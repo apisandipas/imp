@@ -96,6 +96,11 @@ impl Buffer {
         self.text.slice(start..end).to_string()
     }
 
+    /// The text as a rope, for scanning without copying it.
+    pub fn rope(&self) -> &Rope {
+        &self.text
+    }
+
     pub fn char_at(&self, offset: usize) -> Option<char> {
         (offset < self.len()).then(|| self.text.char(offset))
     }

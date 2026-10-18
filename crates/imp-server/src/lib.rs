@@ -9,6 +9,7 @@ mod api;
 mod clipboard;
 mod editor;
 mod render;
+mod scan;
 mod search;
 mod shell;
 

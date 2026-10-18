@@ -670,31 +670,9 @@
  (list #\" #\' #\`))
 
 ;; Brackets. The count picks the nth enclosing pair. A bracket under the
-;; cursor belongs to the pair it opens or closes.
-(define (find-open open close from n)
-  (let loop ([q from] [depth 0] [n n])
-    (if (< q 0)
-        #f
-        (let ([c (buffer-char-at q)])
-          (cond
-            [(and (equal? c close) (not (= q from))) (loop (- q 1) (+ depth 1) n)]
-            [(equal? c open)
-             (cond [(> depth 0) (loop (- q 1) (- depth 1) n)]
-                   [(= n 1) q]
-                   [else (loop (- q 1) 0 (- n 1))])]
-            [else (loop (- q 1) depth n)])))))
-
-(define (find-close open close from)
-  (let ([len (buffer-length)])
-    (let loop ([q from] [depth 0])
-      (if (>= q len)
-          #f
-          (let ([c (buffer-char-at q)])
-            (cond
-              [(equal? c open) (loop (+ q 1) (+ depth 1))]
-              [(equal? c close) (if (= depth 0) q (loop (+ q 1) (- depth 1)))]
-              [else (loop (+ q 1) depth)]))))))
-
+;; cursor belongs to the pair it opens or closes. find-open and find-close
+;; are Rust primitives: scanning a large file a char at a time from Scheme
+;; took most of a second.
 (define (only-blanks-before? p)
   (let ([lo (line-start (offset->line p))])
     (let loop ([q lo]) (cond [(= q p) #t] [(blank-at? q) (loop (+ q 1))] [else #f]))))
@@ -730,55 +708,15 @@
        (list #\{ #\} "{" "}" "B")
        (list #\< #\> "<" ">")))
 
-;; Tags: <name ...> ... </name>. Every tag in the buffer is paired with a
-;; stack, then the count picks the nth innermost pair around the cursor.
-(define (tag-name-end p)
-  (let ([len (buffer-length)])
-    (let loop ([q p])
-      (let ([c (buffer-char-at q)])
-        (if (and (< q len) c (not (char-whitespace? c)) (not (memv c (list #\> #\/))))
-            (loop (+ q 1))
-            q)))))
-
-(define (char-after-tag p)
-  (let ([len (buffer-length)])
-    (let loop ([q p]) (cond [(>= q len) #f] [(equal? (buffer-char-at q) #\>) (+ q 1)] [else (loop (+ q 1))]))))
-
-;; List of (open-start open-end close-start close-end) for every tag pair.
-(define (tag-pairs)
-  (let ([len (buffer-length)])
-    (let loop ([p 0] [stack '()] [pairs '()])
-      (cond
-        [(>= p len) pairs]
-        [(not (equal? (buffer-char-at p) #\<)) (loop (+ p 1) stack pairs)]
-        [else
-         (let* ([closing? (equal? (buffer-char-at (+ p 1)) #\/)]
-                [name-start (if closing? (+ p 2) (+ p 1))]
-                [name-end (tag-name-end name-start)]
-                [name (buffer-substring name-start name-end)]
-                [end (char-after-tag name-end)])
-           (cond
-             [(or (not end) (equal? name "")) (loop (+ p 1) stack pairs)]
-             [closing?
-              ;; Pop to the matching open tag, dropping unclosed ones (<br>).
-              (let pop ([s stack])
-                (cond
-                  [(null? s) (loop end stack pairs)]
-                  [(equal? (car (car s)) name)
-                   (loop end (cdr s)
-                         (cons (list (cadr (car s)) (caddr (car s)) p end) pairs))]
-                  [else (pop (cdr s))]))]
-             [(equal? (buffer-char-at (- end 2)) #\/) (loop end stack pairs)]
-             [else (loop end (cons (list name p end) stack) pairs)]))]))))
-
+;; Tags: <name ...> ... </name>. tag-pairs-around (Rust, for speed on big
+;; files) lists the pairs around the cursor, innermost first, as
+;; (open-start open-end close-start close-end); the count picks one.
 (define (tag-object around?)
   (lambda (from n)
-    (let* ([around (filter (lambda (t) (and (<= (car t) from) (< from (cadddr t)))) (tag-pairs))]
-           ;; Innermost first: the latest-opening pair is the innermost.
-           [sorted (sort around (lambda (a b) (> (car a) (car b))))])
-      (if (< (length sorted) n)
+    (let ([pairs (tag-pairs-around from)])
+      (if (< (length pairs) n)
           #f
-          (let ([t (list-ref sorted (- n 1))])
+          (let ([t (list-ref pairs (- n 1))])
             (if around?
                 (list (car t) (cadddr t) #f)
                 (list (cadr t) (caddr t) #f)))))))

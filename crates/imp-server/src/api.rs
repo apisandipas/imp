@@ -13,6 +13,7 @@ use steel::steel_vm::register_fn::RegisterFn;
 
 use crate::clipboard;
 use crate::editor::{self, Highlight};
+use crate::scan;
 use crate::search;
 use crate::shell;
 use std::path::{Path, PathBuf};
@@ -197,6 +198,33 @@ pub fn register(engine: &mut Engine) {
             Ok::<(), String>(())
         },
     );
+
+    // Bracket and tag scans; see scan.rs.
+    engine.register_fn(
+        "find-open",
+        |open: char, close: char, from: isize, count: isize| {
+            if from < 0 {
+                return None;
+            }
+            editor::with(|e| {
+                scan::find_open(e.buffer.rope(), open, close, from as usize, clamp(count))
+                    .map(|p| p as isize)
+            })
+        },
+    );
+    engine.register_fn("find-close", |open: char, close: char, from: isize| {
+        editor::with(|e| {
+            scan::find_close(e.buffer.rope(), open, close, clamp(from)).map(|p| p as isize)
+        })
+    });
+    engine.register_fn("tag-pairs-around", |offset: isize| {
+        editor::with(|e| {
+            scan::tag_pairs_around(e.buffer.rope(), clamp(offset))
+                .into_iter()
+                .map(|t| t.iter().map(|&x| x as isize).collect::<Vec<isize>>())
+                .collect::<Vec<_>>()
+        })
+    });
 
     // Searching. Patterns use Vim's syntax; see search.rs.
     engine.register_fn("pattern-error", |pattern: String| {
