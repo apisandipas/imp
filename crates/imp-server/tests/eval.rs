@@ -128,3 +128,15 @@ fn user_functions_stay_redefinable() {
     s.eval("(define (k) 2)").unwrap();
     assert_eq!(s.eval("(call-k)").unwrap(), "2");
 }
+
+#[test]
+fn names_defined_later_are_allowed() {
+    let mut s = server("");
+    // later-fn doesn't exist when this is compiled...
+    s.eval("(define (use-later) (later-fn))").unwrap();
+    let err = s.eval("(use-later)").unwrap_err();
+    assert!(err.contains("later-fn is not defined"), "{err}");
+    // ...and once it is, callers get it.
+    s.eval("(define (later-fn) 'here)").unwrap();
+    assert_eq!(s.eval("(use-later)").unwrap(), "here");
+}

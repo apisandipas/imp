@@ -197,6 +197,12 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("getenv", |name: String| std::env::var(name).ok());
+    // imp's config directory (where init.scm and packages/ live).
+    engine.register_fn("config-dir", || {
+        crate::user_config_path()
+            .and_then(|p| p.parent().map(|d| d.display().to_string()))
+            .unwrap_or_else(|| ".".to_string())
+    });
     engine.register_fn("current-dir", || {
         std::env::current_dir()
             .map(|d| d.display().to_string())

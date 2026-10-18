@@ -138,7 +138,41 @@
         void
         ;; A definition's own value is void, so a marker after the last
         ;; form doesn't change the result that matters.
-        (eval (cons 'begin (apply append (map unit-forms others)))))))
+        (eval-allowing-later-definitions (cons 'begin (apply append (map unit-forms others))) 100))))
+
+;; Steel won't compile a reference to a global that doesn't exist yet. But
+;; init.scm routinely names functions a package will define when it loads
+;; (in a use-package! 'config, say). So a missing global is defined as a
+;; placeholder that complains if called before the real definition, which
+;; (being a define of an existing name) then replaces it everywhere.
+(define (eval-allowing-later-definitions form tries)
+  (let ([outcome (with-handler (lambda (e) (list 'failed e)) (list 'ok (eval form)))])
+    (if (eq? (car outcome) 'ok)
+        (cadr outcome)
+        (let ([name (missing-identifier (cadr outcome))])
+          (if (and name (> tries 0))
+              (begin
+                (eval (list 'define (string->symbol name) (list 'not-defined-yet name)))
+                (eval-allowing-later-definitions form (- tries 1)))
+              (raise-error (cadr outcome)))))))
+
+;; The name in a "Cannot reference an identifier before its definition"
+;; error, or #f for any other error.
+(define (missing-identifier e)
+  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))]
+         [marker "before its definition: "])
+    (and (string-contains? m marker)
+         (let loop ([i 0])
+           (cond [(> (+ i (string-length marker)) (string-length m)) #f]
+                 [(equal? (substring m i (+ i (string-length marker))) marker)
+                  (let ([name (substring m (+ i (string-length marker)) (string-length m))])
+                    (substring name 0 (let end ([j 0]) (if (and (< j (string-length name))
+                                                                (not (char-whitespace? (string-ref name j))))
+                                                           (end (+ j 1)) j))))]
+                 [else (loop (+ i 1))])))))
+
+(define (not-defined-yet name)
+  (lambda args (error (string-append name " is not defined (yet)"))))
 
 ;; Evaluates every form in `text` as one unit, returning the last value.
 (define (imp-eval-string text)

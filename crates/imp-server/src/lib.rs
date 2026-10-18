@@ -38,6 +38,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("leader.scm", include_str!("../../../runtime/leader.scm")),
     ("modes.scm", include_str!("../../../runtime/modes.scm")),
     ("emacs.scm", include_str!("../../../runtime/emacs.scm")),
+    (
+        "packages.scm",
+        include_str!("../../../runtime/packages.scm"),
+    ),
 ];
 
 pub struct Options {
