@@ -78,6 +78,9 @@
      (list "sign.debug" (fg 'yellow "bold"))
      (list "debug-line" (string-append "bg=" (c 'debug-bg)))
      (list "fold" (fg 'comment))
+     ;; The file browser
+     (list "dired.directory" (fg 'blue "bold"))
+     (list "dired.hidden" (fg 'dim))
      ;; Org
      (list "org.level1" (fg 'blue "bold"))
      (list "org.level2" (fg 'magenta "bold"))

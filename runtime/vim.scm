@@ -583,15 +583,20 @@
 
 (define (run-operator! op-key motion-key count)
   (let* (;; Vim special case: `cw` on a word changes to its end, like `ce`,
-         ;; leaving the space after it alone.
-         [motion-key (cond
-                       [(not (and (equal? op-key "c") (not (= (class-at (cursor)) 0)))) motion-key]
-                       [(equal? motion-key "w") "e"]
-                       [(equal? motion-key "W") "E"]
-                       [else motion-key])]
+         ;; leaving the space after it alone. On a word's last char it
+         ;; changes just that char, where `ce` would go on to the next word.
+         [cw? (and (equal? op-key "c") (not (= (class-at (cursor)) 0)) (member motion-key '("w" "W")))]
+         [classify (if (equal? motion-key "W") big-class char-class)]
+         [motion-key (cond [(not cw?) motion-key] [(equal? motion-key "w") "e"] [else "E"])]
          [m (find-motion motion-key)]
          [from (cursor)]
-         [target ((motion-proc m) from count)])
+         [at-word-end? (and cw?
+                            (let ([next (+ from 1)])
+                              (or (>= next (line-end (offset->line from)))
+                                  (not (= (classify (buffer-char-at next)) (classify (buffer-char-at from)))))))]
+         [target (cond [(not at-word-end?) ((motion-proc m) from count)]
+                       [(= count 1) from]
+                       [else ((motion-proc m) from (- count 1))])])
     ;; A motion that finds nothing (f with no match) cancels the operator.
     (when target
       (let* ([target (if (member motion-key '("w" "W")) (word-operator-end from target) target)]
@@ -2811,6 +2816,9 @@
 (define (write-buffer! ex)
   (let ([file (ex-args ex)])
     (cond
+      ;; A buffer that isn't a file says what saving means (the file
+      ;; browser applies its changes).
+      [(and (equal? file "") (buffer-local 'write-handler)) ((buffer-local 'write-handler))]
       [(equal? file "")
        (if (buffer-path)
            (when (save-buffer! (ex-bang? ex)) (set-status! (string-append "wrote " (buffer-name))))
@@ -2983,7 +2991,15 @@
 
 ;; Opens `path` (or switches to the buffer that has it) and returns the id,
 ;; or #f after saying why on the status line.
+;; What opening a directory does; the file browser (dired.scm) sets it.
+(define *open-directory* #f)
+
 (define (open-file! path)
+  (if (and *open-directory* (file-directory? (expand-path path)))
+      (*open-directory* (expand-path path))
+      (open-file-buffer! path)))
+
+(define (open-file-buffer! path)
   (let ([r (buffer-open! (expand-path path))])
     (if (string? r)
         (begin (set-status! r) #f)
@@ -3025,6 +3041,12 @@
              (go-to-buffer! *alternate-buffer*)
              (set-status! "no alternate file"))]
         [(not (equal? arg "")) (open-file! arg)]
+        ;; A buffer that isn't a file says how to re-read it (the file
+        ;; browser lists its directory again).
+        [(buffer-local 'revert-handler)
+         (if (and (buffer-modified?) (not (ex-bang? ex)))
+             (set-status! "unsaved changes (add ! to discard them)")
+             ((buffer-local 'revert-handler)))]
         [(not (buffer-path)) (set-status! "no file name")]
         [(and (buffer-modified?) (not (ex-bang? ex)))
          (set-status! "unsaved changes (add ! to discard them)")]

@@ -280,6 +280,62 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("delete-file!", |path: String| {
         std::fs::remove_file(path).is_ok()
     });
+    // Directories, for the file browser. The changing ones return #t, or
+    // what went wrong as a string.
+    engine.register_fn("file-directory?", |path: String| Path::new(&path).is_dir());
+    // (name directory?) for each entry of `path`, dotfiles included,
+    // sorted by name; an error string if it can't be read.
+    engine.register_fn(
+        "directory-entries",
+        |path: String| match std::fs::read_dir(&path) {
+            Ok(dir) => {
+                let mut entries: Vec<(String, bool)> = dir
+                    .filter_map(Result::ok)
+                    .map(|e| {
+                        let is_dir = e.path().is_dir();
+                        (e.file_name().to_string_lossy().into_owned(), is_dir)
+                    })
+                    .collect();
+                entries.sort();
+                SteelVal::ListV(
+                    entries
+                        .into_iter()
+                        .map(|(name, is_dir)| {
+                            SteelVal::ListV(
+                                vec![SteelVal::StringV(name.into()), SteelVal::BoolV(is_dir)]
+                                    .into(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                )
+            }
+            Err(err) => SteelVal::StringV(format!("{path}: {err}").into()),
+        },
+    );
+    let outcome = |r: std::io::Result<()>, what: &str| match r {
+        Ok(()) => SteelVal::BoolV(true),
+        Err(err) => SteelVal::StringV(format!("{what}: {err}").into()),
+    };
+    engine.register_fn("rename-file!", move |from: String, to: String| {
+        if Path::new(&to).exists() {
+            return SteelVal::StringV(format!("{to} already exists").into());
+        }
+        outcome(std::fs::rename(&from, &to), &from)
+    });
+    engine.register_fn("make-directory!", move |path: String| {
+        outcome(std::fs::create_dir_all(&path), &path)
+    });
+    // Deletes a file, or a directory and everything in it.
+    engine.register_fn("delete-path!", move |path: String| {
+        let p = Path::new(&path);
+        let r = if p.is_dir() && !p.is_symlink() {
+            std::fs::remove_dir_all(p)
+        } else {
+            std::fs::remove_file(p)
+        };
+        outcome(r, &path)
+    });
     // $XDG_STATE_HOME/imp, or ~/.local/state/imp.
     engine.register_fn("state-dir", || {
         std::env::var_os("XDG_STATE_HOME")
@@ -381,6 +437,10 @@ pub fn register(engine: &mut Engine) {
     // Marks: positions that move with the text.
     engine.register_fn("mark-set!", |name: String, offset: isize| {
         editor::with(|e| e.buffer.set_mark(&name, clamp(offset)))
+    });
+    // A mark that stays put when text is inserted right at it.
+    engine.register_fn("mark-set-sticky!", |name: String, offset: isize| {
+        editor::with(|e| e.buffer.set_sticky_mark(&name, clamp(offset)))
     });
     engine.register_fn("mark-get", |name: String| {
         editor::with(|e| e.buffer.mark(&name).map(|m| m as isize))

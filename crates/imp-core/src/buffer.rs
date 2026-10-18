@@ -3,7 +3,7 @@
 //! Positions are char offsets into the whole text. Line/column conversions are
 //! provided for the editing layer, which decides what the positions mean.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -27,6 +27,9 @@ pub struct Buffer {
     /// Named positions that move with the text around them. Vim's marks,
     /// the jump list and anything else Scheme wants kept in place.
     marks: HashMap<String, usize>,
+    /// Marks that stay put when text is inserted right where they are,
+    /// instead of moving after it.
+    sticky: HashSet<String>,
     /// Goes up with every change (and undo/redo), so watchers can tell
     /// whether the text changed without comparing it.
     version: u64,
@@ -331,8 +334,8 @@ impl Buffer {
         }
         self.version += 1;
         let n = text.chars().count();
-        for m in self.marks.values_mut() {
-            if *m >= offset {
+        for (name, m) in self.marks.iter_mut() {
+            if *m > offset || (*m == offset && !self.sticky.contains(name)) {
                 *m += n;
             }
         }
@@ -382,6 +385,14 @@ impl Buffer {
 
     pub fn set_mark(&mut self, name: &str, offset: usize) {
         self.marks.insert(name.to_string(), offset.min(self.len()));
+        self.sticky.remove(name);
+    }
+
+    /// Sets a mark that text inserted at it goes after, as at the start of
+    /// a line whose name is being retyped.
+    pub fn set_sticky_mark(&mut self, name: &str, offset: usize) {
+        self.set_mark(name, offset);
+        self.sticky.insert(name.to_string());
     }
 
     /// Where mark `name` is, kept inside the text (undo can shrink it).
@@ -391,6 +402,7 @@ impl Buffer {
 
     pub fn delete_mark(&mut self, name: &str) {
         self.marks.remove(name);
+        self.sticky.remove(name);
     }
 
     pub fn mark_names(&self) -> Vec<String> {
@@ -543,6 +555,22 @@ mod tests {
         assert_eq!(b.mark("b"), Some(5));
         b.delete(0, 8);
         assert_eq!(b.mark("b"), Some(0));
+    }
+
+    #[test]
+    fn sticky_marks_stay_before_text_inserted_at_them() {
+        let mut b = Buffer::from_text("ab");
+        b.set_sticky_mark("s", 1);
+        b.set_mark("m", 1);
+        b.insert(1, "xx");
+        assert_eq!(b.mark("s"), Some(1));
+        assert_eq!(b.mark("m"), Some(3));
+        b.insert(0, "y");
+        assert_eq!(b.mark("s"), Some(2));
+        // Setting it again plainly makes it an ordinary mark.
+        b.set_mark("s", 0);
+        b.insert(0, "z");
+        assert_eq!(b.mark("s"), Some(1));
     }
 
     #[test]

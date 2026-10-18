@@ -1463,3 +1463,21 @@ fn block_d_to_line_ends() {
     s.keys(&["l", "C-v", "j", "D"]);
     assert_eq!(s.text(), "a\nd\n");
 }
+
+/// cw on a word's last char changes only that char (Vim's end_word with
+/// stop set); with a count it goes on to later word ends.
+#[test]
+fn cw_on_the_last_char_of_a_word() {
+    let mut s = server("a.txt one\n");
+    type_keys(&mut s, "cwc<esc>");
+    assert_eq!(s.text(), "c.txt one\n");
+    let mut s = server("ab cd ef\n");
+    type_keys(&mut s, "lcwX<esc>");
+    assert_eq!(s.text(), "aX cd ef\n");
+    let mut s = server("ab cd ef\n");
+    type_keys(&mut s, "l2cwX<esc>");
+    assert_eq!(s.text(), "aX ef\n");
+    let mut s = server("a.b c\n");
+    type_keys(&mut s, "cWX<esc>");
+    assert_eq!(s.text(), "X c\n");
+}

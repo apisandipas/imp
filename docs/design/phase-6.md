@@ -210,3 +210,21 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
   - Not done: typing in a table cell doesn't keep it aligned (`<tab>` or
     `<ret>` realigns), and there are no timestamps or repeaters,
     priorities, property drawers, export, or babel.
+- 6.3 File browser: done (`runtime/dired.scm`).
+  - It opens with `:Explore` / `:Ex`, `SPC f d`, or `:e DIR` (through
+    `*open-directory*`). Global `-` stays Vim's motion; inside the browser
+    `-` goes up.
+  - Tracking which line is which entry took two tries. Marks at line ends
+    broke on `o`, which inserts at the end of the line above. The scheme
+    that works:
+    - a line that reads exactly as an entry did is that entry;
+    - otherwise the entry's *sticky* mark (new in `Buffer`: text inserted
+      at it goes after it) at the start of its line says which line it
+      became.
+  - Consequence: swapping two names reads as no change.
+  - New primitives: `directory-entries`, `file-directory?`, `rename-file!`,
+    `make-directory!`, `delete-path!` and `mark-set-sticky!`.
+  - New buffer-locals: `write-handler` (`:w`) and `revert-handler`
+    (`:e!`), for buffers that aren't files.
+  - Fixed a core Vim bug the tests found: `cw` on a word's last char
+    changed through the next word.
