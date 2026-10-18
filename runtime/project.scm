@@ -44,10 +44,14 @@
 (define (known-projects)
   (if (file-exists? (projects-file)) (text-lines (read-file (projects-file))) '()))
 
+;; Remembering is a convenience: an unwritable state directory isn't an
+;; error worth showing.
 (define (remember-project! root)
-  (let ([known (known-projects)])
-    (unless (member root known)
-      (write-text-file! (projects-file) (string-append (string-join (cons root known) "\n") "\n")))))
+  (with-handler
+   (lambda (e) #f)
+   (let ([known (known-projects)])
+     (unless (member root known)
+       (write-text-file! (projects-file) (string-append (string-join (cons root known) "\n") "\n"))))))
 
 (add-hook! 'buffer-open (lambda () (let ([root (and (buffer-path) (project-root))]) (when root (remember-project! root)))))
 

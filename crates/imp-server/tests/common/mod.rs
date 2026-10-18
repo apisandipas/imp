@@ -11,6 +11,12 @@ pub fn server(text: &str) -> Server {
     let mut s =
         Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads");
     s.eval(r#"(set-face! "normal" "")"#).unwrap();
+    // State (autosaves, remembered projects) stays out of the real one.
+    s.eval(&format!(
+        "(set-option! 'state-directory {:?})",
+        temp_path("state").display().to_string()
+    ))
+    .unwrap();
     s
 }
 

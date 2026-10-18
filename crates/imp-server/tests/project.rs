@@ -99,7 +99,14 @@ fn grep_fills_the_quickfix_list() {
     type_keys(&mut s, "<ret>");
     assert!(s.eval("(buffer-name)").unwrap().contains("main.rs"));
     assert_eq!(s.eval("(current-line)").unwrap(), "1");
-    assert_eq!(s.eval("(current-col)").unwrap(), "4");
+    // grep (when rg isn't installed) gives no columns.
+    if std::process::Command::new("rg")
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
+        assert_eq!(s.eval("(current-col)").unwrap(), "4");
+    }
 }
 
 #[test]

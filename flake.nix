@@ -15,6 +15,8 @@
           version = "0.1.0";
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
+          # The git interface's tests make real repositories.
+          nativeCheckInputs = [ pkgs.git ];
           # The runtime Scheme files are embedded at build time.
           meta.mainProgram = "imp";
         };
