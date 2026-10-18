@@ -25,6 +25,20 @@ fn clamp(n: isize) -> usize {
     n.max(0) as usize
 }
 
+/// A syntax node for Scheme: (kind field start end named?).
+fn node_value(kind: String, field: String, start: usize, end: usize, named: bool) -> SteelVal {
+    SteelVal::ListV(
+        vec![
+            SteelVal::StringV(kind.into()),
+            SteelVal::StringV(field.into()),
+            SteelVal::IntV(start as isize),
+            SteelVal::IntV(end as isize),
+            SteelVal::BoolV(named),
+        ]
+        .into(),
+    )
+}
+
 pub fn register(engine: &mut Engine) {
     // Reading the buffer.
     engine.register_fn("buffer-length", || {
@@ -553,6 +567,78 @@ pub fn register(engine: &mut Engine) {
     });
     engine.register_fn("set-popup-selected!", |n: isize| {
         editor::with(|e| e.popup_selected = (n >= 0).then_some(n as usize))
+    });
+
+    // Tree-sitter (syntax.rs): a language per buffer, and its tree.
+    engine.register_fn("set-buffer-language!", |name: String| {
+        editor::with(|e| {
+            let id = e.current;
+            match crate::syntax::Syntax::new(&name) {
+                Some(syntax) => {
+                    e.buffer.track_edits(true);
+                    e.syntax.insert(id, syntax);
+                    true
+                }
+                None => {
+                    e.buffer.track_edits(false);
+                    e.syntax.remove(&id);
+                    false
+                }
+            }
+        })
+    });
+    engine.register_fn("buffer-language", || {
+        editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
+    });
+    engine.register_fn("syntax-languages", || {
+        let mut names: Vec<String> = crate::syntax::languages()
+            .keys()
+            .map(|n| n.to_string())
+            .collect();
+        names.sort();
+        names
+    });
+    // The named nodes around char offset `at`, innermost first, as
+    // (kind field start end); the field is "" when the node has none.
+    engine.register_fn("syntax-ancestors", |at: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
+                return Vec::new();
+            };
+            crate::syntax::ancestors(root, e.buffer.rope(), clamp(at))
+                .into_iter()
+                .map(|(k, f, s, t)| node_value(k, f, s, t, true))
+                .collect::<Vec<_>>()
+        })
+    });
+    // The children of the node spanning chars start..end, as (kind field
+    // start end named?).
+    engine.register_fn("syntax-children", |start: isize, end: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
+                return Vec::new();
+            };
+            crate::syntax::children(root, e.buffer.rope(), clamp(start), clamp(end))
+                .into_iter()
+                .map(|(k, f, s, t, named)| node_value(k, f, s, t, named))
+                .collect::<Vec<_>>()
+        })
+    });
+    // The whole tree as an S-expression, for looking at while writing
+    // text objects.
+    engine.register_fn("syntax-tree", || {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            e.syntax
+                .get(&id)
+                .and_then(|s| s.root())
+                .map(|r| r.to_sexp())
+        })
     });
 
     // Bracket and tag scans; see scan.rs.

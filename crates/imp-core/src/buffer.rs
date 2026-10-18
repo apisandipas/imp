@@ -37,6 +37,25 @@ pub struct Buffer {
     disk: Option<(std::time::SystemTime, u64)>,
     /// Keep the previous version as `FILE~` when saving.
     pub backup: bool,
+    /// Edits since a parser last looked, when something asked to track
+    /// them (a syntax tree; see `track_edits`).
+    edits: Option<Vec<Edit>>,
+}
+
+/// One change to the text, in the terms a tree-sitter parser wants:
+/// byte offsets, and (row, byte column) points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edit {
+    Change {
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+        start: (usize, usize),
+        old_end: (usize, usize),
+        new_end: (usize, usize),
+    },
+    /// The whole text was replaced (undo, redo, reload).
+    Reset,
 }
 
 impl Buffer {
@@ -141,6 +160,7 @@ impl Buffer {
         self.text.remove(0..len);
         self.text.insert(0, &text);
         self.version += 1;
+        self.record_reset();
         self.dirty = true;
         self.modified = false;
         Ok(())
@@ -254,12 +274,58 @@ impl Buffer {
         self.text.byte_to_char(byte.min(self.text.len_bytes()))
     }
 
+    /// Starts (or stops) recording edits for `take_edits`.
+    pub fn track_edits(&mut self, on: bool) {
+        self.edits = on.then(Vec::new);
+    }
+
+    /// The edits since the last call, oldest first.
+    pub fn take_edits(&mut self) -> Vec<Edit> {
+        self.edits.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// The (row, byte column) of byte offset `byte`.
+    fn point(&self, byte: usize) -> (usize, usize) {
+        let row = self.text.byte_to_line(byte);
+        (row, byte - self.text.line_to_byte(row))
+    }
+
+    fn record(&mut self, edit: Edit) {
+        if let Some(edits) = self.edits.as_mut() {
+            edits.push(edit);
+        }
+    }
+
+    fn record_reset(&mut self) {
+        if let Some(edits) = self.edits.as_mut() {
+            edits.clear();
+            edits.push(Edit::Reset);
+        }
+    }
+
     pub fn insert(&mut self, offset: usize, text: &str) {
         if text.is_empty() {
             return;
         }
         let offset = offset.min(self.len());
+        let tracking = self.edits.is_some();
+        let before = tracking.then(|| {
+            let b = self.text.char_to_byte(offset);
+            (b, self.point(b))
+        });
         self.text.insert(offset, text);
+        if let Some((start_byte, start)) = before {
+            let new_end_byte = start_byte + text.len();
+            let new_end = self.point(new_end_byte);
+            self.record(Edit::Change {
+                start_byte,
+                old_end_byte: start_byte,
+                new_end_byte,
+                start,
+                old_end: start,
+                new_end,
+            });
+        }
         self.version += 1;
         let n = text.chars().count();
         for m in self.marks.values_mut() {
@@ -278,7 +344,21 @@ impl Buffer {
         let end = end.min(self.len());
         let start = start.min(end);
         let removed = self.text.slice(start..end).to_string();
+        let before = (self.edits.is_some() && start < end).then(|| {
+            let (sb, eb) = (self.text.char_to_byte(start), self.text.char_to_byte(end));
+            (sb, eb, self.point(sb), self.point(eb))
+        });
         self.text.remove(start..end);
+        if let Some((start_byte, old_end_byte, start_point, old_end)) = before {
+            self.record(Edit::Change {
+                start_byte,
+                old_end_byte,
+                new_end_byte: start_byte,
+                start: start_point,
+                old_end,
+                new_end: start_point,
+            });
+        }
         if start < end {
             self.version += 1;
         }
@@ -348,6 +428,7 @@ impl Buffer {
         }
         let at = first_difference(&previous, &self.text);
         self.version += 1;
+        self.record_reset();
         self.redo.push(std::mem::replace(&mut self.text, previous));
         self.modified = true;
         self.dirty = false;
@@ -358,6 +439,7 @@ impl Buffer {
         let next = self.redo.pop()?;
         let at = first_difference(&next, &self.text);
         self.version += 1;
+        self.record_reset();
         self.undo.push(std::mem::replace(&mut self.text, next));
         self.modified = true;
         self.dirty = false;
@@ -403,6 +485,44 @@ mod tests {
         assert_eq!(b.offset_to_col(5), 2);
         // Columns clamp to the end of the line's text.
         assert_eq!(b.line_col_to_offset(0, 99), 2);
+    }
+
+    #[test]
+    fn edits_are_recorded_for_parsers() {
+        let mut b = Buffer::from_text("ab\ncd\n");
+        b.insert(0, "x");
+        assert!(b.take_edits().is_empty());
+        b.track_edits(true);
+        b.insert(4, "é");
+        b.delete(0, 2);
+        let edits = b.take_edits();
+        assert_eq!(
+            edits[0],
+            Edit::Change {
+                start_byte: 4,
+                old_end_byte: 4,
+                new_end_byte: 6,
+                start: (1, 0),
+                old_end: (1, 0),
+                new_end: (1, 2),
+            }
+        );
+        assert_eq!(
+            edits[1],
+            Edit::Change {
+                start_byte: 0,
+                old_end_byte: 2,
+                new_end_byte: 0,
+                start: (0, 0),
+                old_end: (0, 2),
+                new_end: (0, 0),
+            }
+        );
+        b.undo_boundary();
+        b.insert(0, "z");
+        b.undo();
+        assert_eq!(b.take_edits(), [Edit::Reset]);
+        assert!(b.take_edits().is_empty());
     }
 
     #[test]

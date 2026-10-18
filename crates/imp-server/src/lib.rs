@@ -18,6 +18,7 @@ mod render;
 mod scan;
 mod search;
 mod shell;
+mod syntax;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -49,6 +50,7 @@ const RUNTIME: &[(&str, &str)] = &[
         include_str!("../../../runtime/packages.scm"),
     ),
     ("files.scm", include_str!("../../../runtime/files.scm")),
+    ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
 ];
 
 pub struct Options {
@@ -157,6 +159,9 @@ impl Server {
             // Daemon events are handled by its own loop (daemon.rs).
             Event::FromClient(_, msg) => self.handle(msg),
             Event::Connected(..) | Event::Disconnected(_) => {}
+            Event::Parsed(id, version, tree) => {
+                editor::with(|e| e.syntax_parsed(id, version, tree))
+            }
             Event::JobExit(id) => {
                 let code = editor::with(|e| e.background.job_finished(id));
                 self.call(

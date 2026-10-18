@@ -63,6 +63,8 @@ pub struct Editor {
     pub height: u16,
     /// Display columns between tab stops.
     pub tab_width: usize,
+    /// Parse trees, by buffer id, for buffers with a language.
+    pub syntax: HashMap<usize, crate::syntax::Syntax>,
     /// Timers and jobs, which report back through the server's events.
     pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
@@ -212,7 +214,30 @@ impl Editor {
             self.switch_to(other);
         }
         self.parked.remove(&id);
+        self.syntax.remove(&id);
         true
+    }
+
+    /// Brings buffer `id`'s parse tree up to date, if it has one (see
+    /// `Syntax::update` for the time budget).
+    pub fn update_syntax(&mut self, id: usize) {
+        if let Some(mut syntax) = self.syntax.remove(&id) {
+            let events = self.background.sender.clone();
+            if let Some(buffer) = self.buffer_by_id_mut(id) {
+                syntax.update(buffer, id, events.as_ref());
+            }
+            self.syntax.insert(id, syntax);
+        }
+    }
+
+    /// A background parse of buffer `id` finished.
+    pub fn syntax_parsed(&mut self, id: usize, version: u64, tree: tree_sitter::Tree) {
+        if let Some(mut syntax) = self.syntax.remove(&id) {
+            if let Some(buffer) = self.buffer_by_id(id) {
+                syntax.background_parsed(buffer, version, tree);
+            }
+            self.syntax.insert(id, syntax);
+        }
     }
 
     /// The screen area windows share: all but the message line.

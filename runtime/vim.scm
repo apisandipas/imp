@@ -2031,14 +2031,57 @@
       (set-cursor! start)))
   (set! *autoindent-line* #f))
 
+;; smartindent: after a line ending in an opening bracket the new line is
+;; indented one shiftwidth more, and <ret> between a pair of brackets puts
+;; the closing one on its own line. Modes set which brackets count.
+(define-option! 'smartindent #f '(si))
+(define-option! 'indent-open "{[(" '())
+(define-option! 'indent-close "}])" '())
+
+(define (char-before-cursor-on-line)
+  (let ([lo (line-start (current-line))])
+    (let loop ([p (cursor)])
+      (cond [(<= p lo) #f]
+            [(char-whitespace? (buffer-char-at (- p 1))) (loop (- p 1))]
+            [else (buffer-char-at (- p 1))]))))
+
+(define (char-after-cursor-on-line)
+  (let ([hi (line-end (current-line))])
+    (let loop ([p (cursor)])
+      (cond [(>= p hi) #f]
+            [(char-whitespace? (buffer-char-at p)) (loop (+ p 1))]
+            [else (buffer-char-at p)]))))
+
+(define (opens-indent? c) (and c (memv c (string->list (option 'indent-open)))))
+(define (closes-indent? c) (and c (memv c (string->list (option 'indent-close)))))
+
 (define (insert-newline!)
-  (let ([indent (if (option 'autoindent)
-                    (buffer-substring (line-start (current-line))
-                                      (min (cursor) (line-first-nonblank (current-line))))
-                    "")])
+  (let* ([indent (if (option 'autoindent)
+                     (buffer-substring (line-start (current-line))
+                                       (min (cursor) (line-first-nonblank (current-line))))
+                     "")]
+         [smart? (and (option 'smartindent) (opens-indent? (char-before-cursor-on-line)))]
+         [deeper (if smart? (string-append indent (indent-string (option 'shiftwidth))) indent)])
     (drop-unused-autoindent!)
-    (insert-text! (string-append "\n" indent))
-    (set! *autoindent-line* (and (> (string-length indent) 0) (current-line)))))
+    (if (and smart? (closes-indent? (char-after-cursor-on-line)))
+        ;; Between brackets: open a line for the inside, and put the
+        ;; closing bracket on the line after it.
+        (let ([p (cursor)])
+          (insert-text! (string-append "\n" deeper))
+          (let ([inside (cursor)])
+            (buffer-insert! inside (string-append "\n" indent))
+            (set-cursor! inside)))
+        (insert-text! (string-append "\n" deeper)))
+    (set! *autoindent-line* (and (> (string-length deeper) 0) (current-line)))))
+
+;; Typing a closing bracket first on a line takes one shiftwidth off it.
+(define (maybe-dedent-for! ch)
+  (when (and (option 'smartindent) (closes-indent? ch)
+             (= (cursor) (line-first-nonblank (current-line)))
+             (> (cursor) (line-start (current-line))))
+    (let* ([line (current-line)] [from-end (- (line-end line) (cursor))])
+      (shift-line! line -1)
+      (set-cursor! (- (line-end line) from-end)))))
 
 ;; C-w: the word (or white space run, or line break) before the cursor.
 (define (delete-word-before!)
@@ -2112,6 +2155,9 @@
      (let ([line (clamp (+ (current-line) (if (equal? key "<up>") -1 1)) 0 (last-line))])
        (set-cursor! (line-col->offset line (current-col))))]
     [(and (= (string-length key) 1) (eq? *mode* 'replace)) (replace-char! key)]
+    [(and (= (string-length key) 1) (closes-indent? (string-ref key 0)))
+     (maybe-dedent-for! (string-ref key 0))
+     (insert-text! key)]
     [(= (string-length key) 1) (insert-text! key)]
     [(lookup-key 'insert key) ((lookup-key 'insert key))]
     [else #t]))

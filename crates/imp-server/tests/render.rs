@@ -197,3 +197,21 @@ fn narrow_status_lines_keep_the_position() {
     assert_eq!(rows[2].chars().count(), 16);
     assert!(rows[2].ends_with("1:1 "), "{:?}", rows[2]);
 }
+
+#[test]
+fn jumping_far_with_wrap_is_quick() {
+    // Scrolling used to step one line at a time and re-measure everything
+    // above the cursor each step: quadratic in the jump.
+    let text: String = (0..200_000).map(|i| format!("line {i}\n")).collect();
+    let mut s = sized(&text, 40, 10);
+    s.frame();
+    let t = std::time::Instant::now();
+    s.keys(&["G"]);
+    let rows = s.frame().text_rows();
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        t.elapsed()
+    );
+    assert_eq!(rows[7], "line 199999");
+}

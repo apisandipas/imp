@@ -29,6 +29,9 @@ pub enum Event {
     /// "stderr".
     JobOutput(u64, &'static str, String),
     JobExit(u64),
+    /// A background parse finished: (buffer, buffer version it parsed,
+    /// tree).
+    Parsed(usize, u64, tree_sitter::Tree),
 }
 
 /// The handles background work needs, kept with the editor.

@@ -26,6 +26,20 @@ pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
     let screen = e.layout.rects(e.windows_area());
+    // Parse what changed in every buffer on screen before drawing.
+    let shown: Vec<usize> = screen
+        .iter()
+        .map(|(id, _)| {
+            if *id == e.current_window {
+                e.current
+            } else {
+                e.windows[id].buffer
+            }
+        })
+        .collect();
+    for id in shown {
+        e.update_syntax(id);
+    }
 
     // Draw each window; scroll positions are worked out on the way and
     // stored afterwards.
@@ -120,6 +134,8 @@ struct DrawnWindow {
 struct View<'a> {
     e: &'a Editor,
     buffer: &'a Buffer,
+    /// Syntax highlights near the visible rows: (start, end, faces to try).
+    syntax: Vec<(usize, usize, &'static [String])>,
     /// Whether this window shows the current buffer, whose highlight
     /// ranges (selection) apply.
     current_buffer: bool,
@@ -160,15 +176,23 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     }
     if e.wrap {
         hscroll = 0;
-        loop {
-            let above: usize = (scroll..cursor_line)
-                .map(|l| line_rows(&layout_line(&buffer.line_text(l), e.tab_width), text_width))
-                .sum();
-            if above + cursor_row < text_rows || scroll >= cursor_line {
+        // Walk back from the cursor's line to find the highest line that
+        // still leaves the cursor on screen; that bounds the work by the
+        // window's height, however far the cursor jumped.
+        let mut top = cursor_line;
+        let mut used = cursor_row + 1;
+        while top > scroll {
+            let rows = line_rows(
+                &layout_line(&buffer.line_text(top - 1), e.tab_width),
+                text_width,
+            );
+            if used + rows > text_rows {
                 break;
             }
-            scroll += 1;
+            used += rows;
+            top -= 1;
         }
+        scroll = scroll.max(top);
     } else {
         if cursor_line >= scroll + text_rows {
             scroll = cursor_line + 1 - text_rows;
@@ -180,9 +204,17 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         }
     }
 
+    // Syntax highlights for about the rows on screen.
+    let syntax = e.syntax.get(&buffer_id).map(|s| {
+        let rope = buffer.rope();
+        let first = rope.line_to_byte(scroll.min(rope.len_lines()));
+        let last = rope.line_to_byte((scroll + text_rows + 1).min(rope.len_lines()));
+        s.highlights(rope, first..last)
+    });
     let view = View {
         e,
         buffer,
+        syntax: syntax.unwrap_or_default(),
         current_buffer: buffer_id == e.current,
         cursor_line,
         gutter,
@@ -320,7 +352,7 @@ impl View<'_> {
         let start = self.buffer.line_col_to_offset(line, 0);
         let text = self.buffer.line_text(line);
         let cells = layout_line(&text, e.tab_width);
-        let mut styles = char_styles(e, start, &text, self.current_buffer);
+        let mut styles = char_styles(e, start, &text, self.current_buffer, &self.syntax);
         let cursorline = e.cursorline && line == self.cursor_line;
         if cursorline {
             let face = e.face("cursorline");
@@ -437,10 +469,33 @@ fn gutter_text(e: &Editor, line: usize, cursor_line: usize, gutter: usize) -> St
 /// plus one more entry for its line break. Highlight ranges are offsets
 /// into the current buffer, so they only apply to windows showing it;
 /// pattern highlights (search) apply everywhere.
-fn char_styles(e: &Editor, start: usize, text: &str, current_buffer: bool) -> Vec<Style> {
+fn char_styles(
+    e: &Editor,
+    start: usize,
+    text: &str,
+    current_buffer: bool,
+    syntax: &[(usize, usize, &'static [String])],
+) -> Vec<Style> {
     let len = text.chars().count();
     let mut styles = vec![Style::default(); len + 1];
     let end = start + len + 1;
+    // Syntax first, underneath everything; where captures overlap the
+    // first one to paint a char keeps it.
+    let mut painted = vec![false; len + 1];
+    for (s, t, faces) in syntax {
+        if *t <= start || *s >= end {
+            continue;
+        }
+        let Some(face) = faces.iter().find_map(|f| e.faces.get(f)) else {
+            continue;
+        };
+        for i in s.max(&start) - start..t.min(&end) - start {
+            if !painted[i] {
+                styles[i] = *face;
+                painted[i] = true;
+            }
+        }
+    }
     for layer in &e.layers {
         if current_buffer {
             for h in &layer.ranges {
