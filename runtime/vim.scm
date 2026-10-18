@@ -1944,6 +1944,11 @@
           (set! *count* "")
           (set! *operator-count* "")]
 
+         ;; A buffer's mode keys come before Vim's own, so special buffers
+         ;; can bind operators and motions (c, d, l in git status).
+         [(local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key)
+          => (lambda (proc) (set! *count* "") (proc count))]
+
          [(and (eq? *mode* 'visual) (lookup-key 'visual key))
           (set! *count* "")
           ((lookup-key 'visual key) count)]

@@ -163,3 +163,19 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     `set-buffer-contents!`, `quit-window` and `list-find`.
   - A key that a buffer's mode binds in normal state is no longer taken
     as a Vim prefix, so `q` (and `g`, `z`) can be mode keys.
+- 6.1 Git: done (`runtime/git.scm`).
+  - As designed, with these changes:
+    - refresh is `gr`, since `g` stays Vim's prefix;
+    - the status refreshes on entering it;
+    - `c`, `b`, `d`, `z`, `f`, `F` and `P` open menus (`menu!` in
+      special.scm), as Magit's transients do;
+    - push, pull and fetch output goes to the `$` popup, not a buffer.
+  - Two dispatch changes in vim.scm, so special buffers can bind any key:
+    - a buffer's mode keys now come before Vim's operators and motions
+      (`c`, `d`, `l`);
+    - `q` returns to the buffer a special buffer was opened from.
+  - Commit messages are edited in `.git/COMMIT_EDITMSG`. `ZZ` or `SPC m c`
+    commits and `ZQ` or `SPC m k` cancels, not `C-c C-c`, which normal
+    state treats as escape.
+  - Not done: staging selected lines, rebase, merge, blame, and refreshing
+    on save.
