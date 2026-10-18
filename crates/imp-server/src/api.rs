@@ -14,6 +14,9 @@ use steel::steel_vm::register_fn::RegisterFn;
 use crate::clipboard;
 use crate::editor::{self, Highlight};
 use crate::search;
+use crate::shell;
+use std::path::{Path, PathBuf};
+use steel::SteelVal;
 
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
@@ -48,6 +51,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("offset->col", |offset: isize| {
         editor::with(|e| e.buffer.offset_to_col(clamp(offset)) as isize)
     });
+    engine.register_fn("buffer-path", || {
+        editor::with(|e| e.buffer.path().map(|p| p.display().to_string()))
+    });
     engine.register_fn("buffer-modified?", || {
         editor::with(|e| e.buffer.is_modified())
     });
@@ -65,6 +71,28 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-delete!", |start: isize, end: isize| {
         editor::with(|e| e.buffer.delete(clamp(start), clamp(end)))
     });
+    // Files and processes.
+    engine.register_fn("write-file!", |path: String| {
+        editor::with(|e| {
+            e.buffer
+                .write_to(Path::new(&path))
+                .map_err(|err| format!("{path}: {err}"))
+        })
+    });
+    engine.register_fn("set-buffer-path!", |path: String| {
+        editor::with(|e| e.buffer.set_path(Some(PathBuf::from(path))))
+    });
+    engine.register_fn("read-file", |path: String| {
+        std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
+    });
+    engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
+    // Runs `command` with sh, feeding it `input`. Returns (exit-code output),
+    // the output being stdout and stderr together.
+    engine.register_fn("run-shell", |command: String, input: String| {
+        shell::run(&command, &input)
+            .map(|(code, out)| vec![SteelVal::IntV(code as isize), SteelVal::StringV(out.into())])
+    });
+
     engine.register_fn("undo-boundary!", || {
         editor::with(|e| e.buffer.undo_boundary())
     });
@@ -140,6 +168,10 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
     // Lines shown above the status line until cleared, for output longer
     // than the status line (:registers) and menus (which-key).
+    engine.register_fn("set-cmdline!", |text: String, col: isize| {
+        editor::with(|e| e.cmdline = Some((text, clamp(col))))
+    });
+    engine.register_fn("clear-cmdline!", || editor::with(|e| e.cmdline = None));
     engine.register_fn("set-popup!", |lines: Vec<String>| {
         editor::with(|e| e.popup = lines)
     });

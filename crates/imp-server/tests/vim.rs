@@ -1277,3 +1277,149 @@ fn delmarks() {
     type_keys(&mut s, "ma:delm a<ret>'a");
     assert!(s.status().contains("mark not set"));
 }
+
+#[test]
+fn cmdline_shows_on_bottom_row_with_cursor() {
+    let mut s = server("a\n");
+    type_keys(&mut s, ":abc<left>");
+    let f = s.frame();
+    assert_eq!(f.text_rows().last().unwrap(), ":abc");
+    assert_eq!(f.cursor, (3, 23));
+    type_keys(&mut s, "X<home>Y");
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":YabXc");
+}
+
+#[test]
+fn cmdline_history() {
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, ":2<ret>:3<ret>:eval 9<ret>:");
+    s.keys(&["<up>"]);
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":eval 9");
+    s.keys(&["<up>"]);
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":3");
+    s.keys(&["<down>", "<down>"]);
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":");
+    // <up> matches what was typed.
+    type_keys(&mut s, "2");
+    s.keys(&["<up>"]);
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":2");
+    type_keys(&mut s, "<esc>/x<ret>/");
+    s.keys(&["<up>"]);
+    assert_eq!(s.frame().text_rows().last().unwrap(), "/x");
+}
+
+#[test]
+fn cmdline_tab_completes_commands() {
+    let mut s = server("a\n");
+    type_keys(&mut s, ":noh<tab>");
+    assert_eq!(s.frame().text_rows().last().unwrap(), ":nohlsearch");
+}
+
+fn temp_path(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("imp-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.join(name)
+}
+
+#[test]
+fn write_and_read_files() {
+    let copy = temp_path("copy.txt");
+    let _ = std::fs::remove_file(&copy);
+    let mut s = server("hello\n");
+    type_keys(&mut s, &format!(":w {}<ret>", copy.display()));
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "hello\n");
+    // It now has a name (the scratch buffer had none).
+    assert!(s.frame().text_rows().last().unwrap().contains("copy.txt"));
+    // Refuses to overwrite another existing file without !.
+    let other = temp_path("other.txt");
+    std::fs::write(&other, "x\n").unwrap();
+    type_keys(&mut s, &format!(":w {}<ret>", other.display()));
+    assert!(s.status().contains("exists"));
+    type_keys(&mut s, &format!(":w! {}<ret>", other.display()));
+    assert_eq!(std::fs::read_to_string(&other).unwrap(), "hello\n");
+    type_keys(&mut s, &format!(":r {}<ret>", other.display()));
+    assert_eq!(s.text(), "hello\nhello\n");
+}
+
+#[test]
+fn shell_commands() {
+    let mut s = server("b\na\nc\n");
+    type_keys(&mut s, ":%!sort<ret>");
+    assert_eq!(s.text(), "a\nb\nc\n");
+    type_keys(&mut s, ":r !echo hi<ret>");
+    assert_eq!(s.text(), "a\nhi\nb\nc\n");
+    type_keys(&mut s, ":!echo out<ret>");
+    assert!(s.frame().text_rows().iter().any(|r| r.starts_with("out")));
+}
+
+#[test]
+fn move_and_copy_lines() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, ":1m3<ret>");
+    assert_eq!(s.text(), "2\n3\n1\n4\n");
+    type_keys(&mut s, ":4m0<ret>");
+    assert_eq!(s.text(), "4\n2\n3\n1\n");
+    type_keys(&mut s, ":1,2t$<ret>");
+    assert_eq!(s.text(), "4\n2\n3\n1\n4\n2\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "4\n2\n3\n1\n");
+}
+
+#[test]
+fn ex_shift_join_put_mark() {
+    let mut s = server("a\nb\nc\n");
+    type_keys(&mut s, ":2><ret>");
+    assert_eq!(s.text(), "a\n    b\nc\n");
+    type_keys(&mut s, ":1,3j<ret>");
+    assert_eq!(s.text(), "a b c\n");
+    type_keys(&mut s, "0yiw:pu<ret>");
+    assert_eq!(s.text(), "a b c\na\n");
+    type_keys(&mut s, ":1k z<ret>G'z");
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn sort_lines() {
+    let mut s = server("b\nA\na\nb\n");
+    type_keys(&mut s, ":sort<ret>");
+    assert_eq!(s.text(), "A\na\nb\nb\n");
+    type_keys(&mut s, ":sort u<ret>");
+    assert_eq!(s.text(), "A\na\nb\n");
+    type_keys(&mut s, ":sort!<ret>");
+    assert_eq!(s.text(), "b\na\nA\n");
+    let mut s = server("x10\nx9\nx100\n");
+    type_keys(&mut s, ":sort n<ret>");
+    assert_eq!(s.text(), "x9\nx10\nx100\n");
+}
+
+#[test]
+fn normal_command() {
+    let mut s = server("a\nb\nc\n");
+    type_keys(&mut s, ":%norm A;<ret>");
+    assert_eq!(s.text(), "a;\nb;\nc;\n");
+    // One undo step for the whole command.
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "a\nb\nc\n");
+    type_keys(&mut s, ":norm dd<ret>");
+    assert_eq!(s.text(), "b\nc\n");
+}
+
+#[test]
+fn global_command() {
+    let mut s = server("keep\ndrop 1\nkeep\ndrop 2\n");
+    type_keys(&mut s, ":g/drop/d<ret>");
+    assert_eq!(s.text(), "keep\nkeep\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "keep\ndrop 1\nkeep\ndrop 2\n");
+    type_keys(&mut s, ":v/drop/s/keep/k/<ret>");
+    assert_eq!(s.text(), "k\ndrop 1\nk\ndrop 2\n");
+    type_keys(&mut s, ":g/drop/norm A!<ret>");
+    assert_eq!(s.text(), "k\ndrop 1!\nk\ndrop 2!\n");
+    type_keys(&mut s, ":g/drop<ret>");
+    let rows = s.frame().text_rows();
+    assert!(rows.iter().any(|r| r == "drop 1!"), "{rows:?}");
+    // :g/pat/m0 reverses the matching lines.
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, ":g/^/m0<ret>");
+    assert_eq!(s.text(), "3\n2\n1\n");
+}

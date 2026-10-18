@@ -58,6 +58,16 @@ impl Buffer {
         Ok(())
     }
 
+    /// Writes the text to `path` without changing the buffer's own file.
+    pub fn write_to(&self, path: &Path) -> io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        self.text.write_to(io::BufWriter::new(file))
+    }
+
+    pub fn set_path(&mut self, path: Option<PathBuf>) {
+        self.path = path;
+    }
+
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }

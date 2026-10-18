@@ -10,6 +10,7 @@ mod clipboard;
 mod editor;
 mod render;
 mod search;
+mod shell;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};

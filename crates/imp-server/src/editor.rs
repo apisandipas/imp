@@ -18,6 +18,9 @@ pub struct Editor {
     pub mode_name: String,
     pub cursor_shape: CursorShape,
     pub status: String,
+    /// The command line being typed and the cursor's column in it. While
+    /// it is set it replaces the status line, as in Vim.
+    pub cmdline: Option<(String, usize)>,
     /// Lines drawn over the bottom of the window, above the status line.
     pub popup: Vec<String>,
     pub quit: bool,

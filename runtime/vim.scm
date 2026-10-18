@@ -33,7 +33,8 @@
 (define *jumps* '())           ; mark names of jump list entries, oldest first
 (define *jump-index* 0)        ; where C-o and C-i are in *jumps*
 (define *jump-counter* 0)      ; for naming jump marks
-(define *popup-shown* #f)      ; a popup is up until the next key   ; set when a key fails; stops a running macro
+(define *popup-shown* #f)      ; a popup is up until the next key
+(define *undo-group* #f)       ; while true, changes join one undo step   ; set when a key fails; stops a running macro
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
@@ -53,6 +54,10 @@
 (define *cmdline-change* #f)   ; (lambda (text) ...) after each edit
 (define *cmdline-cancel* #f)   ; (lambda () ...) on <esc>
 (define *cmdline-return* 'normal) ; the mode to go back to
+(define *cmdline-pos* 0)       ; cursor position in *cmdline*
+(define *history* (hash))      ; prompt -> entries, newest first
+(define *history-index* -1)    ; -1 while editing a fresh line
+(define *history-prefix* "")   ; what <up> and <down> match against
 (define *last-search* #f)      ; the last search pattern
 (define *last-search-forward* #t)
 (define *hlsearch* #f)         ; whether matches of *last-search* are shown
@@ -829,10 +834,21 @@
 
 (define (changing-operator? key) (not (equal? key "y")))
 
+;; Runs `thunk` with all its changes in one undo step.
+(define (with-undo-group thunk)
+  (if *undo-group*
+      (thunk)
+      (begin
+        (undo-boundary!)
+        (set! *undo-group* #t)
+        (let ([result (with-handler (lambda (e) (set! *undo-group* #f) (raise-error e)) (thunk))])
+          (set! *undo-group* #f)
+          result))))
+
 ;; Every change starts here: it makes an undo point, and remembers the
 ;; line's text for U when the change is on a new line.
 (define (begin-change!)
-  (undo-boundary!)
+  (unless *undo-group* (undo-boundary!))
   (mark-set! "." (cursor))
   (unless (equal? *u-line* (current-line))
     (set! *u-line* (current-line))
@@ -1980,23 +1996,41 @@
   (set! *cmdline-return* (if (eq? *mode* 'visual) 'visual 'normal))
   (set! *cmdline-prompt* prompt)
   (set! *cmdline* initial)
+  (set! *cmdline-pos* (string-length initial))
   (set! *cmdline-submit* on-submit)
   (set! *cmdline-change* on-change)
   (set! *cmdline-cancel* on-cancel)
+  (set! *history-index* -1)
   (set-mode! 'cmdline)
   (show-cmdline!))
 
 (define (show-cmdline!)
-  (set-status! (string-append *cmdline-prompt* *cmdline*)))
+  (set-cmdline! (string-append *cmdline-prompt* *cmdline*)
+                (+ (string-length *cmdline-prompt*) *cmdline-pos*)))
 
 (define (close-cmdline!)
+  (clear-cmdline!)
   (set-mode! *cmdline-return*)
   (set-status! ""))
 
-(define (cmdline-edit! text)
+;; Replaces the text, putting the cursor at `pos`.
+(define (cmdline-edit! text pos)
   (set! *cmdline* text)
+  (set! *cmdline-pos* (clamp pos 0 (string-length text)))
   (show-cmdline!)
   (when *cmdline-change* (*cmdline-change* text)))
+
+(define (cmdline-before) (substring *cmdline* 0 *cmdline-pos*))
+(define (cmdline-after) (substring *cmdline* *cmdline-pos* (string-length *cmdline*)))
+
+;; Inserts text at the cursor.
+(define (cmdline-insert! text)
+  (cmdline-edit! (string-append (cmdline-before) text (cmdline-after))
+                 (+ *cmdline-pos* (string-length text))))
+
+;; Deletes from `from` to the cursor.
+(define (cmdline-delete-back! from)
+  (cmdline-edit! (string-append (substring *cmdline* 0 from) (cmdline-after)) from))
 
 ;; The text with its last word (and the white space after it) removed.
 (define (drop-last-word text)
@@ -2011,36 +2045,94 @@
                   p))])
     (substring text 0 p)))
 
+;;; Command-line history: one list per prompt, newest first. <up> and
+;;; <down> go through the entries that start with what was typed.
+
+(define (history prompt) (or (hash-try-get *history* prompt) '()))
+
+(define (add-history! prompt text)
+  (unless (equal? text "")
+    (let* ([old (filter (lambda (h) (not (equal? h text))) (history prompt))]
+           [new (cons text old)])
+      (set! *history* (hash-insert *history* prompt
+                                   (if (> (length new) 200) (take new 200) new))))))
+
+(define (take lst n)
+  (if (or (= n 0) (null? lst)) '() (cons (car lst) (take (cdr lst) (- n 1)))))
+
+(define (history-step! dir)
+  (when (= *history-index* -1) (set! *history-prefix* *cmdline*))
+  (let* ([entries (history *cmdline-prompt*)]
+         [n (length entries)])
+    (let loop ([i (+ *history-index* dir)])
+      (cond
+        [(< i 0)
+         (set! *history-index* -1)
+         (cmdline-edit! *history-prefix* (string-length *history-prefix*))]
+        [(>= i n) #f]
+        [(starts-with? (list-ref entries i) *history-prefix*)
+         (set! *history-index* i)
+         (cmdline-edit! (list-ref entries i) (string-length (list-ref entries i)))]
+        [else (loop (+ i dir))]))))
+
 (define (cmdline-key! key)
   (cond
     ;; C-r {register} inserts a register; C-r C-w the word under the cursor.
     [*cmdline-pending*
      (set! *cmdline-pending* #f)
-     (let ([text (cond
-                   [(equal? key "C-w")
-                    (let ([w (word-at (cursor))]) (if w (buffer-substring (car w) (cadr w)) ""))]
-                   [(and (key-char key) (valid-register? (key-char key)))
-                    (let ([reg (register-get (key-char key))])
-                      (if reg (without-final-newline (car reg)) ""))]
-                   [else ""])])
-       (cmdline-edit! (string-append *cmdline* text)))]
+     (cmdline-insert!
+      (cond
+        [(equal? key "C-w")
+         (let ([w (word-at (cursor))]) (if w (buffer-substring (car w) (cadr w)) ""))]
+        [(and (key-char key) (valid-register? (key-char key)))
+         (let ([reg (register-get (key-char key))])
+           (if reg (without-final-newline (car reg)) ""))]
+        [else ""]))]
     [(equal? key "C-r") (set! *cmdline-pending* #t)]
     [(member key '("<esc>" "C-c"))
+     (add-history! *cmdline-prompt* *cmdline*)
      (close-cmdline!)
      (when *cmdline-cancel* (*cmdline-cancel*))]
-    [(equal? key "<ret>")
+    [(member key '("<ret>" "C-m" "C-j"))
+     (add-history! *cmdline-prompt* *cmdline*)
      (close-cmdline!)
      (*cmdline-submit* *cmdline*)
      (when (member *mode* '(normal visual)) (normal-clamp!))]
-    [(equal? key "<bs>")
-     (if (equal? *cmdline* "")
-         (begin (close-cmdline!) (when *cmdline-cancel* (*cmdline-cancel*)))
-         (cmdline-edit! (substring *cmdline* 0 (- (string-length *cmdline*) 1))))]
-    [(equal? key "C-u") (cmdline-edit! "")]
-    [(equal? key "C-w") (cmdline-edit! (drop-last-word *cmdline*))]
-    [(= (string-length key) 1) (cmdline-edit! (string-append *cmdline* key))]
-    [(equal? key "<tab>") (cmdline-edit! (string-append *cmdline* "\t"))]
+    [(member key '("<bs>" "C-h"))
+     (cond
+       [(equal? *cmdline* "")
+        (close-cmdline!)
+        (when *cmdline-cancel* (*cmdline-cancel*))]
+       [(> *cmdline-pos* 0) (cmdline-delete-back! (- *cmdline-pos* 1))]
+       [else #t])]
+    [(equal? key "<del>")
+     (when (< *cmdline-pos* (string-length *cmdline*))
+       (cmdline-edit! (string-append (cmdline-before)
+                                     (substring *cmdline* (+ *cmdline-pos* 1) (string-length *cmdline*)))
+                      *cmdline-pos*))]
+    [(equal? key "C-u") (cmdline-delete-back! 0)]
+    [(equal? key "C-w") (cmdline-delete-back! (string-length (drop-last-word (cmdline-before))))]
+    [(equal? key "<left>") (cmdline-edit! *cmdline* (- *cmdline-pos* 1))]
+    [(equal? key "<right>") (cmdline-edit! *cmdline* (+ *cmdline-pos* 1))]
+    [(member key '("<home>" "C-b")) (cmdline-edit! *cmdline* 0)]
+    [(member key '("<end>" "C-e")) (cmdline-edit! *cmdline* (string-length *cmdline*))]
+    [(member key '("<up>" "C-p")) (history-step! 1)]
+    [(member key '("<down>" "C-n")) (history-step! -1)]
+    [(equal? key "<tab>") (cmdline-complete!)]
+    [(= (string-length key) 1) (cmdline-insert! key)]
     [else #t]))
+
+;; <tab> on the command line: completion arrives with the completion
+;; framework (2.8). Until then it completes ex command names.
+(define (cmdline-complete!)
+  (when (equal? *cmdline-prompt* ":")
+    (let* ([text (cmdline-before)]
+           [names (filter (lambda (n) (and (starts-with? n text) (> (string-length n) (string-length text))))
+                          (hash-keys->list *ex-commands*))]
+           [names (sort names (lambda (a b) (< (string-length a) (string-length b))))])
+      (if (null? names)
+          (set-status! "no completions")
+          (cmdline-insert! (substring (car names) (string-length text) (string-length (car names))))))))
 
 ;;; Search
 
@@ -2299,7 +2391,7 @@
         (set-status! parsed)
         (let* ([name (car parsed)] [ex (cadr parsed)] [cmd (hash-try-get *ex-commands* name)])
           (cond
-            [cmd (cmd ex)]
+            [cmd (with-handler (lambda (e) (set-status! (error-message e))) (cmd ex))]
             ;; A range on its own goes to its last line.
             [(equal? name "")
              (when (ex-range-given? ex)
@@ -2377,16 +2469,31 @@
                                               (clip (printable (buffer-substring (line-start line) (line-end line))) 60))
                                acc)))))))))
 
+;; :w writes the buffer; :w FILE writes a copy (or names the buffer, if it
+;; had no file).
 (define (write-buffer! ex)
-  (when (save!) (set-status! (string-append "wrote " (buffer-name)))))
+  (let ([file (ex-args ex)])
+    (cond
+      [(equal? file "") (when (save!) (set-status! (string-append "wrote " (buffer-name))))]
+      [(and (file-exists? file) (not (ex-bang? ex)) (not (equal? file (buffer-path))))
+       (set-status! (string-append file " exists (add ! to override)"))]
+      [(not (buffer-path)) (set-buffer-path! file) (write-buffer! (list (ex-range ex) #f #f ""))]
+      [else
+       (let ([r (with-handler (lambda (e) (error-message e)) (write-file! file))])
+         (set-status! (if (string? r) r (string-append "wrote " file))))])))
 
-(define-ex! '("w" "write") write-buffer!)
-(define-ex! '("q" "quit")
+(define-ex! '("w" "write" "wa" "wall") write-buffer!)
+(define-ex! '("sav" "saveas")
+  (lambda (ex)
+    (if (equal? (ex-args ex) "")
+        (set-status! "saveas needs a file name")
+        (begin (set-buffer-path! (ex-args ex)) (write-buffer! (list (ex-range ex) #f #f ""))))))
+(define-ex! '("q" "quit" "qa" "qall" "quita" "quitall")
   (lambda (ex)
     (if (and (buffer-modified?) (not (ex-bang? ex)))
         (set-status! "unsaved changes (add ! to override)")
         (quit!))))
-(define-ex! "wq" (lambda (ex) (when (save!) (quit!))))
+(define-ex! '("wq" "wqa" "wqall" "xa" "xall") (lambda (ex) (when (save!) (quit!))))
 ;; :x writes only if there is something to write.
 (define-ex! '("x" "xit" "exit")
   (lambda (ex) (if (buffer-modified?) (when (save!) (quit!)) (quit!))))
@@ -2474,6 +2581,296 @@
 
 (define-ex! '("se" "set")
   (lambda (ex) (for-each set-one-option! (split-whitespace (ex-args ex)))))
+
+;;; Line commands: :m :t :> :< :j :pu :k :p :sort :normal :g
+
+;; Text of lines first..last, each with its line break.
+(define (lines-text first last)
+  (let ([r (lines-range first last)])
+    (let ([text (buffer-substring (car r) (cadr r))])
+      (if (ends-with? text "\n") text (string-append text "\n")))))
+
+;; Deletes lines first..last, keeping the file's final newline.
+(define (delete-lines! first last)
+  (let ([r (lines-range first last)])
+    (if (and (= (cadr r) (buffer-length)) (> (car r) 0))
+        (buffer-delete! (- (car r) 1) (without-final-break (car r) (cadr r)))
+        (buffer-delete! (car r) (cadr r)))))
+
+;; Inserts whole lines (text ending in a line break) after line `line`, or
+;; before the first line if `line` is -1.
+(define (insert-lines-after! line text)
+  (cond
+    [(< line 0) (buffer-insert! 0 text)]
+    [(< line (last-line)) (buffer-insert! (line-start (+ line 1)) text)]
+    [(and (> (buffer-length) 0) (not (equal? (buffer-substring (- (buffer-length) 1) (buffer-length)) "\n")))
+     (buffer-insert! (buffer-length) (string-append "\n" (without-final-newline text)))]
+    [else (buffer-insert! (buffer-length) text)]))
+
+;; The line an address argument names (as for :m and :t), 0 meaning
+;; "before the first line" and so -1 here.
+(define (address-arg text)
+  (if (equal? (substring text (skip-spaces text 0) (string-length text)) "0")
+      -1
+      (let ([a (parse-address text 0)])
+        (or (car a) (error "missing address")))))
+
+(define-ex! '("m" "mo" "move")
+  (lambda (ex)
+    (let* ([first (car (ex-range ex))] [last (cadr (ex-range ex))]
+           [to (address-arg (ex-args ex))])
+      (if (and (>= to first) (< to last))
+          (set-status! "cannot move a range into itself")
+          (let ([text (lines-text first last)] [n (+ 1 (- last first))])
+            (begin-change!)
+            (delete-lines! first last)
+            ;; Lines above the target moved up if the range was above it.
+            (let ([to (if (> to last) (- to n) to)])
+              (insert-lines-after! to text)
+              (set-cursor! (line-first-nonblank (+ to n)))))))))
+
+(define-ex! '("t" "co" "copy")
+  (lambda (ex)
+    (let* ([first (car (ex-range ex))] [last (cadr (ex-range ex))]
+           [to (address-arg (ex-args ex))]
+           [text (lines-text first last)])
+      (begin-change!)
+      (insert-lines-after! to text)
+      (set-cursor! (line-first-nonblank (+ to 1 (- last first)))))))
+
+;; :> and :< shift once per > or < (:>> twice).
+(define (ex-shift dir)
+  (lambda (ex)
+    (let ([times (+ 1 (string-length (ex-args ex)))])
+      (begin-change!)
+      (let loop ([l (car (ex-range ex))])
+        (when (<= l (cadr (ex-range ex)))
+          (shift-line! l (* dir times))
+          (loop (+ l 1))))
+      (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))))
+
+(define-ex! ">" (ex-shift 1))
+(define-ex! "<" (ex-shift -1))
+
+(define-ex! '("j" "join")
+  (lambda (ex)
+    (let ([first (car (ex-range ex))] [last (cadr (ex-range ex))])
+      (begin-change!)
+      (join-lines! first (if (ex-range-given? ex) (+ 1 (- last first)) 2) (not (ex-bang? ex))))))
+
+(define-ex! '("u" "undo") (lambda (ex) ((lookup-key 'normal "u") 1)))
+(define-ex! '("red" "redo") (lambda (ex) ((lookup-key 'normal "C-r") 1)))
+
+;; :pu [x] puts a register's text as lines below the line (:pu! above).
+(define-ex! '("pu" "put")
+  (lambda (ex)
+    (let* ([arg (ex-args ex)]
+           [c (if (equal? arg "") #\" (string-ref arg 0))]
+           [reg (register-get c)])
+      (if (not reg)
+          (set-status! (string-append "nothing in register " (string c)))
+          (let* ([text (car reg)]
+                 [text (if (ends-with? text "\n") text (string-append text "\n"))]
+                 [line (cadr (ex-range ex))]
+                 [after (if (ex-bang? ex) (- line 1) line)])
+            (begin-change!)
+            (insert-lines-after! after text)
+            (set-cursor! (line-first-nonblank (+ after (length (split-lines text))))))))))
+
+(define (split-lines text)
+  (let loop ([cs (string->list text)] [cur '()] [acc '()])
+    (cond
+      [(null? cs) (reverse (if (null? cur) acc (cons (list->string (reverse cur)) acc)))]
+      [(equal? (car cs) #\newline) (loop (cdr cs) '() (cons (list->string (reverse cur)) acc))]
+      [else (loop (cdr cs) (cons (car cs) cur) acc)])))
+
+(define-ex! '("k" "ma" "mark")
+  (lambda (ex)
+    (let ([arg (ex-args ex)])
+      (if (equal? arg "")
+          (set-status! "mark needs a name")
+          (mark-set! (string (string-ref arg 0)) (line-start (cadr (ex-range ex))))))))
+
+;; :p and :nu show lines in a popup; :g with no command collects them.
+(define *print-lines* #f)
+
+(define (print-lines! ex numbered?)
+  (let loop ([l (car (ex-range ex))] [acc '()])
+    (if (> l (cadr (ex-range ex)))
+        (let ([lines (reverse acc)])
+          (if *print-lines*
+              (set! *print-lines* (append *print-lines* lines))
+              (show-popup! lines))
+          (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))
+        (loop (+ l 1)
+              (cons (string-append (if numbered? (pad-right (number->string (+ l 1)) 4) "")
+                                   (printable (buffer-substring (line-start l) (line-end l))))
+                    acc)))))
+
+(define-ex! '("p" "print") (lambda (ex) (print-lines! ex #f)))
+(define-ex! '("nu" "number" "#") (lambda (ex) (print-lines! ex #t)))
+
+;; :sort [!] [i] [n] [u] sorts lines: reversed, ignoring case, by the first
+;; number on the line, dropping duplicates. Without a range, the whole file.
+(define (first-number text)
+  (let loop ([cs (string->list text)] [digits '()])
+    (cond
+      [(and (null? cs) (null? digits)) #f]
+      [(and (pair? cs) (char-numeric-ascii? (car cs))) (loop (cdr cs) (cons (car cs) digits))]
+      [(null? digits) (loop (cdr cs) '())]
+      [else (string->number (list->string (reverse digits)))])))
+
+(define (dedupe lines same?)
+  (cond [(null? lines) '()]
+        [(and (pair? (cdr lines)) (same? (car lines) (cadr lines))) (dedupe (cdr lines) same?)]
+        [else (cons (car lines) (dedupe (cdr lines) same?))]))
+
+(define-ex! '("sor" "sort")
+  (lambda (ex)
+    (let* ([flags (ex-args ex)]
+           [range (if (ex-range-given? ex) (ex-range ex) (list 0 (last-line)))]
+           [first (car range)] [last (cadr range)]
+           [lines (split-lines (lines-text first last))]
+           [ci? (string-contains? flags "i")]
+           [less (cond
+                   [(string-contains? flags "n")
+                    (lambda (a b) (let ([x (first-number a)] [y (first-number b)])
+                                    (cond [(not x) (and y #t)] [(not y) #f] [else (< x y)])))]
+                   [ci? string-ci<?]
+                   [else string<?])]
+           [sorted (sort lines less)]
+           [sorted (if (string-contains? flags "u")
+                       (dedupe sorted (if ci? (lambda (a b) (equal? (string-downcase a) (string-downcase b))) equal?))
+                       sorted)]
+           [sorted (if (ex-bang? ex) (reverse sorted) sorted)])
+      (begin-change!)
+      (let ([r (lines-range first last)])
+        (replace-range! (car r) (without-final-break (car r) (cadr r))
+                        (string-join sorted "\n")))
+      (set-cursor! (line-start first)))))
+
+;; :normal {keys} runs keys as if typed in normal mode, on each line of
+;; the range (from its start) if one is given. :normal! would skip
+;; mappings; there are no mappings yet, so it is the same.
+(define-ex! '("norm" "normal")
+  (lambda (ex)
+    (let ([keys (string->keys (ex-args ex))])
+      (with-undo-group
+       (lambda ()
+         (if (ex-range-given? ex)
+             (for-each-line-mark (car (ex-range ex)) (cadr (ex-range ex))
+                                 (lambda () (run-normal-keys! keys)))
+             (run-normal-keys! keys)))))))
+
+(define (run-normal-keys! keys)
+  (play-keys! keys)
+  ;; Finish whatever the keys left half done, as Vim does.
+  (when (typing-mode?) (process-key! "<esc>"))
+  (when (eq? *mode* 'cmdline) (process-key! "<esc>"))
+  (when (eq? *mode* 'visual) (leave-visual!))
+  (reset-pending!)
+  (set! *command-failed* #f))
+
+;; Runs `thunk` with the cursor at the start of each line first..last.
+;; Lines are marked first, so the thunk may add or delete lines.
+(define (for-each-line-mark first last thunk)
+  (for-each-marked-line (range first (+ last 1)) thunk))
+
+(define (for-each-marked-line lines thunk)
+  (let ([names (map (lambda (l)
+                      (let ([name (string-append "line" (number->string l))])
+                        (mark-set! name (line-start l))
+                        name))
+                    lines)])
+    (for-each (lambda (name)
+                (let ([p (mark-get name)])
+                  (mark-delete! name)
+                  ;; A line that was deleted leaves its mark on the next
+                  ;; line's start; Vim skips deleted lines too.
+                  (when p
+                    (set-cursor! p)
+                    (thunk))))
+              names)))
+
+;; :g/pattern/command runs command on every line matching pattern (:g! and
+;; :v on the others). The default command is :p. Without a range, the
+;; whole file.
+(define (global-command invert?)
+  (lambda (ex)
+    (let* ([args (ex-args ex)]
+           [delim (char-at args 0)])
+      (if (or (not delim) (char-word? delim) (char-whitespace? delim))
+          (set-status! "global needs /pattern/")
+          (let* ([p (read-delimited args 1 delim)]
+                 [pattern (if (equal? (car p) "") *last-search* (car p))]
+                 [command (substring args (cdr p) (string-length args))]
+                 [command (if (equal? command "") "p" command)]
+                 [span (if (ex-range-given? ex) (ex-range ex) (list 0 (last-line)))])
+            (cond
+              [(not pattern) (set-status! "no previous regular expression")]
+              [(pattern-error pattern) (set-status! (pattern-error pattern))]
+              [else
+               (set! *last-search* pattern)
+               (let ([lines (filter (lambda (l)
+                                      (let ([hit (line-matches? pattern l)])
+                                        (if invert? (not hit) hit)))
+                                    (range (car span) (+ (cadr span) 1)))])
+                 (set! *print-lines* '())
+                 (with-undo-group
+                  (lambda ()
+                    (for-each-marked-line lines (lambda () (run-ex! command)))))
+                 (let ([printed *print-lines*])
+                   (set! *print-lines* #f)
+                   (unless (null? printed) (show-popup! printed)))
+                 (when (null? lines)
+                   (set-status! (string-append "Pattern not found: " pattern))))]))))))
+
+(define (line-matches? pattern line)
+  (let ([hit (search-next pattern (max 0 (- (line-start line) 1)) #t)])
+    (and hit
+         (let ([at (car hit)])
+           ;; A match at the very start of the buffer is found by wrapping.
+           (or (= (offset->line at) line)
+               (and (= line 0) (= at 0)))))))
+
+(define-ex! '("g" "global") (lambda (ex) ((global-command (ex-bang? ex)) ex)))
+(define-ex! '("v" "vglobal") (global-command #t))
+
+;;; Shell commands
+;;;   :!cmd           run it and show the output
+;;;   :{range}!cmd    filter the lines through it
+;;;   :r !cmd         insert its output below the line
+;;;   :r FILE         insert a file below the line
+
+(define-ex! "!"
+  (lambda (ex)
+    (let ([command (ex-args ex)])
+      (if (ex-range-given? ex)
+          (let* ([first (car (ex-range ex))] [last (cadr (ex-range ex))]
+                 [result (run-shell command (lines-text first last))])
+            (begin-change!)
+            (let ([r (lines-range first last)])
+              (replace-range! (car r) (without-final-break (car r) (cadr r))
+                              (without-final-newline (cadr result))))
+            (set-cursor! (line-first-nonblank first))
+            (unless (= (car result) 0)
+              (set-status! (string-append "shell returned " (number->string (car result))))))
+          (let ([result (run-shell command "")])
+            (show-popup! (append (split-lines (cadr result))
+                                 (list (string-append "shell returned " (number->string (car result)))))))))))
+
+(define-ex! '("r" "read")
+  (lambda (ex)
+    (let* ([arg (ex-args ex)]
+           [text (if (starts-with? arg "!")
+                     (cadr (run-shell (substring arg 1 (string-length arg)) ""))
+                     (read-file arg))]
+           [text (if (or (equal? text "") (ends-with? text "\n")) text (string-append text "\n"))]
+           [line (cadr (ex-range ex))])
+      (unless (equal? text "")
+        (begin-change!)
+        (insert-lines-after! line text)
+        (set-cursor! (line-first-nonblank (+ line 1)))))))
 
 ;; :eval EXPR runs Scheme in the editor and shows the result. This is the
 ;; quickest way to redefine something while imp is running.

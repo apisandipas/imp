@@ -39,14 +39,24 @@ pub fn frame(e: &mut Editor) -> Frame {
         let pad = width.saturating_sub(text.chars().count());
         rows[text_rows - shown + i] = vec![Span::new(text + &" ".repeat(pad), e.face("popup"))];
     }
-    rows.push(status_line(e, cursor_line, cursor_col, width));
+    let mut cursor = (
+        cursor_x.min(width - 1) as u16,
+        (cursor_line - e.scroll) as u16,
+    );
+    match &e.cmdline {
+        Some((text, col)) => {
+            // Keep the cursor's end of a long command line in view.
+            let skip = (col + 1).saturating_sub(width);
+            let shown: String = text.chars().skip(skip).take(width).collect();
+            rows.push(vec![Span::new(shown, Style::default())]);
+            cursor = ((col - skip).min(width - 1) as u16, text_rows as u16);
+        }
+        None => rows.push(status_line(e, cursor_line, cursor_col, width)),
+    }
 
     Frame {
         rows,
-        cursor: (
-            cursor_x.min(width - 1) as u16,
-            (cursor_line - e.scroll) as u16,
-        ),
+        cursor,
         cursor_shape: e.cursor_shape,
     }
 }
