@@ -431,7 +431,10 @@ impl Buffer {
         self.record_reset();
         self.redo.push(std::mem::replace(&mut self.text, previous));
         self.modified = true;
-        self.dirty = false;
+        // This text is in no snapshot now, so the next boundary must save
+        // it, or a change after the undo would be undone together with the
+        // one before.
+        self.dirty = true;
         Some(at)
     }
 
@@ -442,7 +445,7 @@ impl Buffer {
         self.record_reset();
         self.undo.push(std::mem::replace(&mut self.text, next));
         self.modified = true;
-        self.dirty = false;
+        self.dirty = true; // as after undo
         Some(at)
     }
 }

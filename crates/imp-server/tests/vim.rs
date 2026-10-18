@@ -1112,6 +1112,23 @@ fn undo_and_redo_take_counts() {
 }
 
 #[test]
+fn a_change_after_undo_is_undone_alone() {
+    let mut s = server("abcd\n");
+    type_keys(&mut s, "xxux");
+    assert_eq!(s.text(), "cd\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "bcd\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "abcd\n");
+    // And after a redo.
+    let mut s = server("abcd\n");
+    type_keys(&mut s, "xxu");
+    s.keys(&["C-r"]);
+    type_keys(&mut s, "xu");
+    assert_eq!(s.text(), "cd\n");
+}
+
+#[test]
 fn line_undo() {
     let mut s = server("abc\nxyz\n");
     type_keys(&mut s, "xx$x");
