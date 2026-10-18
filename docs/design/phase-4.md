@@ -114,11 +114,27 @@ Done and committed on `phase-4`:
   in the bottom popup, not at the cursor (polish pass); dot-repeat of a
   completion replays it as backspaces plus the typed word.
 
+- **Mouse** (asked for by the owner): `runtime/mouse.scm`,
+  `ClientMsg::Mouse`, `screen-position`. Click, drag, wheel; `:set
+  nomouse`.
+- **4.3 DAP** (`runtime/dap.scm`, tests in `tests/dap.rs` against
+  `tests/fake_dap.py`): adapters per major mode
+  (`define-debug-adapter! mode command adapter-id launch-proc`; lldb-dap
+  for Rust/C/C++ asking for the program with Cargo's debug build
+  suggested, debugpy for Python); breakpoints as marks (they follow
+  edits) with `●` signs; gutter signs now merge by priority
+  (`set-sign-source!` in core.scm: diagnostics 10, breakpoints 20, the
+  stopped line 30); the stopped line highlighted (`debug` layer, face
+  `debug-line`) and marked `→`; `SPC d` d/c n i o p q s v e b B O and
+  `<f5> <f9> <f10> <f11>`. Checked by hand with lldb-dap: breakpoint,
+  stop, locals, step.
+  Known gaps: one session at a time; stdio adapters only (codelldb and
+  js-debug need TCP); no conditional breakpoints, watches or expanding
+  nested variables beyond `SPC d e`; lldb shows Rust `String` as a raw
+  struct (no Rust formatters loaded).
+
 ### After LSP
 
-- **4.3 DAP** (same framing and JSON): adapters per language, launch
-  configs, breakpoints as gutter signs, continue/step, stopped line
-  highlighted, stack and variables popups; fake adapter for tests.
 - **4.4 MCP**: opt-in `(mcp-enable!)`; a Unix socket (Rust: generic
   line-based connections as events) speaking MCP JSON-RPC lines; `imp
   --mcp` relays stdio to it. Tools: list/read/edit/open/save buffers,

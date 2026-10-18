@@ -94,6 +94,7 @@ runtime/                   loaded in this order
   syntax.scm               tree-sitter faces, languages, af/if ac/ic aa/ia
   lsp.scm                  language servers: diagnostics, K gd gr, rename,
                            code actions, format, insert-mode completion
+  dap.scm                  debugging: breakpoints, stepping, stack, variables
   mouse.scm                clicks, drag to select, the scroll wheel
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
@@ -174,7 +175,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `highlight-clear! highlight-add! highlight-pattern!` on named layers
   (`syntax`, `diagnostics`, `search`, `visual` in that order);
   `set-signs!` (gutter signs for the current buffer, a list of
-  `(line text face)`); `status-text`.
+  `(line text face)`); `status-text`. Scheme code should use
+  `(set-sign-source! name priority signs)` (core.scm) instead, so sources
+  share the column.
 - Mouse: `screen-position` (`(window offset)` under a screen cell, offset
   #f on a status line); the server calls `(imp-handle-mouse action button
   x y)` for `ClientMsg::Mouse`.
@@ -229,6 +232,8 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`.
 - Language servers: `(define-language-server! 'mode "command args"
   '("root-marker" ...) "languageId")`; option `lsp` turns them off.
+- Debug adapters: `(define-debug-adapter! 'mode "command" "adapter-id"
+  (lambda (done) (done launch-arguments-hash)))`.
 - Cross-file extension inside the runtime: a later runtime file can't be
   called by name from an earlier one, and a `define` there won't replace an
   earlier file's function for its callers. Use hooks, tables
@@ -306,6 +311,9 @@ Phase 4 so far adds (details in `docs/design/phase-4.md`):
   :diagnostics`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
   (`C-x C-o`, `C-n C-p`, and as you type). Defaults for rust-analyzer,
   typescript-language-server, nil, marksman, pyright, used when installed.
+- Debugging (DAP): `SPC d` (`d` start/continue, `b` breakpoint, `n i o`
+  step, `s` stack, `v` variables, `e` evaluate, `q` stop), `<f5> <f9>
+  <f10> <f11>`; lldb-dap and debugpy by default.
 - The mouse: click to move (focusing the window), drag to select, wheel to
   scroll; `:set nomouse` turns it off (shift-drag still selects in most
   terminals while imp captures the mouse).
@@ -518,7 +526,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 3.8 **File handling**: detect external changes, line endings, encodings,
     backups/autosave.
 
-### Phase 4: IDE features through protocols (in progress: 4.1 and 4.2 done, see docs/design/phase-4.md)
+### Phase 4: IDE features through protocols (in progress: 4.1-4.3 done, see docs/design/phase-4.md)
 
 4.1 **Tree-sitter**: syntax highlighting (needs 3.3), structural text objects
     (`af`, `if`, `aa`...), indentation, folding.

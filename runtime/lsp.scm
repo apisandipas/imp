@@ -441,7 +441,7 @@
                               acc
                               (hash-insert acc line (caddr d)))))
                       (hash) (buffer-diagnostics))])
-    (set-signs! (map (lambda (line)
+    (set-sign-source! 'diagnostics 10 (map (lambda (line)
                        (let ([d (hash-ref signs line)])
                          (list line (severity-letter d) (string-append "sign." (severity-name d)))))
                      (hash-keys->list signs)))))

@@ -479,7 +479,23 @@
 
 ;; Layers draw in the order they are first used, later over earlier, so
 ;; declare them here in the order they should stack.
-(for-each highlight-clear! '("syntax" "diagnostics" "search" "visual"))
+(for-each highlight-clear! '("syntax" "diagnostics" "debug" "search" "visual"))
+
+;;; Gutter signs
+;;;
+;;; Several things want the sign column (diagnostics, breakpoints, the
+;;; debugger's current line), so each sets its own signs for the current
+;;; buffer and the one with the highest priority shows on each line.
+
+(define (set-sign-source! source priority signs)
+  (set-buffer-local! (list 'signs source) (cons priority signs))
+  (let* ([sources (filter (lambda (k) (and (pair? k) (eq? (car k) 'signs))) (hash-keys->list (buffer-locals)))]
+         [sets (sort (map (lambda (k) (buffer-local k)) sources) (lambda (a b) (< (car a) (car b))))]
+         ;; Lowest priority first, so higher ones overwrite them.
+         [merged (foldl (lambda (set acc)
+                          (foldl (lambda (sign acc) (hash-insert acc (car sign) sign)) acc (cdr set)))
+                        (hash) sets)])
+    (set-signs! (map (lambda (line) (hash-ref merged line)) (hash-keys->list merged)))))
 
 ;;; Environment
 
