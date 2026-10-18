@@ -1,13 +1,16 @@
-//! Background work: timers and jobs, reported to the main loop as events.
+//! Background work: timers, jobs and socket listeners, reported to the
+//! main loop as events.
 //!
 //! Only the thread that runs the server touches the editor and the Steel
 //! VM. Timers and jobs run on their own threads and post events to the
 //! server's channel; the server hands each to Scheme on its own thread.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,6 +32,12 @@ pub enum Event {
     /// "stderr".
     JobOutput(u64, &'static str, String),
     JobExit(u64),
+    /// A connection to a socket listener: (listener, connection, the
+    /// stream to write to it).
+    SocketOpened(u64, u64, UnixStream),
+    /// A line from a connection, without its line break.
+    SocketLine(u64, String),
+    SocketClosed(u64),
     /// A background parse finished: (buffer, buffer version it parsed,
     /// tree).
     Parsed(usize, u64, tree_sitter::Tree),
@@ -41,7 +50,14 @@ pub struct Background {
     next_id: u64,
     timers: HashMap<u64, Arc<AtomicBool>>,
     jobs: HashMap<u64, (Child, Option<ChildStdin>)>,
+    /// Socket listeners: their path, and a flag that stops accepting.
+    listeners: HashMap<u64, (PathBuf, Arc<AtomicBool>)>,
+    /// Open connections, for writing.
+    connections: HashMap<u64, UnixStream>,
 }
+
+/// Connection ids, unique across listeners (accept threads hand them out).
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
 impl Background {
     fn id(&mut self) -> u64 {
@@ -158,11 +174,93 @@ impl Background {
     }
 }
 
+impl Background {
+    /// Listens on a Unix socket only this user can reach. Each connection
+    /// is reported with `SocketOpened`, then its lines with `SocketLine`,
+    /// then `SocketClosed`.
+    pub fn listen(&mut self, path: &Path) -> Result<u64, String> {
+        let sender = self.sender.clone().ok_or("no event loop")?;
+        let listener = crate::daemon::bind(path, "something is already listening")?;
+        let id = self.id();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = stop.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if stopped.load(Ordering::SeqCst) {
+                    break;
+                }
+                let Ok(stream) = stream else { continue };
+                let Ok(write_half) = stream.try_clone() else {
+                    continue;
+                };
+                let conn = NEXT_CONNECTION.fetch_add(1, Ordering::SeqCst);
+                if sender
+                    .send(Event::SocketOpened(id, conn, write_half))
+                    .is_err()
+                {
+                    break;
+                }
+                let sender = sender.clone();
+                std::thread::spawn(move || {
+                    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                        if sender.send(Event::SocketLine(conn, line)).is_err() {
+                            return;
+                        }
+                    }
+                    let _ = sender.send(Event::SocketClosed(conn));
+                });
+            }
+        });
+        self.listeners.insert(id, (path.to_path_buf(), stop));
+        Ok(id)
+    }
+
+    /// Stops accepting connections and removes the socket.
+    pub fn stop_listening(&mut self, id: u64) {
+        if let Some((path, stop)) = self.listeners.remove(&id) {
+            stop.store(true, Ordering::SeqCst);
+            // Wake the accept loop so it sees the flag.
+            let _ = UnixStream::connect(&path);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    pub fn connection_opened(&mut self, conn: u64, stream: UnixStream) {
+        self.connections.insert(conn, stream);
+    }
+
+    pub fn connection_closed(&mut self, conn: u64) {
+        self.connections.remove(&conn);
+    }
+
+    /// Writes to a connection. False if it is gone.
+    pub fn send_to_connection(&mut self, conn: u64, text: &str) -> bool {
+        match self.connections.get_mut(&conn) {
+            Some(stream) => stream
+                .write_all(text.as_bytes())
+                .and_then(|_| stream.flush())
+                .is_ok(),
+            None => false,
+        }
+    }
+
+    pub fn close_connection(&mut self, conn: u64) {
+        if let Some(stream) = self.connections.remove(&conn) {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    }
+}
+
 impl Drop for Background {
-    /// Jobs (language servers, debuggers) end with the editor.
+    /// Jobs (language servers, debuggers) end with the editor, and its
+    /// sockets go away.
     fn drop(&mut self) {
         for (child, _) in self.jobs.values_mut() {
             let _ = child.kill();
+        }
+        let listeners: Vec<u64> = self.listeners.keys().copied().collect();
+        for id in listeners {
+            self.stop_listening(id);
         }
     }
 }

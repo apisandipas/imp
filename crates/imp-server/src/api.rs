@@ -586,6 +586,54 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // Unix sockets (events.rs): a listener id, or the error as a string.
+    engine.register_fn("socket-listen!", |path: String| {
+        editor::with(|e| match e.background.listen(Path::new(&path)) {
+            Ok(id) => SteelVal::IntV(id as isize),
+            Err(err) => SteelVal::StringV(err.into()),
+        })
+    });
+    engine.register_fn("socket-stop!", |id: isize| {
+        editor::with(|e| e.background.stop_listening(clamp(id) as u64))
+    });
+    engine.register_fn("socket-send!", |conn: isize, text: String| {
+        editor::with(|e| e.background.send_to_connection(clamp(conn) as u64, &text))
+    });
+    engine.register_fn("socket-close!", |conn: isize| {
+        editor::with(|e| e.background.close_connection(clamp(conn) as u64))
+    });
+    // Where a socket called `name` goes ($XDG_RUNTIME_DIR/imp/NAME.sock).
+    engine.register_fn("socket-path", |name: String| {
+        crate::daemon::socket_path(&name).display().to_string()
+    });
+    // Char offsets of every match of `pattern` in the buffer, up to `limit`.
+    engine.register_fn("search-all", |pattern: String, limit: isize| {
+        let re = search::compile(&pattern)?;
+        Ok::<_, String>(editor::with(|e| {
+            let text = e.buffer.text();
+            re.find_iter(&text)
+                .take(clamp(limit))
+                .map(|m| e.buffer.byte_to_char(m.start()) as isize)
+                .collect::<Vec<_>>()
+        }))
+    });
+
+    // Char offsets of each occurrence of `needle` (literal text), up to
+    // `limit`.
+    engine.register_fn("buffer-find-all", |needle: String, limit: isize| {
+        editor::with(|e| {
+            if needle.is_empty() {
+                return Vec::new();
+            }
+            let text = e.buffer.text();
+            text.match_indices(&needle)
+                .take(clamp(limit))
+                .map(|(b, _)| e.buffer.byte_to_char(b) as isize)
+                .collect::<Vec<_>>()
+        })
+    });
+    engine.register_fn("popup-lines", || editor::with(|e| e.popup.clone()));
+
     // JSON and the framing LSP and DAP use (json.rs).
     engine.register_fn("json-decode", |text: String| {
         serde_json::from_str::<serde_json::Value>(&text)

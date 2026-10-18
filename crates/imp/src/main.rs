@@ -9,6 +9,8 @@
 //!   imp --connect --via CMD        ... through CMD's stdin/stdout, e.g.
 //!                                  --via 'ssh host imp --bridge'
 //!   imp --bridge                   relay stdin/stdout to the local daemon
+//!   imp --mcp                      relay stdin/stdout to the editor's MCP
+//!                                  socket, for AI agents ((mcp-enable!))
 //!
 //! `--socket PATH` picks a socket instead of the named one.
 
@@ -37,6 +39,7 @@ struct Args {
     daemon: bool,
     connect: bool,
     bridge: bool,
+    mcp: bool,
     name: String,
     socket: Option<PathBuf>,
     via: Option<String>,
@@ -59,6 +62,7 @@ fn parse_args() -> Result<Args, String> {
             Some("--daemon") => args.daemon = true,
             Some("--connect") => args.connect = true,
             Some("--bridge") => args.bridge = true,
+            Some("--mcp") => args.mcp = true,
             Some("--name") => args.name = value("--name")?,
             Some("--socket") => args.socket = Some(PathBuf::from(value("--socket")?)),
             Some("--via") => args.via = Some(value("--via")?),
@@ -78,7 +82,8 @@ fn parse_args() -> Result<Args, String> {
 const USAGE: &str = "usage: imp [FILE...]
        imp --daemon [--name NAME | --socket PATH]
        imp --connect [--name NAME | --socket PATH | --via COMMAND] [FILE...]
-       imp --bridge [--name NAME | --socket PATH]";
+       imp --bridge [--name NAME | --socket PATH]
+       imp --mcp [--socket PATH]";
 
 fn main() {
     let result = parse_args().and_then(|args| {
@@ -91,7 +96,14 @@ fn main() {
             eprintln!("imp: daemon on {}", socket().display());
             imp_server::daemon::run(&socket(), options())
         } else if args.bridge {
-            bridge(&socket())
+            bridge(&socket()).map_err(|e| format!("{e}; start one with imp --daemon"))
+        } else if args.mcp {
+            let socket = args
+                .socket
+                .clone()
+                .unwrap_or_else(|| imp_server::daemon::socket_path("mcp"));
+            bridge(&socket)
+                .map_err(|e| format!("{e}; is imp running with (mcp-enable!) in its init.scm?"))
         } else if args.connect {
             connect(&args, &socket())
         } else {
@@ -196,21 +208,38 @@ fn connect(args: &Args, socket: &std::path::Path) -> Result<(), String> {
     terminal_session(to_server, from_server, first)
 }
 
-/// Relays stdin to the daemon's socket and its replies to stdout, so a
-/// client elsewhere can use `--via 'ssh host imp --bridge'`.
+/// Relays stdin to a socket and its replies to stdout: the daemon's, so a
+/// client elsewhere can use `--via 'ssh host imp --bridge'`, or the MCP
+/// socket, so an agent can run `imp --mcp` as a stdio MCP server.
 fn bridge(socket: &std::path::Path) -> Result<(), String> {
     let stream = std::os::unix::net::UnixStream::connect(socket)
-        .map_err(|e| format!("can't reach a daemon on {}: {e}", socket.display()))?;
+        .map_err(|e| format!("can't reach {}: {e}", socket.display()))?;
     let mut to_daemon = stream.try_clone().map_err(|e| e.to_string())?;
     let mut from_daemon = stream;
     let up = thread::spawn(move || {
-        let _ = io::copy(&mut io::stdin().lock(), &mut to_daemon);
+        relay(&mut io::stdin().lock(), &mut to_daemon);
         let _ = to_daemon.shutdown(std::net::Shutdown::Write);
     });
-    let mut stdout = io::stdout().lock();
-    let _ = io::copy(&mut from_daemon, &mut stdout);
+    relay(&mut from_daemon, &mut io::stdout().lock());
     drop(up);
     Ok(())
+}
+
+/// Copies until end of input, passing on whatever arrives at once.
+/// (io::copy between a pipe and a socket can wait for more input before
+/// passing any on, which stalls a request-reply conversation.)
+fn relay(from: &mut impl io::Read, to: &mut impl io::Write) {
+    let mut buf = [0u8; 8192];
+    loop {
+        match from.read(&mut buf) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => {
+                if to.write_all(&buf[..n]).and_then(|_| to.flush()).is_err() {
+                    return;
+                }
+            }
+        }
+    }
 }
 
 /// Runs the terminal: raw mode, the alternate screen, and the loop that

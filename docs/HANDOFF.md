@@ -42,7 +42,7 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (Phase 4 in progress, branch `phase-4`)
+## 3. Current state (end of Phase 4, branch `phase-4`)
 
 Phases 1 (daily-driver Vim), 2 (the Emacs half) and 3 (editor
 infrastructure) are done. The owner was away while they were built; every
@@ -96,6 +96,7 @@ runtime/                   loaded in this order
                            code actions, format, insert-mode completion
   dap.scm                  debugging: breakpoints, stepping, stack, variables
   mouse.scm                clicks, drag to select, the scroll wheel
+  mcp.scm                  MCP: AI agents use the editor (opt-in)
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -185,6 +186,10 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   syntax-children syntax-tree` (see syntax.rs / api.rs).
 - JSON/LSP: `json-decode json-encode lsp-frame lsp-take-message path->uri
   uri->path find-executable absolute-path`.
+- Sockets: `socket-listen! socket-send! socket-close! socket-stop!
+  socket-path`; the server calls `imp-socket-opened/line/closed`.
+- Searching and output: `search-all` (regex match offsets),
+  `buffer-find-all` (literal text), `popup-lines`.
 
 ### Extension points in Scheme
 
@@ -234,6 +239,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   '("root-marker" ...) "languageId")`; option `lsp` turns them off.
 - Debug adapters: `(define-debug-adapter! 'mode "command" "adapter-id"
   (lambda (done) (done launch-arguments-hash)))`.
+- Sockets: `(listen-socket! path on-open on-line on-close)`.
+- MCP: `(mcp-enable!)`, `(define-mcp-tool! "name" "description" schema
+  handler)`.
 - Cross-file extension inside the runtime: a later runtime file can't be
   called by name from an earlier one, and a `define` there won't replace an
   earlier file's function for its callers. Use hooks, tables
@@ -303,7 +311,7 @@ Phase 3 adds:
   `:recover`.
 - The daemon (`--daemon`, `--connect`, `--bridge`, `--via`), `:kill-server`.
 
-Phase 4 so far adds (details in `docs/design/phase-4.md`):
+Phase 4 adds (details in `docs/design/phase-4.md`):
 
 - Tree-sitter (Rust, Scheme, TS/TSX, JS, Nix, Markdown): highlighting
   through `syntax.*` faces, `af if ac ic aa ia`, smartindent.
@@ -314,6 +322,11 @@ Phase 4 so far adds (details in `docs/design/phase-4.md`):
 - Debugging (DAP): `SPC d` (`d` start/continue, `b` breakpoint, `n i o`
   step, `s` stack, `v` variables, `e` evaluate, `q` stop), `<f5> <f9>
   <f10> <f11>`; lldb-dap and debugpy by default.
+- MCP (off by default): `(mcp-enable!)` in init.scm, then an agent runs
+  `imp --mcp` as its stdio MCP server (`claude mcp add imp -- imp --mcp`).
+  Tools to read/edit/open/save buffers, the cursor, search, commands, ex
+  commands, diagnostics and Scheme; agent changes show on the status line
+  and in `:mcp-log`.
 - The mouse: click to move (focusing the window), drag to select, wheel to
   scroll; `:set nomouse` turns it off (shift-drag still selects in most
   terminals while imp captures the mouse).
@@ -526,7 +539,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 3.8 **File handling**: detect external changes, line endings, encodings,
     backups/autosave.
 
-### Phase 4: IDE features through protocols (in progress: 4.1-4.3 done, see docs/design/phase-4.md)
+### Phase 4: IDE features through protocols (done; see docs/design/phase-4.md)
 
 4.1 **Tree-sitter**: syntax highlighting (needs 3.3), structural text objects
     (`af`, `if`, `aa`...), indentation, folding.

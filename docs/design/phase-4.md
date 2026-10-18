@@ -133,13 +133,38 @@ Done and committed on `phase-4`:
   nested variables beyond `SPC d e`; lldb shows Rust `String` as a raw
   struct (no Rust formatters loaded).
 
-### After LSP
+- **4.4 MCP** (`runtime/mcp.scm`, tests in `tests/mcp.rs` speaking
+  JSON-RPC over a real socket): Rust has a generic Unix-socket listener
+  (`socket-listen! socket-send! socket-close! socket-stop! socket-path`,
+  events `imp-socket-opened/line/closed`, wrapped by `listen-socket!` in
+  core.scm); `imp --mcp [--socket PATH]` relays stdio to
+  `$XDG_RUNTIME_DIR/imp/mcp.sock`. Twelve tools (list/read/edit buffers,
+  open, save, get/set cursor, search, run_command, ex_command,
+  diagnostics, eval_scheme), more with `define-mcp-tool!`. Agent changes
+  are noted on the status line ("agent: ...") and in `:mcp-log`; each
+  edit is one undo step. New primitives `search-all`, `buffer-find-all`,
+  `popup-lines`. Checked end to end: the release binary in a pty with
+  `(mcp-enable!)`, an agent through `imp --mcp`.
+  Found on the way: the `--bridge`/`--mcp` relay used `io::copy`, which
+  between a pipe and a socket held replies until input closed; it now
+  relays each read at once.
 
-- **4.4 MCP**: opt-in `(mcp-enable!)`; a Unix socket (Rust: generic
-  line-based connections as events) speaking MCP JSON-RPC lines; `imp
-  --mcp` relays stdio to it. Tools: list/read/edit/open/save buffers,
-  cursor and selection, search, run command, diagnostics, eval Scheme.
-- **Cosmetic polish pass** (the owner asked for one after seeing Phases
-  1–3): status line design, popup/which-key/completion look (a border or
-  title, the selection), separators, gutter, a coherent color theme.
-- Then Phase 5 (prototype behind cargo features, as decided) and 6.
+The cosmetic polish pass and Phase 5 come next (see HANDOFF).
+
+## Outcome
+
+Built in the planned order, plus mouse support the owner asked for
+between LSP and DAP. Notes:
+
+- **Everything protocol-shaped is Scheme**: LSP, DAP and MCP are
+  `lsp.scm`, `dap.scm` and `mcp.scm`; Rust added framing, JSON, sockets
+  and a few lookups (signs, screen positions, literal/regex search).
+- **Gutter signs** became shared: `set-sign-source!` merges sources by
+  priority, since diagnostics, breakpoints and the stopped line all want
+  the column.
+- **Positions**: imp's char offsets are LSP's utf-32, negotiated first,
+  with utf-16 conversion as the fallback.
+- **Tests use scripted servers** (`fake_lsp.py`, `fake_dap.py`) and skip
+  without python3; real servers were checked by hand in a pty
+  (rust-analyzer, nil, typescript-language-server, lldb-dap).
+- **Unix socket paths** are limited to 108 bytes; keep test sockets short.

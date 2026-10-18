@@ -55,6 +55,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("lsp.scm", include_str!("../../../runtime/lsp.scm")),
     ("dap.scm", include_str!("../../../runtime/dap.scm")),
     ("mouse.scm", include_str!("../../../runtime/mouse.scm")),
+    ("mcp.scm", include_str!("../../../runtime/mcp.scm")),
 ];
 
 pub struct Options {
@@ -165,6 +166,27 @@ impl Server {
             Event::Connected(..) | Event::Disconnected(_) => {}
             Event::Parsed(id, version, tree) => {
                 editor::with(|e| e.syntax_parsed(id, version, tree))
+            }
+            Event::SocketOpened(listener, conn, stream) => {
+                editor::with(|e| e.background.connection_opened(conn, stream));
+                self.call(
+                    "imp-socket-opened",
+                    vec![
+                        SteelVal::IntV(listener as isize),
+                        SteelVal::IntV(conn as isize),
+                    ],
+                )
+            }
+            Event::SocketLine(conn, line) => self.call(
+                "imp-socket-line",
+                vec![
+                    SteelVal::IntV(conn as isize),
+                    SteelVal::StringV(line.into()),
+                ],
+            ),
+            Event::SocketClosed(conn) => {
+                editor::with(|e| e.background.connection_closed(conn));
+                self.call("imp-socket-closed", vec![SteelVal::IntV(conn as isize)])
             }
             Event::JobExit(id) => {
                 let code = editor::with(|e| e.background.job_finished(id));

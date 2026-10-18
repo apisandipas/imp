@@ -344,6 +344,46 @@
       (with-handler (lambda (e) (set-status! (string-append "error in job exit: " (to-string (error-object-message e)))))
                     ((cadr j) code)))))
 
+;;; Sockets
+;;;
+;;; (listen-socket! path on-open on-line on-close) listens on a Unix socket
+;;; only this user can reach; each connection gets an id, passed to the
+;;; procedures: (on-open conn), (on-line conn line), (on-close conn).
+;;; (socket-send! conn text) writes to one; (socket-stop! id) stops.
+
+(define *listeners* (hash))    ; listener id -> (on-open on-line on-close)
+(define *connections* (hash))  ; connection id -> listener id
+
+;; Returns the listener id, or #f after showing why it couldn't listen.
+(define (listen-socket! path on-open on-line on-close)
+  (let ([id (socket-listen! path)])
+    (if (string? id)
+        (begin (set-status! id) #f)
+        (begin (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))) id))))
+
+(define (socket-handlers conn)
+  (let ([listener (hash-try-get *connections* conn)])
+    (and listener (hash-try-get *listeners* listener))))
+
+(define (socket-call what conn proc . args)
+  (when proc
+    (with-handler (lambda (e) (set-status! (string-append "error in socket " what ": " (to-string (error-object-message e)))))
+                  (apply proc args))))
+
+(define (imp-socket-opened listener conn)
+  (set! *connections* (hash-insert *connections* conn listener))
+  (let ([h (hash-try-get *listeners* listener)])
+    (when h (socket-call "open" conn (car h) conn))))
+
+(define (imp-socket-line conn line)
+  (let ([h (socket-handlers conn)])
+    (when h (socket-call "line" conn (cadr h) conn line))))
+
+(define (imp-socket-closed conn)
+  (let ([h (socket-handlers conn)])
+    (set! *connections* (hash-remove *connections* conn))
+    (when h (socket-call "close" conn (caddr h) conn))))
+
 ;;; Buffer-local values
 ;;;
 ;;; Each buffer has its own table of values, for its major and minor modes

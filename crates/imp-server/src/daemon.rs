@@ -38,7 +38,7 @@ struct Client {
 
 /// Runs a daemon on `socket` until `:kill-server`.
 pub fn run(socket: &Path, options: Options) -> Result<(), String> {
-    let listener = bind(socket)?;
+    let listener = bind(socket, "a daemon is already running")?;
     let mut server = Server::new(Buffer::default(), options)?;
     let events = server.sender.clone();
 
@@ -152,14 +152,12 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
     Ok(())
 }
 
-/// Binds the socket, refusing if a daemon already answers on it and
-/// clearing a stale one left by a daemon that died.
-fn bind(socket: &Path) -> Result<UnixListener, String> {
+/// Binds the socket, refusing (with `busy`, e.g. "a daemon is already
+/// running") if something already answers on it, and clearing a stale one
+/// left by a process that died.
+pub(crate) fn bind(socket: &Path, busy: &str) -> Result<UnixListener, String> {
     if UnixStream::connect(socket).is_ok() {
-        return Err(format!(
-            "a daemon is already running on {}",
-            socket.display()
-        ));
+        return Err(format!("{busy} on {}", socket.display()));
     }
     let _ = std::fs::remove_file(socket);
     if let Some(dir) = socket.parent() {
