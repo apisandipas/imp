@@ -256,6 +256,7 @@ pub fn register(engine: &mut Engine) {
 
     // The window: which buffer lines are on screen.
     engine.register_fn("window-top", || editor::with(|e| e.scroll as isize));
+    engine.register_fn("window-width", || editor::with(|e| e.width as isize));
     engine.register_fn("window-height", || editor::with(|e| e.text_rows() as isize));
     engine.register_fn("set-window-top!", |line: isize| {
         editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))

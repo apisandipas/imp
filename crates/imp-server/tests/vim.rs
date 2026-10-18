@@ -971,7 +971,7 @@ fn named_registers() {
     assert_eq!(s.text(), "one tontwoewo\n");
     // Appending with a capital.
     let mut s = server("a b\n");
-    type_keys(&mut s, "\"xyl w\"Xyl$\"xp");
+    type_keys(&mut s, "\"xylw\"Xyl$\"xp");
     assert_eq!(s.text(), "a bab\n");
 }
 
