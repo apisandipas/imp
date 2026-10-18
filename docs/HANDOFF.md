@@ -42,13 +42,14 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 4, branch `phase-4`)
+## 3. Current state (end of Phase 5, branch `phase-5`)
 
-Phases 1 (daily-driver Vim), 2 (the Emacs half) and 3 (editor
-infrastructure) are done. The owner was away while they were built; every
-step is a separate commit on local branches (`phase-1`, `phase-2` on top of
-it, `phase-3` on top of that), nothing pushed. Design notes per phase, each
-with an Outcome section, are in `docs/design/`.
+Phases 1 (daily-driver Vim), 2 (the Emacs half), 3 (editor
+infrastructure) and 4 (IDE protocols) are done, and Phase 5 is done as
+prototypes behind features. Every step is a separate commit on a branch
+per phase, each on top of the last (`phase-1` ... `phase-5`), pushed to
+origin; nothing is merged to `main`. Design notes per phase are in
+`docs/design/`.
 
 ### Layout
 
@@ -256,6 +257,32 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`,
   `*local-keymaps*`, `*cmdline-key-handler*`).
 
+### Phase 5 prototypes (off by default)
+
+Each is behind a cargo feature or in its own crate, so a default build is
+the same editor as at the end of Phase 4. Details, and what each one
+can't do yet, are in `docs/design/phase-5.md`.
+
+- **WASM plugins** (`--features wasm`): `runtime/wasm.scm`,
+  `src/wasm.rs`. Core modules with a string ABI, no WASI, fuel and memory
+  limits. Plugins become Vim operators (`wasm-operator`), commands
+  (`define-wasm-filter!`) and `:[range]wasm`. Example Rust plugin in
+  `examples/wasm-plugin`.
+- **GPU GUI** (`crates/imp-gui`, `nix run .#gui -- FILE`): winit, wgpu and
+  glyphon. Runs the server in-process or attaches with `--connect`.
+  `--font`, `--font-size`, `--scale` (or `IMP_GUI_SCALE`), and `C-=` /
+  `C--` / `C-0` to zoom. `--screenshot OUT.png` draws off-screen, which is
+  how it's tested (Mesa lavapipe). The owner checked it on a real display.
+- **Shared buffers** (`--features crdt`): `runtime/collab.scm`,
+  `src/crdt.rs`. A yrs document mirrors each shared buffer. `:share
+  [NAME]`, `:join [NAME]`, `:unshare` over a Unix socket; the host relays.
+  Undo is still local, and other cursors aren't shown.
+- **KDL config** (`--features kdl`): `~/.config/imp/config.kdl` loads before
+  `init.scm` (`runtime/config.scm`, `src/kdl.rs`). Starter files:
+  `examples/config.kdl` and `examples/init.scm`.
+- `tools/check.sh` also tests and lints with every feature on, and the GUI
+  crate.
+
 ### What works
 
 Everything in Phase 1 of the roadmap, matched against Vim's behavior:
@@ -347,7 +374,9 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
 
 ### Verified
 
-- `cargo test`: 259 tests; clippy and fmt clean; `nix build` works.
+- `cargo test`: 313 tests, plus the feature-gated ones (`tools/check.sh`
+  runs them all); clippy and fmt clean; `nix build` and `nix build .#gui`
+  work.
 - The release binary in a pty: splits with borders, patched redraws through
   scrolling, which-key on its timer, and a daemon with a direct client and a
   bridged one sharing a buffer, then `:kill-server`.
@@ -568,7 +597,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
     the same access as a human. This was part of the original "born in 2026"
     vision; Emacs's "everything is a command" model suits it well.
 
-### Phase 5: long-term architecture
+### Phase 5: long-term architecture (done as prototypes; see docs/design/phase-5.md)
 
 5.1 **WASM plugins** (wasmtime component model): sandboxed, fast plugins
     written in any language, for heavy work (formatters, indexers) or code
