@@ -23,6 +23,7 @@ pub fn key_name(event: &KeyEvent, mods: &Modifiers) -> Option<String> {
             NamedKey::Space if alt => Some("M- ".into()),
             NamedKey::Space => Some(" ".into()),
             NamedKey::Escape => named("esc"),
+            NamedKey::Enter if alt => Some("M-<ret>".into()),
             NamedKey::Enter => named("ret"),
             NamedKey::Backspace => named("bs"),
             NamedKey::Tab if shift => named("s-tab"),

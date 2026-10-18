@@ -126,3 +126,51 @@
     (if (and (pair? lines) (equal? (last lines) ""))
         (reverse (cdr (reverse lines)))
         lines)))
+
+;;; Drawing a buffer line by line, each line with the item it is about
+;;; (what <ret> or s acts on) and faces for its parts:
+;;;
+;;;   (draw-begin!)
+;;;   (draw-line! (list (list "Head: " "git.head") (list "main" #f)) '(head))
+;;;   (draw-finish!)   ; into the current buffer; (line-item) reads it back
+
+(define *draw-lines* '())  ; newest first
+(define *draw-items* '())
+(define *draw-faces* '())  ; (start end face)
+(define *draw-at* 0)
+
+(define (draw-begin!)
+  (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0))
+
+;; Adds a line made of (text face) parts, about `item`.
+(define (draw-line! parts item)
+  (let loop ([parts parts] [at *draw-at*] [text ""])
+    (if (null? parts)
+        (begin (set! *draw-lines* (cons text *draw-lines*))
+               (set! *draw-items* (cons item *draw-items*))
+               (set! *draw-at* (+ at 1)))
+        (let* ([t (car (car parts))] [face (cadr (car parts))] [n (string-length t)])
+          (when (and face (> n 0)) (set! *draw-faces* (cons (list at (+ at n) face) *draw-faces*)))
+          (loop (cdr parts) (+ at n) (string-append text t))))))
+
+;; Puts what was drawn into the current buffer, keeping the cursor on the
+;; same item if it is still there.
+(define (draw-finish!)
+  (let* ([old (line-item)]
+         [items (list->vector (reverse *draw-items*))])
+    (set-buffer-contents! (string-append (string-join (reverse *draw-lines*) "\n") "\n"))
+    (buffer-highlight-clear! "drawn")
+    (for-each (lambda (f) (buffer-highlight-add! "drawn" (car f) (cadr f) (caddr f))) *draw-faces*)
+    (set-buffer-local! 'line-items items)
+    (when old
+      (let loop ([i 0])
+        (when (< i (vector-length items))
+          (if (equal? (vector-ref items i) old)
+              (set-cursor! (line-first-nonblank i))
+              (loop (+ i 1))))))))
+
+;; What the cursor's line is about: (head), (section S), (file S PATH),
+;; (hunk S PATH I), (hunk-line S PATH I J), (stash REF), (commit HASH), or #f.
+(define (line-item)
+  (let ([items (buffer-local 'line-items)] [line (current-line)])
+    (and items (< line (vector-length items)) (vector-ref items line))))

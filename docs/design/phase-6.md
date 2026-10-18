@@ -194,3 +194,19 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     searches, marks, `%`, `{ }` and undo.
   - Differences from Vim: `h` and `l` on a fold line don't open it, and
     there is no 'foldmethod' other than manual. Org makes its own folds.
+- 6.2b Org: done (`runtime/org.scm`).
+  - Built as designed, with these differences:
+    - `<ret>` does what the line means (link, checkbox, TODO keyword,
+      table), as in Doom Emacs. `C-c C-t` and `C-c C-c` aren't usable,
+      since normal state treats `C-c` as escape; `SPC m t/x/o/b` stand in.
+    - `t` stays Vim's motion.
+  - The faces are per-buffer patterns, so the TODO face also covers the
+    leading stars (the regex crate has no lookbehind for `\zs`).
+  - `M-<ret>` needed both clients to send Alt+Enter as `M-<ret>` instead of
+    a plain `<ret>`.
+  - The line drawing that git.scm started is now generic, in special.scm
+    (`draw-begin!`, `draw-line!`, `draw-finish!`, `line-item`). The agenda
+    uses it.
+  - Not done: typing in a table cell doesn't keep it aligned (`<tab>` or
+    `<ret>` realigns), and there are no timestamps or repeaters,
+    priorities, property drawers, export, or babel.

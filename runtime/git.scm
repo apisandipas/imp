@@ -116,49 +116,6 @@
    (git-output root (string-append "diff --no-color --no-ext-diff" (if (eq? section 'staged) " --cached" "")
                                    " -- " (shell-quote path)))))
 
-;;; Drawing a buffer: lines, the item each line is about, and faces
-
-(define *git-lines* '())  ; newest first
-(define *git-items* '())
-(define *git-faces* '())  ; (start end face)
-(define *git-at* 0)
-
-(define (git-begin!)
-  (set! *git-lines* '()) (set! *git-items* '()) (set! *git-faces* '()) (set! *git-at* 0))
-
-;; Adds a line made of (text face) parts, about `item`.
-(define (git-line! parts item)
-  (let loop ([parts parts] [at *git-at*] [text ""])
-    (if (null? parts)
-        (begin (set! *git-lines* (cons text *git-lines*))
-               (set! *git-items* (cons item *git-items*))
-               (set! *git-at* (+ at 1)))
-        (let* ([t (car (car parts))] [face (cadr (car parts))] [n (string-length t)])
-          (when (and face (> n 0)) (set! *git-faces* (cons (list at (+ at n) face) *git-faces*)))
-          (loop (cdr parts) (+ at n) (string-append text t))))))
-
-;; Puts what was drawn into the current buffer, keeping the cursor on the
-;; same item if it is still there.
-(define (git-finish!)
-  (let* ([old (git-item)]
-         [items (list->vector (reverse *git-items*))])
-    (set-buffer-contents! (string-append (string-join (reverse *git-lines*) "\n") "\n"))
-    (buffer-highlight-clear! "git")
-    (for-each (lambda (f) (buffer-highlight-add! "git" (car f) (cadr f) (caddr f))) *git-faces*)
-    (set-buffer-local! 'git-items items)
-    (when old
-      (let loop ([i 0])
-        (when (< i (vector-length items))
-          (if (equal? (vector-ref items i) old)
-              (set-cursor! (line-first-nonblank i))
-              (loop (+ i 1))))))))
-
-;; What the cursor's line is about: (head), (section S), (file S PATH),
-;; (hunk S PATH I), (hunk-line S PATH I J), (stash REF), (commit HASH), or #f.
-(define (git-item)
-  (let ([items (buffer-local 'git-items)] [line (current-line)])
-    (and items (< line (vector-length items)) (vector-ref items line))))
-
 (define (git-diff-face line)
   (cond [(starts-with? line "+") "diff.added"] [(starts-with? line "-") "diff.removed"] [else #f]))
 
@@ -174,15 +131,15 @@
 (define (git-hunk-lines! root section path)
   (let loop ([hunks (cadr (git-file-diff root section path))] [i 0])
     (unless (null? hunks)
-      (git-line! (list (list (car (car hunks)) "diff.hunk")) (list 'hunk section path i))
+      (draw-line! (list (list (car (car hunks)) "diff.hunk")) (list 'hunk section path i))
       (let inner ([lines (cdr (car hunks))] [j 1])
         (unless (null? lines)
-          (git-line! (list (list (car lines) (git-diff-face (car lines)))) (list 'hunk-line section path i j))
+          (draw-line! (list (list (car lines) (git-diff-face (car lines)))) (list 'hunk-line section path i j))
           (inner (cdr lines) (+ j 1))))
       (loop (cdr hunks) (+ i 1)))))
 
 (define (git-section! title section count)
-  (git-line! (list (list title "git.section") (list (string-append " (" (number->string count) ")") "git.count"))
+  (draw-line! (list (list title "git.section") (list (string-append " (" (number->string count) ")") "git.count"))
              (list 'section section)))
 
 (define (git-files-section! root title section files)
@@ -190,12 +147,12 @@
     (git-section! title section (length files))
     (unless (git-open? (git-key 'section (symbol->string section)))
       (for-each (lambda (f)
-                  (git-line! (list (list (pad-right (car f) 11) "git.status") (list (cadr f) #f))
+                  (draw-line! (list (list (pad-right (car f) 11) "git.status") (list (cadr f) #f))
                              (list 'file section (cadr f)))
                   (when (git-open? (git-key section (cadr f)))
                     (git-hunk-lines! root section (cadr f))))
                 files))
-    (git-line! '() #f)))
+    (draw-line! '() #f)))
 
 (define (git-tab-separated root args)
   (map (lambda (line) (let ([p (split-once line "\t")]) (if (and (pair? p) (pair? (cdr p))) p (list line ""))))
@@ -208,38 +165,38 @@
          [stashes (git-tab-separated root "stash list --format=%gd%x09%s")]
          [commits (git-tab-separated root (string-append "log -n " (number->string (option 'git-recent-commits))
                                                          " --format=%h%x09%s"))])
-    (git-begin!)
-    (git-line! (list (list "Head:     " "git.head")
+    (draw-begin!)
+    (draw-line! (list (list "Head:     " "git.head")
                      (list (if (equal? branch "(detached)") (substring (hash-ref st 'oid) 0 7) branch) "git.branch")
                      (list (if (equal? subject "") "  (no commits yet)" (string-append "  " subject)) #f))
                '(head))
     (when (hash-ref st 'upstream)
-      (git-line! (list (list "Upstream: " "git.head")
+      (draw-line! (list (list "Upstream: " "git.head")
                        (list (hash-ref st 'upstream) "git.remote")
                        (list (cond [(and (= (hash-ref st 'ahead) 0) (= (hash-ref st 'behind) 0)) "  up to date"]
                                    [else (string-append "  ahead " (number->string (hash-ref st 'ahead))
                                                         ", behind " (number->string (hash-ref st 'behind)))])
                              "git.count"))
                  '(head)))
-    (git-line! '() #f)
+    (draw-line! '() #f)
     (git-files-section! root "Untracked files" 'untracked (hash-ref st 'untracked))
     (git-files-section! root "Unstaged changes" 'unstaged (hash-ref st 'unstaged))
     (git-files-section! root "Staged changes" 'staged (hash-ref st 'staged))
     (when (and (null? (hash-ref st 'untracked)) (null? (hash-ref st 'unstaged)) (null? (hash-ref st 'staged)))
-      (git-line! (list (list "Nothing to commit, working tree clean" "git.head")) #f)
-      (git-line! '() #f))
+      (draw-line! (list (list "Nothing to commit, working tree clean" "git.head")) #f)
+      (draw-line! '() #f))
     (unless (null? stashes)
       (git-section! "Stashes" 'stashes (length stashes))
-      (for-each (lambda (s) (git-line! (list (list (car s) "git.hash") (list (string-append "  " (cadr s)) #f))
+      (for-each (lambda (s) (draw-line! (list (list (car s) "git.hash") (list (string-append "  " (cadr s)) #f))
                                        (list 'stash (car s))))
                 stashes)
-      (git-line! '() #f))
+      (draw-line! '() #f))
     (unless (null? commits)
-      (git-line! (list (list "Recent commits" "git.section")) (list 'section 'commits))
-      (for-each (lambda (c) (git-line! (list (list (car c) "git.hash") (list (string-append "  " (cadr c)) #f))
+      (draw-line! (list (list "Recent commits" "git.section")) (list 'section 'commits))
+      (for-each (lambda (c) (draw-line! (list (list (car c) "git.hash") (list (string-append "  " (cadr c)) #f))
                                        (list 'commit (car c))))
                 commits))
-    (git-finish!)))
+    (draw-finish!)))
 
 (define (git-refresh!)
   (let ([root (buffer-local 'git-root)])
@@ -279,7 +236,7 @@
     (string-append (string-join (append (car diff) (list-ref (cadr diff) i)) "\n") "\n")))
 
 (define (git-files-in section)
-  (let ([items (buffer-local 'git-items)])
+  (let ([items (buffer-local 'line-items)])
     (let loop ([i 0] [acc '()])
       (if (>= i (vector-length items))
           (reverse acc)
@@ -290,7 +247,7 @@
 (define (git-paths paths) (string-join (map shell-quote paths) " "))
 
 (define (git-stage!)
-  (let ([item (git-item)] [root (git-root)])
+  (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to stage here")]
       [(equal? item '(section untracked)) (git-do! root (string-append "add -- " (git-paths (git-files-in 'untracked))))]
@@ -308,7 +265,7 @@
       (git-do! root (string-append "rm --cached -q -- " (git-paths paths)))))
 
 (define (git-unstage!)
-  (let ([item (git-item)] [root (git-root)])
+  (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to unstage here")]
       [(equal? item '(section staged)) (git-unstage-paths! root (git-files-in 'staged))]
@@ -325,7 +282,7 @@
     (git-refresh!)))
 
 (define (git-discard!)
-  (let ([item (git-item)] [root (git-root)])
+  (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to discard here")]
       [(and (eq? (car item) 'file) (eq? (cadr item) 'untracked))
@@ -350,7 +307,7 @@
 (define (stash-item? item) (and item (eq? (car item) 'stash)))
 
 (define (git-toggle!)
-  (let ([item (git-item)])
+  (let ([item (line-item)])
     (cond
       [(not item) #f]
       [(eq? (car item) 'section) (git-toggle-key! (git-key 'section (symbol->string (cadr item)))) (git-refresh!)]
@@ -361,7 +318,7 @@
        ;; Folds the file the hunk belongs to, landing on it.
        (git-toggle-key! (git-key (cadr item) (caddr item)))
        (let ([file (list 'file (cadr item) (caddr item))])
-         (set-buffer-local! 'git-items (vector-map-file file))
+         (set-buffer-local! 'line-items (vector-map-file file))
          (git-refresh!))])))
 
 ;; The items with every line of a file's diff replaced by the file, so
@@ -370,7 +327,7 @@
   (list->vector (map (lambda (item) (if (and item (memq (car item) '(hunk hunk-line))
                                              (equal? (cadr item) (cadr file)) (equal? (caddr item) (caddr file)))
                                         file item))
-                     (vector->list (buffer-local 'git-items)))))
+                     (vector->list (buffer-local 'line-items)))))
 
 ;; The line in the new file that line `j` of hunk `i` shows.
 (define (git-hunk-target root section path i j)
@@ -383,7 +340,7 @@
           (loop (cdr lines) (+ k 1) (if (starts-with? (car lines) "-") line (+ line 1)))))))
 
 (define (git-visit!)
-  (let ([item (git-item)] [root (git-root)])
+  (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) #f]
       [(eq? (car item) 'file) (open-file! (string-append root "/" (caddr item)))]
@@ -443,16 +400,16 @@
 ;;; Log, diffs and commits shown
 
 (define (git-render-log! root)
-  (git-begin!)
+  (draw-begin!)
   (for-each (lambda (line)
               (let ([f (split-many line "\t")])
                 (when (= (length f) 4)
-                  (git-line! (list (list (car f) "git.hash") (list (string-append "  " (pad-right (cadr f) 14)) "git.count")
+                  (draw-line! (list (list (car f) "git.hash") (list (string-append "  " (pad-right (cadr f) 14)) "git.count")
                                    (list (pad-right (caddr f) 18) "git.remote") (list (cadddr f) #f))
                              (list 'commit (car f))))))
             (text-lines (git-output root "log -n 300 --format=%h%x09%ar%x09%an%x09%s")))
-  (when (null? *git-lines*) (git-line! (list (list "no commits yet" "git.head")) #f))
-  (git-finish!))
+  (when (null? *draw-lines*) (draw-line! (list (list "no commits yet" "git.head")) #f))
+  (draw-finish!))
 
 (define (git-log! root)
   (go-to-buffer! (git-buffer (string-append "*git log " (file-name-of root) "*") 'git-log-mode root))
@@ -498,7 +455,7 @@
            (git-refresh!)))))
 
 (define (git-stash-ref)
-  (let ([item (git-item)]) (if (stash-item? item) (cadr item) "stash@{0}")))
+  (let ([item (line-item)]) (if (stash-item? item) (cadr item) "stash@{0}")))
 
 (define *git-process-log* '())  ; newest first
 

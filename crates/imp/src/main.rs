@@ -357,6 +357,7 @@ fn key_name(key: KeyEvent) -> Option<String> {
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::ALT) => format!("M-{c}"),
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Esc => "<esc>".into(),
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => "M-<ret>".into(),
         KeyCode::Enter => "<ret>".into(),
         KeyCode::Backspace => "<bs>".into(),
         KeyCode::Tab => "<tab>".into(),
