@@ -4,8 +4,6 @@ use imp_core::{Frame, Row, Span, Style};
 
 use crate::editor::Editor;
 
-const TAB_WIDTH: usize = 4;
-
 pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let text_rows = e.text_rows();
@@ -61,7 +59,7 @@ fn line_row(e: &Editor, line: usize, col: usize, width: usize) -> (Row, usize) {
             cursor_x = Some(x);
         }
         let (shown, n) = if c == '\t' {
-            let n = TAB_WIDTH - x % TAB_WIDTH;
+            let n = e.tab_width - x % e.tab_width;
             (" ".repeat(n), n)
         } else {
             (c.to_string(), 1)

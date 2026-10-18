@@ -175,4 +175,5 @@ pub enum CursorShape {
     #[default]
     Block,
     Bar,
+    Underline,
 }

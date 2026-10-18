@@ -92,6 +92,10 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
     });
 
+    engine.register_fn("set-tab-width!", |width: isize| {
+        editor::with(|e| e.tab_width = clamp(width).clamp(1, 32))
+    });
+
     // Telling the user what's going on.
     engine.register_fn("set-status!", |text: String| {
         editor::with(|e| e.status = text)
@@ -103,6 +107,7 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             e.cursor_shape = match shape.as_str() {
                 "bar" => CursorShape::Bar,
+                "underline" => CursorShape::Underline,
                 _ => CursorShape::Block,
             }
         })

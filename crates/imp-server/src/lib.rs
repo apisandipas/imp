@@ -46,6 +46,7 @@ impl Server {
             buffer,
             width: 80,
             height: 24,
+            tab_width: 8,
             ..Editor::default()
         });
 

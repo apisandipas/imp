@@ -769,3 +769,219 @@ fn z_commands_place_the_cursor_line() {
     type_keys(&mut s, "zb");
     assert_eq!(s.frame().text_rows()[0], "41");
 }
+
+#[test]
+fn replace_char() {
+    let mut s = server("abcd\n");
+    type_keys(&mut s, "rx");
+    assert_eq!(s.text(), "xbcd\n");
+    type_keys(&mut s, "l3ry");
+    assert_eq!(s.text(), "xyyy\n");
+    assert_eq!(s.cursor(), 3);
+    // Not enough chars: nothing happens.
+    type_keys(&mut s, "05rz");
+    assert_eq!(s.text(), "xyyy\n");
+    type_keys(&mut s, "l.");
+    assert_eq!(s.text(), "xyyy\n");
+    let mut s = server("ab\n");
+    type_keys(&mut s, "r<ret>");
+    assert_eq!(s.text(), "\nb\n");
+}
+
+#[test]
+fn replace_mode() {
+    let mut s = server("abcd\n");
+    type_keys(&mut s, "Rxy<esc>");
+    assert_eq!(s.text(), "xycd\n");
+    let mut s = server("ab\n");
+    type_keys(&mut s, "Rxyz<esc>");
+    assert_eq!(s.text(), "xyz\n");
+    // <bs> puts back what was overwritten.
+    let mut s = server("abcd\n");
+    type_keys(&mut s, "Rxy<bs><bs>z<esc>");
+    assert_eq!(s.text(), "zbcd\n");
+}
+
+#[test]
+fn join_lines() {
+    let mut s = server("a\n  b\nc\n");
+    type_keys(&mut s, "J");
+    assert_eq!(s.text(), "a b\nc\n");
+    assert_eq!(s.cursor(), 1);
+    let mut s = server("a\nb\nc\nd\n");
+    type_keys(&mut s, "3J");
+    assert_eq!(s.text(), "a b c\nd\n");
+    let mut s = server("f(\n)\n");
+    type_keys(&mut s, "J");
+    assert_eq!(s.text(), "f()\n");
+    let mut s = server("a\n  b\n");
+    type_keys(&mut s, "gJ");
+    assert_eq!(s.text(), "a  b\n");
+    let mut s = server("a\nb\nc\n");
+    type_keys(&mut s, "VjjJ");
+    assert_eq!(s.text(), "a b c\n");
+}
+
+#[test]
+fn case_changes() {
+    let mut s = server("hello world\n");
+    type_keys(&mut s, "gUiw");
+    assert_eq!(s.text(), "HELLO world\n");
+    type_keys(&mut s, "w~~");
+    assert_eq!(s.text(), "HELLO WOrld\n");
+    type_keys(&mut s, "guu");
+    assert_eq!(s.text(), "hello world\n");
+    type_keys(&mut s, "g~~");
+    assert_eq!(s.text(), "HELLO WORLD\n");
+    type_keys(&mut s, "0vlu");
+    assert_eq!(s.text(), "heLLO WORLD\n");
+    type_keys(&mut s, "g??");
+    assert_eq!(s.text(), "urYYB JBEYQ\n");
+}
+
+#[test]
+fn shift_lines() {
+    let mut s = server("a\nb\n\nc\n");
+    type_keys(&mut s, ">>");
+    assert_eq!(s.text(), "    a\nb\n\nc\n");
+    type_keys(&mut s, "3>>");
+    assert_eq!(s.text(), "        a\n    b\n\nc\n");
+    // "<" followed by a letter would read as a key name, so send it alone.
+    s.keys(&["<", "j"]);
+    assert_eq!(s.text(), "    a\nb\n\nc\n");
+    type_keys(&mut s, "Vj2>");
+    assert_eq!(s.text(), "            a\n        b\n\nc\n");
+    type_keys(&mut s, ":set sw=2 noet ts=8<ret>gg");
+    s.keys(&["<", "<"]);
+    assert_eq!(s.text(), "\t  a\n        b\n\nc\n");
+}
+
+#[test]
+fn increment_numbers() {
+    let mut s = server("x 9 y\n");
+    s.keys(&["C-a"]);
+    assert_eq!(s.text(), "x 10 y\n");
+    assert_eq!(s.cursor(), 3);
+    type_keys(&mut s, "5");
+    s.keys(&["C-x"]);
+    assert_eq!(s.text(), "x 5 y\n");
+    let mut s = server("a-1\n");
+    type_keys(&mut s, "3");
+    s.keys(&["C-a"]);
+    assert_eq!(s.text(), "a2\n");
+    let mut s = server("0xfe\n");
+    s.keys(&["C-a", "C-a"]);
+    assert_eq!(s.text(), "0x100\n");
+    let mut s = server("0x0F\n");
+    s.keys(&["C-a"]);
+    assert_eq!(s.text(), "0x10\n");
+    let mut s = server("no number\n");
+    s.keys(&["C-a"]);
+    assert_eq!(s.text(), "no number\n");
+}
+
+#[test]
+fn insert_with_count() {
+    let mut s = server("x\n");
+    type_keys(&mut s, "3ihi<esc>");
+    assert_eq!(s.text(), "hihihix\n");
+    let mut s = server("x\n");
+    type_keys(&mut s, "2oab<esc>");
+    assert_eq!(s.text(), "x\nab\nab\n");
+    let mut s = server("x\n");
+    type_keys(&mut s, "ia<esc>3.");
+    assert_eq!(s.text(), "aaaax\n");
+}
+
+#[test]
+fn paste_with_count() {
+    let mut s = server("ab\n");
+    type_keys(&mut s, "yl3p");
+    assert_eq!(s.text(), "aaaab\n");
+    let mut s = server("a\n");
+    type_keys(&mut s, "yy2p");
+    assert_eq!(s.text(), "a\na\na\n");
+}
+
+#[test]
+fn autoindent() {
+    let mut s = server("    a\n");
+    type_keys(&mut s, "ob<esc>");
+    assert_eq!(s.text(), "    a\n    b\n");
+    type_keys(&mut s, "A<ret>c<esc>");
+    assert_eq!(s.text(), "    a\n    b\n    c\n");
+    // Indent that nothing was typed after is removed.
+    let mut s = server("    a\n");
+    type_keys(&mut s, "o<esc>");
+    assert_eq!(s.text(), "    a\n\n");
+    let mut s = server("  a\n");
+    type_keys(&mut s, "A<ret><ret>b<esc>");
+    assert_eq!(s.text(), "  a\n\n  b\n");
+}
+
+#[test]
+fn insert_editing_keys() {
+    let mut s = server("\n");
+    type_keys(&mut s, "ifoo bar");
+    s.keys(&["C-w"]);
+    type_keys(&mut s, "baz<esc>");
+    assert_eq!(s.text(), "foo baz\n");
+    let mut s = server("keep\n");
+    type_keys(&mut s, "A typed");
+    s.keys(&["C-u"]);
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.text(), "keep\n");
+    let mut s = server("abc\n");
+    type_keys(&mut s, "i<del>x<end>y<home>z<esc>");
+    assert_eq!(s.text(), "zxbcy\n");
+    let mut s = server("a\n");
+    type_keys(&mut s, "i");
+    s.keys(&["C-t"]);
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.text(), "    a\n");
+}
+
+#[test]
+fn insert_tab_follows_expandtab() {
+    let mut s = server("\n");
+    type_keys(&mut s, "ia<tab>b<esc>");
+    assert_eq!(s.text(), "a   b\n");
+    type_keys(&mut s, ":set noet<ret>o<tab>c<esc>");
+    assert_eq!(s.text(), "a   b\n\tc\n");
+}
+
+#[test]
+fn ctrl_o_runs_one_command() {
+    let mut s = server("abc def\n");
+    type_keys(&mut s, "ix");
+    s.keys(&["C-o"]);
+    type_keys(&mut s, "wy<esc>");
+    assert_eq!(s.text(), "xabc ydef\n");
+}
+
+#[test]
+fn small_commands() {
+    let mut s = server("a\nb\n");
+    type_keys(&mut s, "Sx<esc>");
+    assert_eq!(s.text(), "x\nb\n");
+    type_keys(&mut s, "Yp");
+    assert_eq!(s.text(), "x\nx\nb\n");
+    type_keys(&mut s, "<del>");
+    assert_eq!(s.text(), "x\n\nb\n");
+    let mut s = server("ab\ncd\n");
+    type_keys(&mut s, "ix<esc>jgiy<esc>");
+    assert_eq!(s.text(), "xyab\ncd\n");
+}
+
+#[test]
+fn set_options() {
+    let mut s = server("a\n");
+    type_keys(&mut s, ":set sw?<ret>");
+    assert_eq!(s.status(), "shiftwidth=4");
+    type_keys(&mut s, ":set shiftwidth=2<ret>:set sw?<ret>");
+    assert_eq!(s.status(), "shiftwidth=2");
+    type_keys(&mut s, ":set noai<ret>:set ai?<ret>");
+    assert_eq!(s.status(), "autoindent=#false");
+    type_keys(&mut s, ":set bogus<ret>");
+    assert!(s.status().contains("unknown option"));
+}

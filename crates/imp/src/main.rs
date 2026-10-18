@@ -147,6 +147,7 @@ fn draw(out: &mut impl Write, frame: &Frame) -> io::Result<()> {
     let style = match frame.cursor_shape {
         CursorShape::Block => SetCursorStyle::SteadyBlock,
         CursorShape::Bar => SetCursorStyle::SteadyBar,
+        CursorShape::Underline => SetCursorStyle::SteadyUnderScore,
     };
     queue!(out, MoveTo(frame.cursor.0, frame.cursor.1), style)?;
     out.flush()

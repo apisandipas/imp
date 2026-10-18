@@ -22,6 +22,48 @@
 (define (lookup-key mode key)
   (hash-try-get (keymap mode) key))
 
+;;; Options
+;;;
+;;; Named settings, read with (option 'name) and changed with set-option!
+;;; or :set. An option can have a watcher that runs when it changes, for
+;;; settings Rust needs to know about (tabstop).
+
+(define *options* (hash))
+(define *option-watchers* (hash))
+(define *option-aliases* (hash))
+
+;; Defines option `name` (a symbol) with a default value and short names
+;; for :set, e.g. (define-option! 'shiftwidth 4 '(sw)).
+(define (define-option! name default aliases)
+  (set! *options* (hash-insert *options* name default))
+  (for-each (lambda (a) (set! *option-aliases* (hash-insert *option-aliases* a name))) aliases))
+
+(define (option-name name)
+  (cond [(hash-contains? *options* name) name]
+        [(hash-try-get *option-aliases* name) => (lambda (n) n)]
+        [else #f]))
+
+(define (option name) (hash-ref *options* name))
+
+(define (set-option! name value)
+  (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+    (set! *options* (hash-insert *options* name value))
+    (let ([watch (hash-try-get *option-watchers* name)])
+      (when watch (watch value)))))
+
+(define (watch-option! name proc)
+  (set! *option-watchers* (hash-insert *option-watchers* name proc))
+  (proc (option name)))
+
+(define-option! 'tabstop 4 '(ts))
+(define-option! 'shiftwidth 4 '(sw))
+(define-option! 'expandtab #t '(et))
+(define-option! 'autoindent #t '(ai))
+(define-option! 'wrapscan #t '(ws))
+(define-option! 'hlsearch #t '(hls))
+(define-option! 'incsearch #t '(is))
+(watch-option! 'tabstop set-tab-width!)
+
 ;;; Faces and highlight layers
 ;;;
 ;;; A face is a named style; its spec is a string like "fg=#ff8800 bold"

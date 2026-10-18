@@ -23,6 +23,8 @@ pub struct Editor {
     pub scroll: usize,
     pub width: u16,
     pub height: u16,
+    /// Display columns between tab stops.
+    pub tab_width: usize,
     /// Named styles. Highlights refer to faces by name, so redefining a face
     /// restyles everything that uses it.
     pub faces: HashMap<String, Style>,
