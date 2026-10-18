@@ -64,6 +64,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("git.scm", include_str!("../../../runtime/git.scm")),
     ("org.scm", include_str!("../../../runtime/org.scm")),
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
+    ("project.scm", include_str!("../../../runtime/project.scm")),
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),

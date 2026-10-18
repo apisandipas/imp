@@ -96,7 +96,11 @@ pub fn write_atomic(path: &Path, bytes: &[u8], backup: bool) -> io::Result<()> {
         .file_name()
         .ok_or_else(|| io::Error::other("not a file name"))?
         .to_string_lossy();
-    let temp = dir.join(format!(".{name}.imp-{}", std::process::id()));
+    // Unique per write, so two writes of one file (from threads, or two
+    // editors) can't take each other's temporary file.
+    static WRITES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = dir.join(format!(".{name}.imp-{}-{n}", std::process::id()));
     let result = (|| {
         let mut file = std::fs::File::create(&temp)?;
         file.write_all(bytes)?;

@@ -228,3 +228,16 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     (`:e!`), for buffers that aren't files.
   - Fixed a core Vim bug the tests found: `cw` on a word's last char
     changed through the next word.
+- 6.4 Projects: done (`runtime/project.scm`).
+  - Roots come from `project-markers`, tried in order. Known projects are
+    kept in the state directory.
+  - Commands: `SPC p f/p/b` and `SPC s p` (which offers the word at the
+    cursor).
+  - Quickfix as in Vim:
+    - `:grep` jumps to the first match and `:grep!` doesn't;
+    - `:copen`, `:cn`, `:cp`, `:cfirst`, `:clast`, `:cc`, `]q` and `[q`;
+    - Vim's E42 and E553 messages.
+  - `grepprg` defaults to `rg --vimgrep --sort=path`. It needs an explicit
+    `.`: run-shell pipes stdin, and rg then searches stdin. Without rg it
+    falls back to `grep -rnI`.
+  - Fixed `write_atomic` temporary names colliding between threads.
