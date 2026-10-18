@@ -350,6 +350,7 @@
 ;;; only this user can reach; each connection gets an id, passed to the
 ;;; procedures: (on-open conn), (on-line conn line), (on-close conn).
 ;;; (socket-send! conn text) writes to one; (socket-stop! id) stops.
+;;; (connect-socket! path on-line on-close) connects to one, as a client.
 
 (define *listeners* (hash))    ; listener id -> (on-open on-line on-close)
 (define *connections* (hash))  ; connection id -> listener id
@@ -361,9 +362,19 @@
         (begin (set-status! id) #f)
         (begin (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))) id))))
 
+(define *client-sockets* (hash))  ; connection id -> (#f on-line on-close)
+
+;; Returns the connection id, or #f after showing why it couldn't connect.
+(define (connect-socket! path on-line on-close)
+  (let ([conn (socket-connect! path)])
+    (if (string? conn)
+        (begin (set-status! conn) #f)
+        (begin (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))) conn))))
+
 (define (socket-handlers conn)
-  (let ([listener (hash-try-get *connections* conn)])
-    (and listener (hash-try-get *listeners* listener))))
+  (or (hash-try-get *client-sockets* conn)
+      (let ([listener (hash-try-get *connections* conn)])
+        (and listener (hash-try-get *listeners* listener)))))
 
 (define (socket-call what conn proc . args)
   (when proc
@@ -382,6 +393,7 @@
 (define (imp-socket-closed conn)
   (let ([h (socket-handlers conn)])
     (set! *connections* (hash-remove *connections* conn))
+    (set! *client-sockets* (hash-remove *client-sockets* conn))
     (when h (socket-call "close" conn (caddr h) conn))))
 
 ;;; Buffer-local values

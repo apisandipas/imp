@@ -655,6 +655,13 @@ pub fn register(engine: &mut Engine) {
             Err(err) => SteelVal::StringV(err.into()),
         })
     });
+    // A connection id, or the error as a string.
+    engine.register_fn("socket-connect!", |path: String| {
+        editor::with(|e| match e.background.connect(Path::new(&path)) {
+            Ok(id) => SteelVal::IntV(id as isize),
+            Err(err) => SteelVal::StringV(err.into()),
+        })
+    });
     engine.register_fn("socket-stop!", |id: isize| {
         editor::with(|e| e.background.stop_listening(clamp(id) as u64))
     });
@@ -902,4 +909,5 @@ pub fn register(engine: &mut Engine) {
     );
 
     crate::wasm::register(engine);
+    crate::crdt::register(engine);
 }

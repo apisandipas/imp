@@ -153,6 +153,18 @@ impl Editor {
         }
     }
 
+    /// Buffer `id` and its cursor, to change a buffer that may not be
+    /// current.
+    pub fn buffer_and_cursor_mut(&mut self, id: usize) -> Option<(&mut Buffer, &mut usize)> {
+        if id == self.current {
+            Some((&mut self.buffer, &mut self.cursor))
+        } else {
+            self.parked
+                .get_mut(&id)
+                .map(|p| (&mut p.buffer, &mut p.cursor))
+        }
+    }
+
     /// Makes buffer `id` current. Returns false if there is no such buffer.
     pub fn switch_to(&mut self, id: usize) -> bool {
         if id == self.current {

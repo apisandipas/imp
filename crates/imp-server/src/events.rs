@@ -225,6 +225,25 @@ impl Background {
         }
     }
 
+    /// Connects to a Unix socket. Its lines come back as `SocketLine`,
+    /// then `SocketClosed`, as for a connection to a listener.
+    pub fn connect(&mut self, path: &Path) -> Result<u64, String> {
+        let sender = self.sender.clone().ok_or("no event loop")?;
+        let stream = UnixStream::connect(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let read_half = stream.try_clone().map_err(|e| e.to_string())?;
+        let conn = NEXT_CONNECTION.fetch_add(1, Ordering::SeqCst);
+        self.connections.insert(conn, stream);
+        std::thread::spawn(move || {
+            for line in BufReader::new(read_half).lines().map_while(Result::ok) {
+                if sender.send(Event::SocketLine(conn, line)).is_err() {
+                    return;
+                }
+            }
+            let _ = sender.send(Event::SocketClosed(conn));
+        });
+        Ok(conn)
+    }
+
     pub fn connection_opened(&mut self, conn: u64, stream: UnixStream) {
         self.connections.insert(conn, stream);
     }

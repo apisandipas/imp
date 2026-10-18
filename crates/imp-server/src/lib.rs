@@ -7,6 +7,7 @@
 
 mod api;
 mod clipboard;
+mod crdt;
 #[cfg(unix)]
 pub mod daemon;
 mod editor;
@@ -58,6 +59,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("mouse.scm", include_str!("../../../runtime/mouse.scm")),
     ("mcp.scm", include_str!("../../../runtime/mcp.scm")),
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
+    ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
 ];
 

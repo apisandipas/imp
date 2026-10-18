@@ -91,7 +91,8 @@ beside it as a mirror.
   edits, so marks, the cursor and the syntax tree follow.
 
 Primitives:
-- `(crdt-share! BUF SITE)` starts mirroring the buffer.
+- `(crdt-share! BUF)` starts mirroring the buffer (yrs picks a random
+  site id).
 - `(crdt-sync! BUF)` returns the update since the last sync, as base64,
   or #f if nothing changed.
 - `(crdt-apply! BUF UPDATE)` applies a remote update.
@@ -162,3 +163,16 @@ language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="py
     (`--font`, `--font-file`). cosmic-text can't snap a proportional
     fallback font to the grid.
   - Font ligatures are drawn.
+- 5.3 CRDT buffers: done as a prototype.
+  - `src/crdt.rs` (yrs mirror, prefix/suffix diff for local changes,
+    observer deltas for remote ones) and `runtime/collab.scm`: `:share
+    [NAME]`, `:join [NAME]`, `:unshare`. NAME may be a socket path.
+  - `socket-connect!` and `connect-socket!` are the client side of the
+    socket support; collab uses them, and so can anything else.
+  - Messages are lines: `hello STATE`, `name NAME`, `update UPDATE`
+    (base64). The host relays updates between guests. Each side syncs
+    after every command and every 200 ms.
+  - Remote changes are their own undo step, but undo is still by text
+    snapshot, so `u` after a remote edit can undo it too.
+  - Tests: two buffers in one editor exchanging updates, and three
+    editors on threads sharing a buffer over a socket.
