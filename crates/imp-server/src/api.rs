@@ -13,6 +13,8 @@ use steel::steel_vm::register_fn::RegisterFn;
 
 use crate::clipboard;
 use crate::editor::{self, Highlight};
+use crate::files;
+use crate::fuzzy;
 use crate::scan;
 use crate::search;
 use crate::shell;
@@ -311,6 +313,20 @@ pub fn register(engine: &mut Engine) {
             Ok::<(), String>(())
         },
     );
+
+    // Completion: orderless fuzzy matching (fuzzy.rs) and project files.
+    engine.register_fn(
+        "fuzzy-filter",
+        |query: String, candidates: Vec<String>, limit: isize| {
+            fuzzy::filter(&query, &candidates, clamp(limit))
+        },
+    );
+    engine.register_fn("list-files", |root: String, limit: isize| {
+        files::list(&root, clamp(limit))
+    });
+    engine.register_fn("set-popup-selected!", |n: isize| {
+        editor::with(|e| e.popup_selected = (n >= 0).then_some(n as usize))
+    });
 
     // Bracket and tag scans; see scan.rs.
     engine.register_fn(

@@ -33,6 +33,8 @@ pub struct Editor {
     pub sources: Vec<(String, Option<String>, String)>,
     /// Lines drawn over the bottom of the window, above the status line.
     pub popup: Vec<String>,
+    /// The popup line drawn as selected, for completion menus.
+    pub popup_selected: Option<usize>,
     pub quit: bool,
     /// First buffer line shown on screen.
     pub scroll: usize,

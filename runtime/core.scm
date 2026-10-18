@@ -285,6 +285,7 @@
 (set-face! "status" "reverse")
 (set-face! "nontext" "fg=blue")
 (set-face! "popup" "bg=#262a33")
+(set-face! "popup-selected" "bg=#3e4452 bold")
 (set-face! "visual" "bg=#3e4452")
 (set-face! "search" "fg=black bg=yellow")
 (set-face! "search-current" "fg=black bg=#ff8800")

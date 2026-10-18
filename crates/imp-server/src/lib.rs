@@ -8,6 +8,8 @@
 mod api;
 mod clipboard;
 mod editor;
+mod files;
+mod fuzzy;
 mod render;
 mod scan;
 mod search;
@@ -29,6 +31,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("core.scm", include_str!("../../../runtime/core.scm")),
     ("vim.scm", include_str!("../../../runtime/vim.scm")),
     ("help.scm", include_str!("../../../runtime/help.scm")),
+    (
+        "completion.scm",
+        include_str!("../../../runtime/completion.scm"),
+    ),
 ];
 
 pub struct Options {

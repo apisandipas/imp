@@ -58,6 +58,7 @@
 (define *cmdline-cancel* #f)   ; (lambda () ...) on <esc>
 (define *cmdline-return* 'normal) ; the mode to go back to
 (define *cmdline-pos* 0)       ; cursor position in *cmdline*
+(define *cmdline-key-handler* #f) ; sees keys first; #t from it means handled
 (define *history* (hash))      ; prompt -> entries, newest first
 (define *history-index* -1)    ; -1 while editing a fresh line
 (define *history-prefix* "")   ; what <up> and <down> match against
@@ -2142,6 +2143,7 @@
                 (+ (string-length *cmdline-prompt*) *cmdline-pos*)))
 
 (define (close-cmdline!)
+  (set! *cmdline-key-handler* #f)
   (clear-cmdline!)
   (set-mode! *cmdline-return*)
   (set-status! ""))
@@ -2208,6 +2210,8 @@
 
 (define (cmdline-key! key)
   (cond
+    ;; Completion menus and the like take the keys they want first.
+    [(and *cmdline-key-handler* (*cmdline-key-handler* key)) #t]
     ;; C-r {register} inserts a register; C-r C-w the word under the cursor.
     [*cmdline-pending*
      (set! *cmdline-pending* #f)

@@ -7,4 +7,5 @@ edition.workspace = true
 imp-core.workspace = true
 steel.workspace = true
 regex.workspace = true
+ignore.workspace = true
 ropey.workspace = true
