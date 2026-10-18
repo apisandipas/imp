@@ -1,0 +1,23 @@
+// A starter ~/.config/imp/config.kdl: settings as data, for imp built
+// with the kdl feature (cargo build --features kdl). It loads before
+// init.scm, which can change anything here. Problems are reported with
+// their line, and the rest still loads.
+
+theme "gruvbox-dark"
+
+options {
+    number #true
+    relativenumber #true
+    cursorline #true
+    tabstop 4
+    shiftwidth 4
+    clipboard "unnamedplus"
+}
+
+keys "normal" {
+    "C-s" "save-buffer"
+}
+
+leader "fs" "save-buffer" "save"
+
+language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="python"

@@ -31,6 +31,7 @@ tree-sitter-md = "0.5"
 wasmtime = { version = "38", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
 yrs = "0.28"
 base64 = "0.22"
+kdl = { version = "6", default-features = false, features = ["span"] }
 
 # Steel's prelude takes ~1s to load in a debug build, and every test starts a
 # server. Optimizing dependencies (not our own crates) keeps tests fast while

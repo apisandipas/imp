@@ -16,3 +16,4 @@ crossterm.workspace = true
 # Phase 5 prototypes (docs/design/phase-5.md).
 wasm = ["imp-server/wasm"]
 crdt = ["imp-server/crdt"]
+kdl = ["imp-server/kdl"]

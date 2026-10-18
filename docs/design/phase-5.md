@@ -120,7 +120,7 @@ crate, and fits "options, keys, theme" well. Nickel's typing would cost a
 large dependency for a low-priority item.
 
 - `(kdl-parse TEXT)` turns a document into lists:
-  `(name (args...) ((key . value)...) (children...))`.
+  `(name (args...) ((key value)...) (children...) line)`.
 - `runtime/config.scm` interprets the nodes and reports unknown ones and
   bad values with their line numbers. `~/.config/imp/config.kdl` loads
   before `init.scm`, so Scheme can still override it.
@@ -128,7 +128,7 @@ large dependency for a low-priority item.
 ```kdl
 theme "gruvbox-dark"
 option "number" #true
-option "tabstop" 4
+options { tabstop 4; relativenumber #true }
 leader "gs" "save-buffer" "save"
 key "normal" "C-s" "save-buffer"
 language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="python"
@@ -176,3 +176,13 @@ language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="py
     snapshot, so `u` after a remote edit can undo it too.
   - Tests: two buffers in one editor exchanging updates, and three
     editors on threads sharing a buffer over a socket.
+- 5.4 KDL config: done.
+  - `src/kdl.rs` (`kdl-parse`, KDL v2) and `runtime/config.scm`
+    (`apply-kdl-config!`, `load-kdl-config!`). The server loads
+    `config.kdl` from beside `init.scm`, before it.
+  - Settings: `theme`, `option`, `options { ... }`, `key`,
+    `keys STATE { ... }`, `leader`, `language-server`. Commands aren't
+    checked, since init.scm may define them later.
+  - Without the feature, a `config.kdl` present gets one message saying
+    the build can't read it.
+  - Starter file: `examples/config.kdl`, tested.

@@ -910,4 +910,5 @@ pub fn register(engine: &mut Engine) {
 
     crate::wasm::register(engine);
     crate::crdt::register(engine);
+    crate::kdl::register(engine);
 }

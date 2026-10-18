@@ -15,6 +15,7 @@ mod events;
 mod files;
 mod fuzzy;
 mod json;
+mod kdl;
 mod layout;
 mod render;
 mod scan;
@@ -61,6 +62,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
+    ("config.scm", include_str!("../../../runtime/config.scm")),
 ];
 
 pub struct Options {
@@ -120,6 +122,20 @@ impl Server {
             events,
             sender,
         };
+        // Settings as data (config.kdl) load first, so init.scm can
+        // change them.
+        if let Some(kdl) = options
+            .user_config
+            .as_ref()
+            .map(|p| p.with_file_name("config.kdl"))
+        {
+            if kdl.exists() {
+                server.call(
+                    "load-kdl-config!",
+                    vec![SteelVal::StringV(kdl.display().to_string().into())],
+                );
+            }
+        }
         if let Some(path) = options.user_config.filter(|p| p.exists()) {
             // A broken init.scm shouldn't stop the editor from starting; say
             // what went wrong and carry on with whatever loaded.
