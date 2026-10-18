@@ -58,11 +58,69 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-modified?", || {
         editor::with(|e| e.buffer.is_modified())
     });
-    engine.register_fn("buffer-name", || {
-        editor::with(|e| match e.buffer.path() {
-            Some(path) => path.display().to_string(),
-            None => "[scratch]".to_string(),
+    engine.register_fn("buffer-name", || editor::with(|e| e.buffer.display_name()));
+
+    // Buffers. The primitives above act on the current buffer; these list
+    // buffers and switch between them. Ids are integers.
+    engine.register_fn("buffer-list", || {
+        editor::with(|e| {
+            e.buffer_ids()
+                .into_iter()
+                .map(|id| id as isize)
+                .collect::<Vec<_>>()
         })
+    });
+    engine.register_fn("current-buffer", || editor::with(|e| e.current as isize));
+    engine.register_fn("switch-to-buffer!", |id: isize| {
+        editor::with(|e| e.switch_to(clamp(id)))
+    });
+    // The id of the buffer visiting `path`, opening the file if no buffer
+    // does yet (a missing file opens empty). Errors come back as a string.
+    engine.register_fn("buffer-open!", |path: String| {
+        editor::with(|e| {
+            let path = PathBuf::from(&path);
+            if let Some(id) = e.find_file_buffer(&path) {
+                return SteelVal::IntV(id as isize);
+            }
+            match imp_core::Buffer::open(&path) {
+                Ok(buffer) => SteelVal::IntV(e.add_buffer(buffer) as isize),
+                Err(err) => SteelVal::StringV(format!("{}: {err}", path.display()).into()),
+            }
+        })
+    });
+    // A new buffer with no file; `name` may be "" for "[No Name]".
+    engine.register_fn("buffer-new!", |name: String| {
+        editor::with(|e| {
+            let mut buffer = imp_core::Buffer::default();
+            if !name.is_empty() {
+                buffer.set_name(Some(name));
+            }
+            e.add_buffer(buffer) as isize
+        })
+    });
+    engine.register_fn("buffer-kill!", |id: isize| {
+        editor::with(|e| e.kill_buffer(clamp(id)))
+    });
+    // (name path-or-#f modified?) for buffer `id`, or #f.
+    engine.register_fn("buffer-info", |id: isize| {
+        editor::with(|e| {
+            e.buffer_by_id(clamp(id)).map(|b| {
+                vec![
+                    SteelVal::StringV(b.display_name().into()),
+                    match b.path() {
+                        Some(p) => SteelVal::StringV(p.display().to_string().into()),
+                        None => SteelVal::BoolV(false),
+                    },
+                    SteelVal::BoolV(b.is_modified()),
+                ]
+            })
+        })
+    });
+    engine.register_fn("buffer-reload!", || {
+        editor::with(|e| e.buffer.reload().map_err(|err| err.to_string()))
+    });
+    engine.register_fn("set-buffer-name!", |name: String| {
+        editor::with(|e| e.buffer.set_name(Some(name)))
     });
 
     // Changing the buffer.
@@ -87,6 +145,12 @@ pub fn register(engine: &mut Engine) {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
+    engine.register_fn("getenv", |name: String| std::env::var(name).ok());
+    engine.register_fn("current-dir", || {
+        std::env::current_dir()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|_| ".".to_string())
+    });
     // Runs `command` with sh, feeding it `input`. Returns (exit-code output),
     // the output being stdout and stderr together.
     engine.register_fn("run-shell", |command: String, input: String| {

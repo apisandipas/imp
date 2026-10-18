@@ -22,24 +22,24 @@ use imp_core::{Buffer, ClientMsg, Color, CursorShape, Frame, ServerMsg, Style};
 use imp_server::Options;
 
 fn main() {
-    let path = std::env::args_os().nth(1).map(PathBuf::from);
-    if let Err(e) = run(path) {
+    let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    if let Err(e) = run(paths) {
         eprintln!("imp: {e}");
         std::process::exit(1);
     }
 }
 
-fn run(path: Option<PathBuf>) -> Result<(), String> {
-    let buffer = match &path {
-        Some(path) => Buffer::open(path).map_err(|e| format!("{}: {e}", path.display()))?,
-        None => Buffer::default(),
-    };
+fn run(paths: Vec<PathBuf>) -> Result<(), String> {
+    let buffers = paths
+        .iter()
+        .map(|path| Buffer::open(path).map_err(|e| format!("{}: {e}", path.display())))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let (to_server, from_client) = mpsc::channel();
     let (to_client, from_server) = mpsc::channel();
     let server = thread::spawn(move || {
         imp_server::run(
-            buffer,
+            buffers,
             Options {
                 user_config: imp_server::user_config_path(),
             },

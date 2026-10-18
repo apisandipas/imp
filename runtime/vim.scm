@@ -36,7 +36,8 @@
 (define *jump-index* 0)        ; where C-o and C-i are in *jumps*
 (define *jump-counter* 0)      ; for naming jump marks
 (define *popup-shown* #f)      ; a popup is up until the next key
-(define *undo-group* #f)       ; while true, changes join one undo step   ; set when a key fails; stops a running macro
+(define *undo-group* #f)       ; while true, changes join one undo step
+(define *alternate-buffer* #f) ; for C-^ and :e #   ; set when a key fails; stops a running macro
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
@@ -1569,20 +1570,39 @@
 
 (define (jump-mark-line name) (offset->line (or (mark-get name) 0)))
 
+;; Runs `thunk` with buffer `id` current, then switches back.
+(define (with-buffer id thunk)
+  (let ([here (current-buffer)])
+    (if (= id here)
+        (thunk)
+        (begin
+          (switch-to-buffer! id)
+          (let ([result (thunk)])
+            (switch-to-buffer! here)
+            result)))))
+
+;; Jump list entries are (buffer-id . mark-name), so jumps cross buffers.
+(define (jump-buffer j) (car j))
+(define (jump-mark j) (cdr j))
+
 ;; Records the cursor as a jump. Like Vim, an older entry on the same line
 ;; is dropped, and the list keeps the last 100.
 (define (record-jump!)
   (mark-set! "'" (cursor))
-  (let* ([line (current-line)]
+  (let* ([line (current-line)] [buf (current-buffer)]
          [keep (filter (lambda (j)
-                         (if (= (jump-mark-line j) line) (begin (mark-delete! j) #f) #t))
+                         (if (and (= (jump-buffer j) buf) (= (jump-mark-line (jump-mark j)) line))
+                             (begin (mark-delete! (jump-mark j)) #f)
+                             (memv (jump-buffer j) (buffer-list))))
                        *jumps*)]
          [name (string-append "jump" (number->string *jump-counter*))])
     (set! *jump-counter* (+ *jump-counter* 1))
     (mark-set! name (cursor))
-    (set! *jumps* (append keep (list name)))
+    (set! *jumps* (append keep (list (cons buf name))))
     (when (> (length *jumps*) 100)
-      (mark-delete! (car *jumps*))
+      (let ([old (car *jumps*)])
+        (when (memv (jump-buffer old) (buffer-list))
+          (with-buffer (jump-buffer old) (lambda () (mark-delete! (jump-mark old))))))
       (set! *jumps* (cdr *jumps*)))
     (set! *jump-index* (length *jumps*))))
 
@@ -1597,9 +1617,11 @@
 (define (jump-to-index! i)
   (if (or (< i 0) (>= i (length *jumps*)))
       (set! *command-failed* #t)
-      (begin
+      (let ([j (list-ref *jumps* i)])
         (set! *jump-index* i)
-        (set-cursor! (or (mark-get (list-ref *jumps* i)) (cursor))))))
+        (when (and (not (= (jump-buffer j) (current-buffer))) (memv (jump-buffer j) (buffer-list)))
+          (go-to-buffer! (jump-buffer j)))
+        (set-cursor! (or (mark-get (jump-mark j)) (cursor))))))
 
 (define-key! 'normal "C-o" (lambda (count) (jump-older! count)))
 (define-key! 'normal "C-i" (lambda (count) (jump-to-index! (+ *jump-index* count))))
@@ -2558,7 +2580,9 @@
            (let loop ([js *jumps*] [i 0] [acc '()])
              (if (null? js)
                  (reverse (cons ">" acc))
-                 (let* ([p (or (mark-get (car js)) 0)] [line (offset->line p)])
+                 (let* ([j (car js)]
+                        [p (if (= (jump-buffer j) (current-buffer)) (or (mark-get (jump-mark j)) 0) 0)]
+                        [line (offset->line p)])
                    (loop (cdr js) (+ i 1)
                          (cons (string-append (if (= i *jump-index*) ">" " ")
                                               (pad-right (number->string (abs (- *jump-index* i))) 5)
@@ -2567,34 +2591,56 @@
                                               (clip (printable (buffer-substring (line-start line) (line-end line))) 60))
                                acc)))))))))
 
+;; Saves the current buffer, running the save hooks. Returns #t if saved.
+(define (save-buffer!)
+  (run-hooks 'before-save)
+  (and (save!)
+       (begin (run-hooks 'after-save) #t)))
+
 ;; :w writes the buffer; :w FILE writes a copy (or names the buffer, if it
 ;; had no file).
 (define (write-buffer! ex)
   (let ([file (ex-args ex)])
     (cond
-      [(equal? file "") (when (save!) (set-status! (string-append "wrote " (buffer-name))))]
-      [(and (file-exists? file) (not (ex-bang? ex)) (not (equal? file (buffer-path))))
+      [(equal? file "")
+       (if (buffer-path)
+           (when (save-buffer!) (set-status! (string-append "wrote " (buffer-name))))
+           (set-status! "no file name (use :w FILE)"))]
+      [(and (file-exists? (expand-path file)) (not (ex-bang? ex)) (not (equal? (expand-path file) (buffer-path))))
        (set-status! (string-append file " exists (add ! to override)"))]
-      [(not (buffer-path)) (set-buffer-path! file) (write-buffer! (list (ex-range ex) #f #f ""))]
+      [(not (buffer-path)) (set-buffer-path! (expand-path file)) (write-buffer! (list (ex-range ex) #f #f ""))]
       [else
-       (let ([r (with-handler (lambda (e) (error-message e)) (write-file! file))])
+       (let ([r (with-handler (lambda (e) (error-message e)) (write-file! (expand-path file)))])
          (set-status! (if (string? r) r (string-append "wrote " file))))])))
 
-(define-ex! '("w" "write" "wa" "wall") write-buffer!)
+(define-ex! '("w" "write") write-buffer!)
+(define-ex! '("wa" "wall")
+  (lambda (ex) (when (write-all!) (set-status! "wrote all buffers"))))
 (define-ex! '("sav" "saveas")
   (lambda (ex)
     (if (equal? (ex-args ex) "")
         (set-status! "saveas needs a file name")
-        (begin (set-buffer-path! (ex-args ex)) (write-buffer! (list (ex-range ex) #f #f ""))))))
-(define-ex! '("q" "quit" "qa" "qall" "quita" "quitall")
-  (lambda (ex)
-    (if (and (buffer-modified?) (not (ex-bang? ex)))
-        (set-status! "unsaved changes (add ! to override)")
+        (begin (set-buffer-path! (expand-path (ex-args ex))) (write-buffer! (list (ex-range ex) #f #f ""))))))
+
+;; Quits unless some buffer has unsaved changes (or ! was given).
+(define (quit-if-saved! ex)
+  (let ([dirty (modified-buffers)])
+    (if (and (pair? dirty) (not (ex-bang? ex)))
+        (begin
+          (set-status! (string-append "unsaved changes in " (car (buffer-info (car dirty)))
+                                      " (add ! to override)"))
+          (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty))))
         (quit!))))
-(define-ex! '("wq" "wqa" "wqall" "xa" "xall") (lambda (ex) (when (save!) (quit!))))
+
+(define-ex! '("q" "quit" "qa" "qall" "quita" "quitall") quit-if-saved!)
+(define-ex! "wq"
+  (lambda (ex) (when (save-buffer!) (quit-if-saved! ex))))
 ;; :x writes only if there is something to write.
 (define-ex! '("x" "xit" "exit")
-  (lambda (ex) (if (buffer-modified?) (when (save!) (quit!)) (quit!))))
+  (lambda (ex)
+    (when (or (not (buffer-modified?)) (save-buffer!)) (quit-if-saved! ex))))
+(define-ex! '("wqa" "wqall" "xa" "xall")
+  (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
 
 (define-ex! '("noh" "nohlsearch")
   (lambda (ex) (set! *hlsearch* #f) (refresh-search-highlight!)))
@@ -2679,6 +2725,150 @@
 
 (define-ex! '("se" "set")
   (lambda (ex) (for-each set-one-option! (split-whitespace (ex-args ex)))))
+
+;;; Buffers
+;;;
+;;; Every buffer stays open until :bd; switching keeps each one's cursor.
+;;; As with Vim's 'hidden', a modified buffer can be left without saving;
+;;; :q and :qa refuse while any buffer has unsaved changes.
+
+;; Makes buffer `id` current, remembering the one left for C-^.
+(define (go-to-buffer! id)
+  (unless (= id (current-buffer))
+    (when (eq? *mode* 'visual) (leave-visual!))
+    (set! *alternate-buffer* (current-buffer))
+    (switch-to-buffer! id)
+    (normal-clamp!)
+    (set! *goal-col* (current-col))
+    (run-hooks 'buffer-enter)))
+
+;; Opens `path` (or switches to the buffer that has it) and returns the id,
+;; or #f after saying why on the status line.
+(define (open-file! path)
+  (let ([r (buffer-open! (expand-path path))])
+    (if (string? r)
+        (begin (set-status! r) #f)
+        (begin
+          (record-jump!)
+          (let ([new? (not (buffer-seen? r))])
+            (go-to-buffer! r)
+            (when new? (mark-buffer-seen! r) (run-hooks 'buffer-open)))
+          r))))
+
+(define *seen-buffers* (hash))
+(define (buffer-seen? id) (hash-contains? *seen-buffers* id))
+(define (mark-buffer-seen! id) (set! *seen-buffers* (hash-insert *seen-buffers* id #t)))
+
+;; ~ and $HOME at the start of a path.
+(define (expand-path path)
+  (cond
+    [(equal? path "~") (home-dir)]
+    [(starts-with? path "~/") (string-append (home-dir) (substring path 1 (string-length path)))]
+    [else path]))
+
+(define (buffer-modified-by-id? id)
+  (let ([info (buffer-info id)]) (and info (caddr info))))
+
+(define (modified-buffers)
+  (filter buffer-modified-by-id? (buffer-list)))
+
+;; :e FILE opens it; :e alone re-reads the current file if unchanged, and
+;; :e! re-reads it discarding changes; :e # is the alternate buffer.
+(define-ex! '("e" "edit")
+  (lambda (ex)
+    (let ([arg (ex-args ex)])
+      (cond
+        [(equal? arg "#")
+         (if (and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
+             (go-to-buffer! *alternate-buffer*)
+             (set-status! "no alternate file"))]
+        [(not (equal? arg "")) (open-file! arg)]
+        [(not (buffer-path)) (set-status! "no file name")]
+        [(and (buffer-modified?) (not (ex-bang? ex)))
+         (set-status! "unsaved changes (add ! to discard them)")]
+        [else
+         (let ([r (with-handler (lambda (e) (error-message e)) (buffer-reload!))])
+           (if (string? r)
+               (set-status! r)
+               (begin (normal-clamp!) (set-status! (string-append "reloaded " (buffer-name))))))]))))
+
+(define-ex! '("ene" "enew")
+  (lambda (ex) (go-to-buffer! (buffer-new! ""))))
+
+(define (buffer-line id)
+  (let ([info (buffer-info id)])
+    (string-append (pad-right (number->string id) 4)
+                   (cond [(= id (current-buffer)) "%a "]
+                         [(equal? id *alternate-buffer*) "#  "]
+                         [else "   "])
+                   (if (caddr info) "+ " "  ")
+                   "\"" (car info) "\"")))
+
+(define-ex! '("ls" "buffers" "files")
+  (lambda (ex) (show-popup! (map buffer-line (buffer-list)))))
+
+;; :b N or :b NAME (any unique part of a name).
+(define (find-buffer arg)
+  (let ([n (string->number arg)])
+    (if n
+        (and (memv n (buffer-list)) n)
+        (let ([hits (filter (lambda (id) (string-contains? (car (buffer-info id)) arg)) (buffer-list))])
+          (cond [(null? hits) (set-status! (string-append "no matching buffer for " arg)) #f]
+                [(null? (cdr hits)) (car hits)]
+                [else (set-status! (string-append "more than one match for " arg)) #f])))))
+
+(define-ex! '("b" "bu" "buf" "buffer")
+  (lambda (ex)
+    (let ([id (if (equal? (ex-args ex) "")
+                  (and (ex-range-given? ex) (+ 1 (cadr (ex-range ex))))
+                  (find-buffer (ex-args ex)))])
+      (when id
+        (if (memv id (buffer-list)) (go-to-buffer! id) (set-status! "no such buffer"))))))
+
+;; The buffer `step` places after (or before) the current one, wrapping.
+(define (buffer-step step)
+  (let* ([ids (buffer-list)] [n (length ids)]
+         [i (let loop ([l ids] [i 0]) (if (= (car l) (current-buffer)) i (loop (cdr l) (+ i 1))))])
+    (list-ref ids (modulo (+ i step) n))))
+
+(define-ex! '("bn" "bnext") (lambda (ex) (go-to-buffer! (buffer-step 1))))
+(define-ex! '("bp" "bprevious" "bN" "bNext") (lambda (ex) (go-to-buffer! (buffer-step -1))))
+
+(define-ex! '("bd" "bdelete" "bw" "bwipeout")
+  (lambda (ex)
+    (let ([id (if (equal? (ex-args ex) "") (current-buffer) (find-buffer (ex-args ex)))])
+      (cond
+        [(not id) #f]
+        [(and (buffer-modified-by-id? id) (not (ex-bang? ex)))
+         (set-status! "unsaved changes (add ! to discard them)")]
+        [else
+         (let ([alt *alternate-buffer*])
+           ;; Prefer going back to the alternate buffer, as Vim does.
+           (when (and (= id (current-buffer)) alt (not (= alt id)) (memv alt (buffer-list)))
+             (go-to-buffer! alt))
+           (buffer-kill! id)
+           (when (equal? *alternate-buffer* id) (set! *alternate-buffer* #f))
+           (set! *jumps* (filter (lambda (j) (not (= (jump-buffer j) id))) *jumps*))
+           (set! *jump-index* (length *jumps*))
+           (normal-clamp!))]))))
+
+(define-key! 'normal "C-^"
+  (lambda (count)
+    (if (and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
+        (go-to-buffer! *alternate-buffer*)
+        (set-status! "no alternate file"))))
+(define-key! 'normal "C-6" (lookup-key 'normal "C-^"))
+
+;; Writes every modified buffer that has a file. Returns #t if all went.
+(define (write-all!)
+  (let ([ok #t])
+    (for-each (lambda (id)
+                (with-buffer id
+                  (lambda ()
+                    (when (and (buffer-modified?) (buffer-path))
+                      (unless (save-buffer!) (set! ok #f))))))
+              (buffer-list))
+    ok))
 
 ;;; Line commands: :m :t :> :< :j :pu :k :p :sort :normal :g
 

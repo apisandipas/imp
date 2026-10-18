@@ -13,6 +13,8 @@ use ropey::Rope;
 pub struct Buffer {
     text: Rope,
     path: Option<PathBuf>,
+    /// Name of a buffer with no file, such as "*messages*".
+    name: Option<String>,
     modified: bool,
     // Rope clones share structure, so a snapshot is cheap.
     undo: Vec<Rope>,
@@ -66,6 +68,41 @@ impl Buffer {
 
     pub fn set_path(&mut self, path: Option<PathBuf>) {
         self.path = path;
+    }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    /// The name to show: the file's path, the buffer's own name, or
+    /// "[No Name]".
+    pub fn display_name(&self) -> String {
+        match (&self.path, &self.name) {
+            (Some(path), _) => path.display().to_string(),
+            (None, Some(name)) => name.clone(),
+            (None, None) => "[No Name]".to_string(),
+        }
+    }
+
+    /// Reads the file again, discarding changes. Undo history is kept, so
+    /// the reload itself can be undone.
+    pub fn reload(&mut self) -> io::Result<()> {
+        let path = self
+            .path
+            .clone()
+            .ok_or_else(|| io::Error::other("buffer has no file name"))?;
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e),
+        };
+        self.undo_boundary();
+        let len = self.len();
+        self.text.remove(0..len);
+        self.text.insert(0, &text);
+        self.dirty = true;
+        self.modified = false;
+        Ok(())
     }
 
     pub fn path(&self) -> Option<&Path> {

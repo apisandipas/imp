@@ -138,10 +138,7 @@ fn push(row: &mut Row, text: &str, style: Style) {
 }
 
 fn status_line(e: &Editor, line: usize, col: usize, width: usize) -> Row {
-    let name = match e.buffer.path() {
-        Some(path) => path.display().to_string(),
-        None => "[scratch]".to_string(),
-    };
+    let name = e.buffer.display_name();
     let modified = if e.buffer.is_modified() { " [+]" } else { "" };
     let left = format!(" {} | {name}{modified} | {}", e.mode_name, e.status);
     let right = format!("{}:{} ", line + 1, col + 1);

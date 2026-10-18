@@ -22,6 +22,35 @@
 (define (lookup-key mode key)
   (hash-try-get (keymap mode) key))
 
+;;; Hooks
+;;;
+;;; A hook is a named list of procedures that run when something happens:
+;;; (add-hook! 'after-save (lambda () ...)). An error in one hook is shown
+;;; and the others still run. Hooks run by the editor: after-change,
+;;; before-save, after-save, post-command, insert-enter, insert-leave,
+;;; mode-change, buffer-enter, buffer-open, option-change.
+
+(define *hooks* (hash))
+
+(define (hook-procs name) (or (hash-try-get *hooks* name) '()))
+
+(define (add-hook! name proc)
+  (unless (memq proc (hook-procs name))
+    (set! *hooks* (hash-insert *hooks* name (append (hook-procs name) (list proc))))))
+
+(define (remove-hook! name proc)
+  (set! *hooks* (hash-insert *hooks* name (filter (lambda (p) (not (eq? p proc))) (hook-procs name)))))
+
+;; Runs hook `name`, passing `args` to each procedure.
+(define (run-hooks name . args)
+  (for-each (lambda (proc)
+              (with-handler
+               (lambda (e)
+                 (set-status! (string-append "error in " (symbol->string name) " hook: "
+                                             (to-string (error-object-message e)))))
+               (apply proc args)))
+            (hook-procs name)))
+
 ;;; Options
 ;;;
 ;;; Named settings, read with (option 'name) and changed with set-option!
@@ -49,7 +78,8 @@
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
     (set! *options* (hash-insert *options* name value))
     (let ([watch (hash-try-get *option-watchers* name)])
-      (when watch (watch value)))))
+      (when watch (watch value)))
+    (run-hooks 'option-change name value)))
 
 (define (watch-option! name proc)
   (set! *option-watchers* (hash-insert *option-watchers* name proc))
@@ -82,6 +112,10 @@
 ;; Layers draw in the order they are first used, later over earlier, so
 ;; declare them here in the order they should stack.
 (for-each highlight-clear! '("syntax" "search" "visual"))
+
+;;; Environment
+
+(define (home-dir) (or (getenv "HOME") "/"))
 
 ;;; Buffer helpers built from the primitives
 

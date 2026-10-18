@@ -5,14 +5,21 @@
 //! (LSP, file watching) will post messages to that loop instead.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
 use imp_core::{Buffer, CursorShape, Style};
 use regex::Regex;
 
 #[derive(Debug, Default)]
 pub struct Editor {
+    /// The current buffer. Every buffer primitive acts on this one; other
+    /// buffers wait in `parked` until switched to.
     pub buffer: Buffer,
+    /// Id of the current buffer.
+    pub current: usize,
+    pub parked: BTreeMap<usize, Parked>,
+    pub next_id: usize,
     /// Cursor as a char offset into the buffer.
     pub cursor: usize,
     pub mode_name: String,
@@ -37,6 +44,14 @@ pub struct Editor {
     pub layers: Vec<Layer>,
 }
 
+/// A buffer that isn't current, with where its cursor and window were.
+#[derive(Debug)]
+pub struct Parked {
+    pub buffer: Buffer,
+    pub cursor: usize,
+    pub scroll: usize,
+}
+
 /// A named set of highlighted ranges, such as the visual selection or the
 /// search matches. Scheme replaces a layer's ranges as a whole.
 #[derive(Debug, Default)]
@@ -57,6 +72,83 @@ pub struct Highlight {
 }
 
 impl Editor {
+    /// Ids of all buffers, in the order they were made.
+    pub fn buffer_ids(&self) -> Vec<usize> {
+        let mut ids: Vec<usize> = self.parked.keys().copied().collect();
+        ids.push(self.current);
+        ids.sort_unstable();
+        ids
+    }
+
+    pub fn buffer_by_id(&self, id: usize) -> Option<&Buffer> {
+        if id == self.current {
+            Some(&self.buffer)
+        } else {
+            self.parked.get(&id).map(|p| &p.buffer)
+        }
+    }
+
+    /// Makes buffer `id` current. Returns false if there is no such buffer.
+    pub fn switch_to(&mut self, id: usize) -> bool {
+        if id == self.current {
+            return true;
+        }
+        let Some(next) = self.parked.remove(&id) else {
+            return false;
+        };
+        let old = Parked {
+            buffer: std::mem::replace(&mut self.buffer, next.buffer),
+            cursor: self.cursor,
+            scroll: self.scroll,
+        };
+        self.parked.insert(self.current, old);
+        self.current = id;
+        self.cursor = next.cursor.min(self.buffer.len());
+        self.scroll = next.scroll;
+        true
+    }
+
+    /// Adds a buffer (not made current) and returns its id.
+    pub fn add_buffer(&mut self, buffer: Buffer) -> usize {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.parked.insert(
+            id,
+            Parked {
+                buffer,
+                cursor: 0,
+                scroll: 0,
+            },
+        );
+        id
+    }
+
+    /// The buffer visiting `path`, if one is open.
+    pub fn find_file_buffer(&self, path: &Path) -> Option<usize> {
+        let wanted = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.buffer_ids().into_iter().find(|&id| {
+            self.buffer_by_id(id)
+                .and_then(|b| b.path())
+                .is_some_and(|p| {
+                    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()) == wanted
+                })
+        })
+    }
+
+    /// Removes buffer `id`. Removing the current buffer switches to
+    /// another one, or to a new empty buffer if it was the last.
+    pub fn kill_buffer(&mut self, id: usize) -> bool {
+        if id != self.current {
+            return self.parked.remove(&id).is_some();
+        }
+        let next = match self.parked.keys().next() {
+            Some(&next) => next,
+            None => self.add_buffer(Buffer::default()),
+        };
+        self.switch_to(next);
+        self.parked.remove(&id);
+        true
+    }
     /// Rows available for buffer text: everything but the status line.
     pub fn text_rows(&self) -> usize {
         self.height.saturating_sub(1).max(1) as usize

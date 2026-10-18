@@ -123,6 +123,12 @@ impl Server {
         }
     }
 
+    /// Adds another buffer, as for `imp a.txt b.txt`. The first buffer
+    /// stays current.
+    pub fn add_buffer(&mut self, buffer: Buffer) {
+        editor::with(|e| e.add_buffer(buffer));
+    }
+
     pub fn frame(&mut self) -> Frame {
         editor::with(render::frame)
     }
@@ -159,12 +165,16 @@ pub fn user_config_path() -> Option<PathBuf> {
 /// on a thread in the same process; a socket transport can replace the
 /// channels later without touching anything else.
 pub fn run(
-    buffer: Buffer,
+    buffers: Vec<Buffer>,
     options: Options,
     from_client: Receiver<ClientMsg>,
     to_client: Sender<ServerMsg>,
 ) -> Result<(), String> {
-    let mut server = Server::new(buffer, options)?;
+    let mut buffers = buffers.into_iter();
+    let mut server = Server::new(buffers.next().unwrap_or_default(), options)?;
+    for buffer in buffers {
+        server.add_buffer(buffer);
+    }
     if to_client.send(ServerMsg::Frame(server.frame())).is_err() {
         return Ok(());
     }
