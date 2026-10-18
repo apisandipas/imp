@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/imp-core", "crates/imp-server", "crates/imp"]
+# Built on its own, for wasm32-unknown-unknown.
+exclude = ["examples/wasm-plugin"]
 
 [workspace.package]
 version = "0.1.0"
@@ -24,6 +26,7 @@ tree-sitter-typescript = "0.23"
 tree-sitter-javascript = "0.25"
 tree-sitter-nix = "0.3"
 tree-sitter-md = "0.5"
+wasmtime = { version = "38", default-features = false, features = ["cranelift", "runtime", "std", "wat"] }
 
 # Steel's prelude takes ~1s to load in a debug build, and every test starts a
 # server. Optimizing dependencies (not our own crates) keeps tests fast while

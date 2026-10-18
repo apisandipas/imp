@@ -1,0 +1,14 @@
+# An example WASM plugin for imp (runtime/wasm.scm). Build it with
+#   cargo build --release --target wasm32-unknown-unknown
+# and load target/wasm32-unknown-unknown/release/case.wasm.
+[package]
+name = "case"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"
+lto = true

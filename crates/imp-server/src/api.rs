@@ -900,4 +900,6 @@ pub fn register(engine: &mut Engine) {
             })
         },
     );
+
+    crate::wasm::register(engine);
 }

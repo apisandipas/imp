@@ -11,3 +11,7 @@ path = "src/main.rs"
 imp-core.workspace = true
 imp-server.workspace = true
 crossterm.workspace = true
+
+[features]
+# Phase 5 prototypes (docs/design/phase-5.md).
+wasm = ["imp-server/wasm"]

@@ -4,7 +4,11 @@ cd "$(dirname "$0")/.."
 nix develop -c bash -c '
   out=$(cargo test -q 2>&1); t=$?
   echo "$out" | grep -E "test result|FAILED|panicked|^error"
-  c=$(cargo clippy -q --all-targets 2>&1); echo "$c" | tail -30
+  # The Phase 5 prototypes, behind features (docs/design/phase-5.md).
+  out=$(cargo test -q -p imp-server --all-features 2>&1) || t=1
+  echo "$out" | grep -E "FAILED|panicked|^error"
+  c=$(cargo clippy -q --all-targets 2>&1; cargo clippy -q --all-targets --all-features 2>&1)
+  echo "$c" | tail -30
   cargo fmt --check >/dev/null 2>&1; f=$?
   [ $f -eq 0 ] && echo FMT-OK || echo FMT-FAIL
   [ $t -eq 0 ] && [ -z "$c" ] && [ $f -eq 0 ]

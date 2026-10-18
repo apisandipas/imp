@@ -20,6 +20,7 @@ mod scan;
 mod search;
 mod shell;
 mod syntax;
+mod wasm;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -56,6 +57,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("dap.scm", include_str!("../../../runtime/dap.scm")),
     ("mouse.scm", include_str!("../../../runtime/mouse.scm")),
     ("mcp.scm", include_str!("../../../runtime/mcp.scm")),
+    ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
 ];
 
