@@ -119,14 +119,21 @@ impl Server {
         }
     }
 
-    /// Runs Scheme source in the editor's VM and returns the printed value of
-    /// the last expression.
+    /// Runs Scheme source in the editor and returns the printed value of the
+    /// last expression. It goes through the runtime's `imp-eval-string`, as
+    /// `:eval` does, so a `define` replaces an existing function everywhere.
     pub fn eval(&mut self, source: &str) -> Result<String, String> {
-        let values = self
+        let value = self
             .engine
-            .run(source.to_string())
+            .call_function_by_name_with_args(
+                "imp-eval-string",
+                vec![SteelVal::StringV(source.to_string().into())],
+            )
             .map_err(|e| e.to_string())?;
-        Ok(values.last().map(|v| v.to_string()).unwrap_or_default())
+        Ok(match value {
+            SteelVal::Void => String::new(),
+            v => v.to_string(),
+        })
     }
 
     /// Feeds each key in turn. Convenient for tests.

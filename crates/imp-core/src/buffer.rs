@@ -25,6 +25,9 @@ pub struct Buffer {
     /// Named positions that move with the text around them. Vim's marks,
     /// the jump list and anything else Scheme wants kept in place.
     marks: HashMap<String, usize>,
+    /// Goes up with every change (and undo/redo), so watchers can tell
+    /// whether the text changed without comparing it.
+    version: u64,
 }
 
 impl Buffer {
@@ -100,6 +103,7 @@ impl Buffer {
         let len = self.len();
         self.text.remove(0..len);
         self.text.insert(0, &text);
+        self.version += 1;
         self.dirty = true;
         self.modified = false;
         Ok(())
@@ -112,6 +116,10 @@ impl Buffer {
     /// Marks the text as matching what is on disk, as after a save.
     pub fn set_unmodified(&mut self) {
         self.modified = false;
+    }
+
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     pub fn is_modified(&self) -> bool {
@@ -215,6 +223,7 @@ impl Buffer {
         }
         let offset = offset.min(self.len());
         self.text.insert(offset, text);
+        self.version += 1;
         let n = text.chars().count();
         for m in self.marks.values_mut() {
             if *m >= offset {
@@ -233,6 +242,9 @@ impl Buffer {
         let start = start.min(end);
         let removed = self.text.slice(start..end).to_string();
         self.text.remove(start..end);
+        if start < end {
+            self.version += 1;
+        }
         for m in self.marks.values_mut() {
             if *m >= end {
                 *m -= end - start;
@@ -298,6 +310,7 @@ impl Buffer {
             };
         }
         let at = first_difference(&previous, &self.text);
+        self.version += 1;
         self.redo.push(std::mem::replace(&mut self.text, previous));
         self.modified = true;
         self.dirty = false;
@@ -307,6 +320,7 @@ impl Buffer {
     pub fn redo(&mut self) -> Option<usize> {
         let next = self.redo.pop()?;
         let at = first_difference(&next, &self.text);
+        self.version += 1;
         self.undo.push(std::mem::replace(&mut self.text, next));
         self.modified = true;
         self.dirty = false;

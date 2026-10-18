@@ -70,7 +70,14 @@
 (define *count-given* #f)
 
 (define (set-mode! mode)
-  (set! *mode* mode)
+  (let ([old *mode*])
+    (set! *mode* mode)
+    (unless (eq? old mode)
+      (let ([typing? (lambda (m) (memq m '(insert replace)))])
+        (cond [(and (typing? mode) (not (typing? old))) (run-hooks 'insert-enter)]
+              [(and (typing? old) (not (typing? mode))) (run-hooks 'insert-leave)]
+              [else #t]))
+      (run-hooks 'mode-change old mode)))
   (set-cursor-shape! (cond [(eq? mode 'insert) "bar"] [(eq? mode 'replace) "underline"] [else "block"]))
   (show-mode!))
 
@@ -3261,9 +3268,21 @@
   (set-mode! 'normal)
   (normal-clamp!))
 
+(define *last-version* #f)  ; buffer and version after the last key
+
 (define (imp-handle-key key)
   (when (and *recording* (not (stops-recording? key)))
     (set! *recorded-keys* (cons key *recorded-keys*)))
+  (handle-top-level-key! key)
+  ;; after-change runs once per key that changed the current buffer;
+  ;; post-command after every key.
+  (let ([now (cons (current-buffer) (buffer-version))])
+    (when (and *last-version* (= (car now) (car *last-version*)) (not (= (cdr now) (cdr *last-version*))))
+      (run-hooks 'after-change))
+    (set! *last-version* now))
+  (run-hooks 'post-command))
+
+(define (handle-top-level-key! key)
   (if *popup-shown*
       ;; Any key closes a popup; <ret>, <esc> and space only do that, other
       ;; keys also run, as at Vim's "Press ENTER" prompt.

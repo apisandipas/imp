@@ -109,3 +109,22 @@ fn named_commands_bound_to_keys_follow_redefinition() {
     type_keys(&mut s, "Q");
     assert_eq!(s.text(), "bax\n");
 }
+
+#[test]
+fn forward_references_work_within_one_evaluation() {
+    let mut s = server("");
+    assert_eq!(
+        s.eval("(define (a1) (b1)) (define (b1) 7) (a1)").unwrap(),
+        "7"
+    );
+}
+
+#[test]
+fn user_functions_stay_redefinable() {
+    let mut s = server("");
+    // Defined together, so Steel would otherwise compile call-k's call to
+    // k directly.
+    s.eval("(define (k) 1) (define (call-k) (k))").unwrap();
+    s.eval("(define (k) 2)").unwrap();
+    assert_eq!(s.eval("(call-k)").unwrap(), "2");
+}

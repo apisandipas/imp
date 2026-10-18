@@ -67,15 +67,30 @@
 
 ;;; Evaluating code while the editor runs
 ;;;
-;;; In Steel, define-ing a name that already exists makes a new binding
-;;; that code compiled earlier never sees; set! changes the binding everyone
-;;; uses. So user code (init.scm, :eval, eval-region, packages) is evaluated
-;;; through imp-eval-form, which turns a define of an existing name into a
-;;; set!. That is what lets init.scm or a live :eval redefine any function
-;;; in the runtime and have the whole editor use the new one.
+;;; Two things about Steel shape this. Re-define-ing a name that already
+;;; exists makes a new binding that code compiled earlier never sees, while
+;;; set! changes the binding everyone uses. And within one compilation unit,
+;;; a call to a function that is never set! there is compiled as a direct
+;;; call that later redefinitions can't reach.
+;;;
+;;; So user code (init.scm, :eval, eval-region, packages) is evaluated as
+;;; one unit, (begin ...), in which a define of an existing name becomes a
+;;; set!, and every new definition is followed by (set! name name) to keep
+;;; it redefinable. That is what lets init.scm or a live :eval replace any
+;;; function and have the whole editor use the new one, while forward
+;;; references inside a file still work. The runtime's own files get the
+;;; same markers from the server (with_mutable_globals in lib.rs).
 
 (define (bound? name)
   (with-handler (lambda (e) #f) (begin (eval name) #t)))
+
+;; The name a top-level define form defines, or #f.
+(define (define-target form)
+  (and (pair? form) (eq? (car form) 'define) (pair? (cdr form))
+       (let ([target (cadr form)])
+         (cond [(symbol? target) target]
+               [(and (pair? target) (symbol? (car target))) (car target)]
+               [else #f]))))
 
 ;; `form` with a top-level define of an existing name made into a set!.
 ;; (begin ...) forms are rewritten inside, as at top level.
@@ -83,30 +98,48 @@
   (cond
     [(not (pair? form)) form]
     [(eq? (car form) 'begin) (cons 'begin (map redefinition (cdr form)))]
-    [(and (eq? (car form) 'define) (pair? (cdr form)))
+    [(and (define-target form) (bound? (define-target form)))
      (let ([target (cadr form)])
-       (cond
-         ;; (define (name . params) body ...)
-         [(and (pair? target) (symbol? (car target)) (bound? (car target)))
-          (list 'set! (car target) (cons 'lambda (cons (cdr target) (cddr form))))]
-         ;; (define name value)
-         [(and (symbol? target) (bound? target) (pair? (cddr form)))
-          (list 'set! target (caddr form))]
-         [else form]))]
+       (if (pair? target)
+           ;; (define (name . params) body ...)
+           (list 'set! (car target) (cons 'lambda (cons (cdr target) (cddr form))))
+           ;; (define name value)
+           (list 'set! target (if (pair? (cddr form)) (caddr form) #f))))]
     [else form]))
 
-(define (imp-eval-form form) (eval (redefinition form)))
+;; The forms to evaluate for `form`: itself (rewritten), and for a new
+;; definition a set! that keeps it redefinable.
+(define (unit-forms form)
+  (let ([rewritten (redefinition form)])
+    (if (define-target rewritten)
+        (list rewritten (list 'set! (define-target rewritten) (define-target rewritten)))
+        (list rewritten))))
 
-;; Evaluates every form in `text`, returning the last value.
+(define (imp-eval-form form) (imp-eval-forms (list form)))
+
+;; Evaluates `forms` as one unit, returning the last one's value. Macro
+;; definitions go first, each on its own: inside a (begin ...) a macro
+;; isn't defined yet for the forms after it.
+(define (imp-eval-forms forms)
+  (let* ([macro? (lambda (f) (and (pair? f) (eq? (car f) 'define-syntax)))]
+         [macros (filter macro? forms)]
+         [others (filter (lambda (f) (not (macro? f))) forms)])
+    (for-each eval macros)
+    (if (null? others)
+        void
+        ;; A definition's own value is void, so a marker after the last
+        ;; form doesn't change the result that matters.
+        (eval (cons 'begin (apply append (map unit-forms others)))))))
+
+;; Evaluates every form in `text` as one unit, returning the last value.
 (define (imp-eval-string text)
   (let ([problem (parse-error text)])
     (when problem (error problem)))
   (let ([port (open-input-string text)])
-    (let loop ([form (read port)] [last void])
+    (let loop ([form (read port)] [forms '()])
       (if (eof-object? form)
-          last
-          (let ([value (imp-eval-form form)])
-            (loop (read port) value))))))
+          (imp-eval-forms (reverse forms))
+          (loop (read port) (cons form forms))))))
 
 ;; Loads a Scheme file the same way, and remembers its source so
 ;; describe-function and find-definition can show it.
@@ -143,6 +176,60 @@
                                              (to-string (error-object-message e)))))
                (apply proc args)))
             (hook-procs name)))
+
+;;; Advice
+;;;
+;;; (advice-add! 'name 'before proc) runs proc with the same arguments
+;;; before every call to the function `name`; 'after runs it after; 'around
+;;; calls (proc original arg ...) instead, so it decides whether and how to
+;;; call the original. advice-remove! takes it off again. The function is
+;;; replaced with set!, so every caller sees the advice.
+
+(define *advice* (hash))  ; name -> (original befores afters arounds)
+
+(define (advised name) (hash-try-get *advice* name))
+
+(define (advice-original name) (car (advised name)))
+
+;; Calls `name` with `args` through its advice.
+(define (apply-advised name args)
+  (let* ([a (advised name)] [original (car a)])
+    (for-each (lambda (p) (apply p args)) (cadr a))
+    (let ([result (wrap-call (cadddr a) original args)])
+      (for-each (lambda (p) (apply p args)) (caddr a))
+      result)))
+
+;; Calls `original` through `arounds`, the first added outermost: each gets
+;; a procedure that calls the rest of the chain.
+(define (wrap-call arounds original args)
+  (if (null? arounds)
+      (apply original args)
+      (apply (car arounds) (cons (lambda more (wrap-call (cdr arounds) original more)) args))))
+
+(define (advice-add! name where proc)
+  (unless (advised name)
+    (set! *advice* (hash-insert *advice* name (list (eval name) '() '() '())))
+    (eval (list 'set! name (list 'lambda 'args (list 'apply-advised (list 'quote name) 'args)))))
+  (let* ([a (advised name)]
+         [add (lambda (lst) (if (memq proc lst) lst (append lst (list proc))))]
+         [a (cond [(eq? where 'before) (list (car a) (add (cadr a)) (caddr a) (cadddr a))]
+                  [(eq? where 'after) (list (car a) (cadr a) (add (caddr a)) (cadddr a))]
+                  [(eq? where 'around) (list (car a) (cadr a) (caddr a) (add (cadddr a)))]
+                  [else (error (string-append "advice must be before, after or around, not "
+                                              (symbol->string where)))])])
+    (set! *advice* (hash-insert *advice* name a))))
+
+(define (advice-remove! name proc)
+  (let ([a (advised name)])
+    (when a
+      (let* ([drop (lambda (lst) (filter (lambda (p) (not (eq? p proc))) lst))]
+             [a (list (car a) (drop (cadr a)) (drop (caddr a)) (drop (cadddr a)))])
+        (if (and (null? (cadr a)) (null? (caddr a)) (null? (cadddr a)))
+            ;; No advice left: put the original back.
+            (begin
+              (eval (list 'set! name (list 'advice-original (list 'quote name))))
+              (set! *advice* (hash-remove *advice* name)))
+            (set! *advice* (hash-insert *advice* name a)))))))
 
 ;;; Options
 ;;;

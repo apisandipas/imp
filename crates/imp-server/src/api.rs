@@ -55,6 +55,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-path", || {
         editor::with(|e| e.buffer.path().map(|p| p.display().to_string()))
     });
+    engine.register_fn("buffer-version", || {
+        editor::with(|e| e.buffer.version() as isize)
+    });
     engine.register_fn("buffer-modified?", || {
         editor::with(|e| e.buffer.is_modified())
     });
