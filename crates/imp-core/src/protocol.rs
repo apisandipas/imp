@@ -18,8 +18,32 @@ pub enum ClientMsg {
 /// Server -> client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerMsg {
+    /// A whole screen: the first one, and after a resize.
     Frame(Frame),
+    /// The rows that changed since the last frame sent.
+    Patch(Patch),
     Quit,
+}
+
+/// Changes to apply to the last frame: replaced rows, by index, and where
+/// the cursor is now.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Patch {
+    pub rows: Vec<(u16, Row)>,
+    pub cursor: (u16, u16),
+    pub cursor_shape: CursorShape,
+}
+
+impl Patch {
+    pub fn apply(&self, frame: &mut Frame) {
+        for (i, row) in &self.rows {
+            if let Some(slot) = frame.rows.get_mut(*i as usize) {
+                *slot = row.clone();
+            }
+        }
+        frame.cursor = self.cursor;
+        frame.cursor_shape = self.cursor_shape;
+    }
 }
 
 /// A full screen as a grid of rows of styled text. The last row is the status
@@ -142,6 +166,27 @@ impl Color {
 }
 
 impl Frame {
+    /// What changed from `self` to `next`, or `None` if the screen size
+    /// changed and the whole frame should be sent.
+    pub fn diff(&self, next: &Frame) -> Option<Patch> {
+        if self.rows.len() != next.rows.len() {
+            return None;
+        }
+        let rows = self
+            .rows
+            .iter()
+            .zip(&next.rows)
+            .enumerate()
+            .filter(|(_, (old, new))| old != new)
+            .map(|(i, (_, new))| (i as u16, new.clone()))
+            .collect();
+        Some(Patch {
+            rows,
+            cursor: next.cursor,
+            cursor_shape: next.cursor_shape,
+        })
+    }
+
     /// The text of each row without styles. Handy in tests.
     pub fn text_rows(&self) -> Vec<String> {
         self.rows
@@ -154,6 +199,23 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diffs_apply() {
+        let a = Frame {
+            rows: vec![vec![Span::new("a", Style::default())], vec![]],
+            ..Frame::default()
+        };
+        let mut b = a.clone();
+        b.rows[1] = vec![Span::new("b", Style::default())];
+        b.cursor = (1, 1);
+        let patch = a.diff(&b).unwrap();
+        assert_eq!(patch.rows.len(), 1);
+        let mut c = a.clone();
+        patch.apply(&mut c);
+        assert_eq!(c, b);
+        assert!(a.diff(&Frame::default()).is_none());
+    }
 
     #[test]
     fn parses_face_specs() {

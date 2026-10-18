@@ -238,7 +238,8 @@ pub fn run(
     for buffer in buffers {
         server.add_buffer(buffer);
     }
-    if to_client.send(ServerMsg::Frame(server.frame())).is_err() {
+    let mut last = server.frame();
+    if to_client.send(ServerMsg::Frame(last.clone())).is_err() {
         return Ok(());
     }
     for msg in from_client {
@@ -247,7 +248,14 @@ pub fn run(
             let _ = to_client.send(ServerMsg::Quit);
             break;
         }
-        if to_client.send(ServerMsg::Frame(server.frame())).is_err() {
+        let next = server.frame();
+        // Only what changed, unless the screen size did.
+        let update = match last.diff(&next) {
+            Some(patch) => ServerMsg::Patch(patch),
+            None => ServerMsg::Frame(next.clone()),
+        };
+        last = next;
+        if to_client.send(update).is_err() {
             break;
         }
     }
