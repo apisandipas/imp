@@ -11,7 +11,9 @@
 ;;; State
 
 (define *mode* 'normal)        ; normal | insert | cmdline | visual
-(define *visual* #f)           ; char | line while in visual mode
+(define *visual* #f)           ; char | line | block while in visual mode
+(define *block-eol* #f)        ; $ in block mode: every line to its end
+(define *block-insert* #f)     ; (first last col) while typing I/A/c in a block
 (define *visual-anchor* 0)     ; the end of the selection the cursor isn't on
 (define *last-visual* #f)      ; (kind anchor cursor) for gv
 (define *count* "")            ; digits typed so far
@@ -78,7 +80,8 @@
       [(eq? *mode* 'insert) "INSERT"]
       [(eq? *mode* 'replace) "REPLACE"]
       [(eq? *mode* 'cmdline) "COMMAND"]
-      [(eq? *mode* 'visual) (if (eq? *visual* 'line) "VISUAL LINE" "VISUAL")]
+      [(eq? *mode* 'visual)
+       (cond [(eq? *visual* 'line) "VISUAL LINE"] [(eq? *visual* 'block) "VISUAL BLOCK"] [else "VISUAL"])]
       [else "NORMAL"])
     (if *recording* (string-append " recording @" (string *recording*)) ""))))
 
@@ -430,7 +433,7 @@
 ;; Puts `text` in register `c`. `kind` is 'yank or 'delete, which decides
 ;; where an unnamed write also goes.
 (define (register-set! c text linewise? kind)
-  (let* ([text (if (and linewise? (not (ends-with? text "\n"))) (string-append text "\n") text)]
+  (let* ([text (if (and (eq? linewise? #t) (not (ends-with? text "\n"))) (string-append text "\n") text)]
          [value (list text linewise?)])
     (cond
       [(equal? c #\_) #t]
@@ -1019,7 +1022,9 @@
 ;; Puts text after or before the cursor (whole lines go below or above its
 ;; line). The cursor ends on the last char put, or with gp just after it.
 (define (put-text! text linewise? after? cursor-after?)
-  (put-text-at! text linewise? after? cursor-after?)
+  (if (eq? linewise? 'block)
+      (put-block! text after?)
+      (put-text-at! text linewise? after? cursor-after?))
   (mark-set! "]" (max 0 (- (cursor) (if cursor-after? 1 0)))))
 
 (define (put-text-at! text linewise? after? cursor-after?)
@@ -1092,6 +1097,7 @@
 ;;; act on it and return to normal mode.
 
 (define (enter-visual! kind anchor)
+  (set! *block-eol* #f)
   (set! *visual* kind)
   (set! *visual-anchor* anchor)
   (set-mode! 'visual))
@@ -1116,8 +1122,144 @@
   (highlight-clear! "visual")
   ;; The selection stays visible while a search prompt is open from it.
   (when (or (eq? *mode* 'visual) (and (eq? *mode* 'cmdline) *visual* (eq? *cmdline-return* 'visual)))
-    (let ([r (visual-range)])
-      (highlight-add! "visual" (car r) (cadr r) "visual"))))
+    (if (eq? *visual* 'block)
+        (for-each (lambda (seg) (highlight-add! "visual" (car seg) (max (cadr seg) (+ (car seg) 1)) "visual"))
+                  (block-segments))
+        (let ([r (visual-range)])
+          (highlight-add! "visual" (car r) (cadr r) "visual")))))
+
+;;; Block selections
+;;;
+;;; A block is the columns between the anchor's and the cursor's, on every
+;;; line between them (to each line's end after $). Columns are chars; a
+;;; tab inside a block counts as one column for now.
+
+;; (first-line last-line left-col right-col), right inclusive.
+(define (block-bounds)
+  (let ([a *visual-anchor*] [c (cursor)])
+    (list (min (offset->line a) (offset->line c))
+          (max (offset->line a) (offset->line c))
+          (min (offset->col a) (offset->col c))
+          (max (offset->col a) (offset->col c)))))
+
+;; The selected part of each line, as (start end) offsets, top to bottom.
+(define (block-segments)
+  (let* ([b (block-bounds)] [left (caddr b)] [right (cadddr b)])
+    (map (lambda (l)
+           (list (line-col->offset l left)
+                 (if *block-eol* (line-end l) (line-col->offset l (+ right 1)))))
+         (range (car b) (+ (cadr b) 1)))))
+
+(define (block-text segments)
+  (string-join (map (lambda (seg) (buffer-substring (car seg) (cadr seg))) segments) "\n"))
+
+;; Deletes the segments, bottom first so offsets above stay right.
+(define (delete-segments! segments)
+  (for-each (lambda (seg) (buffer-delete! (car seg) (cadr seg))) (reverse segments)))
+
+;; Puts a block's lines at the cursor column (after it with p), one per
+;; line downward, adding lines and padding short ones as needed.
+(define (put-block! text after?)
+  (let* ([lines (split-lines text)]
+         [first (current-line)]
+         [col (if (and after? (> (buffer-line-length first) 0)) (+ (current-col) 1) (current-col))])
+    (let loop ([ls lines] [l first])
+      (unless (null? ls)
+        (when (> l (last-line))
+          (buffer-insert! (buffer-length) (if (ends-with? (buffer-substring 0 (buffer-length)) "\n") "\n" "\n\n")))
+        (let ([len (buffer-line-length l)])
+          (when (< len col) (buffer-insert! (line-end l) (make-string (- col len) #\space)))
+          (buffer-insert! (line-col->offset l col) (car ls)))
+        (loop (cdr ls) (+ l 1))))
+    (mark-set! "[" (line-col->offset first col))
+    (set-cursor! (line-col->offset first col))))
+
+;; d y c and the rest on a block. d and y keep the text as a block register.
+(define (block-operator! op-key to-eol?)
+  (when to-eol? (set! *block-eol* #t))
+  (let* ([segments (block-segments)] [b (block-bounds)]
+         [top-left (line-col->offset (car b) (caddr b))])
+    (leave-visual!)
+    (begin-change!)
+    (cond
+      [(equal? op-key "y")
+       (register-set! (current-register) (block-text segments) 'block 'yank)
+       (set-cursor! top-left)]
+      [(equal? op-key "d")
+       (register-set! (current-register) (block-text segments) 'block 'delete)
+       (delete-segments! segments)
+       (set-cursor! top-left)]
+      [(equal? op-key "c")
+       (register-set! (current-register) (block-text segments) 'block 'delete)
+       (delete-segments! segments)
+       (start-block-insert! (car b) (cadr b) (caddr b) top-left)]
+      [else
+       (for-each (lambda (seg) ((hash-ref *operators* op-key) (car seg) (cadr seg) #f))
+                 (reverse segments))
+       (set-cursor! top-left)])
+    (set! *block-eol* #f)))
+
+;; I, A and c on a block: type on the first line; on <esc> the same text
+;; goes into every other line of the block.
+(define (start-block-insert! first last col at)
+  (set! *block-insert* (list first last col))
+  (set-cursor! at)
+  (set-mode! 'insert)
+  (set! *insert-start* at))
+
+(define (finish-block-insert!)
+  (let* ([b *block-insert*] [first (car b)] [last (cadr b)] [col (caddr b)])
+    (set! *block-insert* #f)
+    (when (and (= (current-line) first) (>= (current-col) (if (eq? col 'eol) 0 col)))
+      (let* ([start (if (eq? col 'eol) *insert-start* (line-col->offset first col))]
+             [text (buffer-substring start (cursor))])
+        (unless (or (equal? text "") (string-contains? text "\n"))
+          (let loop ([l (+ first 1)])
+            (when (<= l last)
+              (let ([len (buffer-line-length l)])
+                (cond
+                  [(eq? col 'eol) (buffer-insert! (line-end l) text)]
+                  [(>= len col) (buffer-insert! (line-col->offset l col) text)]
+                  ;; A short line gets text only when appending (A pads).
+                  [(caddr (cdr b))
+                   (buffer-insert! (line-end l) (string-append (make-string (- col len) #\space) text))]
+                  [else #t]))
+              (loop (+ l 1)))))))))
+
+(define (block-insert-command append?)
+  (lambda (count)
+    (if (not (eq? *visual* 'block))
+        ;; In other visual modes I and A insert at the selection's ends.
+        (let ([r (visual-range)])
+          (leave-visual!)
+          (begin-change!)
+          (set-cursor! (if append? (cadr r) (car r)))
+          (set-mode! 'insert)
+          (set! *insert-start* (cursor)))
+        (let* ([b (block-bounds)] [first (car b)] [last (cadr b)]
+               [col (cond [(not append?) (caddr b)] [*block-eol* 'eol] [else (+ (cadddr b) 1)])])
+          (leave-visual!)
+          (begin-change!)
+          (set! *block-eol* #f)
+          (start-block-insert! first last col
+                               (if (eq? col 'eol) (line-end first) (min (line-col->offset first col) (line-end first))))
+          (set! *block-insert* (list first last col append?))
+          ;; Appending past a short first line pads it, as Vim does.
+          (when (and (not (eq? col 'eol)) (< (buffer-line-length first) col))
+            (buffer-insert! (line-end first) (make-string (- col (buffer-line-length first)) #\space))
+            (set-cursor! (line-col->offset first col)))))))
+
+(define-key! 'visual "I" (block-insert-command #f))
+(define-key! 'visual "A" (block-insert-command #t))
+
+;; O in a block goes to the other corner on the same line.
+(define-key! 'visual "O"
+  (lambda (count)
+    (if (eq? *visual* 'block)
+        (let ([a *visual-anchor*] [c (cursor)])
+          (set! *visual-anchor* (line-col->offset (offset->line a) (offset->col c)))
+          (set-cursor! (line-col->offset (offset->line c) (offset->col a))))
+        ((lookup-key 'visual "o") count))))
 
 ;; v, V: start a selection, or switch kind, or leave if already that kind.
 (define (visual-command! kind)
@@ -1129,6 +1271,10 @@
 
 (define-key! 'normal "v" (visual-command! 'char))
 (define-key! 'normal "V" (visual-command! 'line))
+(define-key! 'normal "C-v" (visual-command! 'block))
+(define-key! 'normal "C-q" (visual-command! 'block))
+(define-key! 'visual "C-v" (visual-command! 'block))
+(define-key! 'visual "C-q" (visual-command! 'block))
 (define-key! 'visual "v" (visual-command! 'char))
 (define-key! 'visual "V" (visual-command! 'line))
 (define-key! 'visual "<esc>" (lambda (count) (leave-visual!)))
@@ -1174,6 +1320,11 @@
         ((hash-ref *operators* op-key) (car r) (cadr r) (caddr r))))))
 
 (define (visual-operator! op-key linewise?)
+  (if (eq? *visual* 'block)
+      (block-operator! op-key linewise?)
+      (char-or-line-operator! op-key linewise?)))
+
+(define (char-or-line-operator! op-key linewise?)
   (let ([range (if linewise?
                    (let ([r (visual-range)])
                      (lines-range (offset->line (car r)) (offset->line (max (car r) (- (cadr r) 1)))))
@@ -1319,13 +1470,17 @@
   (lambda (count ch)
     (if (eq? *mode* 'visual)
         ;; Visual r replaces every selected char but line breaks.
-        (let ([r (visual-range)])
+        (let ([ranges (if (eq? *visual* 'block)
+                          (block-segments)
+                          (let ([r (visual-range)]) (list (list (car r) (cadr r)))))])
           (leave-visual!)
           (begin-change!)
-          (replace-range! (car r) (cadr r)
-                          (map-string (lambda (c) (if (equal? c #\newline) c ch))
-                                      (buffer-substring (car r) (cadr r))))
-          (set-cursor! (car r)))
+          (for-each (lambda (r)
+                      (replace-range! (car r) (cadr r)
+                                      (map-string (lambda (c) (if (equal? c #\newline) c ch))
+                                                  (buffer-substring (car r) (cadr r)))))
+                    ranges)
+          (set-cursor! (car (car ranges))))
         (when (replace-chars! count ch)
           (record-change! (lambda (n) (replace-chars! n ch)) count)))))
 
@@ -1800,6 +1955,10 @@
                    [(not target) (set! *command-failed* #t)]
                    [else
                     (when (jump-motion? key) (record-jump!))
+                    (when (eq? *visual* 'block)
+                      (cond [(equal? key "$") (set! *block-eol* #t)]
+                            [(vertical-motion? key) #t]
+                            [else (set! *block-eol* #f)]))
                     (set-cursor! target)]))
                (set! *count* ""))]
 
@@ -1975,6 +2134,7 @@
      (let ([keys (reverse *insert-keys*)])
        (set! *last-inserted* (keys->text keys))
        (repeat-insert! keys (- *insert-count* 1) *insert-reentry*)
+       (when *block-insert* (finish-block-insert!))
        (leave-insert!)
        (finish-insert-record! keys)
        (set! *insert-count* 1)

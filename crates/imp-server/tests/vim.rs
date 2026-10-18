@@ -1423,3 +1423,68 @@ fn global_command() {
     type_keys(&mut s, ":g/^/m0<ret>");
     assert_eq!(s.text(), "3\n2\n1\n");
 }
+
+#[test]
+fn block_delete_and_yank() {
+    let mut s = server("abcd\nefgh\nijkl\n");
+    s.keys(&["l", "C-v", "j", "l", "d"]);
+    assert_eq!(s.text(), "ad\neh\nijkl\n");
+    // The block pastes back as a block.
+    type_keys(&mut s, "P");
+    assert_eq!(s.text(), "abcd\nefgh\nijkl\n");
+    let mut s = server("ab\ncd\n");
+    s.keys(&["C-v", "j", "y", "$", "p"]);
+    assert_eq!(s.text(), "aba\ncdc\n");
+}
+
+#[test]
+fn block_is_highlighted_per_line() {
+    let mut s = server("abcd\nefgh\n");
+    s.keys(&["l", "C-v", "j", "l"]);
+    let f = s.frame();
+    for row in &f.rows[..2] {
+        let texts: Vec<&str> = row.iter().map(|sp| sp.text.as_str()).collect();
+        assert_eq!(texts.len(), 3, "{texts:?}");
+        assert!(row[1].style.bg.is_some());
+    }
+    assert!(f.text_rows().last().unwrap().contains("VISUAL BLOCK"));
+}
+
+#[test]
+fn block_insert_and_append() {
+    let mut s = server("ab\ncd\nef\n");
+    s.keys(&["l", "C-v", "j", "j"]);
+    type_keys(&mut s, "IX<esc>");
+    assert_eq!(s.text(), "aXb\ncXd\neXf\n");
+    let mut s = server("ab\nc\nef\n");
+    s.keys(&["l", "C-v", "j", "j"]);
+    type_keys(&mut s, "AY<esc>");
+    assert_eq!(s.text(), "abY\nc Y\nefY\n");
+    // $A appends at each line's end.
+    let mut s = server("a\nbcd\n");
+    s.keys(&["C-v", "j", "$"]);
+    type_keys(&mut s, "A;<esc>");
+    assert_eq!(s.text(), "a;\nbcd;\n");
+}
+
+#[test]
+fn block_change_and_replace() {
+    let mut s = server("abc\ndef\n");
+    s.keys(&["C-v", "j", "l"]);
+    type_keys(&mut s, "cZ<esc>");
+    assert_eq!(s.text(), "Zc\nZf\n");
+    let mut s = server("abc\ndef\n");
+    s.keys(&["l", "C-v", "j"]);
+    type_keys(&mut s, "r-");
+    assert_eq!(s.text(), "a-c\nd-f\n");
+    let mut s = server("abc\ndef\n");
+    s.keys(&["l", "C-v", "j", "U"]);
+    assert_eq!(s.text(), "aBc\ndEf\n");
+}
+
+#[test]
+fn block_d_to_line_ends() {
+    let mut s = server("abc\nde\n");
+    s.keys(&["l", "C-v", "j", "D"]);
+    assert_eq!(s.text(), "a\nd\n");
+}
