@@ -158,6 +158,15 @@ impl Background {
     }
 }
 
+impl Drop for Background {
+    /// Jobs (language servers, debuggers) end with the editor.
+    fn drop(&mut self) {
+        for (child, _) in self.jobs.values_mut() {
+            let _ = child.kill();
+        }
+    }
+}
+
 fn spawn_reader(
     id: u64,
     stream: &'static str,

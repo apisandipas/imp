@@ -319,6 +319,14 @@ Conventions:
   a key name (`<esc>`), so send a literal `<` with `s.keys(&["<", "j"])`.
 - Measure with `cargo run --release -p imp-server --example bench` before
   moving anything to Rust.
+- `tools/check.sh` runs tests, clippy and fmt and fails if any fail; gate
+  every commit on it. `tools/parens.py FILE.scm` finds unbalanced brackets
+  (Steel's parse errors don't say where). `tools/drive.py` drives the real
+  binary in a pty (see its docstring).
+- Git: phase branches (`phase-1` ... each on top of the previous) are pushed
+  to origin as work lands; `main` is left alone.
+- Current work and the detailed next steps are at the end of the latest
+  `docs/design/phase-N.md` ("Progress").
 
 ### Steel gotchas found so far
 
@@ -478,7 +486,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 3.8 **File handling**: detect external changes, line endings, encodings,
     backups/autosave.
 
-### Phase 4: IDE features through protocols (next)
+### Phase 4: IDE features through protocols (in progress: 4.1 done, see docs/design/phase-4.md)
 
 4.1 **Tree-sitter**: syntax highlighting (needs 3.3), structural text objects
     (`af`, `if`, `aa`...), indentation, folding.

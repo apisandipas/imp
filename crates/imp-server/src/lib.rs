@@ -13,6 +13,7 @@ mod editor;
 mod events;
 mod files;
 mod fuzzy;
+mod json;
 mod layout;
 mod render;
 mod scan;

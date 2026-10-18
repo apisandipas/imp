@@ -555,6 +555,46 @@ pub fn register(engine: &mut Engine) {
         },
     );
 
+    // JSON and the framing LSP and DAP use (json.rs).
+    engine.register_fn("json-decode", |text: String| {
+        serde_json::from_str::<serde_json::Value>(&text)
+            .map(crate::json::to_steel)
+            .map_err(|e| format!("bad JSON: {e}"))
+    });
+    engine.register_fn("json-encode", |value: SteelVal| {
+        crate::json::from_steel(&value).map(|v| v.to_string())
+    });
+    engine.register_fn("lsp-frame", |body: String| crate::json::frame(&body));
+    // (message rest) for the first whole message in `text`, the message
+    // already decoded from JSON; or #f.
+    engine.register_fn("lsp-take-message", |text: String| {
+        crate::json::take_message(&text).map(|(body, rest)| {
+            let msg = serde_json::from_str::<serde_json::Value>(&body)
+                .map(crate::json::to_steel)
+                .unwrap_or(SteelVal::BoolV(false));
+            vec![msg, SteelVal::StringV(rest.into())]
+        })
+    });
+    engine.register_fn("path->uri", |path: String| crate::json::path_to_uri(&path));
+    engine.register_fn("uri->path", |uri: String| crate::json::uri_to_path(&uri));
+    // The full path of an executable on $PATH, or #f.
+    engine.register_fn("find-executable", |name: String| {
+        if name.contains('/') {
+            return Path::new(&name).is_file().then_some(name);
+        }
+        std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|dir| dir.join(&name))
+                .find(|p| p.is_file())
+                .map(|p| p.display().to_string())
+        })
+    });
+    engine.register_fn("absolute-path", |path: String| {
+        std::path::absolute(&path)
+            .map(|p| p.display().to_string())
+            .unwrap_or(path)
+    });
+
     // Completion: orderless fuzzy matching (fuzzy.rs) and project files.
     engine.register_fn(
         "fuzzy-filter",

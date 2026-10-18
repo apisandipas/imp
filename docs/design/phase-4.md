@@ -71,3 +71,96 @@ decided, the tools are: list buffers, read a buffer or part of it, edit
 command, diagnostics, and evaluate Scheme. Rust provides the socket
 (generic: line-based connections reported as events); the protocol is in
 Scheme.
+
+## Progress (for whoever picks this up)
+
+Done and committed on `phase-4`:
+
+- **4.1 tree-sitter**: `src/syntax.rs`, `runtime/syntax.scm`. Parsing has an
+  8 ms budget per frame; past that it moves to a background thread
+  (`Event::Parsed`), one per buffer at a time. Benchmarked in
+  `examples/bench.rs`.
+- M-x bound in normal/visual/insert (the owner noticed it missing).
+- **LSP groundwork in Rust** (`src/json.rs` + primitives in `api.rs`):
+  `json-decode`, `json-encode` (objects ↔ hashes with string keys, arrays
+  ↔ lists, null ↔ `'null`; write `(hash)` for `{}`), `lsp-frame`,
+  `lsp-take-message` (returns `(decoded-message rest)` or #f; lengths are
+  bytes), `path->uri`, `uri->path`, `find-executable`, `absolute-path`.
+  Jobs are killed when the server drops.
+
+### Next: `runtime/lsp.scm` (4.2), planned in detail
+
+Add it to `RUNTIME` in `lib.rs` after `syntax.scm`.
+
+- **Config**: `(define-language-server! 'rust-mode "rust-analyzer"
+  '("Cargo.toml" ".git") "rust")` keyed by *major mode* (python has no
+  tree-sitter language), with the LSP languageId. Defaults: rust-analyzer;
+  `typescript-language-server --stdio` for typescript/tsx/javascript
+  (languageIds typescript, typescriptreact, javascript); `nil` for nix;
+  `marksman server` for markdown; `pyright-langserver --stdio` for python.
+  Start only if `find-executable` finds it and option `lsp` is on.
+  `rust-analyzer` and `nil` are installed on the owner's machine.
+- **Server state**, keyed by (mode . root): job id (started with input #f
+  so stdin stays open), receive buffer string, next request id, pending
+  `id -> callback` hash, capabilities, position encoding, initialized flag,
+  queue of messages sent before `initialized`.
+- **Root**: walk up from the file's directory for the markers.
+- **initialize**: offer `general.positionEncodings ["utf-32","utf-16"]`
+  (imp offsets are chars = utf-32); honor the server's choice; utf-16 needs
+  converting columns via the line text (chars > #xFFFF count 2). Then
+  `initialized`, then flush the queue.
+- **Sync**: `didOpen` when a buffer gets its major mode (hook
+  `major-mode`/`buffer-open`); `didChange` with the full text, debounced
+  ~200 ms with `run-after!`/`cancel-timer!` from the `after-change` hook;
+  `didSave` from `after-save`; `didClose` from `:bd` (add a
+  `buffer-kill` hook there).
+- **Incoming**: `lsp-take-message` in a loop on job output. Responses (id +
+  result/error) go to the pending callback. Server requests (method + id)
+  get replies: `workspace/configuration` → list of nulls,
+  `client/registerCapability` and `window/workDoneProgress/create` → null,
+  `workspace/applyEdit` → apply, `{applied: true}`. Notifications:
+  `textDocument/publishDiagnostics`, `window/showMessage` (message),
+  `$/progress` (message with percentage).
+- **Diagnostics**: stored per URI; a `diagnostics` highlight layer for the
+  current buffer, refreshed on `buffer-enter` (faces `diagnostic.error`,
+  `.warning`, `.info`, `.hint`: underline plus color); the message shown on
+  the status line when the cursor is on a diagnostic's line (post-command
+  hook, only if the status is empty); `]d` `[d`; `:diagnostics` through
+  completing-read to jump. Gutter signs need a small renderer addition
+  (signs per buffer, a 2-cell column) — do it if cheap.
+- **Commands**, in an `lsp-mode` minor mode turned on for attached buffers
+  (minor-mode keymaps win over major ones): `K` hover (popup of the
+  markdown text), `gd` definition (Location, Location[] or LocationLink[]:
+  jump, or completing-read if several), `gr` references
+  (completing-read of "file:line: text"), `SPC c r` rename (prompt prefilled
+  with the word; apply WorkspaceEdit `changes` or `documentChanges` across
+  files, edits sorted last-first, one undo group per buffer), `SPC c a` code
+  actions (range = cursor or selection; Command → `workspace/executeCommand`,
+  CodeAction with edit → apply, with only data → `codeAction/resolve`),
+  `SPC c f` format (TextEdit[] with tabSize/insertSpaces), `SPC c` group in
+  leader.scm-style `define-leader!`.
+- **Completion** in insert mode: `C-x C-o` and `C-n`/`C-p` (buffer words
+  when no server), plus automatic after identifier chars or trigger chars
+  (option, ~150 ms delay). A menu in the popup; `C-n C-p <tab>` move, `<ret>`
+  accepts (textEdit, else insertText, else label; strip snippet
+  placeholders `${1:x}` → x, `$0` → ""), `<esc>` closes; other keys type
+  and refilter. Use `*key-interceptor*` and fall through to
+  `insert-mode-key!`.
+- **Tests**: a scripted fake server in Python (`tests/fake_lsp.py`, skip the
+  tests if `python3` is missing) answering initialize, hover, definition,
+  references, rename, formatting, codeAction, completion, and publishing a
+  diagnostic on didOpen/didChange. Also try rust-analyzer by hand in a pty.
+
+### After LSP
+
+- **4.3 DAP** (same framing and JSON): adapters per language, launch
+  configs, breakpoints as gutter signs, continue/step, stopped line
+  highlighted, stack and variables popups; fake adapter for tests.
+- **4.4 MCP**: opt-in `(mcp-enable!)`; a Unix socket (Rust: generic
+  line-based connections as events) speaking MCP JSON-RPC lines; `imp
+  --mcp` relays stdio to it. Tools: list/read/edit/open/save buffers,
+  cursor and selection, search, run command, diagnostics, eval Scheme.
+- **Cosmetic polish pass** (the owner asked for one after seeing Phases
+  1–3): status line design, popup/which-key/completion look (a border or
+  title, the selection), separators, gutter, a coherent color theme.
+- Then Phase 5 (prototype behind cargo features, as decided) and 6.
