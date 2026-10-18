@@ -10,6 +10,7 @@ mod clipboard;
 mod editor;
 mod files;
 mod fuzzy;
+mod layout;
 mod render;
 mod scan;
 mod search;
@@ -59,13 +60,15 @@ pub struct Server {
 
 impl Server {
     pub fn new(buffer: Buffer, options: Options) -> Result<Self, String> {
-        editor::install(Editor {
+        let mut ed = Editor {
             buffer,
             width: 80,
             height: 24,
             tab_width: 8,
             ..Editor::default()
-        });
+        };
+        ed.init_windows();
+        editor::install(ed);
 
         let mut engine = Engine::new();
         api::register(&mut engine);

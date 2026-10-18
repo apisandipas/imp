@@ -10,10 +10,6 @@ fn open(s: &mut imp_server::Server, name: &str, text: &str) {
     type_keys(s, &format!(":e {}<ret>", path.display()));
 }
 
-fn status_row(s: &mut imp_server::Server) -> String {
-    s.frame().text_rows().last().unwrap().clone()
-}
-
 #[test]
 fn mode_from_file_extension() {
     let mut s = server("");

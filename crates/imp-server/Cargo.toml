@@ -8,4 +8,5 @@ imp-core.workspace = true
 steel.workspace = true
 regex.workspace = true
 ignore.workspace = true
+unicode-width.workspace = true
 ropey.workspace = true

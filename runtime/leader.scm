@@ -186,6 +186,20 @@
 
 (define-leader! "m" 'local-leader "+major mode")
 
+(define-leader-group! "w" "window")
+(define (window-keys keys) (lambda (n) ((lookup-key 'normal (string-append "C-w" keys)) n)))
+(define-leader! "ws" (window-keys "s") "split below")
+(define-leader! "wv" (window-keys "v") "split right")
+(define-leader! "ww" (window-keys "w") "next window")
+(define-leader! "wh" (window-keys "h") "window left")
+(define-leader! "wj" (window-keys "j") "window down")
+(define-leader! "wk" (window-keys "k") "window up")
+(define-leader! "wl" (window-keys "l") "window right")
+(define-leader! "wc" (window-keys "c") "close window")
+(define-leader! "wd" (window-keys "c") "close window")
+(define-leader! "wo" (window-keys "o") "only this window")
+(define-leader! "w=" (window-keys "=") "equal sizes")
+
 (define-leader-group! "t" "toggle")
 
 (define (toggle-option-command name)
@@ -201,4 +215,6 @@
 (define-leader! "tn" 'toggle-line-numbers "line numbers")
 (define-leader! "tr" 'toggle-relative-numbers "relative numbers")
 (define-leader! "tl" 'toggle-cursorline "cursor line")
+(define-command! 'toggle-wrap (toggle-option-command 'wrap))
+(define-leader! "tw" 'toggle-wrap "line wrap")
 (define-leader! "th" 'toggle-search-highlight "search highlight")

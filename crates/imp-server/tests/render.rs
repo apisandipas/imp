@@ -12,13 +12,15 @@ fn rows_show_text_and_tildes() {
     let mut s = server("one\n\ttwo\n");
     s.handle(imp_core::ClientMsg::Resize {
         width: 20,
-        height: 4,
+        height: 5,
     });
     let rows = s.frame().text_rows();
     assert_eq!(rows[0], "one");
     assert_eq!(rows[1], "    two");
     assert_eq!(rows[2], "~");
+    // The window's status line, then the message line.
     assert!(rows[3].starts_with(" NORMAL"));
+    assert_eq!(rows[4], "");
 }
 
 #[test]
@@ -89,6 +91,7 @@ fn line_numbers() {
 #[test]
 fn long_lines_scroll_sideways() {
     let mut s = sized("0123456789abcdefghij\nxy\n", 10, 4);
+    s.eval("(set-option! 'wrap #f)").unwrap();
     s.keys(&["$"]);
     let f = s.frame();
     // The cursor's end of the line is in view, and the cursor is drawn.
@@ -119,4 +122,68 @@ fn cursorline_fills_the_row() {
     assert_eq!(text, "ab        ");
     assert!(row.iter().all(|sp| sp.style.bg.is_some()));
     assert_eq!(s.frame().rows[1].len(), 1);
+}
+
+#[test]
+fn long_lines_wrap() {
+    let mut s = sized("0123456789abcdef\nnext\n", 10, 6);
+    let f = s.frame();
+    assert_eq!(f.text_rows()[0], "0123456789");
+    assert_eq!(f.text_rows()[1], "abcdef");
+    assert_eq!(f.text_rows()[2], "next");
+    s.keys(&["$"]);
+    assert_eq!(s.frame().cursor, (5, 1));
+    // With numbers, continuation rows get an empty gutter.
+    s.eval("(set-option! 'number #t)").unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "  1 012345");
+    assert_eq!(rows[1], "    6789ab");
+}
+
+#[test]
+fn wrapped_lines_scroll_by_whole_lines() {
+    let text = format!("{}\n{}\nend\n", "a".repeat(25), "b".repeat(25));
+    let mut s = sized(&text, 10, 5);
+    // Three text rows: the first line alone takes all three.
+    s.keys(&["j"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "bbbbbbbbbb");
+    s.keys(&["j"]);
+    assert_eq!(s.frame().text_rows()[0], "end");
+}
+
+#[test]
+fn wide_chars_take_two_cells() {
+    let mut s = sized("日本語x\n", 20, 4);
+    s.keys(&["l", "l"]);
+    let f = s.frame();
+    assert_eq!(f.text_rows()[0], "日本語x");
+    assert_eq!(f.cursor, (4, 0));
+    s.keys(&["l"]);
+    assert_eq!(s.frame().cursor, (6, 0));
+}
+
+#[test]
+fn wide_chars_wrap_whole() {
+    let mut s = sized("aaaa日\n", 5, 5);
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "aaaa");
+    assert_eq!(rows[1], "日");
+}
+
+#[test]
+fn gj_and_gk_move_by_screen_rows() {
+    let mut s = sized("0123456789abcdefghij12\nxyz\n", 10, 8);
+    s.keys(&["l", "l", "g", "j"]);
+    assert_eq!(s.cursor(), 12);
+    // The last row is "12": column 2 is past its end, so the cursor
+    // lands on its last char, but keeps wanting column 2.
+    s.keys(&["g", "j"]);
+    assert_eq!(s.cursor(), 21);
+    s.keys(&["g", "j"]);
+    assert_eq!(s.cursor(), 25);
+    s.keys(&["g", "k"]);
+    assert_eq!(s.cursor(), 21);
+    s.keys(&["g", "k", "g", "k"]);
+    assert_eq!(s.cursor(), 2);
 }

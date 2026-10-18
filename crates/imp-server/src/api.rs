@@ -254,6 +254,86 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.cursor = clamp(offset).min(e.buffer.len()))
     });
 
+    // Windows. Ids are integers; the current window's buffer is the current
+    // buffer, so the buffer primitives act on what it shows.
+    engine.register_fn("window-list", || {
+        editor::with(|e| {
+            e.layout
+                .windows()
+                .into_iter()
+                .map(|w| w as isize)
+                .collect::<Vec<_>>()
+        })
+    });
+    engine.register_fn("current-window", || {
+        editor::with(|e| e.current_window as isize)
+    });
+    // `where` is "above", "below", "left" or "right" of the current window.
+    engine.register_fn("split-window!", |place: String| {
+        use crate::layout::Dir;
+        let (dir, before) = match place.as_str() {
+            "above" => (Dir::Column, true),
+            "left" => (Dir::Row, true),
+            "right" => (Dir::Row, false),
+            _ => (Dir::Column, false),
+        };
+        editor::with(|e| e.split_window(dir, before) as isize)
+    });
+    engine.register_fn("close-window!", |id: isize| {
+        editor::with(|e| e.close_window(clamp(id)))
+    });
+    engine.register_fn("focus-window!", |id: isize| {
+        editor::with(|e| e.focus_window(clamp(id)))
+    });
+    engine.register_fn("only-window!", || editor::with(|e| e.only_window()));
+    engine.register_fn("window-buffer", |id: isize| {
+        editor::with(|e| e.windows.get(&clamp(id)).map(|w| w.buffer as isize))
+    });
+    // The window to the "left", "right", "up" or "down" of the current
+    // one, or #f.
+    engine.register_fn("window-in-direction", |dir: String| {
+        editor::with(|e| {
+            let (dx, dy) = match dir.as_str() {
+                "left" => (-1, 0),
+                "right" => (1, 0),
+                "up" => (0, -1),
+                _ => (0, 1),
+            };
+            let frame = crate::render::frame(e);
+            let cursor = (frame.cursor.0 as usize, frame.cursor.1 as usize);
+            e.window_in_direction(dx, dy, cursor).map(|w| w as isize)
+        })
+    });
+    // Grows the current window by `delta` rows ("height") or columns
+    // ("width"), taking the space from a neighbor.
+    engine.register_fn("resize-window!", |what: String, delta: isize| {
+        use crate::layout::Dir;
+        let dir = if what == "width" {
+            Dir::Row
+        } else {
+            Dir::Column
+        };
+        editor::with(|e| {
+            let area = e.windows_area();
+            let id = e.current_window;
+            e.layout.resize(id, dir, delta, area)
+        })
+    });
+    engine.register_fn("equalize-windows!", || {
+        editor::with(|e| e.layout.equalize())
+    });
+    engine.register_fn("set-wrap!", |on: bool| editor::with(|e| e.wrap = on));
+    // Display columns, for motions over screen rows (gj, gk).
+    engine.register_fn("line-display-col", |line: isize, col: isize| {
+        editor::with(|e| crate::render::display_col(e, clamp(line), clamp(col)) as isize)
+    });
+    engine.register_fn("line-col-at-display", |line: isize, x: isize| {
+        editor::with(|e| crate::render::col_at_display(e, clamp(line), clamp(x)) as isize)
+    });
+    engine.register_fn("window-text-width", || {
+        editor::with(|e| crate::render::window_text_width(e) as isize)
+    });
+
     // The system clipboard. `primary?` picks the primary selection ("*).
     engine.register_fn("clipboard-get", |primary: bool| clipboard::get(primary));
     engine.register_fn("clipboard-set!", |text: String, primary: bool| {

@@ -368,6 +368,9 @@
 (define-option! 'number #f '(nu))
 (define-option! 'relativenumber #f '(rnu))
 (define-option! 'cursorline #f '(cul))
+;; Long lines continue on the next screen rows; off, they scroll sideways.
+(define-option! 'wrap #t '())
+(watch-option! 'wrap set-wrap!)
 
 (define (update-line-numbers! value)
   (set-line-numbers!
@@ -387,6 +390,8 @@
 ;;; a face in init.scm to restyle everything that uses it.
 
 (set-face! "status" "reverse")
+(set-face! "status-inactive" "bg=#3a3f4b")
+(set-face! "separator" "fg=#5c6370")
 (set-face! "nontext" "fg=blue")
 (set-face! "popup" "bg=#262a33")
 (set-face! "line-number" "fg=bright-black")

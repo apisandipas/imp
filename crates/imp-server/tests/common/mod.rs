@@ -54,3 +54,9 @@ pub fn feed(s: &mut Server, input: &str) {
     let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
     s.keys(&refs);
 }
+
+/// The current window's status line (the row above the message line).
+pub fn status_row(s: &mut Server) -> String {
+    let rows = s.frame().text_rows();
+    rows[rows.len() - 2].clone()
+}

@@ -243,9 +243,35 @@
 (define-motion! "<up>" 'linewise (motion-proc (hash-ref *motions* "k")))
 (define-motion! "<home>" 'exclusive (motion-proc (hash-ref *motions* "0")))
 (define-motion! "<end>" 'inclusive (motion-proc (hash-ref *motions* "$")))
-;; No line wrapping yet, so display lines are buffer lines.
-(define-motion! "gj" 'linewise (motion-proc (hash-ref *motions* "j")))
-(define-motion! "gk" 'linewise (motion-proc (hash-ref *motions* "k")))
+;; gj and gk move by screen rows when lines wrap: within a long line, then
+;; on to the next line, keeping the wanted column (the goal column, which
+;; they leave alone as j and k do). Without wrap they are j and k. Like
+;; Vim's, they are exclusive.
+(define (screen-row-motion dir)
+  (lambda (from n)
+    (if (not (option 'wrap))
+        ((motion-proc (hash-ref *motions* (if (> dir 0) "j" "k"))) from n)
+        (let* ([w (window-text-width)] [column (modulo *goal-col* w)])
+          (let loop ([p from] [i 0])
+            (if (= i n)
+                p
+                (let* ([line (offset->line p)]
+                       [x (line-display-col line (offset->col p))]
+                       [row-start (- x (modulo x w))]
+                       [end-x (line-display-col line (buffer-line-length line))]
+                       [at (lambda (l x) (line-col->offset l (line-col-at-display l x)))])
+                  (cond
+                    [(and (> dir 0) (< (+ row-start w) end-x)) (loop (at line (+ row-start w column)) (+ i 1))]
+                    [(and (< dir 0) (> row-start 0)) (loop (at line (+ (- row-start w) column)) (+ i 1))]
+                    [(and (> dir 0) (< line (last-line))) (loop (at (+ line 1) column) (+ i 1))]
+                    [(and (< dir 0) (> line 0))
+                     (let* ([prev (- line 1)]
+                            [prev-end (line-display-col prev (buffer-line-length prev))])
+                       (loop (at prev (+ (* w (quotient (max 0 (- prev-end 1)) w)) column)) (+ i 1)))]
+                    [else (and (> i 0) p)]))))))))
+
+(define-motion! "gj" 'exclusive (screen-row-motion 1))
+(define-motion! "gk" 'exclusive (screen-row-motion -1))
 
 (define (line-motion offset)
   (lambda (from n)
@@ -400,7 +426,7 @@
     [else #f]))
 
 ;; Vertical motions keep the goal column; everything else resets it.
-(define (vertical-motion? key) (member key '("j" "k" "<down>" "<up>")))
+(define (vertical-motion? key) (member key '("j" "k" "<down>" "<up>" "gj" "gk")))
 
 ;;; Operators
 ;;;
@@ -1967,7 +1993,7 @@
 
   (when (member *mode* '(normal visual))
     (normal-clamp!)
-    (unless (or *operator* (vertical-motion? key))
+    (unless (or *operator* *prefix* (vertical-motion? key))
       (set! *goal-col* (current-col)))))
 
 ;;; Insert and replace mode
@@ -2666,13 +2692,25 @@
           (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty))))
         (quit!))))
 
-(define-ex! '("q" "quit" "qa" "qall" "quita" "quitall") quit-if-saved!)
+;; :q closes the window when there are several, as in Vim; :qa quits.
+(define-ex! '("q" "quit")
+  (lambda (ex)
+    (if (> (length (window-list)) 1)
+        (close-current-window!)
+        (quit-if-saved! ex))))
+(define-ex! '("qa" "qall" "quita" "quitall") quit-if-saved!)
+;; :wq and :x close the window too when there are several.
+(define (quit-window-or-editor! ex)
+  (if (> (length (window-list)) 1)
+      (close-current-window!)
+      (quit-if-saved! ex)))
+
 (define-ex! "wq"
-  (lambda (ex) (when (save-buffer!) (quit-if-saved! ex))))
+  (lambda (ex) (when (save-buffer!) (quit-window-or-editor! ex))))
 ;; :x writes only if there is something to write.
 (define-ex! '("x" "xit" "exit")
   (lambda (ex)
-    (when (or (not (buffer-modified?)) (save-buffer!)) (quit-if-saved! ex))))
+    (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
 
@@ -2907,6 +2945,85 @@
                       (unless (save-buffer!) (set! ok #f))))))
               (buffer-list))
     ok))
+
+;;; Windows
+;;;
+;;; Rust owns the layout (split-window!, close-window!, focus-window!...);
+;;; these are Vim's commands for it. A new split shows the same buffer and
+;;; is focused; it goes above or to the left unless splitbelow/splitright.
+
+(define-option! 'splitbelow #f '(sb))
+(define-option! 'splitright #f '(spr))
+
+(define (leave-pending-states!)
+  (when (eq? *mode* 'visual) (leave-visual!)))
+
+(define (split! vertical?)
+  (leave-pending-states!)
+  (split-window! (if vertical?
+                     (if (option 'splitright) "right" "left")
+                     (if (option 'splitbelow) "below" "above")))
+  (after-window-change!))
+
+;; After focus moves to another window: its buffer may differ, so the
+;; buffer's options and mode line come back, as on switching buffers.
+(define (after-window-change!)
+  (normal-clamp!)
+  (set! *goal-col* (current-col))
+  (run-hooks 'buffer-enter))
+
+(define (go-to-window! id)
+  (when id
+    (leave-pending-states!)
+    (unless (= id (current-window))
+      (focus-window! id)
+      (after-window-change!))))
+
+(define (window-step step)
+  (let* ([ws (window-list)] [n (length ws)]
+         [i (let loop ([l ws] [i 0]) (if (= (car l) (current-window)) i (loop (cdr l) (+ i 1))))])
+    (list-ref ws (modulo (+ i step) n))))
+
+(define (close-current-window!)
+  (if (close-window! (current-window))
+      (after-window-change!)
+      (message "can't close the last window")))
+
+;; :sp FILE and :vs FILE split and open FILE in the new window.
+(define (split-ex vertical?)
+  (lambda (ex)
+    (split! vertical?)
+    (unless (equal? (ex-args ex) "") (open-file! (ex-args ex)))))
+
+(define-ex! '("sp" "split") (split-ex #f))
+(define-ex! '("vs" "vsplit") (split-ex #t))
+(define-ex! '("new") (lambda (ex) (split! #f) (go-to-buffer! (buffer-new! ""))))
+(define-ex! '("vne" "vnew") (lambda (ex) (split! #t) (go-to-buffer! (buffer-new! ""))))
+(define-ex! '("clo" "close") (lambda (ex) (close-current-window!)))
+(define-ex! '("on" "only") (lambda (ex) (only-window!)))
+
+(define (window-command! keys proc)
+  (for-each (lambda (k) (define-key! 'normal (string-append "C-w" k) proc)
+                        (define-key! 'visual (string-append "C-w" k) proc))
+            keys))
+
+(define-prefix! "C-w")
+(window-command! '("s" "S" "C-s") (lambda (n) (split! #f)))
+(window-command! '("v" "C-v") (lambda (n) (split! #t)))
+(window-command! '("n" "C-n") (lambda (n) (split! #f) (go-to-buffer! (buffer-new! ""))))
+(window-command! '("w" "C-w") (lambda (n) (go-to-window! (window-step n))))
+(window-command! '("W") (lambda (n) (go-to-window! (window-step (- n)))))
+(window-command! '("h" "C-h" "<left>") (lambda (n) (go-to-window! (window-in-direction "left"))))
+(window-command! '("l" "C-l" "<right>") (lambda (n) (go-to-window! (window-in-direction "right"))))
+(window-command! '("k" "C-k" "<up>") (lambda (n) (go-to-window! (window-in-direction "up"))))
+(window-command! '("j" "C-j" "<down>") (lambda (n) (go-to-window! (window-in-direction "down"))))
+(window-command! '("c" "C-c" "q" "C-q") (lambda (n) (close-current-window!)))
+(window-command! '("o" "C-o") (lambda (n) (only-window!)))
+(window-command! '("=") (lambda (n) (equalize-windows!)))
+(window-command! '("+") (lambda (n) (resize-window! "height" n)))
+(window-command! '("-") (lambda (n) (resize-window! "height" (- n))))
+(window-command! '(">") (lambda (n) (resize-window! "width" n)))
+(window-command! '("<") (lambda (n) (resize-window! "width" (- n))))
 
 ;;; Line commands: :m :t :> :< :j :pu :k :p :sort :normal :g
 

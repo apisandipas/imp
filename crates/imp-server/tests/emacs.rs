@@ -14,12 +14,12 @@ fn emacs(text: &str) -> imp_server::Server {
 fn c_z_toggles_states() {
     let mut s = server("x\n");
     s.keys(&["C-z"]);
-    assert!(s.frame().text_rows().last().unwrap().contains("EMACS"));
+    assert!(status_row(&mut s).contains("EMACS"));
     // Keys type text.
     type_keys(&mut s, "ab");
     assert_eq!(s.text(), "abx\n");
     s.keys(&["C-z"]);
-    assert!(s.frame().text_rows().last().unwrap().contains("NORMAL"));
+    assert!(status_row(&mut s).contains("NORMAL"));
     // Unlike <esc> from insert, the cursor stays where point was, as in
     // Evil, so x takes the x.
     type_keys(&mut s, "x");
@@ -107,7 +107,7 @@ fn isearch() {
     assert_eq!(s.cursor(), 8);
     type_keys(&mut s, "<ret>");
     assert_eq!(s.cursor(), 8);
-    assert!(s.frame().text_rows().last().unwrap().contains("EMACS"));
+    assert!(status_row(&mut s).contains("EMACS"));
 }
 
 #[test]

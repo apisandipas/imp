@@ -710,6 +710,7 @@ dependencies = [
  "regex",
  "ropey",
  "steel-core",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]

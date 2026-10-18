@@ -376,7 +376,7 @@ fn gv_reselects() {
 fn v_toggles_and_switches_kind() {
     let mut s = server("ab\ncd\n");
     type_keys(&mut s, "vv");
-    assert!(s.frame().text_rows().last().unwrap().contains("NORMAL"));
+    assert!(status_row(&mut s).contains("NORMAL"));
     type_keys(&mut s, "vVd");
     assert_eq!(s.text(), "cd\n");
 }
@@ -683,7 +683,7 @@ fn window_motions() {
     let mut s = server(&text);
     s.handle(imp_core::ClientMsg::Resize {
         width: 20,
-        height: 11,
+        height: 12,
     });
     s.frame();
     type_keys(&mut s, "L");
@@ -710,7 +710,7 @@ fn tall_server(lines: usize, height: u16) -> Server {
 #[test]
 fn half_and_full_page_scrolling() {
     // 10 text rows.
-    let mut s = tall_server(100, 11);
+    let mut s = tall_server(100, 12);
     s.keys(&["C-d"]);
     assert_eq!(line_of(&s), 5);
     s.frame();
@@ -728,7 +728,7 @@ fn half_and_full_page_scrolling() {
 
 #[test]
 fn line_scrolling_drags_the_cursor() {
-    let mut s = tall_server(100, 11);
+    let mut s = tall_server(100, 12);
     s.keys(&["C-e", "C-e"]);
     s.frame();
     assert_eq!(s.frame().text_rows()[0], "3");
@@ -739,7 +739,7 @@ fn line_scrolling_drags_the_cursor() {
 
 #[test]
 fn z_commands_place_the_cursor_line() {
-    let mut s = tall_server(100, 11);
+    let mut s = tall_server(100, 12);
     type_keys(&mut s, "50Gzt");
     assert_eq!(s.frame().text_rows()[0], "50");
     type_keys(&mut s, "zz");
@@ -1070,14 +1070,9 @@ fn macro_with_count_stops_on_failure() {
 fn recording_shows_in_mode_line() {
     let mut s = server("a\n");
     type_keys(&mut s, "qz");
-    assert!(s
-        .frame()
-        .text_rows()
-        .last()
-        .unwrap()
-        .contains("recording @z"));
+    assert!(status_row(&mut s).contains("recording @z"));
     type_keys(&mut s, "q");
-    assert!(!s.frame().text_rows().last().unwrap().contains("recording"));
+    assert!(!status_row(&mut s).contains("recording"));
 }
 
 #[test]
@@ -1289,7 +1284,7 @@ fn write_and_read_files() {
     type_keys(&mut s, &format!(":w {}<ret>", copy.display()));
     assert_eq!(std::fs::read_to_string(&copy).unwrap(), "hello\n");
     // It now has a name (the scratch buffer had none).
-    assert!(s.frame().text_rows().last().unwrap().contains("copy.txt"));
+    assert!(status_row(&mut s).contains("copy.txt"));
     // Refuses to overwrite another existing file without !.
     let other = temp_path("other.txt");
     std::fs::write(&other, "x\n").unwrap();
@@ -1407,7 +1402,7 @@ fn block_is_highlighted_per_line() {
         assert_eq!(texts.len(), 3, "{texts:?}");
         assert!(row[1].style.bg.is_some());
     }
-    assert!(f.text_rows().last().unwrap().contains("VISUAL BLOCK"));
+    assert!(f.text_rows()[f.text_rows().len() - 2].contains("VISUAL BLOCK"));
 }
 
 #[test]
