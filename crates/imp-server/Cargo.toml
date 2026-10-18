@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 imp-core.workspace = true
 steel.workspace = true
+regex.workspace = true

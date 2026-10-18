@@ -8,6 +8,7 @@
 mod api;
 mod editor;
 mod render;
+mod search;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};

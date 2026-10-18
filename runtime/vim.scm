@@ -25,7 +25,16 @@
 (define *last-change-count* 1)
 (define *insert-entry* #f)     ; how the current insert began, for `.`
 (define *insert-keys* '())     ; keys typed during the current insert, reversed
-(define *cmdline* "")
+(define *cmdline* "")           ; text typed at the prompt
+(define *cmdline-prompt* ":")
+(define *cmdline-submit* #f)   ; (lambda (text) ...) on <ret>
+(define *cmdline-change* #f)   ; (lambda (text) ...) after each edit
+(define *cmdline-cancel* #f)   ; (lambda () ...) on <esc>
+(define *cmdline-return* 'normal) ; the mode to go back to
+(define *last-search* #f)      ; the last search pattern
+(define *last-search-forward* #t)
+(define *hlsearch* #f)         ; whether matches of *last-search* are shown
+(define *last-substitute* #f)  ; (pattern replacement) for :s and &
 ;; True while running a command whose count the user typed, so G and gg can
 ;; tell "5G" from "G".
 (define *count-given* #f)
@@ -625,12 +634,6 @@
     (when *last-change*
       (*last-change* (if *count-given* count *last-change-count*)))))
 
-(define-key! 'normal ":"
-  (lambda (count)
-    (set! *cmdline* "")
-    (set-mode! 'cmdline)
-    (set-status! ":")))
-
 ;;; Visual mode
 ;;;
 ;;; The selection runs from *visual-anchor* to the cursor, both included.
@@ -656,7 +659,8 @@
 
 (define (update-visual-highlight!)
   (highlight-clear! "visual")
-  (when (eq? *mode* 'visual)
+  ;; The selection stays visible while a search prompt is open from it.
+  (when (or (eq? *mode* 'visual) (and (eq? *mode* 'cmdline) *visual* (eq? *cmdline-return* 'visual)))
     (let ([r (visual-range)])
       (highlight-add! "visual" (car r) (cadr r) "visual"))))
 
@@ -778,6 +782,13 @@
     [(and (digit? key) (not (and (equal? key "0") (equal? *count* ""))))
      (set! *count* (string-append *count* key))]
 
+    ;; Search prompts. With an operator pending, the search is its motion.
+    [(and (not *prefix*) (member key '("/" "?")))
+     (let ([op *operator*]
+           [count (* (count-value *operator-count*) (count-value *count*))])
+       (reset-pending!)
+       (start-search! (equal? key "/") op count))]
+
     ;; Prefix keys: `g` waits for the next key.
     [(and (not *prefix*) (equal? key "g"))
      (set! *prefix* "g")]
@@ -886,52 +897,425 @@
         (set! *insert-keys* (cons key *insert-keys*))
         (insert-key! key))))
 
-;;; Command line (:w, :q, ...)
+;;; The command line
+;;;
+;;; One prompt serves `:`, `/` and `?`. Whoever opens it says what happens
+;;; on each edit, on <ret> and on <esc>.
 
-(define *ex-commands* (hash))
+(define (open-cmdline! prompt initial on-submit on-change on-cancel)
+  (set! *cmdline-return* (if (eq? *mode* 'visual) 'visual 'normal))
+  (set! *cmdline-prompt* prompt)
+  (set! *cmdline* initial)
+  (set! *cmdline-submit* on-submit)
+  (set! *cmdline-change* on-change)
+  (set! *cmdline-cancel* on-cancel)
+  (set-mode! 'cmdline)
+  (show-cmdline!))
 
-(define (define-ex! name proc)
-  (set! *ex-commands* (hash-insert *ex-commands* name proc)))
+(define (show-cmdline!)
+  (set-status! (string-append *cmdline-prompt* *cmdline*)))
 
-(define-ex! "w" (lambda () (when (save!) (set-status! (string-append "wrote " (buffer-name))))))
-(define-ex! "q"
-  (lambda ()
-    (if (buffer-modified?)
-        (set-status! "unsaved changes (add ! to override)")
-        (quit!))))
-(define-ex! "q!" (lambda () (quit!)))
-(define-ex! "wq" (lambda () (when (save!) (quit!))))
-(define-ex! "x" (lambda () (if (buffer-modified?) (when (save!) (quit!)) (quit!))))
+(define (close-cmdline!)
+  (set-mode! *cmdline-return*)
+  (set-status! ""))
 
-(define (run-ex! line)
-  (let ([cmd (hash-try-get *ex-commands* line)])
-    (cond
-      [cmd (set-status! "") (cmd)]
-      [(string->number line)
-       (set-cursor! (line-first-nonblank (clamp (- (string->number line) 1) 0 (last-line))))
-       (set-status! "")]
-      [(equal? line "") (set-status! "")]
-      [else (set-status! (string-append "not an editor command: " line))])))
+(define (cmdline-edit! text)
+  (set! *cmdline* text)
+  (show-cmdline!)
+  (when *cmdline-change* (*cmdline-change* text)))
+
+;; The text with its last word (and the white space after it) removed.
+(define (drop-last-word text)
+  (let* ([n (string-length text)]
+         [p (let loop ([p n]) (if (and (> p 0) (char-whitespace? (string-ref text (- p 1)))) (loop (- p 1)) p))]
+         [word? (and (> p 0) (char-word? (string-ref text (- p 1))))]
+         [p (let loop ([p p])
+              (if (and (> p 0)
+                       (let ([c (string-ref text (- p 1))])
+                         (and (not (char-whitespace? c)) (eq? (char-word? c) word?))))
+                  (loop (- p 1))
+                  p))])
+    (substring text 0 p)))
 
 (define (cmdline-key! key)
   (cond
     [(member key '("<esc>" "C-c"))
-     (set-mode! 'normal)
-     (set-status! "")]
+     (close-cmdline!)
+     (when *cmdline-cancel* (*cmdline-cancel*))]
     [(equal? key "<ret>")
-     (set-mode! 'normal)
-     (run-ex! *cmdline*)
-     (when (eq? *mode* 'normal) (normal-clamp!))]
+     (close-cmdline!)
+     (*cmdline-submit* *cmdline*)
+     (when (member *mode* '(normal visual)) (normal-clamp!))]
     [(equal? key "<bs>")
      (if (equal? *cmdline* "")
-         (begin (set-mode! 'normal) (set-status! ""))
-         (begin
-           (set! *cmdline* (substring *cmdline* 0 (- (string-length *cmdline*) 1)))
-           (set-status! (string-append ":" *cmdline*))))]
-    [(= (string-length key) 1)
-     (set! *cmdline* (string-append *cmdline* key))
-     (set-status! (string-append ":" *cmdline*))]
+         (begin (close-cmdline!) (when *cmdline-cancel* (*cmdline-cancel*)))
+         (cmdline-edit! (substring *cmdline* 0 (- (string-length *cmdline*) 1))))]
+    [(equal? key "C-u") (cmdline-edit! "")]
+    [(equal? key "C-w") (cmdline-edit! (drop-last-word *cmdline*))]
+    [(= (string-length key) 1) (cmdline-edit! (string-append *cmdline* key))]
+    [(equal? key "<tab>") (cmdline-edit! (string-append *cmdline* "\t"))]
     [else #t]))
+
+;;; Search
+
+;; Escapes the chars that are special in a Vim pattern.
+(define (pattern-quote text)
+  (list->string
+   (let loop ([cs (string->list text)])
+     (cond
+       [(null? cs) '()]
+       [(memv (car cs) (list #\\ #\/ #\. #\* #\$ #\^ #\~ #\[ #\]))
+        (cons #\\ (cons (car cs) (loop (cdr cs))))]
+       [else (cons (car cs) (loop (cdr cs)))]))))
+
+(define (refresh-search-highlight!)
+  (if (and *hlsearch* *last-search*)
+      (highlight-pattern! "search" *last-search* "search")
+      (highlight-clear! "search")))
+
+;; Where the `count`th match of `pattern` from `from` is, or #f. Says on the
+;; status line when the search wraps or fails.
+(define (search-target pattern from forward? count)
+  (let loop ([i 0] [p from] [wrapped #f])
+    (if (= i count)
+        (begin
+          (when wrapped
+            (set-status! (if forward?
+                             "search hit BOTTOM, continuing at TOP"
+                             "search hit TOP, continuing at BOTTOM")))
+          p)
+        (let ([r (search-next pattern p forward?)])
+          (if r
+              (loop (+ i 1) (car r) (or wrapped (= (cadr r) 1)))
+              (begin (set-status! (string-append "Pattern not found: " pattern)) #f))))))
+
+;; Searches for `pattern` and makes it the last search, so n, N and the
+;; highlight follow it.
+(define (search-motion! pattern forward? from count)
+  (set! *last-search* pattern)
+  (set! *last-search-forward* forward?)
+  (set! *hlsearch* #t)
+  (refresh-search-highlight!)
+  (search-target pattern from forward? count))
+
+(define (repeat-search from count reverse?)
+  (cond
+    [(not *last-search*) (set-status! "no previous regular expression") from]
+    [else
+     (set! *hlsearch* #t)
+     (refresh-search-highlight!)
+     (or (search-target *last-search* from (if reverse? (not *last-search-forward*) *last-search-forward*) count)
+         from)]))
+
+(define-motion! "n" 'exclusive (lambda (from n) (repeat-search from n #f)))
+(define-motion! "N" 'exclusive (lambda (from n) (repeat-search from n #t)))
+
+;; The word under or after the cursor on its line, as (start end), or #f.
+(define (word-at from)
+  (let* ([hi (line-end (offset->line from))]
+         [p (let loop ([p from]) (if (and (< p hi) (blank-at? p)) (loop (+ p 1)) p))])
+    (and (< p hi)
+         (list (run-start p char-class (line-start (offset->line p)))
+               (run-end p char-class hi)))))
+
+;; * and #: search for the word under the cursor. Like Vim, they ignore case
+;; even when smartcase would not.
+(define (star-motion forward? whole?)
+  (lambda (from n)
+    (let ([w (word-at from)])
+      (if (not w)
+          (begin (set-status! "no string under cursor") from)
+          (let* ([text (buffer-substring (car w) (cadr w))]
+                 [word? (char-word? (string-ref text 0))]
+                 [pattern (string-append
+                           (if (and whole? word?) "\\<" "")
+                           (pattern-quote text)
+                           (if (and whole? word?) "\\>" "")
+                           "\\c")])
+            ;; Searching backward starts from the word's start, so the word
+            ;; itself isn't the first match.
+            (or (search-motion! pattern forward? (if forward? from (car w)) n) from))))))
+
+(define-motion! "*" 'exclusive (star-motion #t #t))
+(define-motion! "#" 'exclusive (star-motion #f #t))
+(define-motion! "g*" 'exclusive (star-motion #t #f))
+(define-motion! "g#" 'exclusive (star-motion #f #f))
+
+;; Runs operator `op-key` over the text a motion of `type` covers.
+(define (operate! op-key from target type)
+  (let ([range (motion-range from target type)])
+    (undo-boundary!)
+    ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
+
+;; / and ?: prompt for a pattern, moving to matches as it is typed. With an
+;; operator pending, the search is the operator's (exclusive) motion.
+(define (start-search! forward? op count)
+  (let ([origin (cursor)] [prompt (if forward? "/" "?")])
+    (open-cmdline!
+     prompt ""
+     (lambda (text)
+       (set-cursor! origin)
+       (let ([pattern (if (equal? text "") *last-search* text)])
+         (cond
+           [(not pattern) (set-status! "no previous regular expression")]
+           [(pattern-error pattern) (set-status! (pattern-error pattern))]
+           [else
+            (let ([target (search-motion! pattern forward? origin count)])
+              (cond
+                [(not target) #t]
+                [op
+                 (operate! op origin target 'exclusive)
+                 (when (changing-operator? op)
+                   (record-change!
+                    (lambda (n)
+                      (let ([t (search-target pattern (cursor) forward? n)])
+                        (when t (operate! op (cursor) t 'exclusive))))
+                    count))]
+                [else (set-cursor! target)]))])))
+     ;; Incremental search: show where the pattern matches so far.
+     (lambda (text)
+       (set-cursor! origin)
+       (if (or (equal? text "") (pattern-error text))
+           (refresh-search-highlight!)
+           (let ([r (search-next text origin forward?)])
+             (highlight-pattern! "search" text "search")
+             (when r (set-cursor! (car r))))))
+     (lambda ()
+       (set-cursor! origin)
+       (refresh-search-highlight!)))))
+
+;;; Ex commands
+;;;
+;;; A command line is [range] name[!] [args]. The range is resolved to line
+;;; numbers before the command runs; commands read the parsed line with
+;;; ex-range, ex-range-given?, ex-bang? and ex-args.
+
+(define *ex-commands* (hash))
+
+;; Defines an ex command under one name or a list of names (abbreviations
+;; are spelled out, as in (define-ex! '("s" "substitute") ...)).
+(define (define-ex! names proc)
+  (for-each (lambda (name) (set! *ex-commands* (hash-insert *ex-commands* name proc)))
+            (if (list? names) names (list names))))
+
+(define (ex-range ex) (car ex))          ; (first-line last-line), 0-based
+(define (ex-range-given? ex) (cadr ex))
+(define (ex-bang? ex) (caddr ex))
+(define (ex-args ex) (cadddr ex))
+
+(define (char-at s i) (and (< i (string-length s)) (string-ref s i)))
+
+(define (skip-spaces s i)
+  (if (and (char-at s i) (char-whitespace? (char-at s i))) (skip-spaces s (+ i 1)) i))
+
+(define (digits-end s i)
+  (if (and (char-at s i) (char-numeric-ascii? (char-at s i))) (digits-end s (+ i 1)) i))
+
+;; The '< and '> marks: the lines of the last visual selection.
+(define (visual-mark-line which)
+  (and *last-visual*
+       (let ([a (cadr *last-visual*)] [b (caddr *last-visual*)])
+         (offset->line (if (eq? which 'start) (min a b) (max a b))))))
+
+;; Reads text up to an unescaped `delim`, from i. Returns (text . next-i),
+;; next-i being just past the delimiter (or the end of the string).
+(define (read-delimited s i delim)
+  (let loop ([i i] [acc '()])
+    (let ([c (char-at s i)])
+      (cond
+        [(not c) (cons (list->string (reverse acc)) i)]
+        [(equal? c delim) (cons (list->string (reverse acc)) (+ i 1))]
+        [(and (equal? c #\\) (equal? (char-at s (+ i 1)) delim))
+         (loop (+ i 2) (cons delim acc))]
+        [(equal? c #\\) (loop (+ i 2) (if (char-at s (+ i 1)) (cons (char-at s (+ i 1)) (cons c acc)) (cons c acc)))]
+        [else (loop (+ i 1) (cons c acc))]))))
+
+;; One address, as (line . next-i), line #f if there is none. Errors are
+;; raised with (error ...) and shown by the caller.
+(define (parse-address s i)
+  (let* ([i (skip-spaces s i)]
+         [c (char-at s i)]
+         [base
+          (cond
+            [(equal? c #\.) (cons (current-line) (+ i 1))]
+            [(equal? c #\$) (cons (last-line) (+ i 1))]
+            [(and c (char-numeric-ascii? c))
+             (let ([e (digits-end s i)])
+               (cons (- (string->number (substring s i e)) 1) e))]
+            [(equal? c #\')
+             (let* ([m (char-at s (+ i 1))]
+                    [line (cond [(equal? m #\<) (visual-mark-line 'start)]
+                                [(equal? m #\>) (visual-mark-line 'end)]
+                                [else (mark-line m)])])
+               (if line (cons line (+ i 2)) (error "mark not set")))]
+            [(memv c (list #\/ #\?))
+             (let* ([r (read-delimited s (+ i 1) c)]
+                    [pattern (if (equal? (car r) "") *last-search* (car r))]
+                    [forward? (equal? c #\/)]
+                    [from (if forward? (line-end (current-line)) (line-start (current-line)))])
+               (when (or (not pattern) (pattern-error pattern)) (error "bad pattern"))
+               (set! *last-search* pattern)
+               (let ([hit (search-next pattern from forward?)])
+                 (if hit (cons (offset->line (car hit)) (cdr r)) (error (string-append "Pattern not found: " pattern)))))]
+            [else (cons #f i)])])
+    ;; Offsets: +N, -N, or bare + and - meaning 1.
+    (let loop ([line (car base)] [i (cdr base)])
+      (let ([c (char-at s i)])
+        (if (memv c (list #\+ #\-))
+            (let* ([e (digits-end s (+ i 1))]
+                   [n (if (= e (+ i 1)) 1 (string->number (substring s (+ i 1) e)))])
+              (loop (+ (or line (current-line)) (if (equal? c #\+) n (- n))) e))
+            (cons line i))))))
+
+;; The range, as ((first last) given? . next-i).
+(define (parse-range s i)
+  (let ([i (skip-spaces s i)])
+    (if (equal? (char-at s i) #\%)
+        (list (list 0 (last-line)) #t (+ i 1))
+        (let* ([a (parse-address s i)] [i (cdr a)])
+          (if (memv (char-at s i) (list #\, #\;))
+              (let* ([b (parse-address s (+ i 1))]
+                     [first (or (car a) (current-line))]
+                     [last (or (car b) (current-line))])
+                (list (list (min first last) (max first last)) #t (cdr b)))
+              (list (list (or (car a) (current-line)) (or (car a) (current-line)))
+                    (if (car a) #t #f)
+                    i))))))
+
+(define (letter? c)
+  (and c (let ([n (char->integer (char-downcase c))]) (and (>= n 97) (<= n 122)))))
+
+;; Parses a command line into (name ex), ex being (range given? bang args).
+(define (parse-ex line)
+  (let* ([r (parse-range line 0)]
+         [range (car r)]
+         [i (skip-spaces line (caddr r))]
+         [name-end (let loop ([j i]) (if (letter? (char-at line j)) (loop (+ j 1)) j))]
+         ;; A command that isn't letters is one char: & < > ! =
+         [name-end (if (and (= name-end i) (char-at line i)) (+ i 1) name-end)]
+         [name (substring line i name-end)]
+         [bang? (and (equal? (char-at line name-end) #\!) (not (equal? name "!")))]
+         [args-start (skip-spaces line (if bang? (+ name-end 1) name-end))]
+         [args (substring line args-start (string-length line))]
+         [range (list (clamp (car range) 0 (last-line)) (clamp (cadr range) 0 (last-line)))])
+    (list name (list range (cadr r) bang? args))))
+
+(define (run-ex! line)
+  (let ([parsed (with-handler (lambda (e) (error-message e)) (parse-ex line))])
+    (if (string? parsed)
+        (set-status! parsed)
+        (let* ([name (car parsed)] [ex (cadr parsed)] [cmd (hash-try-get *ex-commands* name)])
+          (cond
+            [cmd (cmd ex)]
+            ;; A range on its own goes to its last line.
+            [(equal? name "")
+             (when (ex-range-given? ex)
+               (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))]
+            [else (set-status! (string-append "not an editor command: " line))])))))
+
+;; The message of a caught error, without the space Steel puts in front.
+(define (error-message e)
+  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
+    (substring m (skip-spaces m 0) (string-length m))))
+
+;; Marks other than '< and '> arrive with 1.9; until then they are unset.
+(define (mark-line c) #f)
+
+(define-key! 'normal ":"
+  (lambda (count)
+    (open-cmdline! ":" (if *count-given* (string-append ".,.+" (number->string (- count 1))) "")
+                   run-ex! #f #f)))
+
+(define-key! 'visual ":"
+  (lambda (count)
+    (leave-visual!)
+    (open-cmdline! ":" "'<,'>" run-ex! #f #f)))
+
+;;; The ex commands
+
+(define (write-buffer! ex)
+  (when (save!) (set-status! (string-append "wrote " (buffer-name)))))
+
+(define-ex! '("w" "write") write-buffer!)
+(define-ex! '("q" "quit")
+  (lambda (ex)
+    (if (and (buffer-modified?) (not (ex-bang? ex)))
+        (set-status! "unsaved changes (add ! to override)")
+        (quit!))))
+(define-ex! "wq" (lambda (ex) (when (save!) (quit!))))
+;; :x writes only if there is something to write.
+(define-ex! '("x" "xit" "exit")
+  (lambda (ex) (if (buffer-modified?) (when (save!) (quit!)) (quit!))))
+
+(define-ex! '("noh" "nohlsearch")
+  (lambda (ex) (set! *hlsearch* #f) (refresh-search-highlight!)))
+
+;; :d and :y over lines, into the register like dd and yy.
+(define (ex-lines-operator op-key)
+  (lambda (ex)
+    (let* ([range (ex-range ex)] [r (lines-range (car range) (cadr range))])
+      (undo-boundary!)
+      ((hash-ref *operators* op-key) (car r) (cadr r) #t))))
+
+(define-ex! '("d" "de" "del" "delete") (ex-lines-operator "d"))
+(define-ex! '("y" "ya" "yank") (lambda (ex) (let ([c (cursor)]) ((ex-lines-operator "y") ex) (set-cursor! c))))
+
+;; :s/pattern/replacement/flags. Flags: g (every match on a line), i and I
+;; (ignore or match case). An empty pattern is the last search; :s alone
+;; repeats the last substitute.
+(define (substitute-command ex)
+  (let* ([args (ex-args ex)]
+         [delim (char-at args 0)]
+         [parts
+          (cond
+            [(not delim) (if *last-substitute* (append *last-substitute* (list "")) #f)]
+            [(or (char-word? delim) (equal? delim #\\) (equal? delim #\")) #f]
+            [else
+             (let* ([p (read-delimited args 1 delim)]
+                    [r (read-delimited args (cdr p) delim)])
+               (list (car p) (car r) (substring args (cdr r) (string-length args))))])])
+    (cond
+      [(not parts) (set-status! (if delim "bad substitute" "no previous substitute"))]
+      [else
+       (let* ([pattern (if (equal? (car parts) "") *last-search* (car parts))]
+              [flags (caddr parts)]
+              [pattern (and pattern
+                            (cond [(string-contains? flags "i") (string-append pattern "\\c")]
+                                  [(string-contains? flags "I") (string-append pattern "\\C")]
+                                  [else pattern]))])
+         (cond
+           [(not pattern) (set-status! "no previous regular expression")]
+           [(pattern-error pattern) (set-status! (pattern-error pattern))]
+           [else
+            (set! *last-search* (if (equal? (car parts) "") *last-search* (car parts)))
+            (set! *last-substitute* (list (car parts) (cadr parts)))
+            (undo-boundary!)
+            (let* ([range (ex-range ex)]
+                   [r (substitute! pattern (cadr parts) (car range) (cadr range)
+                                   (string-contains? flags "g"))])
+              (if (= (car r) 0)
+                  (set-status! (string-append "Pattern not found: " pattern))
+                  (begin
+                    (set-cursor! (line-first-nonblank (cadr r)))
+                    (when (> (car r) 1)
+                      (set-status! (string-append (number->string (car r)) " substitutions"))))))
+            (when *hlsearch* (refresh-search-highlight!))]))])))
+
+(define-ex! '("s" "su" "substitute") substitute-command)
+;; & repeats the last substitute on the current line, without its flags.
+(define-ex! "&" (lambda (ex) (substitute-command (list (ex-range ex) (ex-range-given? ex) #f ""))))
+(define-key! 'normal "&"
+  (lambda (count)
+    (run-ex! "s")))
+
+;; :eval EXPR runs Scheme in the editor and shows the result. This is the
+;; quickest way to redefine something while imp is running.
+(define-ex! '("eval" "ev")
+  (lambda (ex)
+    (let ([result (with-handler
+                   (lambda (e) (string-append "error: " (error-message e)))
+                   (to-string (eval (read (open-input-string (ex-args ex))))))])
+      (set-status! result))))
 
 ;;; Entry points
 

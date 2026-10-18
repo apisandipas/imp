@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use imp_core::{Buffer, CursorShape, Style};
+use regex::Regex;
 
 #[derive(Debug, Default)]
 pub struct Editor {
@@ -35,6 +36,9 @@ pub struct Editor {
 pub struct Layer {
     pub name: String,
     pub ranges: Vec<Highlight>,
+    /// Every match of this pattern is drawn with the face. Matches are found
+    /// when drawing, on visible lines only, so they follow edits for free.
+    pub pattern: Option<(Regex, String)>,
 }
 
 /// Chars `start..end` drawn with face `face`.
@@ -57,7 +61,7 @@ impl Editor {
             None => {
                 self.layers.push(Layer {
                     name: name.to_string(),
-                    ranges: Vec::new(),
+                    ..Layer::default()
                 });
                 self.layers.len() - 1
             }

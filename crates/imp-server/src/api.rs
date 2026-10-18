@@ -12,6 +12,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
 use crate::editor::{self, Highlight};
+use crate::search;
 
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
@@ -108,8 +109,53 @@ pub fn register(engine: &mut Engine) {
         Ok::<(), String>(())
     });
     engine.register_fn("highlight-clear!", |layer: String| {
-        editor::with(|e| e.layer_mut(&layer).ranges.clear())
+        editor::with(|e| {
+            let layer = e.layer_mut(&layer);
+            layer.ranges.clear();
+            layer.pattern = None;
+        })
     });
+    engine.register_fn(
+        "highlight-pattern!",
+        |layer: String, pattern: String, face: String| {
+            let re = search::compile(&pattern)?;
+            editor::with(|e| e.layer_mut(&layer).pattern = Some((re, face)));
+            Ok::<(), String>(())
+        },
+    );
+
+    // Searching. Patterns use Vim's syntax; see search.rs.
+    engine.register_fn("pattern-error", |pattern: String| {
+        search::compile(&pattern).err()
+    });
+    engine.register_fn(
+        "search-next",
+        |pattern: String, from: isize, forward: bool| {
+            let re = search::compile(&pattern)?;
+            Ok::<_, String>(editor::with(|e| {
+                search::next_match(&e.buffer, &re, clamp(from), forward)
+                    .map(|(at, wrapped)| vec![at as isize, isize::from(wrapped)])
+            }))
+        },
+    );
+    engine.register_fn(
+        "substitute!",
+        |pattern: String, replacement: String, first: isize, last: isize, global: bool| {
+            let re = search::compile(&pattern)?;
+            Ok::<_, String>(editor::with(|e| {
+                let (count, line) = search::substitute(
+                    &mut e.buffer,
+                    &re,
+                    &replacement,
+                    clamp(first),
+                    clamp(last),
+                    global,
+                );
+                // (count last-changed-line), the line being -1 if none.
+                vec![count as isize, line.map_or(-1, |l| l as isize)]
+            }))
+        },
+    );
     engine.register_fn(
         "highlight-add!",
         |layer: String, start: isize, end: isize, face: String| {

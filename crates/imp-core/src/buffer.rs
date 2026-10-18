@@ -136,6 +136,15 @@ impl Buffer {
         self.text.line_to_char(line) + col.min(self.line_len(line))
     }
 
+    /// Byte offset of char offset `offset` in [`Self::text`].
+    pub fn char_to_byte(&self, offset: usize) -> usize {
+        self.text.char_to_byte(offset.min(self.len()))
+    }
+
+    pub fn byte_to_char(&self, byte: usize) -> usize {
+        self.text.byte_to_char(byte.min(self.text.len_bytes()))
+    }
+
     pub fn insert(&mut self, offset: usize, text: &str) {
         self.text.insert(offset.min(self.len()), text);
         self.modified = true;

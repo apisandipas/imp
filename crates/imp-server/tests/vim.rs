@@ -402,3 +402,170 @@ fn v_toggles_and_switches_kind() {
     type_keys(&mut s, "vVd");
     assert_eq!(s.text(), "cd\n");
 }
+
+#[test]
+fn search_forward_and_back() {
+    let mut s = server("foo bar\nbaz bar\n");
+    type_keys(&mut s, "/bar<ret>");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "n");
+    assert_eq!(s.cursor(), 12);
+    // n wraps to the top.
+    type_keys(&mut s, "n");
+    assert_eq!(s.cursor(), 4);
+    assert!(s.status().contains("BOTTOM"));
+    type_keys(&mut s, "N");
+    assert_eq!(s.cursor(), 12);
+    type_keys(&mut s, "gg?ba<ret>");
+    assert_eq!(s.cursor(), 12);
+}
+
+#[test]
+fn search_not_found_stays_put() {
+    let mut s = server("abc\n");
+    type_keys(&mut s, "l/zzz<ret>");
+    assert_eq!(s.cursor(), 1);
+    assert!(s.status().contains("Pattern not found"));
+}
+
+#[test]
+fn search_bad_pattern_reports() {
+    let mut s = server("abc\n");
+    type_keys(&mut s, "/\\(<ret>");
+    assert!(s.status().contains("bad pattern"), "{}", s.status());
+}
+
+#[test]
+fn search_is_a_motion() {
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "d/thr<ret>");
+    assert_eq!(s.text(), "three\n");
+    let mut s = server("a x b x c x\n");
+    type_keys(&mut s, "d/x<ret>.");
+    assert_eq!(s.text(), "x c x\n");
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "dn");
+    assert!(s.status().contains("no previous"));
+}
+
+#[test]
+fn incremental_search_previews_and_escape_restores() {
+    let mut s = server("abc xyz\n");
+    type_keys(&mut s, "/xy");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn search_highlights_matches_until_noh() {
+    let mut s = server("ab ab\n");
+    type_keys(&mut s, "/ab<ret>");
+    let row = &s.frame().rows[0];
+    assert_eq!(row.len(), 3); // ab, space, ab
+    type_keys(&mut s, ":noh<ret>");
+    assert_eq!(s.frame().rows[0].len(), 1);
+}
+
+#[test]
+fn star_and_hash_search_the_word() {
+    let mut s = server("foo bar foobar foo\n");
+    type_keys(&mut s, "*");
+    assert_eq!(s.cursor(), 15); // whole word only, skipping foobar
+    type_keys(&mut s, "#");
+    assert_eq!(s.cursor(), 0);
+    type_keys(&mut s, "g*");
+    assert_eq!(s.cursor(), 8);
+}
+
+#[test]
+fn visual_search_extends_selection() {
+    let mut s = server("abc def ghi\n");
+    type_keys(&mut s, "v/gh<ret>d");
+    assert_eq!(s.text(), "hi\n");
+}
+
+#[test]
+fn substitute() {
+    let mut s = server("a a\na a\n");
+    type_keys(&mut s, ":s/a/b/<ret>");
+    assert_eq!(s.text(), "b a\na a\n");
+    type_keys(&mut s, ":%s/a/c/g<ret>");
+    assert_eq!(s.text(), "b c\nc c\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "b a\na a\n");
+}
+
+#[test]
+fn substitute_groups_ranges_and_delimiters() {
+    let mut s = server("x=1\ny=2\nz=3\n");
+    type_keys(&mut s, ":2,3s/\\(\\w\\)=\\(\\d\\)/\\2=\\1/<ret>");
+    assert_eq!(s.text(), "x=1\n2=y\n3=z\n");
+    let mut s = server("a/b\n");
+    type_keys(&mut s, ":s#/#\\\\#<ret>");
+    assert_eq!(s.text(), "a\\b\n");
+    let mut s = server("one\n");
+    type_keys(&mut s, ":s/n/&&/<ret>");
+    assert_eq!(s.text(), "onne\n");
+}
+
+#[test]
+fn substitute_on_visual_lines() {
+    let mut s = server("a\na\na\n");
+    type_keys(&mut s, "jVj:s/a/b/<ret>");
+    assert_eq!(s.text(), "a\nb\nb\n");
+}
+
+#[test]
+fn substitute_empty_pattern_uses_last_search() {
+    let mut s = server("foo bar\n");
+    type_keys(&mut s, "/bar<ret>:s//baz/<ret>");
+    assert_eq!(s.text(), "foo baz\n");
+}
+
+#[test]
+fn substitute_with_line_breaks() {
+    let mut s = server("a,b\n");
+    type_keys(&mut s, ":s/,/\\r/<ret>");
+    assert_eq!(s.text(), "a\nb\n");
+}
+
+#[test]
+fn ex_ranges() {
+    let mut s = server("1\n2\n3\n4\n5\n");
+    type_keys(&mut s, ":2,4d<ret>");
+    assert_eq!(s.text(), "1\n5\n");
+    let mut s = server("1\n2\n3\n4\n5\n");
+    type_keys(&mut s, ":.,.+1d<ret>");
+    assert_eq!(s.text(), "3\n4\n5\n");
+    let mut s = server("1\n2\n3\n4\n5\n");
+    type_keys(&mut s, ":$<ret>");
+    assert_eq!(s.cursor(), 8);
+    type_keys(&mut s, ":/2/<ret>");
+    assert_eq!(s.cursor(), 2);
+    type_keys(&mut s, ":4<ret>");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "2:d<ret>");
+    assert_eq!(s.text(), "1\n2\n3\n");
+}
+
+#[test]
+fn eval_runs_scheme() {
+    let mut s = server("x\n");
+    type_keys(&mut s, ":eval (+ 1 2)<ret>");
+    assert_eq!(s.status(), "3");
+    type_keys(
+        &mut s,
+        ":eval (define-key! 'normal \"Q\" (lambda (n) (set-status! \"hi\")))<ret>Q",
+    );
+    assert_eq!(s.status(), "hi");
+}
+
+#[test]
+fn cmdline_editing_keys() {
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, ":foo bar");
+    s.keys(&["C-w", "C-w"]);
+    type_keys(&mut s, "3<ret>");
+    assert_eq!(s.cursor(), 4);
+}

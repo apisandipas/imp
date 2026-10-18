@@ -51,7 +51,7 @@ pub fn frame(e: &mut Editor) -> Frame {
 fn line_row(e: &Editor, line: usize, col: usize, width: usize) -> (Row, usize) {
     let start = e.buffer.line_col_to_offset(line, 0);
     let text = e.buffer.line_text(line);
-    let styles = char_styles(e, start, text.chars().count());
+    let styles = char_styles(e, start, &text);
 
     let mut row: Row = Vec::new();
     let mut x = 0;
@@ -82,9 +82,10 @@ fn line_row(e: &Editor, line: usize, col: usize, width: usize) -> (Row, usize) {
     (row, cursor_x.unwrap_or(x))
 }
 
-/// The style of each char of the line starting at `start` with `len` chars,
+/// The style of each char of `text`, the line starting at offset `start`,
 /// plus one more entry for its line break.
-fn char_styles(e: &Editor, start: usize, len: usize) -> Vec<Style> {
+fn char_styles(e: &Editor, start: usize, text: &str) -> Vec<Style> {
+    let len = text.chars().count();
     let mut styles = vec![Style::default(); len + 1];
     let end = start + len + 1;
     for layer in &e.layers {
@@ -97,6 +98,16 @@ fn char_styles(e: &Editor, start: usize, len: usize) -> Vec<Style> {
             let to = h.end.min(end) - start;
             for style in &mut styles[from..to] {
                 *style = face.over(*style);
+            }
+        }
+        if let Some((re, face)) = &layer.pattern {
+            let face = e.face(face);
+            for m in re.find_iter(text) {
+                let from = text[..m.start()].chars().count();
+                let to = from + m.as_str().chars().count();
+                for style in &mut styles[from..to] {
+                    *style = face.over(*style);
+                }
             }
         }
     }
