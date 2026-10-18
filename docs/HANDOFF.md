@@ -388,6 +388,8 @@ Conventions:
   names against the prelude; `crates/imp-server/examples/` is the place for
   such scratch tools.
 - `void` is a value, not a function: `(void)` is an error.
+- Symbols from Rust (JSON `null` is `'null`) aren't `eq?` to quoted ones;
+  compare with `equal?`. `trim` and `char-digit?` are prelude names.
 - Rust primitives returning `Result<_, String>` raise errors whose message is
   the Debug-quoted string; prefer a primitive that returns the error (like
   `pattern-error`) when Scheme needs to show it.
