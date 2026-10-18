@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use imp_core::{Buffer, Frame, Row, Span, Style};
 use unicode_width::UnicodeWidthChar;
 
-use crate::editor::{window_mark, Editor};
+use crate::editor::{window_mark, Editor, Layer};
 use crate::layout::Rect;
 
 /// How the gutter shows line numbers, set from Scheme (the `number` and
@@ -306,6 +306,8 @@ struct View<'a> {
     /// Whether this window shows the current buffer, whose highlight
     /// ranges (selection) apply.
     current_buffer: bool,
+    /// The buffer's own highlight layers.
+    buffer_layers: &'a [Layer],
     /// The buffer's gutter signs, if it has any.
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
     cursor_line: usize,
@@ -385,6 +387,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer,
         syntax: syntax.unwrap_or_default(),
         current_buffer: buffer_id == e.current,
+        buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: e.signs.get(&buffer_id).filter(|s| !s.is_empty()),
         cursor_line,
         gutter,
@@ -523,7 +526,14 @@ impl View<'_> {
         let start = self.buffer.line_col_to_offset(line, 0);
         let text = self.buffer.line_text(line);
         let cells = layout_line(&text, e.tab_width);
-        let mut styles = char_styles(e, start, &text, self.current_buffer, &self.syntax);
+        let mut styles = char_styles(
+            e,
+            start,
+            &text,
+            self.current_buffer,
+            self.buffer_layers,
+            &self.syntax,
+        );
         let cursorline = e.cursorline && line == self.cursor_line;
         if cursorline {
             let face = e.face("cursorline");
@@ -658,14 +668,16 @@ fn gutter_text(e: &Editor, line: usize, cursor_line: usize, gutter: usize) -> St
 }
 
 /// The style of each char of `text`, the line starting at offset `start`,
-/// plus one more entry for its line break. Highlight ranges are offsets
-/// into the current buffer, so they only apply to windows showing it;
-/// pattern highlights (search) apply everywhere.
+/// plus one more entry for its line break. Global highlight ranges are
+/// offsets into the current buffer, so they only apply to windows showing
+/// it; global patterns (search) apply everywhere. A buffer's own layers
+/// apply wherever it is shown.
 fn char_styles(
     e: &Editor,
     start: usize,
     text: &str,
     current_buffer: bool,
+    buffer_layers: &[Layer],
     syntax: &[(usize, usize, &'static [String])],
 ) -> Vec<Style> {
     let len = text.chars().count();
@@ -688,8 +700,13 @@ fn char_styles(
             }
         }
     }
-    for layer in &e.layers {
-        if current_buffer {
+    let layers = e
+        .layers
+        .iter()
+        .map(|l| (l, current_buffer))
+        .chain(buffer_layers.iter().map(|l| (l, true)));
+    for (layer, ranges_apply) in layers {
+        if ranges_apply {
             for h in &layer.ranges {
                 if h.end <= start || h.start >= end {
                     continue;

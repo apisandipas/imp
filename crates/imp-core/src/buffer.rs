@@ -37,6 +37,9 @@ pub struct Buffer {
     disk: Option<(std::time::SystemTime, u64)>,
     /// Keep the previous version as `FILE~` when saving.
     pub backup: bool,
+    /// Vim's 'nomodifiable': the server refuses to change the text (the
+    /// buffer itself doesn't check).
+    pub read_only: bool,
     /// Edits since a parser last looked, when something asked to track
     /// them (a syntax tree; see `track_edits`).
     edits: Option<Vec<Edit>>,

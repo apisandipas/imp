@@ -1895,7 +1895,9 @@
        (start-search! (equal? key "/") op count))]
 
     ;; Prefix keys wait for the next key: `g`, `z`, char motions like `f`.
-    [(and (not *prefix*) (prefix-key? key))
+    ;; A buffer's mode can take one over (q in special buffers).
+    [(and (not *prefix*) (prefix-key? key)
+          (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
      (set! *prefix* key)]
     [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
      (set! *prefix* key)]

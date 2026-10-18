@@ -48,6 +48,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ),
     ("leader.scm", include_str!("../../../runtime/leader.scm")),
     ("modes.scm", include_str!("../../../runtime/modes.scm")),
+    ("special.scm", include_str!("../../../runtime/special.scm")),
     ("emacs.scm", include_str!("../../../runtime/emacs.scm")),
     (
         "packages.scm",

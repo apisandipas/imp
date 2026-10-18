@@ -91,6 +91,8 @@ pub struct Editor {
     pub faces: HashMap<String, Style>,
     /// Highlight layers in drawing order: later layers draw over earlier ones.
     pub layers: Vec<Layer>,
+    /// Each buffer's own highlight layers, drawn wherever it is shown.
+    pub buffer_layers: HashMap<usize, Vec<Layer>>,
 }
 
 /// One popup row: runs of (text, face); an empty face means the popup's.
@@ -249,6 +251,7 @@ impl Editor {
         }
         self.parked.remove(&id);
         self.syntax.remove(&id);
+        self.buffer_layers.remove(&id);
         self.signs.remove(&id);
         self.status_values.remove(&id);
         true
@@ -446,6 +449,22 @@ impl Editor {
     }
 
     /// The layer called `name`, created on top of the others if new.
+    /// The current buffer's own layer `name`, made if it is new.
+    pub fn buffer_layer_mut(&mut self, name: &str) -> &mut Layer {
+        let layers = self.buffer_layers.entry(self.current).or_default();
+        let i = match layers.iter().position(|l| l.name == name) {
+            Some(i) => i,
+            None => {
+                layers.push(Layer {
+                    name: name.to_string(),
+                    ..Layer::default()
+                });
+                layers.len() - 1
+            }
+        };
+        &mut layers[i]
+    }
+
     pub fn layer_mut(&mut self, name: &str) -> &mut Layer {
         let i = match self.layers.iter().position(|l| l.name == name) {
             Some(i) => i,

@@ -12,7 +12,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
 use crate::clipboard;
-use crate::editor::{self, Highlight};
+use crate::editor::{self, Editor, Highlight};
 use crate::files;
 use crate::fuzzy;
 use crate::scan;
@@ -44,6 +44,15 @@ fn popup_line(value: &SteelVal) -> crate::editor::PopupLine {
 
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
+}
+
+/// Fails if the current buffer is read-only.
+fn writable(e: &Editor) -> Result<(), String> {
+    if e.buffer.read_only {
+        Err("E21: Cannot make changes, 'modifiable' is off".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// A syntax node for Scheme: (kind field start end named?).
@@ -218,11 +227,26 @@ pub fn register(engine: &mut Engine) {
 
     // Changing the buffer.
     engine.register_fn("buffer-insert!", |offset: isize, text: String| {
-        editor::with(|e| e.buffer.insert(clamp(offset), &text))
+        editor::with(|e| {
+            if !text.is_empty() {
+                writable(e)?;
+            }
+            e.buffer.insert(clamp(offset), &text);
+            Ok::<_, String>(())
+        })
     });
     engine.register_fn("buffer-delete!", |start: isize, end: isize| {
-        editor::with(|e| e.buffer.delete(clamp(start), clamp(end)))
+        editor::with(|e| {
+            if start < end {
+                writable(e)?;
+            }
+            Ok::<_, String>(e.buffer.delete(clamp(start), clamp(end)))
+        })
     });
+    engine.register_fn("set-buffer-read-only!", |on: bool| {
+        editor::with(|e| e.buffer.read_only = on)
+    });
+    engine.register_fn("buffer-read-only?", || editor::with(|e| e.buffer.read_only));
     // Files and processes.
     engine.register_fn("write-file!", |path: String| {
         editor::with(|e| {
@@ -333,10 +357,16 @@ pub fn register(engine: &mut Engine) {
     // Both return the offset where the text changed, or #f if there was
     // nothing to undo or redo.
     engine.register_fn("undo!", || {
-        editor::with(|e| e.buffer.undo().map(|at| at as isize))
+        editor::with(|e| {
+            writable(e)?;
+            Ok::<_, String>(e.buffer.undo().map(|at| at as isize))
+        })
     });
     engine.register_fn("redo!", || {
-        editor::with(|e| e.buffer.redo().map(|at| at as isize))
+        editor::with(|e| {
+            writable(e)?;
+            Ok::<_, String>(e.buffer.redo().map(|at| at as isize))
+        })
     });
     engine.register_fn("save!", || {
         editor::with(|e| match e.buffer.save() {
@@ -881,6 +911,7 @@ pub fn register(engine: &mut Engine) {
         "substitute!",
         |pattern: String, replacement: String, first: isize, last: isize, global: bool| {
             let re = search::compile(&pattern)?;
+            editor::with(|e| writable(e))?;
             Ok::<_, String>(editor::with(|e| {
                 let (count, line) = search::substitute(
                     &mut e.buffer,
@@ -893,6 +924,34 @@ pub fn register(engine: &mut Engine) {
                 // (count last-changed-line), the line being -1 if none.
                 vec![count as isize, line.map_or(-1, |l| l as isize)]
             }))
+        },
+    );
+    // The current buffer's own layers, drawn wherever it is shown.
+    engine.register_fn("buffer-highlight-clear!", |layer: String| {
+        editor::with(|e| {
+            let layer = e.buffer_layer_mut(&layer);
+            layer.ranges.clear();
+            layer.pattern = None;
+        })
+    });
+    engine.register_fn(
+        "buffer-highlight-add!",
+        |layer: String, start: isize, end: isize, face: String| {
+            editor::with(|e| {
+                e.buffer_layer_mut(&layer).ranges.push(Highlight {
+                    start: clamp(start),
+                    end: clamp(end),
+                    face,
+                })
+            })
+        },
+    );
+    engine.register_fn(
+        "buffer-highlight-pattern!",
+        |layer: String, pattern: String, face: String| {
+            let re = search::compile(&pattern)?;
+            editor::with(|e| e.buffer_layer_mut(&layer).pattern = Some((re, face)));
+            Ok::<(), String>(())
         },
     );
     engine.register_fn(
