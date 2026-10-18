@@ -187,3 +187,13 @@ fn gj_and_gk_move_by_screen_rows() {
     s.keys(&["g", "k", "g", "k"]);
     assert_eq!(s.cursor(), 2);
 }
+
+#[test]
+fn narrow_status_lines_keep_the_position() {
+    let mut s = sized("x\n", 16, 4);
+    s.eval("(set-buffer-name! \"a-very-long-buffer-name\")")
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[2].chars().count(), 16);
+    assert!(rows[2].ends_with("1:1 "), "{:?}", rows[2]);
+}

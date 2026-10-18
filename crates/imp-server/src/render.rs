@@ -533,13 +533,22 @@ fn status_line(
     } else {
         format!(" {name}{modified}")
     };
-    let right = if focused && !e.mode_line_extra.is_empty() {
-        format!("{}  {}:{} ", e.mode_line_extra, line + 1, col + 1)
+    // What shows, in order of priority when the window is narrow: the
+    // position, then the mode and buffer name, then the major mode.
+    let position = clip(&format!("{}:{} ", line + 1, col + 1), width);
+    let room = width.saturating_sub(text_width(&position));
+    let extra = if focused && !e.mode_line_extra.is_empty() {
+        format!("{}  ", e.mode_line_extra)
     } else {
-        format!("{}:{} ", line + 1, col + 1)
+        String::new()
     };
-    let gap = width.saturating_sub(text_width(&left) + text_width(&right));
-    let s = clip(&format!("{left}{}{right}", " ".repeat(gap)), width);
+    let (left, extra) = if text_width(&left) + text_width(&extra) < room {
+        (left, extra)
+    } else {
+        (clip(&left, room.saturating_sub(1)), String::new())
+    };
+    let gap = width.saturating_sub(text_width(&left) + text_width(&extra) + text_width(&position));
+    let s = format!("{left}{}{extra}{position}", " ".repeat(gap));
     let face = if focused {
         e.face("status")
     } else {
