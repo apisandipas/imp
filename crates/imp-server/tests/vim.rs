@@ -302,3 +302,103 @@ fn paragraph_objects() {
     type_keys(&mut s, "Gdap");
     assert_eq!(s.text(), "a\n");
 }
+
+#[test]
+fn visual_delete_and_yank() {
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "wvlld");
+    assert_eq!(s.text(), "one  three\n");
+    let mut s = server("one two\n");
+    type_keys(&mut s, "vey$p");
+    assert_eq!(s.text(), "one twoone\n");
+}
+
+#[test]
+fn visual_selection_is_highlighted() {
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "lvll");
+    let row = &s.frame().rows[0];
+    let texts: Vec<&str> = row.iter().map(|span| span.text.as_str()).collect();
+    assert_eq!(texts, ["a", "bcd", "ef"]);
+    assert!(row[1].style.bg.is_some());
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.frame().rows[0].len(), 1);
+}
+
+#[test]
+fn visual_line_delete_and_change() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "jVjd");
+    assert_eq!(s.text(), "1\n4\n");
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, "Vjcx<esc>");
+    assert_eq!(s.text(), "x\n3\n");
+    // x on a whole-line selection deletes the lines.
+    let mut s = server("1\n2\n");
+    type_keys(&mut s, "Vx");
+    assert_eq!(s.text(), "2\n");
+}
+
+#[test]
+fn visual_o_swaps_ends() {
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "llvlohd");
+    assert_eq!(s.text(), "aef\n");
+}
+
+#[test]
+fn visual_backwards_selection() {
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "$vhhd");
+    assert_eq!(s.text(), "abc\n");
+}
+
+#[test]
+fn visual_text_objects() {
+    let mut s = server("foo (bar baz) qux\n");
+    type_keys(&mut s, "6lvi(d");
+    assert_eq!(s.text(), "foo () qux\n");
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "wvawd");
+    assert_eq!(s.text(), "one three\n");
+    // ip selects lines, so the selection becomes linewise.
+    let mut s = server("a\nb\n\nc\n");
+    type_keys(&mut s, "vipd");
+    assert_eq!(s.text(), "\nc\n");
+}
+
+#[test]
+fn visual_dot_repeats_same_size() {
+    let mut s = server("abcdefgh\n");
+    type_keys(&mut s, "vld.");
+    assert_eq!(s.text(), "efgh\n");
+    let mut s = server("1\n2\n3\n4\n5\n");
+    type_keys(&mut s, "Vjd.");
+    assert_eq!(s.text(), "5\n");
+}
+
+#[test]
+fn visual_paste_replaces_selection() {
+    let mut s = server("one two\n");
+    type_keys(&mut s, "yiwwviwp");
+    assert_eq!(s.text(), "one one\n");
+    // The replaced text is now in the register.
+    type_keys(&mut s, "0P");
+    assert_eq!(s.text(), "twoone one\n");
+}
+
+#[test]
+fn gv_reselects() {
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "vl<esc>$gvd");
+    assert_eq!(s.text(), "cdef\n");
+}
+
+#[test]
+fn v_toggles_and_switches_kind() {
+    let mut s = server("ab\ncd\n");
+    type_keys(&mut s, "vv");
+    assert!(s.frame().text_rows().last().unwrap().contains("NORMAL"));
+    type_keys(&mut s, "vVd");
+    assert_eq!(s.text(), "cd\n");
+}

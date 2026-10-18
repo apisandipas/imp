@@ -10,7 +10,10 @@
 
 ;;; State
 
-(define *mode* 'normal)        ; normal | insert | cmdline
+(define *mode* 'normal)        ; normal | insert | cmdline | visual
+(define *visual* #f)           ; char | line while in visual mode
+(define *visual-anchor* 0)     ; the end of the selection the cursor isn't on
+(define *last-visual* #f)      ; (kind anchor cursor) for gv
 (define *count* "")            ; digits typed so far
 (define *operator* #f)         ; pending operator key, e.g. "d"
 (define *operator-count* "")   ; count typed before the operator
@@ -32,6 +35,9 @@
   (cond
     [(eq? mode 'insert) (set-mode-name! "INSERT") (set-cursor-shape! "bar")]
     [(eq? mode 'cmdline) (set-mode-name! "COMMAND") (set-cursor-shape! "block")]
+    [(eq? mode 'visual)
+     (set-mode-name! (if (eq? *visual* 'line) "VISUAL LINE" "VISUAL"))
+     (set-cursor-shape! "block")]
     [else (set-mode-name! "NORMAL") (set-cursor-shape! "block")]))
 
 (define (reset-pending!)
@@ -625,6 +631,131 @@
     (set-mode! 'cmdline)
     (set-status! ":")))
 
+;;; Visual mode
+;;;
+;;; The selection runs from *visual-anchor* to the cursor, both included.
+;;; Motions move the cursor, text objects grow the selection, and operators
+;;; act on it and return to normal mode.
+
+(define (enter-visual! kind anchor)
+  (set! *visual* kind)
+  (set! *visual-anchor* anchor)
+  (set-mode! 'visual))
+
+(define (leave-visual!)
+  (set! *last-visual* (list *visual* *visual-anchor* (cursor)))
+  (set! *visual* #f)
+  (set-mode! 'normal))
+
+;; The selection as (start end linewise?).
+(define (visual-range)
+  (let ([lo (min *visual-anchor* (cursor))] [hi (max *visual-anchor* (cursor))])
+    (if (eq? *visual* 'line)
+        (lines-range (offset->line lo) (offset->line hi))
+        (list lo (min (+ hi 1) (buffer-length)) #f))))
+
+(define (update-visual-highlight!)
+  (highlight-clear! "visual")
+  (when (eq? *mode* 'visual)
+    (let ([r (visual-range)])
+      (highlight-add! "visual" (car r) (cadr r) "visual"))))
+
+;; v, V: start a selection, or switch kind, or leave if already that kind.
+(define (visual-command! kind)
+  (lambda (count)
+    (cond
+      [(not (eq? *mode* 'visual)) (enter-visual! kind (cursor))]
+      [(eq? *visual* kind) (leave-visual!)]
+      [else (set! *visual* kind) (set-mode! 'visual)])))
+
+(define-key! 'normal "v" (visual-command! 'char))
+(define-key! 'normal "V" (visual-command! 'line))
+(define-key! 'visual "v" (visual-command! 'char))
+(define-key! 'visual "V" (visual-command! 'line))
+(define-key! 'visual "<esc>" (lambda (count) (leave-visual!)))
+(define-key! 'visual "C-c" (lambda (count) (leave-visual!)))
+
+(define-key! 'visual "o"
+  (lambda (count)
+    (let ([anchor *visual-anchor*])
+      (set! *visual-anchor* (cursor))
+      (set-cursor! anchor))))
+
+(define-key! 'normal "gv"
+  (lambda (count)
+    (when *last-visual*
+      (enter-visual! (car *last-visual*) (cadr *last-visual*))
+      (set-cursor! (caddr *last-visual*)))))
+
+;; A text object in visual mode selects the object, taking in the current
+;; selection if it is larger than one char.
+(define (visual-text-object! key count)
+  (let ([range ((hash-ref *text-objects* key) (cursor) count)])
+    (when range
+      (let* ([start (car range)] [end (max (car range) (- (cadr range) 1))])
+        (if (= *visual-anchor* (cursor))
+            (set! *visual-anchor* start)
+            (set! *visual-anchor* (min *visual-anchor* start)))
+        (set-cursor! (max (cursor) end))
+        (when (and (caddr range) (eq? *visual* 'char))
+          (set! *visual* 'line)
+          (set-mode! 'visual))))))
+
+;; How to repeat a visual operator with `.`: the same number of lines, or of
+;; chars, from wherever the cursor is then.
+(define (visual-repeat op-key range)
+  (let* ([start (car range)] [end (cadr range)] [linewise? (caddr range)]
+         [lines (- (offset->line (max start (- end 1))) (offset->line start))]
+         [chars (- end start)])
+    (lambda (n)
+      (undo-boundary!)
+      (let ([r (if linewise?
+                   (lines-range (current-line) (min (last-line) (+ (current-line) lines)))
+                   (list (cursor) (min (buffer-length) (+ (cursor) chars)) #f))])
+        ((hash-ref *operators* op-key) (car r) (cadr r) (caddr r))))))
+
+(define (visual-operator! op-key linewise?)
+  (let ([range (if linewise?
+                   (let ([r (visual-range)])
+                     (lines-range (offset->line (car r)) (offset->line (max (car r) (- (cadr r) 1)))))
+                   (visual-range))])
+    (leave-visual!)
+    (undo-boundary!)
+    ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))
+    (when (changing-operator? op-key)
+      (record-change! (visual-repeat op-key range) 1))))
+
+;; Visual shorthands: x is d, s is c; the capitals act on whole lines.
+(for-each
+ (lambda (spec)
+   (define-key! 'visual (car spec)
+     (lambda (count) (visual-operator! (cadr spec) (caddr spec)))))
+ (list (list "x" "d" #f) (list "s" "c" #f)
+       (list "X" "d" #t) (list "D" "d" #t) (list "Y" "y" #t)
+       (list "C" "c" #t) (list "S" "c" #t) (list "R" "c" #t)))
+
+;; p in visual replaces the selection with the register, and the replaced
+;; text becomes the register, so pasting again swaps back.
+(define-key! 'visual "p"
+  (lambda (count)
+    (let* ([text *register*] [text-linewise? *register-linewise*]
+           [range (visual-range)] [start (car range)] [linewise? (caddr range)])
+      (leave-visual!)
+      (undo-boundary!)
+      (yank-range! start (cadr range) linewise?)
+      (buffer-delete! start (if linewise? (without-final-break start (cadr range)) (cadr range)))
+      (let ([text (cond
+                    [(and text-linewise? linewise?) (without-final-newline text)]
+                    [text-linewise? (string-append "\n" text)]
+                    [else text])])
+        (buffer-insert! start text)
+        (set-cursor! (if text-linewise?
+                         (line-first-nonblank (offset->line (if linewise? start (+ start 1))))
+                         (max start (- (+ start (string-length text)) 1))))))))
+
+(define (without-final-newline text)
+  (if (ends-with? text "\n") (substring text 0 (- (string-length text) 1)) text))
+
 ;;; Normal mode dispatch
 
 (define (digit? key)
@@ -638,7 +769,10 @@
 
 (define (normal-key! key)
   (cond
-    [(member key '("<esc>" "C-c")) (reset-pending!)]
+    [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
+     (reset-pending!)]
+    [(and (member key '("<esc>" "C-c")) (not (eq? *mode* 'visual)))
+     (reset-pending!)]
 
     ;; Counts. A leading 0 is the motion, not a count.
     [(and (digit? key) (not (and (equal? key "0") (equal? *count* ""))))
@@ -647,7 +781,7 @@
     ;; Prefix keys: `g` waits for the next key.
     [(and (not *prefix*) (equal? key "g"))
      (set! *prefix* "g")]
-    [(and *operator* (not *prefix*) (member key '("i" "a")))
+    [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
      (set! *prefix* key)]
 
     [else
@@ -682,6 +816,18 @@
           (set! *count* "")
           (set! *operator-count* "")]
 
+         [(and (eq? *mode* 'visual) (hash-contains? *operators* key))
+          (visual-operator! key #f)
+          (set! *count* "")]
+
+         [(and (eq? *mode* 'visual) (hash-contains? *text-objects* key))
+          (visual-text-object! key count)
+          (set! *count* "")]
+
+         [(and (eq? *mode* 'visual) (lookup-key 'visual key))
+          ((lookup-key 'visual key) count)
+          (set! *count* "")]
+
          [(hash-contains? *operators* key)
           (set! *operator* key)
           (set! *operator-count* *count*)
@@ -691,7 +837,7 @@
           (set-cursor! ((motion-proc (hash-ref *motions* key)) (cursor) count))
           (set! *count* "")]
 
-         [(lookup-key 'normal key)
+         [(and (not (eq? *mode* 'visual)) (lookup-key 'normal key))
           ((lookup-key 'normal key) count)
           (set! *count* "")]
 
@@ -700,7 +846,7 @@
           (set-status! (string-append "no binding for " key))])
        (set! *count-given* #f))])
 
-  (when (eq? *mode* 'normal)
+  (when (member *mode* '(normal visual))
     (normal-clamp!)
     (unless (or *operator* (vertical-motion? key))
       (set! *goal-col* (current-col)))))
@@ -801,4 +947,5 @@
      ;; A fresh command clears the last message.
      (when (and (not *operator*) (not *prefix*) (equal? *count* ""))
        (set-status! ""))
-     (normal-key! key)]))
+     (normal-key! key)])
+  (update-visual-highlight!))
