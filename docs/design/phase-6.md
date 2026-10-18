@@ -179,3 +179,18 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     state treats as escape.
   - Not done: staging selected lines, rebase, merge, blame, and refreshing
     on save.
+- 6.2a Folding: done.
+  - `runtime/fold.scm` keeps the folds as mark pairs. The end mark is at
+    the start of the line after the fold, so deleting a fold's last line
+    shrinks it.
+  - `set-closed-folds!` tells the renderer what to hide. It handles
+    scrolling, wrap, mouse clicks, relative numbers and the
+    `··· N lines` note.
+  - Keys: `zf` (an operator), `zF`, `zo zO zc zC za zA zR zM zE zd zD
+    zj zk`, plus `:fold`, `:foldopen[!]` and `:foldclose[!]`.
+  - `j`, `k` and counts step over a closed fold, and linewise operators
+    take it whole.
+  - Folds open where Vim's default 'foldopen' says they should: after
+    searches, marks, `%`, `{ }` and undo.
+  - Differences from Vim: `h` and `l` on a fold line don't open it, and
+    there is no 'foldmethod' other than manual. Org makes its own folds.

@@ -209,10 +209,11 @@
   (lambda (from n) (repeat-motion n (lambda (p) (step p classify)) from)))
 
 ;; j and k go as far as they can, but fail (#f) if they can't move at all,
-;; as Vim's do: that stops a macro at the end of the file.
+;; as Vim's do: that stops a macro at the end of the file. A closed fold
+;; counts as one line.
 (define (vertical from n)
-  (let ([line (clamp (+ (offset->line from) n) 0 (last-line))])
-    (and (not (= line (offset->line from)))
+  (let ([line (fold-step (offset->line from) n)])
+    (and (not (= line (shown-line (offset->line from))))
          (line-col->offset line *goal-col*))))
 
 (define-motion! "h" 'exclusive
@@ -566,7 +567,8 @@
 (define (motion-range from target type)
   (let ([lo (min from target)] [hi (max from target)])
     (cond
-      [(eq? type 'linewise) (lines-range (offset->line lo) (offset->line hi))]
+      ;; Linewise, a closed fold is taken whole.
+      [(eq? type 'linewise) (lines-range (shown-line (offset->line lo)) (shown-last (offset->line hi)))]
       [(eq? type 'inclusive) (list lo (min (+ hi 1) (buffer-length)) #f)]
       [else
        ;; Vim's rules for an exclusive motion that ends at the start of a
@@ -610,7 +612,7 @@
 ;; `dd`, `cc`, `yy`: the operator over `count` whole lines.
 (define (run-linewise-operator! op-key count)
   (let* ([from (cursor)]
-         [target (line-start (clamp (+ (current-line) (- count 1)) 0 (last-line)))]
+         [target (line-start (fold-step (current-line) (- count 1)))]
          [range (motion-range from target 'linewise)])
     (begin-change!)
     ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
@@ -828,7 +830,7 @@
 
 ;;; Changes and dot-repeat
 
-(define (changing-operator? key) (not (equal? key "y")))
+(define (changing-operator? key) (not (member key '("y" "zf"))))
 
 ;; Runs `thunk` with all its changes in one undo step.
 (define (with-undo-group thunk)
@@ -1061,7 +1063,7 @@
       (let ([r (and (< i count) (step!))])
         (cond
           [r (loop (+ i 1) r)]
-          [at (set-cursor! (min at (buffer-length))) (normal-clamp!)]
+          [at (set-cursor! (min at (buffer-length))) (normal-clamp!) (set! *fold-open-wanted* #t)]
           [else (set-status! message)])))))
 
 (define-key! 'normal "u" (undo-command undo! "already at oldest change"))
@@ -1618,6 +1620,12 @@
 (define-char-motion! "`" 'exclusive (lambda (from n c) (mark-pos c)))
 
 ;; Motions that count as jumps: they set the ' mark and go in the jump list.
+;; Motions that open a closed fold they land in ('foldopen': mark,
+;; percent, search, block).
+(define (fold-opening-motion? key)
+  (or (member key '("%" "{" "}" "n" "N" "*" "#" "g*" "g#" "(" ")"))
+      (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`")))))
+
 (define (jump-motion? key)
   (or (member key '("G" "gg" "%" "{" "}" "n" "N" "*" "#" "g*" "g#" "H" "M" "L"))
       (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`")))))
@@ -1852,6 +1860,81 @@
 (define-normal-and-visual! "z." (cursor-line-at! 'middle #t))
 (define-normal-and-visual! "z-" (cursor-line-at! 'bottom #t))
 
+;;; Folds (fold.scm has how they're kept)
+
+;; zf{motion} and visual zf make a closed fold of the lines covered.
+(define-operator! "zf"
+  (lambda (start end linewise?)
+    (let ([first (offset->line start)]
+          [last (offset->line (if linewise? (max start (- end 1)) end))])
+      (fold-create! first last #t)
+      (set-cursor! (line-first-nonblank first)))))
+
+;; zF makes a fold of count lines.
+(define-key! 'normal "zF"
+  (lambda (count) (fold-create! (current-line) (fold-step (current-line) (- count 1)) #t)))
+
+(define (fold-command! key proc)
+  (define-normal-and-visual! key (lambda (count) (proc (current-line)))))
+
+(define (fold-or-complain line ok? what)
+  (or (innermost-fold line ok?) (begin (set-status! (string-append "E490: No fold found" what)) #f)))
+
+;; zo opens the fold under the cursor (the closed one showing there), zO
+;; every fold there.
+(fold-command! "zo"
+  (lambda (line)
+    (let ([f (closed-fold-at line)])
+      (if f (fold-set-closed! (fold-id f) #f) (fold-or-complain line (lambda (f) #f) "")))))
+(fold-command! "zO"
+  (lambda (line) (for-each (lambda (f) (fold-set-closed! (fold-id f) #f)) (folds-at line))))
+;; zc closes the innermost open fold there, zC every fold there.
+(fold-command! "zc"
+  (lambda (line)
+    (let ([f (innermost-fold line (lambda (f) (not (fold-closed? f))))])
+      (cond [f (fold-set-closed! (fold-id f) #t)]
+            [(null? (folds-at line)) (fold-or-complain line (lambda (f) #f) "")]
+            [else #f]))
+    (set-cursor! (line-first-nonblank (shown-line line)))))
+(fold-command! "zC"
+  (lambda (line)
+    (for-each (lambda (f) (fold-set-closed! (fold-id f) #t)) (folds-at line))
+    (set-cursor! (line-first-nonblank (shown-line line)))))
+;; za: open if closed, close if open.
+(fold-command! "za"
+  (lambda (line)
+    (if (closed-fold-at line) ((lookup-key 'normal "zo") 1) ((lookup-key 'normal "zc") 1))))
+(fold-command! "zA"
+  (lambda (line)
+    (if (closed-fold-at line) ((lookup-key 'normal "zO") 1) ((lookup-key 'normal "zC") 1))))
+;; zR opens and zM closes every fold; zE deletes them all.
+(fold-command! "zR"
+  (lambda (line) (for-each (lambda (f) (fold-set-closed! (fold-id f) #f)) (buffer-folds))))
+(fold-command! "zM"
+  (lambda (line)
+    (for-each (lambda (f) (fold-set-closed! (fold-id f) #t)) (buffer-folds))
+    (set-cursor! (line-first-nonblank (shown-line line)))))
+(fold-command! "zE"
+  (lambda (line) (for-each (lambda (f) (fold-delete! (fold-id f))) (buffer-folds))))
+;; zd deletes the innermost fold at the cursor (its text stays), zD every
+;; one there.
+(fold-command! "zd"
+  (lambda (line)
+    (let ([f (or (closed-fold-at line) (fold-or-complain line (lambda (f) #t) ""))])
+      (when f (fold-delete! (fold-id f))))))
+(fold-command! "zD"
+  (lambda (line) (for-each (lambda (f) (fold-delete! (fold-id f))) (folds-at line))))
+;; zj and zk move to the start of the next fold, and the end of the one
+;; before.
+(define-key! 'normal "zj"
+  (lambda (count)
+    (let ([starts (filter (lambda (l) (> l (current-line))) (map fold-first (buffer-folds)))])
+      (if (null? starts) (set! *command-failed* #t) (cursor-to-line! (apply min starts))))))
+(define-key! 'normal "zk"
+  (lambda (count)
+    (let ([ends (filter (lambda (l) (< l (current-line))) (map fold-last (buffer-folds)))])
+      (if (null? ends) (set! *command-failed* #t) (cursor-to-line! (apply max ends))))))
+
 ;;; Normal mode dispatch
 
 ;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
@@ -1976,6 +2059,7 @@
                    [(not target) (set! *command-failed* #t)]
                    [else
                     (when (jump-motion? key) (record-jump!))
+                    (when (fold-opening-motion? key) (set! *fold-open-wanted* #t))
                     (when (eq? *visual* 'block)
                       (cond [(equal? key "$") (set! *block-eol* #t)]
                             [(vertical-motion? key) #t]
@@ -2487,7 +2571,7 @@
                       (let ([t (search-target pattern (cursor) forward? n)])
                         (when t (operate! op (cursor) t 'exclusive))))
                     count))]
-                [else (record-jump!) (set-cursor! target)]))])))
+                [else (record-jump!) (set! *fold-open-wanted* #t) (set-cursor! target)]))])))
      ;; Incremental search: show where the pattern matches so far.
      (lambda (text)
        (set-cursor! origin)
@@ -2793,6 +2877,18 @@
       ((hash-ref *operators* op-key) (car r) (cadr r) #t))))
 
 (define-ex! '("d" "de" "del" "delete") (ex-lines-operator "d"))
+;; :[range]fold, :[range]foldopen[!], :[range]foldclose[!]
+(define-ex! '("fo" "fold") (lambda (ex) (fold-create! (car (ex-range ex)) (cadr (ex-range ex)) #t)))
+(define (ex-fold-set! closed?)
+  (lambda (ex)
+    (let ([first (car (ex-range ex))] [last (cadr (ex-range ex))])
+      (for-each (lambda (f)
+                  (when (and (<= (fold-first f) last) (>= (fold-last f) first)
+                             (or (ex-bang? ex) (eq? (fold-closed? f) (not closed?))))
+                    (fold-set-closed! (fold-id f) closed?)))
+                (buffer-folds)))))
+(define-ex! '("foldo" "foldopen") (ex-fold-set! #f))
+(define-ex! '("foldc" "foldclose") (ex-fold-set! #t))
 (define-ex! '("y" "ya" "yank") (lambda (ex) (let ([c (cursor)]) ((ex-lines-operator "y") ex) (set-cursor! c))))
 
 ;; :s/pattern/replacement/flags. Flags: g (every match on a line), i and I

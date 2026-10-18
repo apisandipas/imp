@@ -297,6 +297,58 @@ struct DrawnWindow {
     hscroll: usize,
 }
 
+/// A buffer's closed folds: (first, last) lines, sorted, not nested. A
+/// closed fold shows as its first line.
+#[derive(Clone, Copy)]
+struct Folds<'a>(&'a [(usize, usize)]);
+
+impl Folds<'_> {
+    fn of(e: &Editor, buffer_id: usize) -> Folds<'_> {
+        Folds(e.folds.get(&buffer_id).map_or(&[], Vec::as_slice))
+    }
+
+    fn at(self, line: usize) -> Option<(usize, usize)> {
+        self.0
+            .iter()
+            .copied()
+            .find(|&(a, b)| a <= line && line <= b)
+    }
+
+    /// The line `line` shows on: its fold's first line, or itself.
+    fn shown(self, line: usize) -> usize {
+        self.at(line).map_or(line, |(a, _)| a)
+    }
+
+    /// The shown line after `line`'s.
+    fn next(self, line: usize) -> usize {
+        self.at(line).map_or(line, |(_, b)| b) + 1
+    }
+
+    /// Whether at most `limit` shown lines run from `a` to `b`.
+    fn within(self, a: usize, b: usize, limit: usize) -> bool {
+        let (mut line, mut n) = (a, 0);
+        while line <= b {
+            n += 1;
+            if n > limit {
+                return false;
+            }
+            line = self.next(line);
+        }
+        true
+    }
+
+    /// Shown lines between `a` and `b`, as `j` would count them.
+    fn distance(self, a: usize, b: usize) -> usize {
+        let (from, to) = (self.shown(a.min(b)), self.shown(a.max(b)));
+        let (mut line, mut n) = (from, 0);
+        while line < to {
+            n += 1;
+            line = self.next(line);
+        }
+        n
+    }
+}
+
 /// Everything about one window's view needed to draw it.
 struct View<'a> {
     e: &'a Editor,
@@ -310,6 +362,7 @@ struct View<'a> {
     buffer_layers: &'a [Layer],
     /// The buffer's gutter signs, if it has any.
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
+    folds: Folds<'a>,
     cursor_line: usize,
     gutter: usize,
     text_width: usize,
@@ -331,17 +384,26 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     }
     .min(buffer.len());
     let text_rows = rect.h.saturating_sub(1).max(1);
-    let cursor_line = buffer.offset_to_line(cursor);
+    let folds = Folds::of(e, buffer_id);
+    let real_line = buffer.offset_to_line(cursor);
     let cursor_col = buffer.offset_to_col(cursor);
+    // In a closed fold the cursor shows at the start of the fold's line.
+    let folded = folds.at(real_line).is_some();
+    let cursor_line = folds.shown(real_line);
     let gutter = gutter_width(e, buffer_id, buffer);
     let text_width = rect.w.saturating_sub(gutter).max(1);
 
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
     // without.
     let cursor_cells = layout_line(&buffer.line_text(cursor_line), e.tab_width);
-    let (cursor_row, cursor_x) = cursor_position(&cursor_cells, cursor_col, e.wrap, text_width);
+    let (cursor_row, cursor_x) = if folded {
+        (0, 0)
+    } else {
+        cursor_position(&cursor_cells, cursor_col, e.wrap, text_width)
+    };
 
     // Scroll just enough to keep the cursor in view.
+    scroll = folds.shown(scroll);
     if cursor_line < scroll {
         scroll = cursor_line;
     }
@@ -353,20 +415,31 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         let mut top = cursor_line;
         let mut used = cursor_row + 1;
         while top > scroll {
-            let rows = line_rows(
-                &layout_line(&buffer.line_text(top - 1), e.tab_width),
-                text_width,
-            );
+            let prev = folds.shown(top - 1);
+            let rows = if folds.at(prev).is_some() {
+                1
+            } else {
+                line_rows(
+                    &layout_line(&buffer.line_text(prev), e.tab_width),
+                    text_width,
+                )
+            };
             if used + rows > text_rows {
                 break;
             }
             used += rows;
-            top -= 1;
+            top = prev;
         }
         scroll = scroll.max(top);
     } else {
-        if cursor_line >= scroll + text_rows {
-            scroll = cursor_line + 1 - text_rows;
+        if !folds.within(scroll, cursor_line, text_rows) {
+            scroll = cursor_line;
+            for _ in 1..text_rows {
+                if scroll == 0 {
+                    break;
+                }
+                scroll = folds.shown(scroll - 1);
+            }
         }
         if cursor_x < hscroll {
             hscroll = cursor_x;
@@ -378,8 +451,12 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     // Syntax highlights for about the rows on screen.
     let syntax = e.syntax.get(&buffer_id).map(|s| {
         let rope = buffer.rope();
+        let mut end = scroll;
+        for _ in 0..=text_rows {
+            end = folds.next(end);
+        }
         let first = rope.line_to_byte(scroll.min(rope.len_lines()));
-        let last = rope.line_to_byte((scroll + text_rows + 1).min(rope.len_lines()));
+        let last = rope.line_to_byte(end.min(rope.len_lines()));
         s.highlights(rope, first..last)
     });
     let view = View {
@@ -389,6 +466,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: e.signs.get(&buffer_id).filter(|s| !s.is_empty()),
+        folds,
         cursor_line,
         gutter,
         text_width,
@@ -400,6 +478,21 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     while rows.len() < text_rows {
         if line >= buffer.line_count() {
             rows.push(fill(vec![Span::new("~", e.face("nontext"))], rect.w, pad));
+            continue;
+        }
+        if let Some((first, last)) = folds.at(line) {
+            // A closed fold: its first line and how many lines it holds.
+            let mut row = view.line_rows(first).into_iter().next().unwrap_or_default();
+            let note = format!(" ··· {} lines", last - first + 1);
+            let used: usize = row.iter().map(|s| self::text_width(&s.text)).sum();
+            if used + self::text_width(&note) <= rect.w {
+                push(&mut row, &note, e.face("fold"));
+            }
+            if first == cursor_line {
+                cursor_screen = (rect.x + gutter, rect.y + rows.len());
+            }
+            rows.push(fill(row, rect.w, pad));
+            line = last + 1;
             continue;
         }
         let line_rows = view.line_rows(line);
@@ -417,13 +510,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         line += 1;
     }
     rows.push(status_line(
-        e,
-        buffer_id,
-        buffer,
-        focused,
-        cursor_line,
-        cursor_col,
-        rect.w,
+        e, buffer_id, buffer, focused, real_line, cursor_col, rect.w,
     ));
     DrawnWindow {
         rows,
@@ -607,7 +694,16 @@ impl View<'_> {
                 }
                 if numbers > 0 {
                     row.push(if i == 0 {
-                        Span::new(gutter_text(e, line, self.cursor_line, numbers), gutter_face)
+                        Span::new(
+                            gutter_text(
+                                e,
+                                line,
+                                self.cursor_line,
+                                self.folds.distance(line, self.cursor_line),
+                                numbers,
+                            ),
+                            gutter_face,
+                        )
                     } else {
                         Span::new(" ".repeat(numbers), gutter_face)
                     });
@@ -653,11 +749,19 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
     signs + digits.max(3) + 1
 }
 
-fn gutter_text(e: &Editor, line: usize, cursor_line: usize, gutter: usize) -> String {
+/// `distance` is how far `line` is from the cursor's, counting a closed
+/// fold as one line.
+fn gutter_text(
+    e: &Editor,
+    line: usize,
+    cursor_line: usize,
+    distance: usize,
+    gutter: usize,
+) -> String {
     let n = match e.line_numbers {
         LineNumbers::Absolute => line + 1,
         LineNumbers::Hybrid if line == cursor_line => line + 1,
-        _ => line.abs_diff(cursor_line),
+        _ => distance,
     };
     // Hybrid numbers sit left on the cursor's line, as in Vim.
     if e.line_numbers == LineNumbers::Hybrid && line == cursor_line {
@@ -1010,10 +1114,19 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
     let width = rect.w.saturating_sub(gutter).max(1);
     let dx = (x - rect.x).saturating_sub(gutter);
     let mut row = y - rect.y;
-    let mut line = scroll;
+    let folds = Folds::of(e, buffer_id);
+    let mut line = folds.shown(scroll);
     while line < buffer.line_count() {
-        let cells = layout_line(&buffer.line_text(line), e.tab_width);
         let start = buffer.line_col_to_offset(line, 0);
+        if let Some((_, last)) = folds.at(line) {
+            if row == 0 {
+                return Some((id, Some(start)));
+            }
+            row -= 1;
+            line = last + 1;
+            continue;
+        }
+        let cells = layout_line(&buffer.line_text(line), e.tab_width);
         if !e.wrap {
             if row == 0 {
                 let at = dx + hscroll;

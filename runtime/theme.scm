@@ -77,6 +77,7 @@
      (list "sign.breakpoint" (fg 'red "bold"))
      (list "sign.debug" (fg 'yellow "bold"))
      (list "debug-line" (string-append "bg=" (c 'debug-bg)))
+     (list "fold" (fg 'comment))
      ;; Git and diffs
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))

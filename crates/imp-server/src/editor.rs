@@ -84,6 +84,9 @@ pub struct Editor {
     /// gets a two-cell column before its line numbers (diagnostics,
     /// breakpoints).
     pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
+    /// Each buffer's closed folds as (first, last) lines: sorted, not
+    /// nested. Scheme decides where folds are (runtime/fold.scm).
+    pub folds: HashMap<usize, Vec<(usize, usize)>>,
     /// Timers and jobs, which report back through the server's events.
     pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
@@ -252,6 +255,7 @@ impl Editor {
         self.parked.remove(&id);
         self.syntax.remove(&id);
         self.buffer_layers.remove(&id);
+        self.folds.remove(&id);
         self.signs.remove(&id);
         self.status_values.remove(&id);
         true

@@ -648,6 +648,29 @@ pub fn register(engine: &mut Engine) {
         },
     );
 
+    // The current buffer's closed folds, as (first last) lines; nested
+    // ones are dropped, since the outer fold hides them.
+    engine.register_fn("set-closed-folds!", |folds: Vec<Vec<isize>>| {
+        let mut ranges: Vec<(usize, usize)> = folds
+            .iter()
+            .filter_map(|f| match f.as_slice() {
+                [a, b] if a <= b => Some((clamp(*a), clamp(*b))),
+                _ => None,
+            })
+            .collect();
+        ranges.sort_by_key(|&(a, b)| (a, std::cmp::Reverse(b)));
+        let mut outer: Vec<(usize, usize)> = Vec::new();
+        for (a, b) in ranges {
+            match outer.last_mut() {
+                Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                _ => outer.push((a, b)),
+            }
+        }
+        editor::with(|e| {
+            let id = e.current;
+            e.folds.insert(id, outer);
+        })
+    });
     // Gutter signs for the current buffer: a list of (line text face);
     // '() removes them, and the sign column with them.
     engine.register_fn("set-signs!", |signs: Vec<Vec<SteelVal>>| {
