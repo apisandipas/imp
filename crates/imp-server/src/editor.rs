@@ -5,8 +5,9 @@
 //! (LSP, file watching) will post messages to that loop instead.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
-use imp_core::{Buffer, CursorShape};
+use imp_core::{Buffer, CursorShape, Style};
 
 #[derive(Debug, Default)]
 pub struct Editor {
@@ -21,6 +22,48 @@ pub struct Editor {
     pub scroll: usize,
     pub width: u16,
     pub height: u16,
+    /// Named styles. Highlights refer to faces by name, so redefining a face
+    /// restyles everything that uses it.
+    pub faces: HashMap<String, Style>,
+    /// Highlight layers in drawing order: later layers draw over earlier ones.
+    pub layers: Vec<Layer>,
+}
+
+/// A named set of highlighted ranges, such as the visual selection or the
+/// search matches. Scheme replaces a layer's ranges as a whole.
+#[derive(Debug, Default)]
+pub struct Layer {
+    pub name: String,
+    pub ranges: Vec<Highlight>,
+}
+
+/// Chars `start..end` drawn with face `face`.
+#[derive(Debug, Clone)]
+pub struct Highlight {
+    pub start: usize,
+    pub end: usize,
+    pub face: String,
+}
+
+impl Editor {
+    pub fn face(&self, name: &str) -> Style {
+        self.faces.get(name).copied().unwrap_or_default()
+    }
+
+    /// The layer called `name`, created on top of the others if new.
+    pub fn layer_mut(&mut self, name: &str) -> &mut Layer {
+        let i = match self.layers.iter().position(|l| l.name == name) {
+            Some(i) => i,
+            None => {
+                self.layers.push(Layer {
+                    name: name.to_string(),
+                    ranges: Vec::new(),
+                });
+                self.layers.len() - 1
+            }
+        };
+        &mut self.layers[i]
+    }
 }
 
 thread_local! {

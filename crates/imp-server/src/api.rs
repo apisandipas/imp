@@ -7,11 +7,11 @@
 //! Offsets and counts are `isize` because Steel integers are signed; negative
 //! values clamp to zero.
 
-use imp_core::CursorShape;
+use imp_core::{CursorShape, Style};
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
-use crate::editor;
+use crate::editor::{self, Highlight};
 
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
@@ -100,4 +100,26 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
+
+    // Faces and highlights. Scheme decides what is highlighted; Rust draws it.
+    engine.register_fn("set-face!", |name: String, spec: String| {
+        let style = Style::parse(&spec)?;
+        editor::with(|e| e.faces.insert(name, style));
+        Ok::<(), String>(())
+    });
+    engine.register_fn("highlight-clear!", |layer: String| {
+        editor::with(|e| e.layer_mut(&layer).ranges.clear())
+    });
+    engine.register_fn(
+        "highlight-add!",
+        |layer: String, start: isize, end: isize, face: String| {
+            editor::with(|e| {
+                e.layer_mut(&layer).ranges.push(Highlight {
+                    start: clamp(start),
+                    end: clamp(end),
+                    face,
+                })
+            })
+        },
+    );
 }

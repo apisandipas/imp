@@ -12,10 +12,13 @@ use std::thread;
 
 use crossterm::cursor::{MoveTo, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::style::Print;
+use crossterm::style::{
+    Attribute, Color as TermColor, Print, ResetColor, SetAttribute, SetBackgroundColor,
+    SetForegroundColor,
+};
 use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{execute, queue};
-use imp_core::{Buffer, ClientMsg, CursorShape, Frame, ServerMsg};
+use imp_core::{Buffer, ClientMsg, Color, CursorShape, Frame, ServerMsg, Style};
 use imp_server::Options;
 
 fn main() {
@@ -125,8 +128,13 @@ fn key_name(key: KeyEvent) -> Option<String> {
 
 fn draw(out: &mut impl Write, frame: &Frame) -> io::Result<()> {
     queue!(out, Clear(ClearType::All))?;
-    for (row, text) in frame.rows.iter().enumerate() {
-        queue!(out, MoveTo(0, row as u16), Print(text))?;
+    for (row, spans) in frame.rows.iter().enumerate() {
+        queue!(out, MoveTo(0, row as u16))?;
+        for span in spans {
+            set_style(out, span.style)?;
+            queue!(out, Print(&span.text))?;
+        }
+        queue!(out, SetAttribute(Attribute::Reset), ResetColor)?;
     }
     let style = match frame.cursor_shape {
         CursorShape::Block => SetCursorStyle::SteadyBlock,
@@ -134,4 +142,32 @@ fn draw(out: &mut impl Write, frame: &Frame) -> io::Result<()> {
     };
     queue!(out, MoveTo(frame.cursor.0, frame.cursor.1), style)?;
     out.flush()
+}
+
+fn set_style(out: &mut impl Write, style: Style) -> io::Result<()> {
+    queue!(out, SetAttribute(Attribute::Reset), ResetColor)?;
+    if let Some(fg) = style.fg {
+        queue!(out, SetForegroundColor(term_color(fg)))?;
+    }
+    if let Some(bg) = style.bg {
+        queue!(out, SetBackgroundColor(term_color(bg)))?;
+    }
+    for (on, attr) in [
+        (style.bold, Attribute::Bold),
+        (style.italic, Attribute::Italic),
+        (style.underline, Attribute::Underlined),
+        (style.reverse, Attribute::Reverse),
+    ] {
+        if on {
+            queue!(out, SetAttribute(attr))?;
+        }
+    }
+    Ok(())
+}
+
+fn term_color(c: Color) -> TermColor {
+    match c {
+        Color::Indexed(n) => TermColor::AnsiValue(n),
+        Color::Rgb(r, g, b) => TermColor::Rgb { r, g, b },
+    }
 }

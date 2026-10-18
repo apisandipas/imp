@@ -101,6 +101,16 @@ impl Server {
         }
     }
 
+    /// Runs Scheme source in the editor's VM and returns the printed value of
+    /// the last expression.
+    pub fn eval(&mut self, source: &str) -> Result<String, String> {
+        let values = self
+            .engine
+            .run(source.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(values.last().map(|v| v.to_string()).unwrap_or_default())
+    }
+
     /// Feeds each key in turn. Convenient for tests.
     pub fn keys(&mut self, keys: &[&str]) {
         for key in keys {
