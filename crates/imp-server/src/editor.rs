@@ -18,6 +18,8 @@ pub struct Editor {
     pub mode_name: String,
     pub cursor_shape: CursorShape,
     pub status: String,
+    /// Lines drawn over the bottom of the window, above the status line.
+    pub popup: Vec<String>,
     pub quit: bool,
     /// First buffer line shown on screen.
     pub scroll: usize,

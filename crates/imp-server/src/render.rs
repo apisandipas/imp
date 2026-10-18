@@ -32,6 +32,13 @@ pub fn frame(e: &mut Editor) -> Frame {
         }
         rows.push(row);
     }
+    // The popup covers the bottom rows of the window.
+    let shown = e.popup.len().min(text_rows);
+    for (i, line) in e.popup[e.popup.len() - shown..].iter().enumerate() {
+        let text: String = line.chars().take(width).collect();
+        let pad = width.saturating_sub(text.chars().count());
+        rows[text_rows - shown + i] = vec![Span::new(text + &" ".repeat(pad), e.face("popup"))];
+    }
     rows.push(status_line(e, cursor_line, cursor_col, width));
 
     Frame {

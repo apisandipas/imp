@@ -1163,3 +1163,117 @@ fn line_undo() {
     type_keys(&mut s, "u");
     assert_eq!(s.text(), "abc\nxyz\n");
 }
+
+#[test]
+fn marks_set_and_jump() {
+    let mut s = server("one\n  two\nthree\n");
+    type_keys(&mut s, "jllmaG'a");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "G`a");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "gg");
+    // Marks move with the text.
+    type_keys(&mut s, "Onew<esc>`a");
+    assert_eq!(s.cursor(), 10);
+}
+
+#[test]
+fn marks_as_motions() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "majjd'a");
+    assert_eq!(s.text(), "4\n");
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "lmb$d`b");
+    assert_eq!(s.text(), "af\n");
+    let mut s = server("abc\n");
+    type_keys(&mut s, "'z");
+    assert!(s.status().contains("mark not set"));
+}
+
+#[test]
+fn backtick_backtick_returns_from_jump() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "jG''");
+    assert_eq!(s.cursor(), 2);
+    type_keys(&mut s, "``");
+    assert_eq!(s.cursor(), 6);
+}
+
+#[test]
+fn jump_list() {
+    let mut s = server("1\n2\n3\n4\n5\n");
+    type_keys(&mut s, "3G5Ggg");
+    s.keys(&["C-o"]);
+    assert_eq!(s.cursor(), 8);
+    s.keys(&["C-o"]);
+    assert_eq!(s.cursor(), 4);
+    // As in Vim, going back from the newest position added it to the end
+    // of the list and dropped the older entry for the same line, so there
+    // is nothing further back.
+    s.keys(&["C-o"]);
+    assert_eq!(s.cursor(), 4);
+    s.keys(&["<tab>"]);
+    assert_eq!(s.cursor(), 8);
+    s.keys(&["C-i", "C-i"]);
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn search_is_a_jump() {
+    let mut s = server("a\nb\nc\n");
+    type_keys(&mut s, "/c<ret>");
+    s.keys(&["C-o"]);
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn special_marks() {
+    let mut s = server("one two\nthree\n");
+    type_keys(&mut s, "wcwX<esc>gg`.");
+    assert_eq!(s.cursor(), 4);
+    // `^ is just past the insert, which normal mode shows on the last char.
+    type_keys(&mut s, "jAyz<esc>gg`^");
+    assert_eq!(s.cursor(), 12);
+    type_keys(&mut s, "ggyiw`]");
+    assert_eq!(s.cursor(), 2);
+    type_keys(&mut s, "wvj<esc>gg'>");
+    assert_eq!(s.cursor(), 6);
+}
+
+#[test]
+fn ex_mark_addresses() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "jmajmbgg:'a,'bd<ret>");
+    assert_eq!(s.text(), "1\n4\n");
+}
+
+#[test]
+fn popups_list_and_close() {
+    let mut s = server("hello\n");
+    type_keys(&mut s, "ma:marks<ret>");
+    let rows = s.frame().text_rows();
+    assert!(rows.iter().any(|r| r.starts_with(" a   1")), "{rows:?}");
+    // Any key closes it; j also runs.
+    type_keys(&mut s, "x");
+    assert!(!s
+        .frame()
+        .text_rows()
+        .iter()
+        .any(|r| r.contains("mark line")));
+    assert_eq!(s.text(), "ello\n");
+    type_keys(&mut s, "\"ayy:reg<ret>");
+    assert!(s
+        .frame()
+        .text_rows()
+        .iter()
+        .any(|r| r.contains("\"a  l    ello^J")));
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "ello\n");
+}
+
+#[test]
+fn delmarks() {
+    let mut s = server("a\n");
+    type_keys(&mut s, "ma:delm a<ret>'a");
+    assert!(s.status().contains("mark not set"));
+}

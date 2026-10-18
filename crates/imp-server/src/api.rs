@@ -86,6 +86,18 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // Marks: positions that move with the text.
+    engine.register_fn("mark-set!", |name: String, offset: isize| {
+        editor::with(|e| e.buffer.set_mark(&name, clamp(offset)))
+    });
+    engine.register_fn("mark-get", |name: String| {
+        editor::with(|e| e.buffer.mark(&name).map(|m| m as isize))
+    });
+    engine.register_fn("mark-delete!", |name: String| {
+        editor::with(|e| e.buffer.delete_mark(&name))
+    });
+    engine.register_fn("mark-names", || editor::with(|e| e.buffer.mark_names()));
+
     // The cursor.
     engine.register_fn("cursor", || editor::with(|e| e.cursor as isize));
     engine.register_fn("set-cursor!", |offset: isize| {
@@ -126,6 +138,11 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
+    // Lines shown above the status line until cleared, for output longer
+    // than the status line (:registers) and menus (which-key).
+    engine.register_fn("set-popup!", |lines: Vec<String>| {
+        editor::with(|e| e.popup = lines)
+    });
 
     // Faces and highlights. Scheme decides what is highlighted; Rust draws it.
     engine.register_fn("set-face!", |name: String, spec: String| {

@@ -3,6 +3,7 @@
 //! Positions are char offsets into the whole text. Line/column conversions are
 //! provided for the editing layer, which decides what the positions mean.
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +20,9 @@ pub struct Buffer {
     /// Whether the text changed since the last undo point, so a boundary
     /// knows whether to record one without comparing ropes.
     dirty: bool,
+    /// Named positions that move with the text around them. Vim's marks,
+    /// the jump list and anything else Scheme wants kept in place.
+    marks: HashMap<String, usize>,
 }
 
 impl Buffer {
@@ -152,7 +156,14 @@ impl Buffer {
         if text.is_empty() {
             return;
         }
-        self.text.insert(offset.min(self.len()), text);
+        let offset = offset.min(self.len());
+        self.text.insert(offset, text);
+        let n = text.chars().count();
+        for m in self.marks.values_mut() {
+            if *m >= offset {
+                *m += n;
+            }
+        }
         self.modified = true;
         self.dirty = true;
         self.redo.clear();
@@ -165,12 +176,38 @@ impl Buffer {
         let start = start.min(end);
         let removed = self.text.slice(start..end).to_string();
         self.text.remove(start..end);
+        for m in self.marks.values_mut() {
+            if *m >= end {
+                *m -= end - start;
+            } else if *m > start {
+                *m = start;
+            }
+        }
         if !removed.is_empty() {
             self.modified = true;
             self.dirty = true;
             self.redo.clear();
         }
         removed
+    }
+
+    pub fn set_mark(&mut self, name: &str, offset: usize) {
+        self.marks.insert(name.to_string(), offset.min(self.len()));
+    }
+
+    /// Where mark `name` is, kept inside the text (undo can shrink it).
+    pub fn mark(&self, name: &str) -> Option<usize> {
+        self.marks.get(name).map(|&m| m.min(self.len()))
+    }
+
+    pub fn delete_mark(&mut self, name: &str) {
+        self.marks.remove(name);
+    }
+
+    pub fn mark_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.marks.keys().cloned().collect();
+        names.sort();
+        names
     }
 
     /// Records the current text as an undo point. The editing layer calls
@@ -249,6 +286,20 @@ mod tests {
         assert_eq!(b.offset_to_col(5), 2);
         // Columns clamp to the end of the line's text.
         assert_eq!(b.line_col_to_offset(0, 99), 2);
+    }
+
+    #[test]
+    fn marks_follow_edits() {
+        let mut b = Buffer::from_text("abcdef");
+        b.set_mark("a", 3);
+        b.set_mark("b", 5);
+        b.insert(1, "xx");
+        assert_eq!(b.mark("a"), Some(5));
+        b.delete(4, 6);
+        assert_eq!(b.mark("a"), Some(4));
+        assert_eq!(b.mark("b"), Some(5));
+        b.delete(0, 8);
+        assert_eq!(b.mark("b"), Some(0));
     }
 
     #[test]

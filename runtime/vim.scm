@@ -29,7 +29,11 @@
 (define *last-macro* #f)       ; for @@
 (define *command-failed* #f)
 (define *u-line* #f)           ; the line U restores, and its old text
-(define *u-text* "")   ; set when a key fails; stops a running macro
+(define *u-text* "")
+(define *jumps* '())           ; mark names of jump list entries, oldest first
+(define *jump-index* 0)        ; where C-o and C-i are in *jumps*
+(define *jump-counter* 0)      ; for naming jump marks
+(define *popup-shown* #f)      ; a popup is up until the next key   ; set when a key fails; stops a running macro
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
@@ -457,6 +461,8 @@
       [else (store! c value) (store! #\" value)])))
 
 (define (store-range! start end linewise? kind)
+  (mark-set! "[" start)
+  (mark-set! "]" (max start (- end 1)))
   (register-set! (current-register) (buffer-substring start end) linewise? kind))
 
 (define (yank-range! start end linewise?) (store-range! start end linewise? 'delete))
@@ -827,6 +833,7 @@
 ;; line's text for U when the change is on a new line.
 (define (begin-change!)
   (undo-boundary!)
+  (mark-set! "." (cursor))
   (unless (equal? *u-line* (current-line))
     (set! *u-line* (current-line))
     (set! *u-text* (buffer-substring (line-start (current-line)) (line-end (current-line))))))
@@ -996,6 +1003,10 @@
 ;; Puts text after or before the cursor (whole lines go below or above its
 ;; line). The cursor ends on the last char put, or with gp just after it.
 (define (put-text! text linewise? after? cursor-after?)
+  (put-text-at! text linewise? after? cursor-after?)
+  (mark-set! "]" (max 0 (- (cursor) (if cursor-after? 1 0)))))
+
+(define (put-text-at! text linewise? after? cursor-after?)
   (if linewise?
       (let* ([line (current-line)]
              [at (if after?
@@ -1009,11 +1020,13 @@
                        (string-append "\n" (substring text 0 (- (string-length text) 1)))
                        text)])
         (buffer-insert! at text)
+        (mark-set! "[" at)
         (set-cursor! (if cursor-after?
                          (min (+ at (string-length text)) (buffer-length))
                          (line-first-nonblank (if after? (+ line 1) line)))))
       (let ([at (if after? (min (+ (cursor) 1) (line-end (current-line))) (cursor))])
         (buffer-insert! at text)
+        (mark-set! "[" at)
         (set-cursor! (+ at (string-length text) (if cursor-after? 0 -1))))))
 
 (define (paste-command! key after? cursor-after?)
@@ -1069,6 +1082,10 @@
 
 (define (leave-visual!)
   (set! *last-visual* (list *visual* *visual-anchor* (cursor)))
+  (mark-set! "visual-anchor" *visual-anchor*)
+  (mark-set! "visual-cursor" (cursor))
+  (mark-set! "<" (min *visual-anchor* (cursor)))
+  (mark-set! ">" (max *visual-anchor* (cursor)))
   (set! *visual* #f)
   (set-mode! 'normal))
 
@@ -1110,8 +1127,8 @@
 (define-key! 'normal "gv"
   (lambda (count)
     (when *last-visual*
-      (enter-visual! (car *last-visual*) (cadr *last-visual*))
-      (set-cursor! (caddr *last-visual*)))))
+      (enter-visual! (car *last-visual*) (mark-get "visual-anchor"))
+      (set-cursor! (mark-get "visual-cursor")))))
 
 ;; A text object in visual mode selects the object, taking in the current
 ;; selection if it is larger than one char.
@@ -1411,6 +1428,96 @@
                                   " " (number->string lines) (if (= lines 1) " line" " lines")
                                   " --" (number->string (quotient (* 100 (+ (current-line) 1)) lines)) "%--")))))
 
+;;; Marks and the jump list
+;;;
+;;; Marks are kept by the buffer (mark-set!, mark-get), so they move with
+;;; the text. m{a-zA-Z} sets one; '{mark} goes to its line and `{mark} to
+;;; its exact place, as motions that work with operators. Special marks:
+;;; ' (before the latest jump), . (last change), ^ (last insert), [ and ]
+;;; (last changed or yanked text), < and > (last visual selection).
+
+(define (mark-char? c)
+  (or (letter? c) (memv c (string->list "'`[]<>.^\""))))
+
+(define (mark-pos c)
+  (let ([m (mark-get (if (equal? c #\`) "'" (string c)))])
+    (or m (begin (set-status! (string-append "mark not set: " (string c))) #f))))
+
+(define-char-command! "m"
+  (lambda (count c)
+    (if (or (letter? c) (memv c (string->list "'`[]<>")))
+        (mark-set! (if (equal? c #\`) "'" (string c)) (cursor))
+        (set-status! (string-append "invalid mark " (string c))))))
+
+(define-char-motion! "'" 'linewise
+  (lambda (from n c) (let ([m (mark-pos c)]) (and m (line-first-nonblank (offset->line m))))))
+(define-char-motion! "`" 'exclusive (lambda (from n c) (mark-pos c)))
+
+;; Motions that count as jumps: they set the ' mark and go in the jump list.
+(define (jump-motion? key)
+  (or (member key '("G" "gg" "%" "{" "}" "n" "N" "*" "#" "g*" "g#" "H" "M" "L"))
+      (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`")))))
+
+(define (jump-mark-line name) (offset->line (or (mark-get name) 0)))
+
+;; Records the cursor as a jump. Like Vim, an older entry on the same line
+;; is dropped, and the list keeps the last 100.
+(define (record-jump!)
+  (mark-set! "'" (cursor))
+  (let* ([line (current-line)]
+         [keep (filter (lambda (j)
+                         (if (= (jump-mark-line j) line) (begin (mark-delete! j) #f) #t))
+                       *jumps*)]
+         [name (string-append "jump" (number->string *jump-counter*))])
+    (set! *jump-counter* (+ *jump-counter* 1))
+    (mark-set! name (cursor))
+    (set! *jumps* (append keep (list name)))
+    (when (> (length *jumps*) 100)
+      (mark-delete! (car *jumps*))
+      (set! *jumps* (cdr *jumps*)))
+    (set! *jump-index* (length *jumps*))))
+
+;; C-o and C-i (<tab> in a terminal) move back and forth in the list.
+(define (jump-older! count)
+  (when (= *jump-index* (length *jumps*))
+    ;; Leaving the newest position: remember it so C-i can come back.
+    (record-jump!)
+    (set! *jump-index* (- (length *jumps*) 1)))
+  (jump-to-index! (- *jump-index* count)))
+
+(define (jump-to-index! i)
+  (if (or (< i 0) (>= i (length *jumps*)))
+      (set! *command-failed* #t)
+      (begin
+        (set! *jump-index* i)
+        (set-cursor! (or (mark-get (list-ref *jumps* i)) (cursor))))))
+
+(define-key! 'normal "C-o" (lambda (count) (jump-older! count)))
+(define-key! 'normal "C-i" (lambda (count) (jump-to-index! (+ *jump-index* count))))
+(define-key! 'normal "<tab>" (lambda (count) (jump-to-index! (+ *jump-index* count))))
+
+;;; Popups: output longer than the status line
+
+(define (show-popup! lines)
+  (set-popup! lines)
+  (set! *popup-shown* #t))
+
+(define (close-popup!)
+  (set-popup! '())
+  (set! *popup-shown* #f))
+
+;; Shows a char as it would be typed: line breaks as ^J, tabs as ^I.
+(define (printable text)
+  (apply string-append
+         (map (lambda (c) (cond [(equal? c #\newline) "^J"] [(equal? c #\tab) "^I"] [else (string c)]))
+              (string->list text))))
+
+(define (pad-right text width)
+  (if (< (string-length text) width) (string-append text (make-string (- width (string-length text)) #\space)) text))
+
+(define (clip text width)
+  (if (> (string-length text) width) (substring text 0 width) text))
+
 ;;; Macros
 ;;;
 ;;; q{reg} records keys into a register as text, in Vim's key notation
@@ -1673,7 +1780,11 @@
          [(find-motion key)
           => (lambda (m)
                (let ([target ((motion-proc m) (cursor) count)])
-                 (if target (set-cursor! target) (set! *command-failed* #t)))
+                 (cond
+                   [(not target) (set! *command-failed* #t)]
+                   [else
+                    (when (jump-motion? key) (record-jump!))
+                    (set-cursor! target)]))
                (set! *count* ""))]
 
          ;; The count is cleared before a command runs, so keys it feeds itself
@@ -1824,6 +1935,7 @@
 
 (define (leave-insert!)
   (drop-unused-autoindent!)
+  (mark-set! "^" (cursor))
   (set! *last-insert-pos* (cursor))
   (set-mode! 'normal)
   ;; Leaving insert mode steps back onto the last inserted char.
@@ -2052,7 +2164,7 @@
                       (let ([t (search-target pattern (cursor) forward? n)])
                         (when t (operate! op (cursor) t 'exclusive))))
                     count))]
-                [else (set-cursor! target)]))])))
+                [else (record-jump!) (set-cursor! target)]))])))
      ;; Incremental search: show where the pattern matches so far.
      (lambda (text)
        (set-cursor! origin)
@@ -2094,9 +2206,8 @@
 
 ;; The '< and '> marks: the lines of the last visual selection.
 (define (visual-mark-line which)
-  (and *last-visual*
-       (let ([a (cadr *last-visual*)] [b (caddr *last-visual*)])
-         (offset->line (if (eq? which 'start) (min a b) (max a b))))))
+  (let ([m (mark-get (if (eq? which 'start) "<" ">"))])
+    (and m (offset->line m))))
 
 ;; Reads text up to an unescaped `delim`, from i. Returns (text . next-i),
 ;; next-i being just past the delimiter (or the end of the string).
@@ -2192,6 +2303,7 @@
             ;; A range on its own goes to its last line.
             [(equal? name "")
              (when (ex-range-given? ex)
+               (record-jump!)
                (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))]
             [else (set-status! (string-append "not an editor command: " line))])))))
 
@@ -2200,8 +2312,9 @@
   (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
     (substring m (skip-spaces m 0) (string-length m))))
 
-;; Marks other than '< and '> arrive with 1.9; until then they are unset.
-(define (mark-line c) #f)
+;; The line of mark `c`, for ex addresses like 'a.
+(define (mark-line c)
+  (let ([m (mark-get (if (equal? c #\`) "'" (string c)))]) (and m (offset->line m))))
 
 (define-key! 'normal ":"
   (lambda (count)
@@ -2214,6 +2327,55 @@
     (open-cmdline! ":" "'<,'>" run-ex! #f #f)))
 
 ;;; The ex commands
+
+(define-ex! '("marks")
+  (lambda (ex)
+    (let ([names (filter (lambda (n) (= (string-length n) 1)) (mark-names))])
+      (show-popup!
+       (cons "mark line  col text"
+             (map (lambda (n)
+                    (let* ([p (mark-get n)] [line (offset->line p)])
+                      (string-append " " (pad-right n 4) (pad-right (number->string (+ line 1)) 6)
+                                     (pad-right (number->string (offset->col p)) 5)
+                                     (clip (printable (buffer-substring (line-start line) (line-end line))) 60))))
+                  names))))))
+
+(define-ex! '("delm" "delmarks")
+  (lambda (ex)
+    (if (ex-bang? ex)
+        (for-each (lambda (n) (when (letter? (string-ref n 0)) (when (= (string-length n) 1) (mark-delete! n))))
+                  (mark-names))
+        (for-each (lambda (c) (unless (char-whitespace? c) (mark-delete! (string c))))
+                  (string->list (ex-args ex))))))
+
+(define-ex! '("reg" "registers" "di" "display")
+  (lambda (ex)
+    (let ([names (string->list "\"0123456789abcdefghijklmnopqrstuvwxyz-.:/%")])
+      (show-popup!
+       (cons "reg  type text"
+             (filter (lambda (x) x)
+                     (map (lambda (c)
+                            (let ([r (if (memv c (string->list ".:/%")) (register-get c) (hash-try-get *registers* c))])
+                              (and r (not (equal? (car r) ""))
+                                   (string-append " \"" (string c) "  " (if (cadr r) "l    " "c    ")
+                                                  (clip (printable (car r)) 70)))))
+                          names)))))))
+
+(define-ex! '("ju" "jumps")
+  (lambda (ex)
+    (show-popup!
+     (cons " jump line  col text"
+           (let loop ([js *jumps*] [i 0] [acc '()])
+             (if (null? js)
+                 (reverse (cons ">" acc))
+                 (let* ([p (or (mark-get (car js)) 0)] [line (offset->line p)])
+                   (loop (cdr js) (+ i 1)
+                         (cons (string-append (if (= i *jump-index*) ">" " ")
+                                              (pad-right (number->string (abs (- *jump-index* i))) 5)
+                                              (pad-right (number->string (+ line 1)) 6)
+                                              (pad-right (number->string (offset->col p)) 5)
+                                              (clip (printable (buffer-substring (line-start line) (line-end line))) 60))
+                               acc)))))))))
 
 (define (write-buffer! ex)
   (when (save!) (set-status! (string-append "wrote " (buffer-name)))))
@@ -2331,7 +2493,13 @@
 (define (imp-handle-key key)
   (when (and *recording* (not (stops-recording? key)))
     (set! *recorded-keys* (cons key *recorded-keys*)))
-  (process-key! key))
+  (if *popup-shown*
+      ;; Any key closes a popup; <ret>, <esc> and space only do that, other
+      ;; keys also run, as at Vim's "Press ENTER" prompt.
+      (begin
+        (close-popup!)
+        (unless (member key '("<ret>" "<esc>" " " "C-c")) (process-key! key)))
+      (process-key! key)))
 
 ;; q stops recording, when it isn't part of a longer command.
 (define (stops-recording? key)
