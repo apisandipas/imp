@@ -1,0 +1,17 @@
+[package]
+name = "imp-gui"
+version.workspace = true
+edition.workspace = true
+
+# A GPU client (Phase 5 prototype, docs/design/phase-5.md). Not a default
+# workspace member: build it with cargo build -p imp-gui.
+
+[dependencies]
+imp-core.workspace = true
+imp-server.workspace = true
+unicode-width.workspace = true
+glyphon = "0.12"
+wgpu = "30"
+winit = "0.30"
+pollster = "0.4"
+png = "0.18"

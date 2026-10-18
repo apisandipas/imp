@@ -18,6 +18,25 @@
           # The runtime Scheme files are embedded at build time.
           meta.mainProgram = "imp";
         };
+        # The GPU client (Phase 5 prototype): nix run .#gui -- FILE.
+        # winit and wgpu load the windowing and graphics libraries at run
+        # time, so they go on its library path.
+        gui = pkgs.rustPlatform.buildRustPackage {
+          pname = "imp-gui";
+          version = "0.1.0";
+          src = self;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [ "-p" "imp-gui" ];
+          doCheck = false;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          postFixup = ''
+            wrapProgram $out/bin/imp-gui --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (with pkgs; [
+              vulkan-loader libGL libxkbcommon wayland
+              xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr
+            ])}
+          '';
+          meta.mainProgram = "imp-gui";
+        };
       });
 
       devShells = forAllSystems (pkgs: {

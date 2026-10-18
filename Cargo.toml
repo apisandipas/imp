@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/imp-core", "crates/imp-server", "crates/imp"]
+members = ["crates/imp-core", "crates/imp-server", "crates/imp", "crates/imp-gui"]
+# The GUI (Phase 5 prototype) builds only when asked: cargo build -p imp-gui.
+default-members = ["crates/imp-core", "crates/imp-server", "crates/imp"]
 # Built on its own, for wasm32-unknown-unknown.
 exclude = ["examples/wasm-plugin"]
 

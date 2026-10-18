@@ -150,3 +150,15 @@ language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="py
   - Writing these tests found a core undo bug, fixed separately: a change
     made right after `u` or `C-r` was undone together with the change
     before it.
+- 5.2 GPU GUI: done as a prototype.
+  - `crates/imp-gui`: `nix run .#gui -- FILE`, or
+    `cargo run -p imp-gui -- FILE` in a shell that has the Vulkan, Wayland
+    and X11 libraries.
+  - Off-screen screenshots, checked on lavapipe:
+    `imp-gui --screenshot OUT.png --grid 90x28 --keys "..." FILE`.
+  - The window can't open on this headless build machine, so the owner is
+    testing it.
+  - It needs a monospace font, and warns when the one it gets isn't
+    (`--font`, `--font-file`). cosmic-text can't snap a proportional
+    fallback font to the grid.
+  - Font ligatures are drawn.
