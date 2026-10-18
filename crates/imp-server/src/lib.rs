@@ -8,6 +8,7 @@
 mod api;
 mod clipboard;
 mod editor;
+mod events;
 mod files;
 mod fuzzy;
 mod layout;
@@ -17,13 +18,15 @@ mod search;
 mod shell;
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 
 use imp_core::{Buffer, ClientMsg, Frame, ServerMsg};
 use steel::steel_vm::engine::Engine;
 use steel::SteelVal;
 
 use editor::Editor;
+use events::Event;
 
 /// The runtime Scheme files, in load order. Embedded so the binary works on
 /// its own; set `IMP_RUNTIME` to a directory to load them from disk instead,
@@ -56,6 +59,9 @@ pub struct Options {
 /// thread that created it.
 pub struct Server {
     engine: Engine,
+    /// Events from timers and jobs (and, under `run`, the client).
+    events: Receiver<Event>,
+    sender: Sender<Event>,
 }
 
 impl Server {
@@ -68,6 +74,8 @@ impl Server {
             ..Editor::default()
         };
         ed.init_windows();
+        let (sender, events) = mpsc::channel();
+        ed.background.sender = Some(sender.clone());
         editor::install(ed);
 
         let mut engine = Engine::new();
@@ -92,7 +100,11 @@ impl Server {
                 .map_err(|e| format!("runtime/{name}: {e}"))?;
         }
 
-        let mut server = Self { engine };
+        let mut server = Self {
+            engine,
+            events,
+            sender,
+        };
         if let Some(path) = options.user_config.filter(|p| p.exists()) {
             // A broken init.scm shouldn't stop the editor from starting; say
             // what went wrong and carry on with whatever loaded.
@@ -123,6 +135,41 @@ impl Server {
         if let Err(e) = self.engine.call_function_by_name_with_args(function, args) {
             editor::with(|ed| ed.status = format!("error: {e}"));
         }
+    }
+
+    /// Handles one event from the loop: client input, or a timer or job
+    /// reporting back, which goes to Scheme.
+    fn handle_event(&mut self, event: Event) {
+        match event {
+            Event::Client(msg) => self.handle(msg),
+            Event::Timer(id) => self.call("imp-timer-fired", vec![SteelVal::IntV(id as isize)]),
+            Event::JobOutput(id, stream, text) => self.call(
+                "imp-job-output",
+                vec![
+                    SteelVal::IntV(id as isize),
+                    SteelVal::StringV(stream.into()),
+                    SteelVal::StringV(text.into()),
+                ],
+            ),
+            Event::JobExit(id) => {
+                let code = editor::with(|e| e.background.job_finished(id));
+                self.call(
+                    "imp-job-exit",
+                    vec![SteelVal::IntV(id as isize), SteelVal::IntV(code as isize)],
+                )
+            }
+        }
+    }
+
+    /// Handles timer and job events until none arrive for `idle`. Tests use
+    /// it to let background work finish; `run` has its own loop.
+    pub fn pump(&mut self, idle: Duration) -> usize {
+        let mut n = 0;
+        while let Ok(event) = self.events.recv_timeout(idle) {
+            self.handle_event(event);
+            n += 1;
+        }
+        n
     }
 
     pub fn handle(&mut self, msg: ClientMsg) {
@@ -242,21 +289,38 @@ pub fn run(
     if to_client.send(ServerMsg::Frame(last.clone())).is_err() {
         return Ok(());
     }
-    for msg in from_client {
-        server.handle(msg);
+    // Client messages join the timers' and jobs' events, so the loop waits
+    // on one channel.
+    let forward = server.sender.clone();
+    std::thread::spawn(move || {
+        for msg in from_client {
+            if forward.send(Event::Client(msg)).is_err() {
+                break;
+            }
+        }
+    });
+    while let Ok(event) = server.events.recv() {
+        let from_client = matches!(event, Event::Client(_));
+        server.handle_event(event);
         if server.should_quit() {
             let _ = to_client.send(ServerMsg::Quit);
             break;
         }
         let next = server.frame();
-        // Only what changed, unless the screen size did.
+        // Only what changed, unless the screen size did; background events
+        // that changed nothing send nothing.
         let update = match last.diff(&next) {
-            Some(patch) => ServerMsg::Patch(patch),
-            None => ServerMsg::Frame(next.clone()),
+            Some(patch) if patch.rows.is_empty() && next.cursor == last.cursor && !from_client => {
+                None
+            }
+            Some(patch) => Some(ServerMsg::Patch(patch)),
+            None => Some(ServerMsg::Frame(next.clone())),
         };
         last = next;
-        if to_client.send(update).is_err() {
-            break;
+        if let Some(update) = update {
+            if to_client.send(update).is_err() {
+                break;
+            }
         }
     }
     Ok(())

@@ -334,6 +334,44 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| crate::render::window_text_width(e) as isize)
     });
 
+    // Timers and jobs (events.rs). Scheme's wrappers in core.scm keep the
+    // procedures to call; these just start, stop and talk to them.
+    engine.register_fn("timer-start!", |ms: isize, repeat: bool| {
+        editor::with(|e| {
+            e.background
+                .start_timer(clamp(ms) as u64, repeat)
+                .map(|id| id as isize)
+        })
+    });
+    engine.register_fn("timer-cancel!", |id: isize| {
+        editor::with(|e| e.background.cancel_timer(clamp(id) as u64))
+    });
+    engine.register_fn("timer-done!", |id: isize, repeat: bool| {
+        editor::with(|e| e.background.timer_fired(clamp(id) as u64, repeat))
+    });
+    // The job's id, or an error message. Input #f keeps stdin open.
+    engine.register_fn("job-start!", |command: String, input: SteelVal| {
+        let input = match &input {
+            SteelVal::StringV(s) => Some(s.to_string()),
+            _ => None,
+        };
+        editor::with(
+            |e| match e.background.start_job(&command, input.as_deref()) {
+                Ok(id) => SteelVal::IntV(id as isize),
+                Err(err) => SteelVal::StringV(err.into()),
+            },
+        )
+    });
+    engine.register_fn("job-send!", |id: isize, text: String| {
+        editor::with(|e| e.background.send_to_job(clamp(id) as u64, &text))
+    });
+    engine.register_fn("job-close-input!", |id: isize| {
+        editor::with(|e| e.background.close_job_input(clamp(id) as u64))
+    });
+    engine.register_fn("job-kill!", |id: isize| {
+        editor::with(|e| e.background.kill_job(clamp(id) as u64))
+    });
+
     // The system clipboard. `primary?` picks the primary selection ("*).
     engine.register_fn("clipboard-get", |primary: bool| clipboard::get(primary));
     engine.register_fn("clipboard-set!", |text: String, primary: bool| {

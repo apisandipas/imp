@@ -82,6 +82,7 @@
 (define (leader-done!)
   (set! *leader-keys* "")
   (set! *key-interceptor* #f)
+  (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
   (set-popup! '()))
 
 ;; Each key typed after the leader comes here.
@@ -103,9 +104,25 @@
            (leader-done!)
            (message (string-append (leader-prompt) (key-label key) " is undefined"))]))))
 
+;; The popup waits which-key-delay ms, so keys typed quickly don't flash
+;; it; the prompt shows at once.
+(define-option! 'which-key-delay 300 '())
+(define *which-key-timer* #f)
+
 (define (show-which-key!)
-  (set-popup! (which-key-lines *leader-keys*))
-  (message (leader-prompt)))
+  (message (leader-prompt))
+  (when *which-key-timer* (cancel-timer! *which-key-timer*))
+  (set! *which-key-timer* #f)
+  (let ([keys *leader-keys*])
+    (if (<= (option 'which-key-delay) 0)
+        (set-popup! (which-key-lines keys))
+        (set! *which-key-timer*
+              (run-after! (option 'which-key-delay)
+                          (lambda ()
+                            (set! *which-key-timer* #f)
+                            ;; Only if still waiting on the same keys.
+                            (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
+                              (set-popup! (which-key-lines keys)))))))))
 
 ;; Start a leader sequence.
 (define-command! 'leader

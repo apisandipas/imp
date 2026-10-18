@@ -61,6 +61,8 @@ pub struct Editor {
     pub height: u16,
     /// Display columns between tab stops.
     pub tab_width: usize,
+    /// Timers and jobs, which report back through the server's events.
+    pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
     /// restyles everything that uses it.
     pub faces: HashMap<String, Style>,

@@ -61,8 +61,13 @@
             (run-emacs-command! binding))]
       [(emacs-prefix? keys)
        (set! *emacs-prefix* keys)
-       (set-popup! (emacs-which-key keys))
-       (message (string-append keys "-"))]
+       (message (string-append keys "-"))
+       (if (<= (option 'which-key-delay) 0)
+           (set-popup! (emacs-which-key keys))
+           (run-after! (option 'which-key-delay)
+                       (lambda ()
+                         (when (equal? *emacs-prefix* keys)
+                           (set-popup! (emacs-which-key keys))))))]
       [(and (equal? *emacs-prefix* "") (key-char key) (not (equal? key "<ret>")))
        (run-emacs-command! (lambda (n) (self-insert! key n)))]
       [else

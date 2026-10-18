@@ -4,6 +4,13 @@ mod common;
 
 use common::*;
 
+/// A server whose which-key popup shows at once instead of after a delay.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    s
+}
+
 fn emacs(text: &str) -> imp_server::Server {
     let mut s = server(text);
     s.keys(&["C-z"]);

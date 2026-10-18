@@ -284,6 +284,65 @@
               (set! *advice* (hash-remove *advice* name)))
             (set! *advice* (hash-insert *advice* name a)))))))
 
+;;; Timers and jobs
+;;;
+;;; Background work reports back on the editor's thread, so these
+;;; procedures can do anything a key can.
+;;;
+;;;   (run-after! 500 (lambda () ...))     ; once, after 500 ms
+;;;   (run-every! 2000 (lambda () ...))    ; until (cancel-timer! id)
+;;;   (start-job! "make" ""                ; a process, its output streamed;
+;;;                                        ;   input #f keeps stdin open for
+;;;                                        ;   job-send! (and job-close-input!)
+;;;     (lambda (text stream) ...)         ;   stream: "stdout" or "stderr"
+;;;     (lambda (code) ...))               ;   when it exits
+
+(define *timers* (hash))  ; id -> (thunk repeat?)
+(define *jobs* (hash))    ; id -> (on-output on-exit)
+
+(define (start-timer ms thunk repeat?)
+  (let ([id (timer-start! ms repeat?)])
+    (when id (set! *timers* (hash-insert *timers* id (list thunk repeat?))))
+    id))
+
+(define (run-after! ms thunk) (start-timer ms thunk #f))
+(define (run-every! ms thunk) (start-timer ms thunk #t))
+
+(define (cancel-timer! id)
+  (timer-cancel! id)
+  (set! *timers* (hash-remove *timers* id)))
+
+;; Called by the server when timer `id` fires.
+(define (imp-timer-fired id)
+  (let ([t (hash-try-get *timers* id)])
+    (when t
+      (timer-done! id (cadr t))
+      (unless (cadr t) (set! *timers* (hash-remove *timers* id)))
+      (with-handler (lambda (e) (set-status! (string-append "error in timer: " (to-string (error-object-message e)))))
+                    ((car t))))))
+
+;; Starts `command` (run by sh). A string `input` is written to its stdin,
+;; which is then closed; #f leaves stdin open for job-send!. Returns the
+;; job id, or #f after showing why it couldn't start.
+(define (start-job! command input on-output on-exit)
+  (let ([id (job-start! command input)])
+    (if (string? id)
+        (begin (set-status! id) #f)
+        (begin (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))) id))))
+
+(define (imp-job-output id stream text)
+  (let ([j (hash-try-get *jobs* id)])
+    (when (and j (car j))
+      (with-handler (lambda (e) (set-status! (string-append "error in job output: " (to-string (error-object-message e)))))
+                    ((car j) text stream)))))
+
+(define (imp-job-exit id code)
+  (let ([j (hash-try-get *jobs* id)])
+    (set! *jobs* (hash-remove *jobs* id))
+    (when (and j (cadr j))
+      (with-handler (lambda (e) (set-status! (string-append "error in job exit: " (to-string (error-object-message e)))))
+                    ((cadr j) code)))))
+
 ;;; Buffer-local values
 ;;;
 ;;; Each buffer has its own table of values, for its major and minor modes

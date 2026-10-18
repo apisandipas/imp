@@ -4,6 +4,13 @@ mod common;
 
 use common::*;
 
+/// A server whose which-key popup shows at once instead of after a delay.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    s
+}
+
 fn rows(s: &mut imp_server::Server) -> String {
     s.frame().text_rows().join("\n")
 }
@@ -65,4 +72,18 @@ fn leader_in_visual_mode() {
     let mut s = server("(+ 1 1)\n(+ 2 2)\n");
     type_keys(&mut s, "V er");
     assert_eq!(s.status(), "2");
+}
+
+#[test]
+fn which_key_waits_for_its_delay() {
+    let mut s = common::server("");
+    s.eval("(set-option! 'which-key-delay 30)").unwrap();
+    type_keys(&mut s, " ");
+    assert!(!s.frame().text_rows().join("\n").contains("+buffer"));
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(s.frame().text_rows().join("\n").contains("+buffer"));
+    // Typing on before the delay never shows it.
+    type_keys(&mut s, "<esc> b");
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(s.frame().text_rows().join("\n").contains("switch buffer"));
 }

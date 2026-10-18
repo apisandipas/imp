@@ -4,6 +4,13 @@ mod common;
 
 use common::*;
 
+/// A server whose which-key popup shows at once instead of after a delay.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    s
+}
+
 fn open(s: &mut imp_server::Server, name: &str, text: &str) {
     let path = temp_path(name);
     std::fs::write(&path, text).unwrap();
