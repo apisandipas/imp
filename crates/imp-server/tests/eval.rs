@@ -1,0 +1,111 @@
+//! Evaluating Scheme inside the editor, and redefining things live.
+
+mod common;
+
+use common::*;
+
+#[test]
+fn eval_redefines_runtime_functions_for_their_callers() {
+    let mut s = server("a\nb\n\nc\n");
+    // `blank-line?` drives the paragraph text objects; redefine it live.
+    type_keys(&mut s, ":eval (define (blank-line? line) #f)<ret>dip");
+    assert_eq!(s.text(), "");
+}
+
+#[test]
+fn eval_form_at_cursor() {
+    let mut s = server("(+ 1 (* 2 3))\n");
+    // On the closing paren of the outer form.
+    type_keys(&mut s, "$");
+    s.eval("(run-command 'eval-last-sexp)").unwrap();
+    assert_eq!(s.status(), "7");
+    // Inside the inner form: the innermost list... from its open paren.
+    type_keys(&mut s, "0f(");
+    s.eval("(run-command 'eval-last-sexp)").unwrap();
+    assert_eq!(s.status(), "6");
+    // On a symbol.
+    type_keys(&mut s, "0l");
+    s.eval("(run-command 'eval-last-sexp)").unwrap();
+    assert!(
+        s.status().contains("closure") || s.status().contains("function"),
+        "{}",
+        s.status()
+    );
+}
+
+#[test]
+fn eval_defun_finds_the_top_level_form() {
+    let mut s = server("(define (sq x)\n  (* x x))\n(sq 9)\n");
+    type_keys(&mut s, "jw");
+    s.eval("(run-command 'eval-defun)").unwrap();
+    type_keys(&mut s, "j$");
+    s.eval("(run-command 'eval-last-sexp)").unwrap();
+    assert_eq!(s.status(), "81");
+}
+
+#[test]
+fn eval_buffer_and_region() {
+    let mut s = server("(define zz 4)\n(* zz 10)\n");
+    s.eval("(run-command 'eval-buffer)").unwrap();
+    assert_eq!(s.status(), "40");
+    type_keys(&mut s, "jV");
+    s.eval("(run-command 'eval-region)").unwrap();
+    assert_eq!(s.status(), "40");
+}
+
+#[test]
+fn eval_errors_are_shown() {
+    let mut s = server("");
+    feed(&mut s, ":eval (car 5)<ret>");
+    assert!(s.status().starts_with("error:"), "{}", s.status());
+    feed(&mut s, ":eval (+ 1<ret>");
+    assert!(s.status().starts_with("error:"), "{}", s.status());
+}
+
+#[test]
+fn long_results_go_to_a_popup() {
+    let mut s = server("");
+    type_keys(&mut s, ":eval (range 0 60)<ret>");
+    assert!(s
+        .frame()
+        .text_rows()
+        .iter()
+        .any(|r| r.starts_with("(0 1 2")));
+}
+
+#[test]
+fn source_a_file() {
+    let path = temp_path("source.scm");
+    std::fs::write(
+        &path,
+        "(define-key! 'normal \"Q\" (lambda (n) (buffer-insert! 0 \"q\")))",
+    )
+    .unwrap();
+    let mut s = server("x\n");
+    type_keys(&mut s, &format!(":source {}<ret>Q", path.display()));
+    assert_eq!(s.text(), "qx\n");
+}
+
+#[test]
+fn messages_are_kept() {
+    let mut s = server("");
+    type_keys(&mut s, ":eval 1<ret>:eval 2<ret>:messages<ret>");
+    let rows = s.frame().text_rows();
+    let first = rows.iter().position(|r| r.trim_end() == "1").unwrap();
+    assert_eq!(rows[first + 1].trim_end(), "2");
+}
+
+#[test]
+fn named_commands_bound_to_keys_follow_redefinition() {
+    let mut s = server("x\n");
+    s.eval(
+        r#"(define-command! 'shout (lambda (n) (buffer-insert! 0 "a")))
+           (define-key! 'normal "Q" 'shout)"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "Q");
+    s.eval(r#"(define-command! 'shout (lambda (n) (buffer-insert! 0 "b")))"#)
+        .unwrap();
+    type_keys(&mut s, "Q");
+    assert_eq!(s.text(), "bax\n");
+}

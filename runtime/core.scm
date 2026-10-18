@@ -14,13 +14,100 @@
   (let ([m (hash-try-get *keymaps* mode)])
     (if m m (hash))))
 
-;; Binds `key` to `command` in `mode`. Commands are ordinary procedures; what
-;; arguments they take is up to the mode that calls them.
+;; Binds `key` to `command` in `mode`. A command is a procedure, or the
+;; name (a symbol) of one made with define-command!; a name is looked up
+;; each time the key is pressed, so redefining the command changes every
+;; key bound to it. What arguments a command takes is up to the mode that
+;; calls it; Vim's modes pass the count.
 (define (define-key! mode key command)
   (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command))))
 
+;; The procedure `key` runs in `mode`, or #f.
 (define (lookup-key mode key)
-  (hash-try-get (keymap mode) key))
+  (let ([binding (hash-try-get (keymap mode) key)])
+    (if (symbol? binding) (command-proc binding) binding)))
+
+;; What `key` is bound to as written: a command name or a procedure.
+(define (key-binding mode key) (hash-try-get (keymap mode) key))
+
+;;; Named commands
+;;;
+;;; (define-command! 'name proc) gives a procedure a name that keys, the
+;;; leader menu and M-x can refer to. Commands take a count (1 by default).
+
+(define *commands* (hash))
+
+(define (define-command! name proc)
+  (set! *commands* (hash-insert *commands* name proc)))
+
+(define (command-proc name) (hash-try-get *commands* name))
+
+(define (command-names) (hash-keys->list *commands*))
+
+;; Runs command `name` (with a count of 1 unless given).
+(define (run-command name . count)
+  (let ([proc (command-proc name)])
+    (if proc
+        (proc (if (null? count) 1 (car count)))
+        (set-status! (string-append "no command " (symbol->string name))))))
+
+;;; Messages: the status line, with a history for :messages.
+
+(define *messages* '())
+
+(define (message text)
+  (set-status! text)
+  (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
+
+;;; Evaluating code while the editor runs
+;;;
+;;; In Steel, define-ing a name that already exists makes a new binding
+;;; that code compiled earlier never sees; set! changes the binding everyone
+;;; uses. So user code (init.scm, :eval, eval-region, packages) is evaluated
+;;; through imp-eval-form, which turns a define of an existing name into a
+;;; set!. That is what lets init.scm or a live :eval redefine any function
+;;; in the runtime and have the whole editor use the new one.
+
+(define (bound? name)
+  (with-handler (lambda (e) #f) (begin (eval name) #t)))
+
+;; `form` with a top-level define of an existing name made into a set!.
+;; (begin ...) forms are rewritten inside, as at top level.
+(define (redefinition form)
+  (cond
+    [(not (pair? form)) form]
+    [(eq? (car form) 'begin) (cons 'begin (map redefinition (cdr form)))]
+    [(and (eq? (car form) 'define) (pair? (cdr form)))
+     (let ([target (cadr form)])
+       (cond
+         ;; (define (name . params) body ...)
+         [(and (pair? target) (symbol? (car target)) (bound? (car target)))
+          (list 'set! (car target) (cons 'lambda (cons (cdr target) (cddr form))))]
+         ;; (define name value)
+         [(and (symbol? target) (bound? target) (pair? (cddr form)))
+          (list 'set! target (caddr form))]
+         [else form]))]
+    [else form]))
+
+(define (imp-eval-form form) (eval (redefinition form)))
+
+;; Evaluates every form in `text`, returning the last value.
+(define (imp-eval-string text)
+  (let ([problem (parse-error text)])
+    (when problem (error problem)))
+  (let ([port (open-input-string text)])
+    (let loop ([form (read port)] [last void])
+      (if (eof-object? form)
+          last
+          (let ([value (imp-eval-form form)])
+            (loop (read port) value))))))
+
+;; Loads a Scheme file the same way, and remembers its source so
+;; describe-function and find-definition can show it.
+(define (imp-load-file path)
+  (let ([text (read-file path)])
+    (record-source! path path text)
+    (imp-eval-string text)))
 
 ;;; Hooks
 ;;;

@@ -52,3 +52,36 @@ fn a_broken_init_still_starts_the_editor() {
     s.keys(&["d", "w"]);
     assert_eq!(s.text(), "two three\n");
 }
+
+#[test]
+fn init_redefines_a_runtime_function_for_its_callers() {
+    // `line-first-nonblank` (core.scm) is what ^ calls. Redefining it must
+    // change ^: that only works if the runtime's callers see the new
+    // definition, not just a new binding beside the old one.
+    let mut s = server_with_config(
+        "redefine",
+        r#"(define (line-first-nonblank line) (line-end line))"#,
+    );
+    s.keys(&["^"]);
+    assert_eq!(s.cursor(), 12);
+}
+
+#[test]
+fn init_can_change_what_a_word_is() {
+    // Words are char-class's business; w, e and iw all follow it.
+    let mut s = server_with_config("words", r#"(define (char-class c) (if c 1 0))"#);
+    s.keys(&["d", "w"]);
+    assert_eq!(s.text(), "\n");
+}
+
+#[test]
+fn init_can_define_new_functions_and_macros() {
+    let mut s = server_with_config(
+        "new",
+        r#"(define-syntax twice (syntax-rules () [(_ e) (begin e e)]))
+           (define (bang! count) (twice (buffer-insert! 0 "!")))
+           (define-key! 'normal "Q" bang!)"#,
+    );
+    s.keys(&["Q"]);
+    assert_eq!(s.text(), "!!one two three\n");
+}

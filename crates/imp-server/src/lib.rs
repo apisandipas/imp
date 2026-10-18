@@ -58,13 +58,20 @@ impl Server {
 
         let runtime_dir = std::env::var_os("IMP_RUNTIME").map(PathBuf::from);
         for (name, embedded) in RUNTIME {
-            let source = match &runtime_dir {
-                Some(dir) => std::fs::read_to_string(dir.join(name))
-                    .map_err(|e| format!("{}: {e}", dir.join(name).display()))?,
-                None => embedded.to_string(),
+            let (source, path) = match &runtime_dir {
+                Some(dir) => (
+                    std::fs::read_to_string(dir.join(name))
+                        .map_err(|e| format!("{}: {e}", dir.join(name).display()))?,
+                    Some(dir.join(name).display().to_string()),
+                ),
+                None => (embedded.to_string(), None),
             };
+            editor::with(|e| {
+                e.sources
+                    .push((format!("runtime/{name}"), path, source.clone()))
+            });
             engine
-                .run(source)
+                .run(with_mutable_globals(&source))
                 .map_err(|e| format!("runtime/{name}: {e}"))?;
         }
 
@@ -80,13 +87,18 @@ impl Server {
         Ok(server)
     }
 
+    /// Loads a user file through the runtime's `imp-load-file`, so a
+    /// `define` of an existing function replaces it everywhere (see
+    /// core.scm).
     fn load_file(&mut self, path: &Path) -> Result<(), String> {
-        let source =
-            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let path_text = path.display().to_string();
         self.engine
-            .run(source)
+            .call_function_by_name_with_args(
+                "imp-load-file",
+                vec![SteelVal::StringV(path_text.clone().into())],
+            )
             .map(|_| ())
-            .map_err(|e| format!("{}: {e}", path.display()))
+            .map_err(|e| format!("{path_text}: {e}"))
     }
 
     /// Calls a Scheme function, reporting any error on the status line.
@@ -148,6 +160,33 @@ impl Server {
     pub fn status(&self) -> String {
         editor::with(|e| e.status.clone())
     }
+}
+
+/// `source` followed by `(set! name name)` for each of its top-level
+/// definitions.
+///
+/// Steel compiles a call to a function defined in the same file, and never
+/// `set!` there, as a direct call that later redefinitions can't reach. A
+/// `set!` anywhere in the file makes the name mutable, so the runtime's
+/// functions stay redefinable from init.scm and `:eval`. This is the
+/// property the whole design rests on; tests/eval.rs checks it.
+fn with_mutable_globals(source: &str) -> String {
+    let mut out = source.to_string();
+    out.push_str("\n;; Generated: keep every definition redefinable.\n");
+    for line in source.lines() {
+        let Some(rest) = line.strip_prefix("(define ") else {
+            continue;
+        };
+        let name: String = rest
+            .trim_start_matches('(')
+            .chars()
+            .take_while(|c| !c.is_whitespace() && *c != '(' && *c != ')')
+            .collect();
+        if !name.is_empty() {
+            out.push_str(&format!("(set! {name} {name})\n"));
+        }
+    }
+    out
 }
 
 /// `$XDG_CONFIG_HOME/imp/init.scm`, falling back to `~/.config/imp/init.scm`.

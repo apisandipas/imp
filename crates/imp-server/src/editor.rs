@@ -28,6 +28,9 @@ pub struct Editor {
     /// The command line being typed and the cursor's column in it. While
     /// it is set it replaces the status line, as in Vim.
     pub cmdline: Option<(String, usize)>,
+    /// Scheme sources loaded so far: (name, path on disk if any, text), for
+    /// documentation and jumping to definitions.
+    pub sources: Vec<(String, Option<String>, String)>,
     /// Lines drawn over the bottom of the window, above the status line.
     pub popup: Vec<String>,
     pub quit: bool,

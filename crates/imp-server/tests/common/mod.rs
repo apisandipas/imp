@@ -47,3 +47,10 @@ pub fn temp_path(name: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir.join(name)
 }
+
+/// Feeds keys without checking the status line for errors.
+pub fn feed(s: &mut Server, input: &str) {
+    let keys = keys(input);
+    let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+    s.keys(&refs);
+}

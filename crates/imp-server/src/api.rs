@@ -145,6 +145,49 @@ pub fn register(engine: &mut Engine) {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
+    // Why `text` doesn't parse as Scheme, or #f if it does. `read` just
+    // stops at an unclosed paren, so loaders check with this first.
+    engine.register_fn("parse-error", |text: String| {
+        steel::parser::parser::Parser::parse(&text)
+            .err()
+            .map(|e| e.to_string())
+    });
+
+    // Loaded Scheme sources, newest last.
+    engine.register_fn(
+        "record-source!",
+        |name: String, path: String, text: String| {
+            editor::with(|e| {
+                let path = (!path.is_empty()).then_some(path);
+                e.sources.retain(|(n, _, _)| *n != name);
+                e.sources.push((name, path, text));
+            })
+        },
+    );
+    engine.register_fn("source-names", || {
+        editor::with(|e| {
+            e.sources
+                .iter()
+                .map(|(n, _, _)| n.clone())
+                .collect::<Vec<_>>()
+        })
+    });
+    engine.register_fn("source-text", |name: String| {
+        editor::with(|e| {
+            e.sources
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .map(|(_, _, t)| t.clone())
+        })
+    });
+    engine.register_fn("source-path", |name: String| {
+        editor::with(|e| {
+            e.sources
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .and_then(|(_, p, _)| p.clone())
+        })
+    });
     engine.register_fn("getenv", |name: String| std::env::var(name).ok());
     engine.register_fn("current-dir", || {
         std::env::current_dir()

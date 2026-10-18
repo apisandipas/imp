@@ -126,6 +126,12 @@
         [(char-word? c) 1]
         [else 2]))
 
+;; The classifiers motions and text objects are built with. They call
+;; char-class and big-class by name each time, so redefining those (to make
+;; - a word char in Lisp, say) changes w, e, iw and the rest at once.
+(define (word-class c) (char-class c))
+(define (WORD-class c) (big-class c))
+
 ;; WORD classes: anything that isn't white space is part of a WORD.
 (define (big-class c)
   (cond [(not c) 0] [(char-whitespace? c) 0] [else 1]))
@@ -195,14 +201,14 @@
     (let ([hi (line-end (offset->line from))]) (and (< from hi) (min hi (+ from n))))))
 (define-motion! "j" 'linewise (lambda (from n) (vertical from n)))
 (define-motion! "k" 'linewise (lambda (from n) (vertical from (- n))))
-(define-motion! "w" 'exclusive (word-motion next-word-start char-class))
-(define-motion! "b" 'exclusive (word-motion prev-word-start char-class))
-(define-motion! "e" 'inclusive (word-motion next-word-end char-class))
-(define-motion! "ge" 'inclusive (word-motion prev-word-end char-class))
-(define-motion! "W" 'exclusive (word-motion next-word-start big-class))
-(define-motion! "B" 'exclusive (word-motion prev-word-start big-class))
-(define-motion! "E" 'inclusive (word-motion next-word-end big-class))
-(define-motion! "gE" 'inclusive (word-motion prev-word-end big-class))
+(define-motion! "w" 'exclusive (word-motion next-word-start word-class))
+(define-motion! "b" 'exclusive (word-motion prev-word-start word-class))
+(define-motion! "e" 'inclusive (word-motion next-word-end word-class))
+(define-motion! "ge" 'inclusive (word-motion prev-word-end word-class))
+(define-motion! "W" 'exclusive (word-motion next-word-start WORD-class))
+(define-motion! "B" 'exclusive (word-motion prev-word-start WORD-class))
+(define-motion! "E" 'inclusive (word-motion next-word-end WORD-class))
+(define-motion! "gE" 'inclusive (word-motion prev-word-end WORD-class))
 (define-motion! "0" 'exclusive (lambda (from n) (line-start (offset->line from))))
 (define-motion! "^" 'exclusive (lambda (from n) (line-first-nonblank (offset->line from))))
 (define-motion! "$" 'inclusive
@@ -621,10 +627,10 @@
                (list (run-start (- start 1) classify lo) end #f)
                (list start end #f)))]))))
 
-(define-text-object! "iw" (inner-word char-class))
-(define-text-object! "aw" (a-word char-class))
-(define-text-object! "iW" (inner-word big-class))
-(define-text-object! "aW" (a-word big-class))
+(define-text-object! "iw" (inner-word word-class))
+(define-text-object! "aw" (a-word word-class))
+(define-text-object! "iW" (inner-word WORD-class))
+(define-text-object! "aW" (a-word WORD-class))
 
 ;; Quotes, on the cursor's line only, as in Vim. A quote preceded by a
 ;; backslash doesn't count.
@@ -2177,8 +2183,6 @@
       (set! *history* (hash-insert *history* prompt
                                    (if (> (length new) 200) (take new 200) new))))))
 
-(define (take lst n)
-  (if (or (= n 0) (null? lst)) '() (cons (car lst) (take (cdr lst) (- n 1)))))
 
 (define (history-step! dir)
   (when (= *history-index* -1) (set! *history-prefix* *cmdline*))
@@ -3160,14 +3164,90 @@
         (insert-lines-after! line text)
         (set-cursor! (line-first-nonblank (+ line 1)))))))
 
-;; :eval EXPR runs Scheme in the editor and shows the result. This is the
-;; quickest way to redefine something while imp is running.
-(define-ex! '("eval" "ev")
+;;; Evaluating Scheme in the editor
+;;;
+;;; :eval EXPR, :source FILE, and commands that evaluate the form at the
+;;; cursor, the top-level form around it, the selection or the buffer. All
+;;; go through imp-eval-string (core.scm), so a define of an existing
+;;; function replaces it for the whole editor right away.
+
+;; Shows a result: on the status line, or in a popup if it is long.
+(define (show-result! value)
+  (let ([text (if (string? value) value (to-string value))])
+    (if (or (string-contains? text "\n") (> (string-length text) 100))
+        (show-popup! (split-lines text))
+        (message text))))
+
+;; Evaluates `text`, showing the value or the error.
+(define (eval-and-show! text)
+  (show-result!
+   (with-handler (lambda (e) (string-append "error: " (error-message e)))
+                 (let ([v (imp-eval-string text)]) (if (eq? v void) "#<void>" v)))))
+
+(define-ex! '("eval" "ev") (lambda (ex) (eval-and-show! (ex-args ex))))
+
+(define-ex! '("so" "source")
   (lambda (ex)
-    (let ([result (with-handler
-                   (lambda (e) (string-append "error: " (error-message e)))
-                   (to-string (eval (read (open-input-string (ex-args ex))))))])
-      (set-status! result))))
+    (let ([path (expand-path (if (equal? (ex-args ex) "") (or (buffer-path) "") (ex-args ex)))])
+      (show-result!
+       (with-handler (lambda (e) (string-append "error: " (error-message e)))
+                     (begin (imp-load-file path) (string-append "sourced " path)))))))
+
+(define-ex! '("mes" "messages")
+  (lambda (ex) (show-popup! (if (null? *messages*) (list "no messages") (reverse *messages*)))))
+
+;; Chars that end a symbol.
+(define (delimiter? c)
+  (or (not c) (char-whitespace? c) (memv c (string->list "()[]\"';`,"))))
+
+;; The form at the cursor, as (start end): the list whose ( or ) the cursor
+;; is on, the symbol or number under it, or else the innermost list around
+;; it.
+(define (form-at p)
+  (let ([c (buffer-char-at p)])
+    (cond
+      [(memv c (list #\) #\]))
+       (let ([o (find-open (if (equal? c #\)) #\( #\[) c p 1)]) (and o (list o (+ p 1))))]
+      [(memv c (list #\( #\[))
+       (let ([e (find-close c (if (equal? c #\() #\) #\]) (+ p 1))]) (and e (list p (+ e 1))))]
+      [(not (delimiter? c))
+       (let ([lo (let loop ([q p]) (if (and (> q 0) (not (delimiter? (buffer-char-at (- q 1))))) (loop (- q 1)) q))]
+             [hi (let loop ([q p]) (if (not (delimiter? (buffer-char-at q))) (loop (+ q 1)) q))])
+         (list lo hi))]
+      [else (let ([o (find-open #\( #\) p 1)]) (and o (form-at o)))])))
+
+;; The top-level form around the cursor: the outermost list containing it.
+(define (top-level-form-at p)
+  (let loop ([o (if (equal? (buffer-char-at p) #\() p (find-open #\( #\) p 1))])
+    (and o
+         (let ([outer (and (> o 0) (find-open #\( #\) (- o 1) 1))])
+           (if outer (loop outer) (form-at o))))))
+
+(define (eval-range-command range-of)
+  (lambda (count)
+    (let ([r (range-of (cursor))])
+      (if r
+          (eval-and-show! (buffer-substring (car r) (cadr r)))
+          (message "no form at the cursor")))))
+
+;; Evaluate the form at the cursor (Emacs's C-x C-e).
+(define-command! 'eval-last-sexp (eval-range-command form-at))
+;; Evaluate the top-level form around the cursor (C-M-x).
+(define-command! 'eval-defun (eval-range-command top-level-form-at))
+;; Evaluate the whole buffer.
+(define-command! 'eval-buffer
+  (lambda (count) (eval-and-show! (buffer-substring 0 (buffer-length)))))
+;; Evaluate the visual selection.
+(define-command! 'eval-region
+  (lambda (count)
+    (if (eq? *mode* 'visual)
+        (let ([r (visual-range)])
+          (leave-visual!)
+          (eval-and-show! (buffer-substring (car r) (cadr r))))
+        (run-command 'eval-last-sexp))))
+;; Prompt for an expression and evaluate it (M-:).
+(define-command! 'eval-expression
+  (lambda (count) (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
 
 ;;; Entry points
 
