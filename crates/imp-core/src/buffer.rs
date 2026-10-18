@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use ropey::Rope;
 
+use crate::fileio::{self, FileFormat};
+
 #[derive(Debug, Default)]
 pub struct Buffer {
     text: Rope,
@@ -28,6 +30,13 @@ pub struct Buffer {
     /// Goes up with every change (and undo/redo), so watchers can tell
     /// whether the text changed without comparing it.
     version: u64,
+    /// How the file was stored, to write it back the same way.
+    format: FileFormat,
+    /// The file's modification time and size when last read or written,
+    /// to notice changes made outside the editor.
+    disk: Option<(std::time::SystemTime, u64)>,
+    /// Keep the previous version as `FILE~` when saving.
+    pub backup: bool,
 }
 
 impl Buffer {
@@ -38,35 +47,65 @@ impl Buffer {
         }
     }
 
-    /// Opens `path`, or starts an empty buffer for it if the file doesn't exist.
+    /// Opens `path`, or starts an empty buffer for it if the file doesn't
+    /// exist. Line endings and encoding are noted to write back the same.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => Rope::from_str(&text),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Rope::new(),
-            Err(e) => return Err(e),
-        };
+        let (text, format) = read_file(path)?;
         Ok(Self {
-            text,
+            text: Rope::from_str(&text),
             path: Some(path.to_path_buf()),
+            format,
+            disk: fileio::stamp(path),
             ..Self::default()
         })
     }
 
+    /// Saves to the buffer's file, atomically (see `fileio::write_atomic`).
     pub fn save(&mut self) -> io::Result<()> {
         let path = self
             .path
-            .as_ref()
+            .clone()
             .ok_or_else(|| io::Error::other("buffer has no file name"))?;
-        let file = std::fs::File::create(path)?;
-        self.text.write_to(io::BufWriter::new(file))?;
+        let bytes = fileio::encode(&self.text.to_string(), self.format)?;
+        fileio::write_atomic(&path, &bytes, self.backup)?;
         self.modified = false;
+        self.disk = fileio::stamp(&path);
         Ok(())
     }
 
     /// Writes the text to `path` without changing the buffer's own file.
     pub fn write_to(&self, path: &Path) -> io::Result<()> {
-        let file = std::fs::File::create(path)?;
-        self.text.write_to(io::BufWriter::new(file))
+        let bytes = fileio::encode(&self.text.to_string(), self.format)?;
+        fileio::write_atomic(path, &bytes, false)
+    }
+
+    pub fn format(&self) -> FileFormat {
+        self.format
+    }
+
+    pub fn set_format(&mut self, format: FileFormat) {
+        if format != self.format {
+            self.format = format;
+            // Saving would now write different bytes.
+            self.modified = true;
+        }
+    }
+
+    /// Whether the file changed on disk since it was last read or written
+    /// here (including appearing or disappearing).
+    pub fn changed_on_disk(&self) -> bool {
+        match &self.path {
+            Some(path) => fileio::stamp(path) != self.disk,
+            None => false,
+        }
+    }
+
+    /// Accepts the file on disk as it is now, as `:w!` over a changed file
+    /// will.
+    pub fn forget_disk_change(&mut self) {
+        if let Some(path) = &self.path {
+            self.disk = fileio::stamp(path);
+        }
     }
 
     pub fn set_path(&mut self, path: Option<PathBuf>) {
@@ -94,11 +133,9 @@ impl Buffer {
             .path
             .clone()
             .ok_or_else(|| io::Error::other("buffer has no file name"))?;
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(e),
-        };
+        let (text, format) = read_file(&path)?;
+        self.format = format;
+        self.disk = fileio::stamp(&path);
         self.undo_boundary();
         let len = self.len();
         self.text.remove(0..len);
@@ -325,6 +362,15 @@ impl Buffer {
         self.modified = true;
         self.dirty = false;
         Some(at)
+    }
+}
+
+/// The text of `path` and its format; a missing file is empty.
+fn read_file(path: &Path) -> io::Result<(String, FileFormat)> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(fileio::decode(&bytes)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok((String::new(), FileFormat::default())),
+        Err(e) => Err(e),
     }
 }
 

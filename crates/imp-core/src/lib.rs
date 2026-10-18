@@ -2,6 +2,7 @@
 //! messages that cross the client/server boundary.
 
 pub mod buffer;
+pub mod fileio;
 pub mod protocol;
 
 pub use buffer::Buffer;

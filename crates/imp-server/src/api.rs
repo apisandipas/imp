@@ -121,6 +121,56 @@ pub fn register(engine: &mut Engine) {
             })
         })
     });
+    engine.register_fn("buffer-changed-on-disk?", || {
+        editor::with(|e| e.buffer.changed_on_disk())
+    });
+    engine.register_fn("buffer-forget-disk-change!", || {
+        editor::with(|e| e.buffer.forget_disk_change())
+    });
+    // ("unix"|"dos" "utf-8"|"latin1" bom?) for the current buffer.
+    engine.register_fn("buffer-file-format", || {
+        editor::with(|e| {
+            let f = e.buffer.format();
+            vec![
+                SteelVal::StringV(if f.crlf { "dos" } else { "unix" }.into()),
+                SteelVal::StringV(
+                    match f.encoding {
+                        imp_core::fileio::Encoding::Utf8 => "utf-8",
+                        imp_core::fileio::Encoding::Latin1 => "latin1",
+                    }
+                    .into(),
+                ),
+                SteelVal::BoolV(f.bom),
+            ]
+        })
+    });
+    engine.register_fn(
+        "set-buffer-file-format!",
+        |ff: String, encoding: String, bom: bool| {
+            use imp_core::fileio::{Encoding, FileFormat};
+            let encoding = match encoding.as_str() {
+                "latin1" | "latin-1" | "iso-8859-1" => Encoding::Latin1,
+                "utf-8" | "utf8" => Encoding::Utf8,
+                other => return Err(format!("unknown encoding {other}")),
+            };
+            let crlf = match ff.as_str() {
+                "dos" => true,
+                "unix" => false,
+                other => return Err(format!("unknown fileformat {other}")),
+            };
+            editor::with(|e| {
+                e.buffer.set_format(FileFormat {
+                    crlf,
+                    bom,
+                    encoding,
+                })
+            });
+            Ok(())
+        },
+    );
+    engine.register_fn("set-backup!", |on: bool| {
+        editor::with(|e| e.buffer.backup = on)
+    });
     engine.register_fn("buffer-reload!", || {
         editor::with(|e| e.buffer.reload().map_err(|err| err.to_string()))
     });
@@ -153,6 +203,33 @@ pub fn register(engine: &mut Engine) {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
+    // Seconds since the epoch the file was modified, or #f.
+    engine.register_fn("file-mtime", |path: String| {
+        std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as isize)
+    });
+    engine.register_fn("write-text-file!", |path: String, text: String| {
+        let path = Path::new(&path);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(|e| e.to_string())
+    });
+    engine.register_fn("delete-file!", |path: String| {
+        std::fs::remove_file(path).is_ok()
+    });
+    // $XDG_STATE_HOME/imp, or ~/.local/state/imp.
+    engine.register_fn("state-dir", || {
+        std::env::var_os("XDG_STATE_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+            .map(|d| d.join("imp").display().to_string())
+            .unwrap_or_else(|| ".".to_string())
+    });
     // Why `text` doesn't parse as Scheme, or #f if it does. `read` just
     // stops at an unclosed paren, so loaders check with this first.
     engine.register_fn("parse-error", |text: String| {

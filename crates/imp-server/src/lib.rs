@@ -46,6 +46,7 @@ const RUNTIME: &[(&str, &str)] = &[
         "packages.scm",
         include_str!("../../../runtime/packages.scm"),
     ),
+    ("files.scm", include_str!("../../../runtime/files.scm")),
 ];
 
 pub struct Options {

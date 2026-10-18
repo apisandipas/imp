@@ -2652,10 +2652,18 @@
                                acc)))))))))
 
 ;; Saves the current buffer, running the save hooks. Returns #t if saved.
-(define (save-buffer!)
-  (run-hooks 'before-save)
-  (and (save!)
-       (begin (run-hooks 'after-save) #t)))
+;; A file changed on disk since it was read isn't overwritten unless
+;; `force?` (as :w! does).
+(define (save-buffer! . force)
+  (cond
+    [(and (buffer-changed-on-disk?) (file-exists? (or (buffer-path) "")) (or (null? force) (not (car force))))
+     (message (string-append (buffer-name) " changed on disk since it was read (:w! to overwrite, :e! to reload)"))
+     #f]
+    [else
+     (run-hooks 'before-save)
+     (set-backup! (option 'backup))
+     (and (save!)
+          (begin (run-hooks 'after-save) #t))]))
 
 ;; :w writes the buffer; :w FILE writes a copy (or names the buffer, if it
 ;; had no file).
@@ -2664,7 +2672,7 @@
     (cond
       [(equal? file "")
        (if (buffer-path)
-           (when (save-buffer!) (set-status! (string-append "wrote " (buffer-name))))
+           (when (save-buffer! (ex-bang? ex)) (set-status! (string-append "wrote " (buffer-name))))
            (set-status! "no file name (use :w FILE)"))]
       [(and (file-exists? (expand-path file)) (not (ex-bang? ex)) (not (equal? (expand-path file) (buffer-path))))
        (set-status! (string-append file " exists (add ! to override)"))]

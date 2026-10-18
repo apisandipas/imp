@@ -384,12 +384,25 @@
         [(hash-try-get *option-aliases* name) => (lambda (n) n)]
         [else #f]))
 
+;; Options whose value lives elsewhere (the buffer's file format, in Rust):
+;; name -> (getter setter).
+(define *computed-options* (hash))
+
+(define (define-computed-option! name aliases getter setter)
+  (set! *computed-options* (hash-insert *computed-options* name (list getter setter)))
+  (define-option! name #f aliases))
+
 (define (option name)
-  (let ([local (buffer-locals)] [key (list 'option name)])
-    (if (hash-contains? local key) (hash-ref local key) (hash-ref *options* name))))
+  (let ([computed (hash-try-get *computed-options* name)])
+    (if computed
+        ((car computed))
+        (let ([local (buffer-locals)] [key (list 'option name)])
+          (if (hash-contains? local key) (hash-ref local key) (hash-ref *options* name))))))
 
 (define (set-local-option! name value)
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+    (let ([computed (hash-try-get *computed-options* name)])
+      (when computed ((cadr computed) value)))
     (set-buffer-local! (list 'option name) value)
     (let ([watch (hash-try-get *option-watchers* name)])
       (when watch (watch value)))
@@ -403,6 +416,8 @@
 
 (define (set-option! name value)
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+    (let ([computed (hash-try-get *computed-options* name)])
+      (when computed ((cadr computed) value)))
     (set! *options* (hash-insert *options* name value))
     (let ([watch (hash-try-get *option-watchers* name)])
       (when watch (watch (option name))))
