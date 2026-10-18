@@ -51,6 +51,12 @@
         (proc (if (null? count) 1 (car count)))
         (set-status! (string-append "no command " (symbol->string name))))))
 
+;; When this is a procedure, keys go to it instead of the editor (describe-
+;; key uses it to read the keys it describes). Runtime files extend each
+;; other through variables like this and hooks: a define in a later file
+;; would add a new binding that earlier files never see.
+(define *key-interceptor* #f)
+
 ;;; Messages: the status line, with a history for :messages.
 
 (define *messages* '())

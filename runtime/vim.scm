@@ -2498,7 +2498,13 @@
   (let* ([r (parse-range line 0)]
          [range (car r)]
          [i (skip-spaces line (caddr r))]
-         [name-end (let loop ([j i]) (if (letter? (char-at line j)) (loop (+ j 1)) j))]
+         ;; Names are letters, with dashes inside longer ones
+         ;; (:describe-key).
+         [name-end (let loop ([j i])
+                     (if (or (letter? (char-at line j))
+                             (and (> j i) (equal? (char-at line j) #\-) (letter? (char-at line (+ j 1)))))
+                         (loop (+ j 1))
+                         j))]
          ;; A command that isn't letters is one char: & < > ! =
          [name-end (if (and (= name-end i) (char-at line i)) (+ i 1) name-end)]
          [name (substring line i name-end)]
@@ -3274,9 +3280,11 @@
 ;; Handles one key without recording it; macros play keys through here.
 (define (process-key! key)
   (define typing? (typing-mode?))
-  (if (stops-recording? key)
-      (stop-recording!)
-      (handle-key! key))
+  (cond
+    [(stops-recording? key) (stop-recording!)]
+    ;; Something (describe-key) wants the next keys instead.
+    [*key-interceptor* (*key-interceptor* key)]
+    [else (handle-key! key)])
   ;; After C-o's one command (once nothing is pending), back to insert.
   (when (and *insert-return* (not typing?) (eq? *mode* 'normal)
              (not *operator*) (not *prefix*) (equal? *count* ""))

@@ -109,6 +109,11 @@ impl Buffer {
         self.path.as_deref()
     }
 
+    /// Marks the text as matching what is on disk, as after a save.
+    pub fn set_unmodified(&mut self) {
+        self.modified = false;
+    }
+
     pub fn is_modified(&self) -> bool {
         self.modified
     }

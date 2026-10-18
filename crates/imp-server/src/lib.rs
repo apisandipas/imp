@@ -28,6 +28,7 @@ use editor::Editor;
 const RUNTIME: &[(&str, &str)] = &[
     ("core.scm", include_str!("../../../runtime/core.scm")),
     ("vim.scm", include_str!("../../../runtime/vim.scm")),
+    ("help.scm", include_str!("../../../runtime/help.scm")),
 ];
 
 pub struct Options {

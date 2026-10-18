@@ -119,6 +119,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-reload!", || {
         editor::with(|e| e.buffer.reload().map_err(|err| err.to_string()))
     });
+    engine.register_fn("set-buffer-unmodified!", || {
+        editor::with(|e| e.buffer.set_unmodified())
+    });
     engine.register_fn("set-buffer-name!", |name: String| {
         editor::with(|e| e.buffer.set_name(Some(name)))
     });
