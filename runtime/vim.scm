@@ -10,7 +10,9 @@
 
 ;;; State
 
-(define *mode* 'normal)        ; normal | insert | cmdline | visual
+(define *mode* 'normal)        ; normal | insert | replace | cmdline | visual, or a state added by another file
+;; States other files add (emacs.scm): state -> (name cursor-shape key-handler).
+(define *extra-states* (hash))
 (define *visual* #f)           ; char | line | block while in visual mode
 (define *block-eol* #f)        ; $ in block mode: every line to its end
 (define *block-insert* #f)     ; (first last col) while typing I/A/c in a block
@@ -70,6 +72,10 @@
 ;; tell "5G" from "G".
 (define *count-given* #f)
 
+;; Adds an editor state beside Vim's: keys in it go to `handler`.
+(define (define-state! state name cursor-shape handler)
+  (set! *extra-states* (hash-insert *extra-states* state (list name cursor-shape handler))))
+
 (define (set-mode! mode)
   (let ([old *mode*])
     (set! *mode* mode)
@@ -79,7 +85,10 @@
               [(and (typing? old) (not (typing? mode))) (run-hooks 'insert-leave)]
               [else #t]))
       (run-hooks 'mode-change old mode)))
-  (set-cursor-shape! (cond [(eq? mode 'insert) "bar"] [(eq? mode 'replace) "underline"] [else "block"]))
+  (set-cursor-shape! (cond [(eq? mode 'insert) "bar"]
+                           [(eq? mode 'replace) "underline"]
+                           [(hash-try-get *extra-states* mode) => cadr]
+                           [else "block"]))
   (show-mode!))
 
 (define (show-mode!)
@@ -91,6 +100,7 @@
       [(eq? *mode* 'cmdline) "COMMAND"]
       [(eq? *mode* 'visual)
        (cond [(eq? *visual* 'line) "VISUAL LINE"] [(eq? *visual* 'block) "VISUAL BLOCK"] [else "VISUAL"])]
+      [(hash-try-get *extra-states* *mode*) => car]
       [else "NORMAL"])
     (if *recording* (string-append " recording @" (string *recording*)) ""))))
 
@@ -2127,7 +2137,8 @@
 ;;; on each edit, on <ret> and on <esc>.
 
 (define (open-cmdline! prompt initial on-submit on-change on-cancel)
-  (set! *cmdline-return* (if (eq? *mode* 'visual) 'visual 'normal))
+  ;; Back to whatever state opened it (normal, visual, emacs...).
+  (set! *cmdline-return* (if (eq? *mode* 'cmdline) *cmdline-return* *mode*))
   (set! *cmdline-prompt* prompt)
   (set! *cmdline* initial)
   (set! *cmdline-pos* (string-length initial))
@@ -3322,6 +3333,7 @@
 
 (define (handle-key! key)
   (cond
+    [(hash-try-get *extra-states* *mode*) => (lambda (s) ((caddr s) key))]
     [(typing-mode?) (insert-mode-key! key)]
     [(eq? *mode* 'cmdline) (cmdline-key! key)]
     [else
