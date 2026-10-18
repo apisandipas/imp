@@ -42,12 +42,13 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 1, branch `phase-1`)
+## 3. Current state (end of Phase 2, branch `phase-2`)
 
-Phase 1 (daily-driver Vim) is done, with styled frames (3.3) pulled forward.
-The owner was away while it was built; every step is a separate commit on
-the local `phase-1` branch, nothing pushed. Design notes per phase are in
-`docs/design/`.
+Phases 1 (daily-driver Vim) and 2 (the Emacs half) are done, with styled
+frames (3.3) and multiple buffers (3.1) pulled forward. The owner was away
+while they were built; every step is a separate commit on local branches
+(`phase-1`, then `phase-2` on top of it), nothing pushed. Design notes per
+phase, each with an Outcome section, are in `docs/design/`.
 
 ### Layout
 
@@ -73,15 +74,23 @@ crates/
     examples/bench.rs      times commands on a 100k-line buffer
   imp/                     terminal client (package imp-editor, bin imp)
     src/main.rs            crossterm; draws styled spans
-runtime/
-  core.scm                 keymaps, options, faces, buffer helpers
-  vim.scm                  everything Vim (~3000 lines)
-docs/design/phase-1.md     how Phase 1 was designed
+runtime/                   loaded in this order
+  core.scm                 evaluation (live redefinition), keymaps, commands,
+                           hooks, advice, buffer-locals, options, faces
+  vim.scm                  everything Vim, buffers, ex commands (~3300 lines)
+  help.scm                 describe-key/function/option, apropos, :help
+  completion.scm           completing-read, M-x, find-file, switch-buffer
+  leader.scm               SPC leader tree and which-key
+  modes.scm                major/minor modes, gc commenting, the REPL
+  emacs.scm                the Emacs state (holy bindings)
+  packages.scm             use-package!, :packages
+docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
-Size check against the 80% rule: ~3,100 lines of Scheme vs ~2,000 lines of
-Rust (and the Rust includes the client, protocol, buffer and renderer, none
-of which is editor behavior). Every key's meaning is in Scheme.
+Size check against the 80% rule: ~5,300 lines of Scheme vs ~2,600 lines of
+Rust, and the Rust is the client, protocol, buffer, renderer and the few
+primitives that measured too slow in Scheme (bracket/tag scans, fuzzy
+matching, regex). Every key's meaning is in Scheme.
 
 ### How it works
 
@@ -100,6 +109,14 @@ of which is editor behavior). Every key's meaning is in Scheme.
   error in `init.scm` goes to the status line; the editor still starts.
 - Scheme errors at runtime are caught and shown as `error: ...`.
 - `:eval EXPR` runs Scheme in the live editor (`Server::eval` from Rust).
+- **Live redefinition** (the property everything rests on): see "Steel
+  gotchas" below for why it needs care. In short, the server appends
+  `(set! name name)` for every top-level definition of each runtime file,
+  and user code (`init.scm`, `:eval`, eval commands, packages, the REPL)
+  goes through `imp-eval-string` in `core.scm`, which turns a `define` of an
+  existing name into `set!`, keeps new definitions redefinable, and gives
+  names defined later (by a package) a placeholder. `tests/eval.rs` and
+  `tests/config.rs` check it.
 
 ### The Scheme API (`crates/imp-server/src/api.rs`)
 
@@ -117,8 +134,15 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   tag-pairs-around`
 - Cursor/window: `cursor set-cursor! window-top window-height
   set-window-top! set-tab-width!`
-- UI: `set-status! set-mode-name! set-cursor-shape!` (`bar block
-  underline`), `set-cmdline! clear-cmdline! set-popup! quit!`
+- UI: `set-status! set-mode-name! set-mode-line-extra! set-cursor-shape!`
+  (`bar block underline`), `set-cmdline! clear-cmdline! set-popup!
+  set-popup-selected! set-line-numbers! set-cursorline! window-width quit!`
+- Buffers: `buffer-list current-buffer switch-to-buffer! buffer-open!
+  buffer-new! buffer-kill! buffer-info buffer-reload! set-buffer-name!
+  set-buffer-unmodified! buffer-version`
+- Sources and environment: `record-source! source-names source-text
+  source-path parse-error getenv current-dir config-dir`
+- Completion: `fuzzy-filter list-files`
 - Styling: `set-face!` (spec like `"fg=#ff8800 bg=blue bold"`),
   `highlight-clear! highlight-add! highlight-pattern!` on named layers
   (`syntax`, `search`, `visual` in that order).
@@ -144,6 +168,28 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
     with `ex-range ex-range-given? ex-bang? ex-args`.
   - `(begin-change!)` before any change (undo point, `.`/`U` bookkeeping);
     `(with-undo-group thunk)` makes several changes one undo step.
+  - `(define-state! state name cursor-shape handler)`: a new editor state
+    beside Vim's (emacs.scm uses it).
+- Commands and keys: `(define-command! 'name proc)`; `define-key!` takes a
+  command name, looked up when the key is pressed. `(run-command 'name)`.
+- Hooks: `add-hook! remove-hook! run-hooks`; the editor runs `startup
+  after-change before-save after-save post-command insert-enter
+  insert-leave mode-change major-mode buffer-enter buffer-open
+  option-change`. Advice: `(advice-add! 'fn 'before|'after|'around proc)`,
+  `advice-remove!`.
+- Leader: `(define-leader! "keys" command "description")`,
+  `define-leader-group!`; major modes: `define-mode-leader!` (under SPC m).
+- Modes: `define-major-mode! define-minor-mode! define-mode-key!
+  define-file-name-mode! set-major-mode! minor-mode-on!`;
+  `set-local-option!`, `buffer-local`, `set-buffer-local!`.
+- Completion: `(completing-read prompt candidates on-select)`.
+- Emacs keys: `(define-key! 'emacs "C-x C-s" 'save-buffer)`.
+- Packages: `(use-package! 'name 'git URL 'rev REV 'config thunk)`.
+- Cross-file extension inside the runtime: a later runtime file can't be
+  called by name from an earlier one, and a `define` there won't replace an
+  earlier file's function for its callers. Use hooks, tables
+  (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`,
+  `*local-keymaps*`, `*cmdline-key-handler*`).
 
 ### What works
 
@@ -174,9 +220,31 @@ Everything in Phase 1 of the roadmap, matched against Vim's behavior:
 - Options: `tabstop shiftwidth expandtab autoindent wrapscan hlsearch
   incsearch clipboard` via `:set` (with `no`, `?`, `!`, `=`).
 
+Phase 2 adds:
+
+- Buffers: `:e :e! :enew :ls :b :bn :bp :bd C-^ :wa :qa`, each with its own
+  cursor; jumps cross buffers.
+- Live Scheme: `:eval`, `:source`, eval form/top-level form/region/buffer,
+  `M-:`, `:messages`, and a `*scheme*` REPL buffer (`:repl`, `SPC e i`).
+- Help from the source: `describe-key` (press keys, see the binding form and
+  its comment), `describe-function/option/command`, `apropos`,
+  `find-definition`, `:help`; Scheme buffers have `K` and `gd`.
+- Hooks, advice, named commands.
+- Completion (orderless fuzzy) for M-x, find-file (gitignore-aware),
+  switch-buffer, describe-*.
+- SPC leader with which-key (Doom-like tree: files, buffers, eval, help,
+  search, toggles, quit, SPC m for the major mode).
+- Major modes for ~20 languages (indentation, commentstring), minor modes,
+  `:setlocal`, `:mode`, and `gc` commenting.
+- An Emacs state (C-z) with mark/region, kill ring, C-u, isearch, C-x keys.
+- Packages via `use-package!` (local or git, pinned), `:packages`.
+- Line numbers (`number`, `relativenumber`, hybrid), `cursorline`,
+  horizontal scrolling for long lines.
+
 ### Verified
 
-- `cargo test`: ~140 tests; clippy and fmt clean; `nix build` works.
+- `cargo test`: 218 tests; clippy and fmt clean; `nix build` works.
+- Startup ~0.3 s in release (Steel's prelude dominates, as before).
 - The release binary was driven through a pty (`pyte` screen): visual
   highlighting, search, `ci(`, `:%s`, `O` with autoindent, `:w`.
 - `examples/bench.rs` on 100k lines: most commands ~0.1-0.3 ms per key
@@ -229,6 +297,24 @@ Conventions:
 - No `raise`: re-raise a caught error with `(raise-error e)`. Catch with
   `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a
   leading space (see `error-message` in vim.scm).
+- **Redefinition (the big one).** Re-`define`-ing an existing global makes
+  a *new* binding that code compiled earlier never sees; `set!` changes the
+  binding everyone uses. And within one compilation unit (one `run`, one
+  file), a call to a function never `set!` in that unit is compiled as a
+  direct call later `set!`s can't reach. Hence the markers and the
+  `define`→`set!` rewrite described in "How it works". A function passed
+  *as a value* at load time (`(word-motion next-word-start ...)`) is still
+  captured; call by name inside a lambda where redefinition matters.
+- A runtime file can't call a function first defined in a *later* runtime
+  file (each file is its own unit), and `eval` of a form that references a
+  global not yet defined fails; user code gets placeholders for those.
+- `define-syntax` inside `(begin ...)` isn't visible to the later forms in
+  it; macros are evaluated first.
+- Defining a name the prelude already has (`take`, `log`) fails once it is
+  `set!` ("cannot mutate module-required identifier"). Check new runtime
+  names against the prelude; `crates/imp-server/examples/` is the place for
+  such scratch tools.
+- `void` is a value, not a function: `(void)` is an error.
 - Rust primitives returning `Result<_, String>` raise errors whose message is
   the Debug-quoted string; prefer a primitive that returns the error (like
   `pattern-error`) when Scheme needs to show it.
@@ -244,23 +330,25 @@ Conventions:
 Fix these when the roadmap item touching them comes up, not all at once.
 
 1. **One server per thread.** Editor state is a `thread_local`, because Steel's
-   `register_fn` takes plain functions. Fine for one session; for multiple
-   buffers/clients keep one `Editor` holding many buffers, on one thread.
-2. **Single buffer, single window** (Phase 3.1/3.2). `:e` doesn't exist yet;
-   `:w FILE` names an unnamed buffer.
-3. **Full-frame redraw** on every key (no diffs yet), and char count is used
-   as display width (wide CJK/emoji chars misalign; 3.4). Block visual mode
-   uses char columns, so a tab inside a block counts as one column.
+   `register_fn` takes plain functions. Fine with many buffers; revisit for
+   several clients (3.5).
+2. **Single window**: no splits yet (3.2). Buffers are switched in place.
+3. **Full-frame redraw** on every key (no diffs yet), char count used as
+   display width (wide CJK/emoji misalign; 3.4), **no soft wrap** (long lines
+   scroll sideways; `gj`/`gk` are `j`/`k`). Block visual mode uses char
+   columns, so a tab inside a block counts as one column.
 4. **Undo** is whole-text snapshots; no undo tree. Marks aren't restored by
    undo (they are clamped into the text).
-5. **Dot-repeat of inserts** replays the typed keys. Good enough; revisit if
-   completion makes typed keys diverge from inserted text.
-6. **No mappings** (`:map`, `:noremap`) yet; `define-key!` from Scheme is the
-   way to bind keys. `:normal!` is the same as `:normal`.
+5. **Dot-repeat of inserts** replays the typed keys.
+6. **No `:map`/`:noremap`**; bind keys with `define-key!` in Scheme.
 7. **Search** converts the rope to a string per search (~3 ms on 100k lines).
-   Fine for now; a rope-aware regex or caching by buffer version would fix it.
-8. **Client/server is in-process.** Channels only; no socket yet (3.5).
-9. **gj/gk** are j/k because there is no line wrapping yet.
+8. **Client/server is in-process** (3.5).
+9. **Which-key** appears immediately (there are no timers yet); Vim prefixes
+   (`g`, `z`) don't show it, only the leader and Emacs prefixes.
+10. **after-change** runs once per key, without the changed range; LSP sync
+    (4.2) will need ranges.
+11. **Package loading blocks** while `git clone` runs at startup.
+12. **The REPL** has no input history.
 
 ## 6. Roadmap
 
@@ -299,7 +387,9 @@ All of 1.1–1.10 is built; see §3 "What works" and `docs/design/phase-1.md`.
      That last one is very important to the Emacs feel; check what Steel
      offers for `eval`.
 
-### Phase 2: the Emacs half (live, self-documenting, extensible) (next)
+### Phase 2: the Emacs half (live, self-documenting, extensible) (done)
+
+All of 2.1–2.8 is built; see §3 and `docs/design/phase-2.md`.
 
 2.1 **Live REPL / eval-in-editor**: evaluate a region or the form before point,
     redefine functions without restarting. This is the defining Emacs
@@ -321,7 +411,7 @@ All of 1.1–1.10 is built; see §3 "What works" and `docs/design/phase-1.md`.
     (vertico/orderless-style). One of the "killer packages" a new editor
     needs to attract users.
 
-### Phase 3: editor infrastructure
+### Phase 3: editor infrastructure (next; 3.1 and 3.3's styling are done)
 
 3.1 **Multiple buffers**: buffer list, `:e`, `:bn/:bp`, `:ls`.
 3.2 **Windows**: splits (`C-w s/v/h/j/k/l`), layout owned by the server.

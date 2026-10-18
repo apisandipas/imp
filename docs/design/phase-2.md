@@ -121,3 +121,31 @@ state as in Evil; `:set editing-style=emacs` (in init.scm) starts in it.
 '(git "URL") '(rev "SHA") '(config ,thunk))`-style declarations in
 `init.scm` clone missing packages with `git` (pinned to a commit when
 given) and load them. `:packages` lists them.
+
+## Outcome
+
+Built in the planned order, with these findings and changes:
+
+- **Redefinition needed more than define→set!.** Steel also compiles a call
+  to a function defined in the same unit, and never `set!` there, as a direct
+  call. The server now appends `(set! name name)` for every top-level runtime
+  definition (no measurable cost), and user code is evaluated as one unit
+  with the same markers. One-unit evaluation was needed anyway: form-by-form
+  evaluation broke forward references inside a file. Macros are evaluated
+  first, because a `define-syntax` inside `(begin ...)` isn't visible to the
+  forms after it.
+- **Names defined later.** `init.scm` is compiled before packages load, so a
+  `use-package!` config naming a package function failed to compile. Missing
+  globals in user code now get a placeholder that the real definition
+  replaces.
+- **Runtime files extend each other through variables, tables and hooks**
+  (`*key-interceptor*`, `*local-keymaps*`, `*extra-states*`,
+  `*cmdline-key-handler*`, the `startup` hook), never forward calls.
+- **Line numbers, cursorline and horizontal scrolling** were added: the toggle
+  group needed something to toggle, and long lines hid the cursor.
+- **Insert mode checks mode keymaps first**, so a major mode can rebind
+  `<ret>` (the REPL does).
+- **Server::eval** goes through the same evaluator as `:eval`, so tests
+  exercise the real path.
+- Deferred: REPL history, which-key for Vim prefixes and on a delay (no
+  timers yet), ranges for `after-change`.
