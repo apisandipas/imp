@@ -91,3 +91,24 @@ transport is a byte stream, so remote use needs no new protocol: `imp
 --bridge` relays stdin/stdout to the local daemon's socket, and `imp
 --connect --via 'ssh host imp --bridge'` runs a client here against a
 daemon there.
+
+## Outcome
+
+Built in the planned order. Notes:
+
+- **Windows** keep their cursor as a buffer mark while not focused, so edits
+  through another window keep it in place; the focused window's buffer and
+  cursor stay in the fields every primitive already used.
+- **The renderer was rewritten once** for windows, wrap and Unicode width
+  together, rather than three times.
+- **Narrow status lines** keep the position first, then mode and name, then
+  the major mode.
+- **Jobs**: a string input is written and stdin closed (so `cat`-like
+  commands finish); `#f` keeps stdin open, which LSP will need.
+- **which-key** got its delay from the new timers.
+- **Autosave** lives under a `state-directory` option (default
+  `$XDG_STATE_HOME/imp`), which also keeps tests out of the real one.
+- **Daemon clients** share the cursor and layout (each has its own size).
+  `:q` detaches; `:kill-server` stops it. Messages are JSON lines.
+- A test that ran two servers at once on one thread failed intermittently;
+  the editor is thread-local, so tests use one server at a time.

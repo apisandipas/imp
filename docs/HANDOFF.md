@@ -42,13 +42,13 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 2, branch `phase-2`)
+## 3. Current state (end of Phase 3, branch `phase-3`)
 
-Phases 1 (daily-driver Vim) and 2 (the Emacs half) are done, with styled
-frames (3.3) and multiple buffers (3.1) pulled forward. The owner was away
-while they were built; every step is a separate commit on local branches
-(`phase-1`, then `phase-2` on top of it), nothing pushed. Design notes per
-phase, each with an Outcome section, are in `docs/design/`.
+Phases 1 (daily-driver Vim), 2 (the Emacs half) and 3 (editor
+infrastructure) are done. The owner was away while they were built; every
+step is a separate commit on local branches (`phase-1`, `phase-2` on top of
+it, `phase-3` on top of that), nothing pushed. Design notes per phase, each
+with an Outcome section, are in `docs/design/`.
 
 ### Layout
 
@@ -58,12 +58,18 @@ flake.nix                  dev shell + package (both verified)
 crates/
   imp-core/                shared types
     src/buffer.rs          rope text, snapshot undo, marks that follow edits
-    src/protocol.rs        ClientMsg, ServerMsg, Frame of styled Spans, Style
+    src/fileio.rs          CRLF/BOM/Latin-1, atomic writes, disk stamps
+    src/protocol.rs        ClientMsg, ServerMsg, Frame/Patch, JSON lines
   imp-server/              the editor
     src/lib.rs             Server, run(), runtime loading, eval()
-    src/editor.rs          Editor state (thread-local), faces, highlight layers
+    src/editor.rs          Editor state (thread-local): buffers, windows,
+                           faces, highlight layers
+    src/layout.rs          the window split tree
+    src/events.rs          the event loop's events; timers and jobs
+    src/daemon.rs          imp --daemon: the socket server
     src/api.rs             THE Rust->Scheme boundary (~55 primitives)
-    src/render.rs          Editor -> Frame: scrolling, tabs, highlights, popup
+    src/render.rs          Editor -> Frame: windows, wrap, Unicode width,
+                           gutter, highlights, popup, status lines
     src/search.rs          Vim regex syntax -> `regex` crate; search, :s
     src/scan.rs            bracket matching and tag pairing (speed)
     src/clipboard.rs       "+ and "* via wl-copy/xclip/xsel/pbcopy
@@ -84,6 +90,7 @@ runtime/                   loaded in this order
   modes.scm                major/minor modes, gc commenting, the REPL
   emacs.scm                the Emacs state (holy bindings)
   packages.scm             use-package!, :packages
+  files.scm                autoread, autosave/:recover, fileformat options
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -94,9 +101,15 @@ matching, regex). Every key's meaning is in Scheme.
 
 ### How it works
 
-- The client spawns `imp_server::run` on a thread, connected by two `mpsc`
-  channels. Client sends `ClientMsg::Key("j")` / `Resize`; server replies with
-  a full `Frame` (rows of styled spans + cursor position + shape) or `Quit`.
+- Standalone (`imp FILE`), the client spawns `imp_server::run` on a thread,
+  connected by two `mpsc` channels. With `imp --daemon` the server listens
+  on a Unix socket and `imp --connect` clients talk JSON lines
+  (`imp --bridge` relays stdio to it, for `--via 'ssh host imp --bridge'`).
+  Clients send `ClientMsg::Key("j")` / `Resize` / `Open`; the server replies
+  with a `Frame` (rows of styled spans + cursor), then `Patch`es of changed
+  rows, or `Quit`.
+- The server's loop reads one channel of events: client messages, timers,
+  job output. Only that thread touches the editor and the Steel VM.
 - For every key the server calls the Scheme function `(imp-handle-key key)`.
   `vim.scm` defines it. Rust has no idea what keys mean.
 - Key names: single chars (`"j"`, `" "`), `"<esc>" "<ret>" "<bs>" "<tab>"
@@ -143,6 +156,16 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Sources and environment: `record-source! source-names source-text
   source-path parse-error getenv current-dir config-dir`
 - Completion: `fuzzy-filter list-files`
+- Windows: `window-list current-window split-window! close-window!
+  focus-window! only-window! window-buffer window-in-direction
+  resize-window! equalize-windows! window-text-width set-wrap!
+  line-display-col line-col-at-display`
+- Background: `timer-start! timer-cancel! job-start! job-send!
+  job-close-input! job-kill!` (Scheme wraps them: `run-after! run-every!
+  cancel-timer! start-job!`)
+- Files: `buffer-changed-on-disk? buffer-forget-disk-change!
+  buffer-file-format set-buffer-file-format! set-backup! file-mtime
+  write-text-file! delete-file! state-dir`; `kill-server!`
 - Styling: `set-face!` (spec like `"fg=#ff8800 bg=blue bold"`),
   `highlight-clear! highlight-add! highlight-pattern!` on named layers
   (`syntax`, `search`, `visual` in that order).
@@ -185,6 +208,10 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Completion: `(completing-read prompt candidates on-select)`.
 - Emacs keys: `(define-key! 'emacs "C-x C-s" 'save-buffer)`.
 - Packages: `(use-package! 'name 'git URL 'rev REV 'config thunk)`.
+- Background: `(run-after! ms thunk)`, `(run-every! ms thunk)`,
+  `(start-job! command input on-output on-exit)` (input `#f` keeps stdin
+  open for `job-send!`).
+- Options backed by something else: `define-computed-option!`.
 - Cross-file extension inside the runtime: a later runtime file can't be
   called by name from an earlier one, and a `define` there won't replace an
   earlier file's function for its callers. Use hooks, tables
@@ -241,9 +268,25 @@ Phase 2 adds:
 - Line numbers (`number`, `relativenumber`, hybrid), `cursorline`,
   horizontal scrolling for long lines.
 
+Phase 3 adds:
+
+- Windows: `C-w s v n w W h j k l c q o = + - < >`, `:sp :vs :new :vnew
+  :close :only`, `SPC w`; each window has its own status line.
+- Soft wrap (on by default, as in Vim), Unicode display width, `gj`/`gk`
+  by screen rows.
+- Frame diffs: only changed rows are sent and redrawn.
+- Timers and jobs; which-key waits `which-key-delay` (300 ms).
+- Atomic saves, `backup`, CRLF/BOM/Latin-1 round trips, `autoread`, `:w`
+  refusing to overwrite outside changes without `!`, autosave and
+  `:recover`.
+- The daemon (`--daemon`, `--connect`, `--bridge`, `--via`), `:kill-server`.
+
 ### Verified
 
-- `cargo test`: 218 tests; clippy and fmt clean; `nix build` works.
+- `cargo test`: 259 tests; clippy and fmt clean; `nix build` works.
+- The release binary in a pty: splits with borders, patched redraws through
+  scrolling, which-key on its timer, and a daemon with a direct client and a
+  bridged one sharing a buffer, then `:kill-server`.
 - Startup ~0.3 s in release (Steel's prelude dominates, as before).
 - The release binary was driven through a pty (`pyte` screen): visual
   highlighting, search, `ci(`, `:%s`, `O` with autoindent, `:w`.
@@ -330,25 +373,24 @@ Conventions:
 Fix these when the roadmap item touching them comes up, not all at once.
 
 1. **One server per thread.** Editor state is a `thread_local`, because Steel's
-   `register_fn` takes plain functions. Fine with many buffers; revisit for
-   several clients (3.5).
-2. **Single window**: no splits yet (3.2). Buffers are switched in place.
-3. **Full-frame redraw** on every key (no diffs yet), char count used as
-   display width (wide CJK/emoji misalign; 3.4), **no soft wrap** (long lines
-   scroll sideways; `gj`/`gk` are `j`/`k`). Block visual mode uses char
-   columns, so a tab inside a block counts as one column.
+   `register_fn` takes plain functions. Tests must not run two servers at
+   once on one thread (one after another is fine).
+2. **Daemon clients share one cursor and layout**, like tmux sessions; each
+   only has its own size. Scroll can differ per client size.
+3. **No syntax highlighting yet** (Phase 4.1 adds tree-sitter as a layer).
 4. **Undo** is whole-text snapshots; no undo tree. Marks aren't restored by
    undo (they are clamped into the text).
 5. **Dot-repeat of inserts** replays the typed keys.
 6. **No `:map`/`:noremap`**; bind keys with `define-key!` in Scheme.
 7. **Search** converts the rope to a string per search (~3 ms on 100k lines).
-8. **Client/server is in-process** (3.5).
-9. **Which-key** appears immediately (there are no timers yet); Vim prefixes
-   (`g`, `z`) don't show it, only the leader and Emacs prefixes.
-10. **after-change** runs once per key, without the changed range; LSP sync
-    (4.2) will need ranges.
-11. **Package loading blocks** while `git clone` runs at startup.
-12. **The REPL** has no input history.
+8. **Which-key** shows for the leader and Emacs prefixes, not Vim's `g`/`z`.
+9. **after-change** runs once per key, without the changed range; LSP sync
+   (4.2) will need ranges.
+10. **Package loading blocks** while `git clone` runs at startup.
+11. **The REPL** has no input history.
+12. **Block visual mode** uses char columns (a tab counts as one), unlike the
+    renderer, which now measures display width.
+13. **File times are whole seconds** for autosave comparisons.
 
 ## 6. Roadmap
 
@@ -411,7 +453,9 @@ All of 2.1–2.8 is built; see §3 and `docs/design/phase-2.md`.
     (vertico/orderless-style). One of the "killer packages" a new editor
     needs to attract users.
 
-### Phase 3: editor infrastructure (next; 3.1 and 3.3's styling are done)
+### Phase 3: editor infrastructure (done)
+
+All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 
 3.1 **Multiple buffers**: buffer list, `:e`, `:bn/:bp`, `:ls`.
 3.2 **Windows**: splits (`C-w s/v/h/j/k/l`), layout owned by the server.
@@ -434,7 +478,7 @@ All of 2.1–2.8 is built; see §3 and `docs/design/phase-2.md`.
 3.8 **File handling**: detect external changes, line endings, encodings,
     backups/autosave.
 
-### Phase 4: IDE features through protocols
+### Phase 4: IDE features through protocols (next)
 
 4.1 **Tree-sitter**: syntax highlighting (needs 3.3), structural text objects
     (`af`, `if`, `aa`...), indentation, folding.
