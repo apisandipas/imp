@@ -42,14 +42,19 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 5, branch `phase-5`)
+## 3. Current state (end of Phase 6, branch `phase-6`)
 
-Phases 1 (daily-driver Vim), 2 (the Emacs half), 3 (editor
-infrastructure) and 4 (IDE protocols) are done, and Phase 5 is done as
-prototypes behind features. Every step is a separate commit on a branch
-per phase, each on top of the last (`phase-1` ... `phase-5`), pushed to
-origin; nothing is merged to `main`. Design notes per phase are in
-`docs/design/`.
+The whole roadmap is built:
+- Phase 1, daily-driver Vim;
+- Phase 2, the Emacs half;
+- Phase 3, editor infrastructure;
+- Phase 4, IDE protocols;
+- Phase 5, prototypes behind features;
+- Phase 6, the ecosystem packages.
+
+Every step is a separate commit on a branch per phase, each on top of the
+last (`phase-1` ... `phase-6`), pushed to origin. Nothing is merged to
+`main`. Design notes per phase are in `docs/design/`.
 
 ### Layout
 
@@ -257,6 +262,44 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`,
   `*local-keymaps*`, `*cmdline-key-handler*`).
 
+### Phase 6 packages (on by default)
+
+Each is a runtime file built on the API, with the few primitives it
+needed. Details, and what each one leaves out, are in
+`docs/design/phase-6.md`.
+
+- **Groundwork** (`special.scm`):
+  - generated buffers (`special-mode`, with `q` returning to where you
+    were), `menu!` popups and `confirm!`;
+  - line drawing with per-line items (`draw-line!`, `line-item`);
+  - per-buffer highlights (`buffer-highlight-*`) and read-only buffers
+    (`:set nomodifiable`);
+  - `write-handler` and `revert-handler` for buffers that aren't files.
+  - A buffer's mode keys now come before Vim's operators, motions and
+    prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+- **Folding** (`fold.scm`, the renderer, `z` keys in vim.scm): Vim's
+  manual folds as mark pairs; `j`, `k` and linewise operators treat a
+  closed fold as one line.
+- **Git** (`git.scm`, `SPC g g`, `:Git`): a Magit-style status buffer:
+  - stage, unstage and discard files and hunks, and commit in a message
+    buffer;
+  - log, diffs, branches and stashes;
+  - fetch, pull and push in the background.
+- **Org** (`org.scm`):
+  - outline cycling on folds, TODO keywords, checkboxes with cookies;
+  - links, aligned tables, new headings with `M-<ret>`, and promote,
+    demote and move subtrees;
+  - an agenda (`SPC o a`) and capture (`SPC o c`).
+- **File browser** (`dired.scm`, `:Ex`, `SPC f d`, `:e DIR`): an oil-style
+  editable listing; `:w` shows the renames, deletions and creations and
+  asks first.
+- **Projects** (`project.scm`):
+  - roots from markers, `SPC p f/p/b`;
+  - project search (`SPC s p`, `:grep` with rg) into a quickfix list
+    (`:copen`, `:cn`, `]q`).
+- **Terminals** (`term.rs`, `term.scm`, `:terminal`, `SPC o t`): programs
+  on a pty with vt100, in a TERMINAL state. `C-\ C-n` leaves it.
+
 ### Phase 5 prototypes (off by default)
 
 Each is behind a cargo feature or in its own crate, so a default build is
@@ -374,9 +417,9 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
 
 ### Verified
 
-- `cargo test`: 313 tests, plus the feature-gated ones (`tools/check.sh`
-  runs them all); clippy and fmt clean; `nix build` and `nix build .#gui`
-  work.
+- `cargo test`: 359 tests, plus the feature-gated ones (`tools/check.sh`
+  runs them all). Clippy and fmt are clean. `nix build` (which runs the
+  tests in its sandbox, git included) and `nix build .#gui` work.
 - The release binary in a pty: splits with borders, patched redraws through
   scrolling, which-key on its timer, and a daemon with a direct client and a
   bridged one sharing a buffer, then `:kill-server`.
@@ -498,6 +541,15 @@ Fix these when the roadmap item touching them comes up, not all at once.
 12. **Block visual mode** uses char columns (a tab counts as one), unlike the
     renderer, which now measures display width.
 13. **File times are whole seconds** for autosave comparisons.
+14. **Folds are manual only** (no 'foldmethod' syntax/indent/expr), and `h`
+    and `l` on a closed fold don't open it.
+15. **Org** covers outlines, TODOs, checkboxes, links, tables, agenda and
+    capture. It lacks timestamps with repeaters, priorities, properties,
+    export and babel, and typing in a table doesn't keep it aligned.
+16. **Terminals** resize only for the current window, and don't pass mouse
+    events or bracketed paste to the program.
+17. **The file browser** can't swap two names in one save (a line that
+    reads as an entry did is that entry).
 
 ## 6. Roadmap
 
@@ -611,7 +663,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 5.4 **Optional typed/declarative config layer** (e.g. Nickel or KDL) for
     reproducible configs alongside the live Scheme one. Low priority.
 
-### Phase 6: the ecosystem (what decides whether imp succeeds)
+### Phase 6: the ecosystem (what decides whether imp succeeds) (done; see docs/design/phase-6.md)
 
 People use Emacs for its packages, not Elisp. Targets, roughly in order:
 6.1 a Magit-equivalent git interface; 6.2 Org-mode compatibility (the most
