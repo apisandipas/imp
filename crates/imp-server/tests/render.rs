@@ -62,3 +62,61 @@ fn bad_face_spec_is_an_error() {
     let mut s = server("");
     assert!(s.eval(r#"(set-face! "x" "fg=nope")"#).is_err());
 }
+
+fn sized(text: &str, width: u16, height: u16) -> Server {
+    let mut s = server(text);
+    s.handle(imp_core::ClientMsg::Resize { width, height });
+    s
+}
+
+#[test]
+fn line_numbers() {
+    let mut s = sized("a\nb\nc\n", 20, 5);
+    s.eval("(set-option! 'number #t)").unwrap();
+    let f = s.frame();
+    assert_eq!(f.text_rows()[0], "  1 a");
+    assert_eq!(f.text_rows()[2], "  3 c");
+    assert_eq!(f.cursor, (4, 0));
+    s.eval("(set-option! 'relativenumber #t)").unwrap();
+    s.keys(&["j"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "  1 a");
+    assert_eq!(rows[1], "2   b");
+    s.eval("(set-option! 'number #f)").unwrap();
+    assert_eq!(s.frame().text_rows()[1], "  0 b");
+}
+
+#[test]
+fn long_lines_scroll_sideways() {
+    let mut s = sized("0123456789abcdefghij\nxy\n", 10, 4);
+    s.keys(&["$"]);
+    let f = s.frame();
+    // The cursor's end of the line is in view, and the cursor is drawn.
+    assert_eq!(f.text_rows()[0], "abcdefghij");
+    assert_eq!(f.cursor, (9, 0));
+    // Other lines scroll with it.
+    assert_eq!(f.text_rows()[1], "");
+    s.keys(&["0"]);
+    assert_eq!(s.frame().text_rows()[0], "0123456789");
+}
+
+#[test]
+fn tabs_count_display_columns() {
+    let mut s = sized("\tx\n", 20, 4);
+    s.eval("(set-option! 'tabstop 4)").unwrap();
+    s.keys(&["l"]);
+    let f = s.frame();
+    assert_eq!(f.text_rows()[0], "    x");
+    assert_eq!(f.cursor, (4, 0));
+}
+
+#[test]
+fn cursorline_fills_the_row() {
+    let mut s = sized("ab\ncd\n", 10, 4);
+    s.eval("(set-option! 'cursorline #t)").unwrap();
+    let row = &s.frame().rows[0];
+    let text: String = row.iter().map(|sp| sp.text.as_str()).collect();
+    assert_eq!(text, "ab        ");
+    assert!(row.iter().all(|sp| sp.style.bg.is_some()));
+    assert_eq!(s.frame().rows[1].len(), 1);
+}

@@ -18,19 +18,28 @@ pub fn frame(e: &mut Editor) -> Frame {
         e.scroll = cursor_line + 1 - text_rows;
     }
 
+    // The line-number gutter, then the text area. Lines don't wrap; the
+    // text scrolls sideways to keep the cursor in view.
+    let gutter = gutter_width(e);
+    let text_width = width.saturating_sub(gutter).max(1);
+    let cursor_x = display_col(&e.buffer.line_text(cursor_line), cursor_col, e.tab_width);
+    if cursor_x < e.hscroll {
+        e.hscroll = cursor_x;
+    } else if cursor_x >= e.hscroll + text_width {
+        e.hscroll = cursor_x + 1 - text_width;
+    }
+
     let mut rows = Vec::with_capacity(text_rows + 1);
-    let mut cursor_x = 0;
     for row in 0..text_rows {
         let line = e.scroll + row;
         if line >= e.buffer.line_count() {
             rows.push(vec![Span::new("~", e.face("nontext"))]);
             continue;
         }
-        let (row, x) = line_row(e, line, cursor_col, width);
-        if line == cursor_line {
-            cursor_x = x;
-        }
-        rows.push(row);
+        let mut spans = gutter_spans(e, line, cursor_line, gutter);
+        let (text, _) = line_row(e, line, text_width, line == cursor_line);
+        spans.extend(text);
+        rows.push(spans);
     }
     // The popup covers the bottom rows of the window.
     let shown = e.popup.len().min(text_rows);
@@ -46,7 +55,7 @@ pub fn frame(e: &mut Editor) -> Frame {
         rows[text_rows - shown + i] = vec![Span::new(text + &" ".repeat(pad), face)];
     }
     let mut cursor = (
-        cursor_x.min(width - 1) as u16,
+        (gutter + cursor_x - e.hscroll).min(width - 1) as u16,
         (cursor_line - e.scroll) as u16,
     );
     match &e.cmdline {
@@ -67,40 +76,113 @@ pub fn frame(e: &mut Editor) -> Frame {
     }
 }
 
-/// Draws buffer line `line`, clipped to `width` display columns. Returns the
-/// row and the display column of char column `col`.
-fn line_row(e: &Editor, line: usize, col: usize, width: usize) -> (Row, usize) {
+/// How the gutter shows line numbers, set from Scheme (the `number` and
+/// `relativenumber` options).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LineNumbers {
+    #[default]
+    Off,
+    Absolute,
+    Relative,
+    /// Relative, but the cursor's line shows its own number.
+    Hybrid,
+}
+
+fn gutter_width(e: &Editor) -> usize {
+    if e.line_numbers == LineNumbers::Off {
+        return 0;
+    }
+    let digits = e.buffer.line_count().to_string().len();
+    digits.max(3) + 1
+}
+
+fn gutter_spans(e: &Editor, line: usize, cursor_line: usize, gutter: usize) -> Row {
+    if gutter == 0 {
+        return Vec::new();
+    }
+    let n = match e.line_numbers {
+        LineNumbers::Absolute => line + 1,
+        LineNumbers::Hybrid if line == cursor_line => line + 1,
+        _ => line.abs_diff(cursor_line),
+    };
+    let face = if line == cursor_line {
+        e.face("line-number-current")
+    } else {
+        e.face("line-number")
+    };
+    // Hybrid numbers sit left on the cursor's line, as in Vim.
+    let text = if e.line_numbers == LineNumbers::Hybrid && line == cursor_line {
+        format!("{:<w$} ", n, w = gutter - 1)
+    } else {
+        format!("{:>w$} ", n, w = gutter - 1)
+    };
+    vec![Span::new(text, face)]
+}
+
+/// The display column of char column `col` in `text`, counting tabs.
+fn display_col(text: &str, col: usize, tab_width: usize) -> usize {
+    let mut x = 0;
+    for c in text.chars().take(col) {
+        x += if c == '\t' {
+            tab_width - x % tab_width
+        } else {
+            1
+        };
+    }
+    x
+}
+
+/// Draws buffer line `line`: the display columns from `e.hscroll` on,
+/// `width` of them.
+fn line_row(e: &Editor, line: usize, width: usize, is_cursor_line: bool) -> (Row, usize) {
     let start = e.buffer.line_col_to_offset(line, 0);
     let text = e.buffer.line_text(line);
-    let styles = char_styles(e, start, &text);
+    let mut styles = char_styles(e, start, &text);
+    if is_cursor_line && e.cursorline {
+        let face = e.face("cursorline");
+        for s in &mut styles {
+            *s = s.over(face);
+        }
+    }
 
+    let (left, right) = (e.hscroll, e.hscroll + width);
     let mut row: Row = Vec::new();
     let mut x = 0;
-    let mut cursor_x = None;
     for (i, c) in text.chars().enumerate() {
-        if i == col {
-            cursor_x = Some(x);
-        }
-        let (shown, n) = if c == '\t' {
-            let n = e.tab_width - x % e.tab_width;
-            (" ".repeat(n), n)
+        let n = if c == '\t' {
+            e.tab_width - x % e.tab_width
         } else {
-            (c.to_string(), 1)
+            1
         };
-        x += n;
-        if x <= width {
+        // Each display cell of the char that falls inside the window.
+        let visible = (x.max(left)..(x + n).min(right)).len();
+        if visible > 0 {
+            let shown = if c == '\t' {
+                " ".repeat(visible)
+            } else {
+                c.to_string()
+            };
             push(&mut row, &shown, styles[i]);
-        } else if x - n < width {
-            push(&mut row, &shown[..width - (x - n)], styles[i]);
+        }
+        x += n;
+        if x >= right {
+            break;
         }
     }
     // A selection that takes in the line break shows as one highlighted cell
     // past the end of the line, as in Vim, so selected empty lines are visible.
     let eol = styles[text.chars().count()];
-    if eol != Style::default() && x < width {
+    if eol != Style::default() && x >= left && x < right {
         push(&mut row, " ", eol);
     }
-    (row, cursor_x.unwrap_or(x))
+    // The cursor line's face runs to the window's edge.
+    if is_cursor_line && e.cursorline {
+        let used: usize = row.iter().map(|s| s.text.chars().count()).sum();
+        if used < width {
+            push(&mut row, &" ".repeat(width - used), e.face("cursorline"));
+        }
+    }
+    (row, x)
 }
 
 /// The style of each char of `text`, the line starting at offset `start`,

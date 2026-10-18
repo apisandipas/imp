@@ -185,3 +185,18 @@
 (define-leader! "qs" 'save-and-quit "save all and quit")
 
 (define-leader-group! "t" "toggle")
+
+(define (toggle-option-command name)
+  (lambda (count)
+    (set-option! name (not (option name)))
+    (message (string-append (symbol->string name) (if (option name) " on" " off")))))
+
+(define-command! 'toggle-line-numbers (toggle-option-command 'number))
+(define-command! 'toggle-relative-numbers (toggle-option-command 'relativenumber))
+(define-command! 'toggle-cursorline (toggle-option-command 'cursorline))
+(define-command! 'toggle-search-highlight (toggle-option-command 'hlsearch))
+
+(define-leader! "tn" 'toggle-line-numbers "line numbers")
+(define-leader! "tr" 'toggle-relative-numbers "relative numbers")
+(define-leader! "tl" 'toggle-cursorline "cursor line")
+(define-leader! "th" 'toggle-search-highlight "search highlight")

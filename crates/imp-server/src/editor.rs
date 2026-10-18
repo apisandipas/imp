@@ -38,6 +38,11 @@ pub struct Editor {
     pub quit: bool,
     /// First buffer line shown on screen.
     pub scroll: usize,
+    /// First display column shown on screen (lines don't wrap).
+    pub hscroll: usize,
+    pub line_numbers: crate::render::LineNumbers,
+    /// Whether the cursor's line is drawn with the "cursorline" face.
+    pub cursorline: bool,
     pub width: u16,
     pub height: u16,
     /// Display columns between tab stops.
@@ -106,6 +111,7 @@ impl Editor {
             cursor: self.cursor,
             scroll: self.scroll,
         };
+        self.hscroll = 0;
         self.parked.insert(self.current, old);
         self.current = id;
         self.cursor = next.cursor.min(self.buffer.len());

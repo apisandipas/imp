@@ -276,6 +276,22 @@
 (define-option! 'clipboard "" '(cb))
 (watch-option! 'tabstop set-tab-width!)
 
+;; Line numbers: number, relativenumber, or both for hybrid (as in Vim).
+(define-option! 'number #f '(nu))
+(define-option! 'relativenumber #f '(rnu))
+(define-option! 'cursorline #f '(cul))
+
+(define (update-line-numbers! value)
+  (set-line-numbers!
+   (cond [(and (option 'number) (option 'relativenumber)) "hybrid"]
+         [(option 'number) "absolute"]
+         [(option 'relativenumber) "relative"]
+         [else "off"])))
+
+(watch-option! 'number update-line-numbers!)
+(watch-option! 'relativenumber update-line-numbers!)
+(watch-option! 'cursorline set-cursorline!)
+
 ;;; Faces and highlight layers
 ;;;
 ;;; A face is a named style; its spec is a string like "fg=#ff8800 bold"
@@ -285,6 +301,9 @@
 (set-face! "status" "reverse")
 (set-face! "nontext" "fg=blue")
 (set-face! "popup" "bg=#262a33")
+(set-face! "line-number" "fg=bright-black")
+(set-face! "line-number-current" "fg=yellow bold")
+(set-face! "cursorline" "bg=#2c313a")
 (set-face! "popup-selected" "bg=#3e4452 bold")
 (set-face! "visual" "bg=#3e4452")
 (set-face! "search" "fg=black bg=yellow")

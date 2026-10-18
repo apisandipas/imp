@@ -262,6 +262,21 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
     });
 
+    // "off", "absolute", "relative" or "hybrid".
+    engine.register_fn("set-line-numbers!", |mode: String| {
+        use crate::render::LineNumbers;
+        editor::with(|e| {
+            e.line_numbers = match mode.as_str() {
+                "absolute" => LineNumbers::Absolute,
+                "relative" => LineNumbers::Relative,
+                "hybrid" => LineNumbers::Hybrid,
+                _ => LineNumbers::Off,
+            }
+        })
+    });
+    engine.register_fn("set-cursorline!", |on: bool| {
+        editor::with(|e| e.cursorline = on)
+    });
     engine.register_fn("set-tab-width!", |width: isize| {
         editor::with(|e| e.tab_width = clamp(width).clamp(1, 32))
     });
