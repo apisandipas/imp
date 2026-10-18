@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/imp-core", "crates/imp-server", "crates/imp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+imp-core = { path = "crates/imp-core" }
+imp-server = { path = "crates/imp-server" }
+ropey = "1.6.1"
+crossterm = "0.29.0"
+steel = { package = "steel-core", version = "0.8.3" }

@@ -1,0 +1,7 @@
+[package]
+name = "imp-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ropey.workspace = true

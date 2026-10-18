@@ -1,0 +1,13 @@
+[package]
+name = "imp-editor"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "imp"
+path = "src/main.rs"
+
+[dependencies]
+imp-core.workspace = true
+imp-server.workspace = true
+crossterm.workspace = true
