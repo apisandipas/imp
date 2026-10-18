@@ -1129,3 +1129,37 @@ fn macro_keys_round_trip() {
         .unwrap();
     assert_eq!(out, r#"("a" "<" "<esc>" "C-r" "<ret>")"#);
 }
+
+#[test]
+fn undo_moves_cursor_to_the_change() {
+    let mut s = server("one\ntwo\nthree\n");
+    type_keys(&mut s, "jjdwgg");
+    type_keys(&mut s, "u");
+    assert_eq!(s.cursor(), 8);
+    type_keys(&mut s, "gg");
+    s.keys(&["C-r"]);
+    assert_eq!(s.cursor(), 8);
+}
+
+#[test]
+fn undo_and_redo_take_counts() {
+    let mut s = server("abc\n");
+    type_keys(&mut s, "xxx3u");
+    assert_eq!(s.text(), "abc\n");
+    s.keys(&["2", "C-r"]);
+    assert_eq!(s.text(), "c\n");
+}
+
+#[test]
+fn line_undo() {
+    let mut s = server("abc\nxyz\n");
+    type_keys(&mut s, "xx$x");
+    assert_eq!(s.text(), "\nxyz\n");
+    type_keys(&mut s, "U");
+    assert_eq!(s.text(), "abc\nxyz\n");
+    type_keys(&mut s, "U");
+    assert_eq!(s.text(), "\nxyz\n");
+    // U is itself undoable.
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "abc\nxyz\n");
+}

@@ -16,6 +16,9 @@ pub struct Buffer {
     // Rope clones share structure, so a snapshot is cheap.
     undo: Vec<Rope>,
     redo: Vec<Rope>,
+    /// Whether the text changed since the last undo point, so a boundary
+    /// knows whether to record one without comparing ropes.
+    dirty: bool,
 }
 
 impl Buffer {
@@ -146,8 +149,12 @@ impl Buffer {
     }
 
     pub fn insert(&mut self, offset: usize, text: &str) {
+        if text.is_empty() {
+            return;
+        }
         self.text.insert(offset.min(self.len()), text);
         self.modified = true;
+        self.dirty = true;
         self.redo.clear();
     }
 
@@ -160,6 +167,7 @@ impl Buffer {
         self.text.remove(start..end);
         if !removed.is_empty() {
             self.modified = true;
+            self.dirty = true;
             self.redo.clear();
         }
         removed
@@ -168,29 +176,56 @@ impl Buffer {
     /// Records the current text as an undo point. The editing layer calls
     /// this once per change it wants undone as a unit.
     pub fn undo_boundary(&mut self) {
-        if self.undo.last() != Some(&self.text) {
+        if self.dirty || self.undo.is_empty() {
             self.undo.push(self.text.clone());
+            self.dirty = false;
         }
     }
 
-    /// Returns false when there is nothing to undo.
-    pub fn undo(&mut self) -> bool {
-        let Some(previous) = self.undo.pop() else {
-            return false;
-        };
+    /// Goes back to the last undo point. Returns where the text changed
+    /// (the first char that differs), or `None` when there is nothing to
+    /// undo.
+    pub fn undo(&mut self) -> Option<usize> {
+        // Changes since the last boundary are undone first, so they can be
+        // redone too.
+        if self.dirty {
+            self.undo_boundary();
+        }
+        let mut previous = self.undo.pop()?;
+        // The top snapshot can equal the text (a boundary with no change
+        // after it); skip it to undo something visible.
+        if previous == self.text {
+            previous = match self.undo.pop() {
+                Some(p) => p,
+                None => {
+                    self.undo.push(previous);
+                    return None;
+                }
+            };
+        }
+        let at = first_difference(&previous, &self.text);
         self.redo.push(std::mem::replace(&mut self.text, previous));
         self.modified = true;
-        true
+        self.dirty = false;
+        Some(at)
     }
 
-    pub fn redo(&mut self) -> bool {
-        let Some(next) = self.redo.pop() else {
-            return false;
-        };
+    pub fn redo(&mut self) -> Option<usize> {
+        let next = self.redo.pop()?;
+        let at = first_difference(&next, &self.text);
         self.undo.push(std::mem::replace(&mut self.text, next));
         self.modified = true;
-        true
+        self.dirty = false;
+        Some(at)
     }
+}
+
+/// The char offset of the first difference between two texts.
+fn first_difference(a: &Rope, b: &Rope) -> usize {
+    a.chars()
+        .zip(b.chars())
+        .position(|(x, y)| x != y)
+        .unwrap_or(a.len_chars().min(b.len_chars()))
 }
 
 #[cfg(test)]
@@ -222,9 +257,27 @@ mod tests {
         b.undo_boundary();
         b.delete(0, 2);
         assert_eq!(b.text(), "llo");
-        assert!(b.undo());
+        assert_eq!(b.undo(), Some(0));
         assert_eq!(b.text(), "hello");
-        assert!(b.redo());
+        assert_eq!(b.redo(), Some(0));
         assert_eq!(b.text(), "llo");
+        assert_eq!(b.undo(), Some(0));
+        assert_eq!(b.undo(), None);
+    }
+
+    #[test]
+    fn boundaries_without_changes_add_nothing() {
+        let mut b = Buffer::from_text("abc");
+        b.undo_boundary();
+        b.undo_boundary();
+        b.insert(3, "d");
+        b.undo_boundary();
+        b.undo_boundary();
+        b.insert(4, "e");
+        assert_eq!(b.undo(), Some(4));
+        assert_eq!(b.text(), "abcd");
+        assert_eq!(b.undo(), Some(3));
+        assert_eq!(b.text(), "abc");
+        assert_eq!(b.undo(), None);
     }
 }

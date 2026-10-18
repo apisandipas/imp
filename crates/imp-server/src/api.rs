@@ -68,8 +68,14 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("undo-boundary!", || {
         editor::with(|e| e.buffer.undo_boundary())
     });
-    engine.register_fn("undo!", || editor::with(|e| e.buffer.undo()));
-    engine.register_fn("redo!", || editor::with(|e| e.buffer.redo()));
+    // Both return the offset where the text changed, or #f if there was
+    // nothing to undo or redo.
+    engine.register_fn("undo!", || {
+        editor::with(|e| e.buffer.undo().map(|at| at as isize))
+    });
+    engine.register_fn("redo!", || {
+        editor::with(|e| e.buffer.redo().map(|at| at as isize))
+    });
     engine.register_fn("save!", || {
         editor::with(|e| match e.buffer.save() {
             Ok(()) => true,

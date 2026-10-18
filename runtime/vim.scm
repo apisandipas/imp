@@ -27,7 +27,9 @@
 (define *recording* #f)        ; the register q is recording into
 (define *recorded-keys* '())   ; reversed
 (define *last-macro* #f)       ; for @@
-(define *command-failed* #f)   ; set when a key fails; stops a running macro
+(define *command-failed* #f)
+(define *u-line* #f)           ; the line U restores, and its old text
+(define *u-text* "")   ; set when a key fails; stops a running macro
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
@@ -523,7 +525,7 @@
     (when target
       (let* ([target (if (member motion-key '("w" "W")) (word-operator-end from target) target)]
              [range (motion-range from target (motion-type m))])
-        (undo-boundary!)
+        (begin-change!)
         ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))))
 
 ;; Vim special case: with an operator, w stops at the end of the last word
@@ -541,7 +543,7 @@
   (let* ([from (cursor)]
          [target (line-start (clamp (+ (current-line) (- count 1)) 0 (last-line)))]
          [range (motion-range from target 'linewise)])
-    (undo-boundary!)
+    (begin-change!)
     ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
 
 ;;; Text objects
@@ -814,12 +816,20 @@
 (define (run-text-object! op-key object-key count)
   (let ([range ((hash-ref *text-objects* object-key) (cursor) count)])
     (when range
-      (undo-boundary!)
+      (begin-change!)
       ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range)))))
 
 ;;; Changes and dot-repeat
 
 (define (changing-operator? key) (not (equal? key "y")))
+
+;; Every change starts here: it makes an undo point, and remembers the
+;; line's text for U when the change is on a new line.
+(define (begin-change!)
+  (undo-boundary!)
+  (unless (equal? *u-line* (current-line))
+    (set! *u-line* (current-line))
+    (set! *u-text* (buffer-substring (line-start (current-line)) (line-end (current-line))))))
 
 ;; Records `change` as the thing `.` repeats. If it ends in insert mode, the
 ;; record is completed when insert mode exits, with the text that was typed.
@@ -892,7 +902,7 @@
 
 (define (enter-insert! where)
   (lambda (count)
-    (undo-boundary!)
+    (begin-change!)
     (let ([line (current-line)])
       (cond
         [(eq? where 'after) (set-cursor! (min (+ (cursor) 1) (line-end line)))]
@@ -978,7 +988,7 @@
   (lambda (count)
     (let ([reg (register-get (current-register))])
       (if reg
-          (begin (undo-boundary!) (put-text! (string-repeat (car reg) count) (cadr reg) after? cursor-after?) #t)
+          (begin (begin-change!) (put-text! (string-repeat (car reg) count) (cadr reg) after? cursor-after?) #t)
           (begin
             (set-status! (string-append "nothing in register " (string (current-register))))
             #f)))))
@@ -1017,13 +1027,29 @@
 (paste-command! "gp" #t #t)
 (paste-command! "gP" #f #t)
 
-(define-key! 'normal "u"
+;; u and C-r put the cursor where the text changed, like Vim.
+(define (undo-command step! message)
   (lambda (count)
-    (unless (undo!) (set-status! "already at oldest change"))
-    (set-cursor! (cursor))))
-(define-key! 'normal "C-r"
+    (let loop ([i 0] [at #f])
+      (let ([r (and (< i count) (step!))])
+        (cond
+          [r (loop (+ i 1) r)]
+          [at (set-cursor! (min at (buffer-length))) (normal-clamp!)]
+          [else (set-status! message)])))))
+
+(define-key! 'normal "u" (undo-command undo! "already at oldest change"))
+(define-key! 'normal "C-r" (undo-command redo! "already at newest change"))
+
+;; U undoes the latest changes on the last changed line, as one new change
+;; (so U again redoes them).
+(define-key! 'normal "U"
   (lambda (count)
-    (unless (redo!) (set-status! "already at newest change"))))
+    (when (and *u-line* (<= *u-line* (last-line)))
+      (let ([line *u-line*] [old *u-text*] [now (buffer-substring (line-start *u-line*) (line-end *u-line*))])
+        (undo-boundary!)
+        (replace-range! (line-start line) (line-end line) old)
+        (set! *u-text* now)
+        (set-cursor! (line-start line))))))
 
 (define-key! 'normal "."
   (lambda (count)
@@ -1108,7 +1134,7 @@
          [lines (- (offset->line (max start (- end 1))) (offset->line start))]
          [chars (- end start)])
     (lambda (n)
-      (undo-boundary!)
+      (begin-change!)
       (let ([r (if linewise?
                    (lines-range (current-line) (min (last-line) (+ (current-line) lines)))
                    (list (cursor) (min (buffer-length) (+ (cursor) chars)) #f))])
@@ -1120,7 +1146,7 @@
                      (lines-range (offset->line (car r)) (offset->line (max (car r) (- (cadr r) 1)))))
                    (visual-range))])
     (leave-visual!)
-    (undo-boundary!)
+    (begin-change!)
     ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))
     (when (changing-operator? op-key)
       (record-change! (visual-repeat op-key range) 1))))
@@ -1144,7 +1170,7 @@
       (leave-visual!)
       ;; The replaced text goes to the unnamed register, not the one pasted.
       (set! *register-prefix* #f)
-      (undo-boundary!)
+      (begin-change!)
       (yank-range! start (cadr range) linewise?)
       (buffer-delete! start (if linewise? (without-final-break start (cadr range)) (cadr range)))
       (let ([text (cond
@@ -1188,7 +1214,7 @@
 
 (define (tilde! count)
   (let* ([p (cursor)] [end (min (+ p count) (line-end (current-line)))])
-    (undo-boundary!)
+    (begin-change!)
     (replace-range! p end (map-string toggle-case (buffer-substring p end)))
     (set-cursor! end)))
 
@@ -1232,7 +1258,7 @@
            [lines (- last first)])
       (leave-visual!)
       (let ([change (lambda (n)
-                      (undo-boundary!)
+                      (begin-change!)
                       (let ([first (current-line)])
                         (let loop ([l first])
                           (when (<= l (min (last-line) (+ first lines)))
@@ -1250,7 +1276,7 @@
 (define (replace-chars! count ch)
   (let* ([p (cursor)] [end (+ p count)])
     (when (<= end (line-end (current-line)))
-      (undo-boundary!)
+      (begin-change!)
       (if (equal? ch #\newline)
           (begin (replace-range! p end "\n") (set-cursor! (+ p 1)))
           (begin (replace-range! p end (make-string count ch)) (set-cursor! (- end 1))))
@@ -1262,7 +1288,7 @@
         ;; Visual r replaces every selected char but line breaks.
         (let ([r (visual-range)])
           (leave-visual!)
-          (undo-boundary!)
+          (begin-change!)
           (replace-range! (car r) (cadr r)
                           (map-string (lambda (c) (if (equal? c #\newline) c ch))
                                       (buffer-substring (car r) (cadr r))))
@@ -1290,7 +1316,7 @@
 
 (define (join-command spaces?)
   (lambda (count)
-    (let ([change (lambda (n) (undo-boundary!) (join-lines! (current-line) n spaces?))])
+    (let ([change (lambda (n) (begin-change!) (join-lines! (current-line) n spaces?))])
       (change count)
       (record-change! change count))))
 
@@ -1302,7 +1328,7 @@
     (let* ([r (visual-range)] [first (offset->line (car r))]
            [last (offset->line (max (car r) (- (cadr r) 1)))])
       (leave-visual!)
-      (undo-boundary!)
+      (begin-change!)
       (join-lines! first (max 2 (+ 1 (- last first))) spaces?))))
 
 (define-key! 'visual "J" (visual-join #t))
@@ -1361,7 +1387,7 @@
                                         (pad-left (if upper? (string-upcase digits) digits)
                                                   (- (string-length old) 2))))
                        (number->string value))])
-        (undo-boundary!)
+        (begin-change!)
         (replace-range! start end text)
         (set-cursor! (+ start (string-length text) -1))
         #t))))
@@ -1999,7 +2025,7 @@
 ;; Runs operator `op-key` over the text a motion of `type` covers.
 (define (operate! op-key from target type)
   (let ([range (motion-range from target type)])
-    (undo-boundary!)
+    (begin-change!)
     ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
 
 ;; / and ?: prompt for a pattern, moving to matches as it is typed. With an
@@ -2210,7 +2236,7 @@
 (define (ex-lines-operator op-key)
   (lambda (ex)
     (let* ([range (ex-range ex)] [r (lines-range (car range) (cadr range))])
-      (undo-boundary!)
+      (begin-change!)
       ((hash-ref *operators* op-key) (car r) (cadr r) #t))))
 
 (define-ex! '("d" "de" "del" "delete") (ex-lines-operator "d"))
@@ -2245,7 +2271,7 @@
            [else
             (set! *last-search* (if (equal? (car parts) "") *last-search* (car parts)))
             (set! *last-substitute* (list (car parts) (cadr parts)))
-            (undo-boundary!)
+            (begin-change!)
             (let* ([range (ex-range ex)]
                    [r (substitute! pattern (cadr parts) (car range) (cadr range)
                                    (string-contains? flags "g"))])
