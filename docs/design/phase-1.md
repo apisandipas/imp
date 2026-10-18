@@ -84,3 +84,29 @@ ranges for highlighting; `(buffer-replace-in-line ...)`-style helpers only if
 `:s` in pure Scheme proves too slow. Pattern syntax is the `regex` crate's,
 with Vim's `\<`/`\>` translated to `\b`. Smartcase as in Vim with `ignorecase
 smartcase`, since that's what most Vim users configure.
+
+## Outcome
+
+Built as designed, with these differences and additions:
+
+- **Rust primitives added for speed**, after measuring with
+  `examples/bench.rs`: `find-open`, `find-close` and `tag-pairs-around`
+  (bracket and tag text objects took 0.6-1 s on 100k lines from Scheme; now
+  ~8 ms and ~1 ms). Everything else stayed in Scheme and runs in ~0.1-0.3 ms
+  per key on that file.
+- **Motions can fail** by returning `#f`. That cancels an operator, stops a
+  macro, and lets `j`/`k`/`h`/`l` fail at edges as Vim's do.
+- **Char motions and char commands** (`f`, `r`, `m`, `q`, `@`, `"`) are
+  prefixes; `fx` resolves to a motion on the fly, so it composes with
+  everything without extra code.
+- **Registers** are `(text type)` where type is `#f` (chars), `#t` (lines)
+  or `'block`.
+- **Marks live in the Rust buffer** so they move with edits; the jump list
+  is a list of mark names.
+- **The command line** replaces the status row while typing (`set-cmdline!`)
+  instead of being drawn into the status text, so it has a real cursor.
+- **Popups** (`set-popup!`) show multi-line output (`:marks`, `:reg`) above
+  the status line until the next key; which-key (2.4) will reuse them.
+- **Options** (`define-option!`, `:set`) were needed earlier than planned,
+  for `shiftwidth` and friends.
+- Visual-mode `:` and ex ranges use the `<`/`>` marks, as in Vim.

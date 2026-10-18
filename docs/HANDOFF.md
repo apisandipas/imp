@@ -42,88 +42,145 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (commit `85edadd`, plus this document)
+## 3. Current state (end of Phase 1, branch `phase-1`)
+
+Phase 1 (daily-driver Vim) is done, with styled frames (3.3) pulled forward.
+The owner was away while it was built; every step is a separate commit on
+the local `phase-1` branch, nothing pushed. Design notes per phase are in
+`docs/design/`.
 
 ### Layout
 
 ```
-Cargo.toml                 workspace
-flake.nix                  dev shell + package (NOT YET VERIFIED, see §5)
+Cargo.toml                 workspace; deps optimized in dev builds (fast tests)
+flake.nix                  dev shell + package (both verified)
 crates/
-  imp-core/                Buffer (ropey + snapshot undo), protocol types
-    src/buffer.rs
-    src/protocol.rs        ClientMsg, ServerMsg, Frame, CursorShape
+  imp-core/                shared types
+    src/buffer.rs          rope text, snapshot undo, marks that follow edits
+    src/protocol.rs        ClientMsg, ServerMsg, Frame of styled Spans, Style
   imp-server/              the editor
-    src/lib.rs             Server, run(), runtime loading, init.scm loading
-    src/editor.rs          Editor state in a thread-local
-    src/api.rs             THE Rust->Scheme boundary (~25 primitives)
-    src/render.rs          Editor -> Frame (scrolling, tabs, status line)
-    tests/vim.rs           19 key-driven Vim behavior tests
-    tests/config.rs        3 init.scm tests
+    src/lib.rs             Server, run(), runtime loading, eval()
+    src/editor.rs          Editor state (thread-local), faces, highlight layers
+    src/api.rs             THE Rust->Scheme boundary (~55 primitives)
+    src/render.rs          Editor -> Frame: scrolling, tabs, highlights, popup
+    src/search.rs          Vim regex syntax -> `regex` crate; search, :s
+    src/scan.rs            bracket matching and tag pairing (speed)
+    src/clipboard.rs       "+ and "* via wl-copy/xclip/xsel/pbcopy
+    src/shell.rs           :! and filters
+    tests/vim.rs           ~120 key-driven Vim behavior tests
+    tests/render.rs        frame/style tests
+    tests/config.rs        init.scm tests
+    examples/bench.rs      times commands on a 100k-line buffer
   imp/                     terminal client (package imp-editor, bin imp)
-    src/main.rs            crossterm; runs the server on a thread
+    src/main.rs            crossterm; draws styled spans
 runtime/
-  core.scm                 keymaps, buffer helpers, default entry points
-  vim.scm                  modes, motions, operators, dot-repeat, :commands
+  core.scm                 keymaps, options, faces, buffer helpers
+  vim.scm                  everything Vim (~3000 lines)
+docs/design/phase-1.md     how Phase 1 was designed
 ```
+
+Size check against the 80% rule: ~3,100 lines of Scheme vs ~2,000 lines of
+Rust (and the Rust includes the client, protocol, buffer and renderer, none
+of which is editor behavior). Every key's meaning is in Scheme.
 
 ### How it works
 
 - The client spawns `imp_server::run` on a thread, connected by two `mpsc`
   channels. Client sends `ClientMsg::Key("j")` / `Resize`; server replies with
-  a full `Frame` (rows of text + cursor position + cursor shape) or `Quit`.
+  a full `Frame` (rows of styled spans + cursor position + shape) or `Quit`.
 - For every key the server calls the Scheme function `(imp-handle-key key)`.
   `vim.scm` defines it. Rust has no idea what keys mean.
-- Key names: `"j"`, `"<esc>"`, `"<ret>"`, `"<bs>"`, `"<tab>"`, `"<del>"`,
-  `"<left>"`/`"<right>"`/`"<up>"`/`"<down>"`, `"C-r"`.
-- Runtime `.scm` files are embedded with `include_str!`. If `IMP_RUNTIME` is
-  set (the dev shell sets it to `$PWD/runtime`), they load from disk instead,
-  so Scheme edits need only a restart.
+- Key names: single chars (`"j"`, `" "`), `"<esc>" "<ret>" "<bs>" "<tab>"
+  "<del>" "<left>" "<right>" "<up>" "<down>" "<home>" "<end>" "<pageup>"
+  "<pagedown>" "<insert>" "<s-tab>" "<f1>"`..., and `"C-r"`, `"M-x"`. Macros
+  store keys as text in Vim notation (`<esc>`, `<C-r>`, `<lt>`).
+- Runtime `.scm` files are embedded with `include_str!`; `IMP_RUNTIME` (set
+  by the dev shell) loads them from disk instead.
 - Load order: `core.scm`, `vim.scm`, user `init.scm`, then `(imp-init)`. An
   error in `init.scm` goes to the status line; the editor still starts.
-- Scheme errors at runtime are caught and shown as `error: ...` on the status
-  line.
+- Scheme errors at runtime are caught and shown as `error: ...`.
+- `:eval EXPR` runs Scheme in the live editor (`Server::eval` from Rust).
 
 ### The Scheme API (`crates/imp-server/src/api.rs`)
 
-Reading: `buffer-length`, `buffer-char-at`, `buffer-substring`,
-`buffer-line-count`, `buffer-line-length`, `line-col->offset`, `offset->line`,
-`offset->col`, `buffer-modified?`, `buffer-name`, `char-word?`.
-Changing: `buffer-insert!`, `buffer-delete!` (returns removed text),
-`undo-boundary!`, `undo!`, `redo!`, `save!`.
-Cursor: `cursor`, `set-cursor!` (both char offsets).
-UI: `set-status!`, `set-mode-name!`, `set-cursor-shape!` (`"bar"`/`"block"`),
-`quit!`.
+All positions are **char offsets**; integers are `isize` (negatives clamp).
 
-All positions are **char offsets** into the whole buffer. Integers are `isize`
-on the Rust side because Steel ints are signed; negatives clamp to 0.
+- Buffer: `buffer-length buffer-char-at buffer-substring buffer-line-count
+  buffer-line-length line-col->offset offset->line offset->col buffer-name
+  buffer-path buffer-modified? char-word?`
+- Changing: `buffer-insert! buffer-delete! undo-boundary! undo! redo!`
+  (`undo!`/`redo!` return where the text changed, or #f), `save!`
+- Files/processes: `write-file! set-buffer-path! read-file file-exists?
+  run-shell` (`(code output)`), `clipboard-get clipboard-set!`
+- Marks (follow edits): `mark-set! mark-get mark-delete! mark-names`
+- Search: `pattern-error search-next substitute! find-open find-close
+  tag-pairs-around`
+- Cursor/window: `cursor set-cursor! window-top window-height
+  set-window-top! set-tab-width!`
+- UI: `set-status! set-mode-name! set-cursor-shape!` (`bar block
+  underline`), `set-cmdline! clear-cmdline! set-popup! quit!`
+- Styling: `set-face!` (spec like `"fg=#ff8800 bg=blue bold"`),
+  `highlight-clear! highlight-add! highlight-pattern!` on named layers
+  (`syntax`, `search`, `visual` in that order).
 
 ### Extension points in Scheme
 
-- `(define-key! mode key command)`: `core.scm`. Normal-mode commands take
-  `(count)`.
-- `(define-motion! key type proc)`: `vim.scm`. `type` is `'exclusive`,
-  `'inclusive` or `'linewise`; `proc` is `(lambda (from count) target-offset)`.
-  New motions work with every operator, counts and `.` automatically.
-- `(define-operator! key proc)`: `proc` is `(lambda (start end linewise?) ...)`.
-- `(define-ex! name thunk)`: `:` commands.
+- `core.scm`: `(define-key! mode key command)`, `(define-option! name default
+  aliases)`, `(option name)`, `(set-option! name value)`, `(watch-option!
+  name proc)`, faces.
+- `vim.scm`:
+  - `(define-motion! key type proc)`: `type` is `'exclusive`, `'inclusive` or
+    `'linewise`; `proc` is `(lambda (from count) target-or-#f)`. Works with
+    every operator, visual mode, counts and `.`.
+  - `(define-char-motion! key type proc)`: motions taking a char (`f`):
+    `proc` is `(lambda (from count char) ...)`.
+  - `(define-text-object! key proc)`: `proc` returns `(start end linewise?)`
+    or #f; used in operator-pending and visual mode.
+  - `(define-operator! key proc)`: `(lambda (start end linewise?) ...)`.
+  - `(define-char-command! key proc)`: commands taking a char (`r`, `m`, `q`,
+    `@`): `(lambda (count char) ...)`.
+  - `(define-prefix! key)`: makes `key` the start of longer keys.
+  - `(define-ex! name-or-names proc)`: proc takes the parsed command; read it
+    with `ex-range ex-range-given? ex-bang? ex-args`.
+  - `(begin-change!)` before any change (undo point, `.`/`U` bookkeeping);
+    `(with-undo-group thunk)` makes several changes one undo step.
 
 ### What works
 
-Normal: `h j k l` and arrows, `w b e 0 ^ $ gg G`, counts (`3w`, `2d3w`
-multiplies), operators `d c y` with any motion and doubled (`dd cc yy`),
-`x X D C s`, `p P`, `u`, `C-r`, `.`. `cw` acts like `ce` as in Vim. `dw` on the
-last word of a line keeps the newline. `dd` on the last line keeps the file's
-final newline.
-Insert: `i a I A o O`, typing, `<ret> <tab> <bs> <left> <right>`, `<esc>`.
-Command line: `:w :q :q! :wq :x :N`.
+Everything in Phase 1 of the roadmap, matched against Vim's behavior:
+
+- Motions: `h j k l w b e ge W B E gE 0 ^ $ | + - _ <ret> gg G N% { } % H M L
+  f F t T ; , n N * # g* g#`, arrows, `<home> <end>`, marks `'x` and
+  `` `x``. Vim's rules for exclusive motions and the `dw`/`cw` special cases.
+- Text objects: `iw aw iW aW`, quotes, all bracket kinds, `it at`, `ip ap`.
+- Operators: `d c y > < gu gU g~ g?`, doubled forms, counts that multiply.
+- Commands: `x X D C s S Y p P gp gP r R J gJ ~ C-a C-x u C-r U . & ZZ ZQ
+  C-g i a I A o O gi gI` and counts on inserts and pastes.
+- Visual: `v V C-v`, `o O gv`, operators, text objects, `I A c r J p u U ~ >
+  <`, `.` over the same size of region, block `$`.
+- Insert: autoindent, expandtab-aware `<tab>`, `C-w C-u C-h C-t C-d C-r C-o`,
+  `<del> <home> <end> <up> <down>`; Replace mode with `<bs>` restore.
+- Search: `/ ? n N * #`, incremental, highlighted (`:noh`), as a motion
+  (`d/foo`), smartcase, Vim regex syntax.
+- Registers `"a-z "A-Z "0-9 "- "_ ". ": "/ "% "+ "*`, `clipboard=unnamedplus`,
+  `"1p..`. Macros `q @ @@ @:`; a failing key stops a macro.
+- Marks `a-zA-Z ' . ^ [ ] < >`, jump list `C-o C-i`, scrolling `C-d C-u C-f
+  C-b C-e C-y zt zz zb z<ret> z. z-`.
+- Ex: ranges (`. $ N 'x /pat/ ?pat? %` and offsets), `:w [file] :w! :sav :q
+  :wq :x :qa` (no `:e` until buffers exist), `:s` (with `g i I`, groups, `&`, `\r`),
+  `:d :y :m :t :> :< :j :pu :k :p :nu :sort :normal :g :v :! :r :u :red :noh
+  :set :marks :reg :jumps :delm :eval`; command-line history, editing keys,
+  `C-r`, `<tab>` completion of command names.
+- Options: `tabstop shiftwidth expandtab autoindent wrapscan hlsearch
+  incsearch clipboard` via `:set` (with `no`, `?`, `!`, `=`).
 
 ### Verified
 
-- `cargo test`: 25 tests pass (3 buffer, 19 Vim, 3 config).
-- `cargo clippy --all-targets` clean, `cargo fmt --check` clean.
-- The release binary was driven through a pty: started in 0.33s, `dw`, `j`,
-  `dd`, `onew<esc>`, `:wq` produced exactly the expected file.
+- `cargo test`: ~140 tests; clippy and fmt clean; `nix build` works.
+- The release binary was driven through a pty (`pyte` screen): visual
+  highlighting, search, `ci(`, `:%s`, `O` with autoindent, `:w`.
+- `examples/bench.rs` on 100k lines: most commands ~0.1-0.3 ms per key
+  including the frame; search ~3 ms; `ci(` ~8 ms.
 
 ## 4. Working on it
 
@@ -144,8 +201,13 @@ Conventions:
   general.
 - Comments explain *why*, as in the existing code. Match the existing style.
 - To exercise the real TUI, drive the release binary through a pty (Python
-  `pty.fork()`, set `TIOCSWINSZ`, write keys, read output). Set `HOME` to a temp
-  dir so no user config loads.
+  `pty.fork()`, set `TIOCSWINSZ`, write keys, read output; `pyte` renders
+  the screen: `nix-shell -p 'python3.withPackages(p:[p.pyte])'`). Set `HOME`
+  to a temp dir so no user config loads.
+- Test helper gotcha: `type_keys` reads `<` followed by a lowercase letter as
+  a key name (`<esc>`), so send a literal `<` with `s.keys(&["<", "j"])`.
+- Measure with `cargo run --release -p imp-server --example bench` before
+  moving anything to Rust.
 
 ### Steel gotchas found so far
 
@@ -158,37 +220,47 @@ Conventions:
   them in a top-level variable and `set!` it (see `*keymaps*`).
 - A top-level variable must be defined before any function that references it
   is compiled, or you get `FreeIdentifier`. Put state at the top of the file.
-- `Engine::new()` loads Steel's prelude: ~1s per server in debug builds (the
-  test suite takes ~20s because each test creates one), ~0.3s in release.
+- Code that *runs* at load time (a top-level `(define-key! ...)` call) must
+  come after the definitions it calls; function bodies may refer forward.
+- A `cond` clause with only a test returns void, not the test's value. Use
+  `[(test) => (lambda (x) x)]`.
+- Local names shadow builtins silently: a `let` binding called `range` broke
+  a later `(range a b)` call in the same scope.
+- No `raise`: re-raise a caught error with `(raise-error e)`. Catch with
+  `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a
+  leading space (see `error-message` in vim.scm).
+- Rust primitives returning `Result<_, String>` raise errors whose message is
+  the Debug-quoted string; prefer a primitive that returns the error (like
+  `pattern-error`) when Scheme needs to show it.
+- Present and useful: `filter sort string-join split-whitespace
+  string-contains? string-upcase number->string` (with radix),
+  `string->number` (with radix), `eval`, `read`, `open-input-string`, `range`,
+  `list-ref`, `last`, `hash-keys->list`.
+- `Engine::new()` loads Steel's prelude: ~0.3s per server with dependencies
+  optimized (the dev profile does this), so the suite runs in ~25s.
 
 ## 5. Known limitations and debt
 
 Fix these when the roadmap item touching them comes up, not all at once.
 
-1. **Flake unverified.** nixpkgs could not be fetched in the session that wrote
-   it. Run `nix develop` and `nix build` once; `Cargo.lock` must be committed
-   (it is).
-2. **One server per thread.** Editor state is a `thread_local`, because Steel's
-   `register_fn` takes plain functions. Fine for one session; revisit for
-   multiple buffers/clients (probably one `Editor` holding many buffers, still
-   on one thread).
-3. **Single buffer, single window.** No buffer list, no splits.
-4. **Full-frame redraw** on every key, plain text only (no colors/styles), and
-   char count is used as display width (wide CJK/emoji chars will misalign).
-   Tabs render as 4 columns.
-5. **Undo** is whole-text snapshots (cheap with ropes) but `undo_boundary`
-   compares ropes for equality, which is O(n). Cursor isn't restored to the
-   change position on undo. No undo tree.
-6. **Counts are ignored** for inserts (`3ihi<esc>`) and paste (`3p`).
-7. **Dot-repeat of inserts** replays the typed keys inside the recorded change
-   (the change itself is a closure). Good enough; revisit if insert-mode
+1. **One server per thread.** Editor state is a `thread_local`, because Steel's
+   `register_fn` takes plain functions. Fine for one session; for multiple
+   buffers/clients keep one `Editor` holding many buffers, on one thread.
+2. **Single buffer, single window** (Phase 3.1/3.2). `:e` doesn't exist yet;
+   `:w FILE` names an unnamed buffer.
+3. **Full-frame redraw** on every key (no diffs yet), and char count is used
+   as display width (wide CJK/emoji chars misalign; 3.4). Block visual mode
+   uses char columns, so a tab inside a block counts as one column.
+4. **Undo** is whole-text snapshots; no undo tree. Marks aren't restored by
+   undo (they are clamped into the text).
+5. **Dot-repeat of inserts** replays the typed keys. Good enough; revisit if
    completion makes typed keys diverge from inserted text.
-8. **Single unnamed register.** No `"a`–`"z`, no system clipboard.
-9. **No `<del>`/`<home>`/`<end>`/`<pageup>` handling** in Scheme yet (client
-   only sends `<del>`).
-10. **`gg`/`G` with an operator** are treated as linewise but untested
-    (`dgg`, `dG`).
-11. **Client/server is in-process.** Channels only; no socket yet.
+6. **No mappings** (`:map`, `:noremap`) yet; `define-key!` from Scheme is the
+   way to bind keys. `:normal!` is the same as `:normal`.
+7. **Search** converts the rope to a string per search (~3 ms on 100k lines).
+   Fine for now; a rope-aware regex or caching by buffer version would fix it.
+8. **Client/server is in-process.** Channels only; no socket yet (3.5).
+9. **gj/gk** are j/k because there is no line wrapping yet.
 
 ## 6. Roadmap
 
@@ -196,9 +268,9 @@ Ordered by what makes imp livable for a Vim user first, then what makes it
 Emacs-like, then the long-term architecture. Each phase should end with tests
 and a pty-driven check of the real binary.
 
-### Phase 1: daily-driver Vim (next)
+### Phase 1: daily-driver Vim (done)
 
-The owner was offered these as the next step; 1.1–1.3 recommended first.
+All of 1.1–1.10 is built; see §3 "What works" and `docs/design/phase-1.md`.
 
 1.1 **Text objects**: `iw aw iW aW`, `i" a" i' a' i( a( ib i[ i{ iB i< it`,
     `ip ap`. Add a text-object table in `vim.scm` (a text object returns
@@ -227,7 +299,7 @@ The owner was offered these as the next step; 1.1–1.3 recommended first.
      That last one is very important to the Emacs feel; check what Steel
      offers for `eval`.
 
-### Phase 2: the Emacs half (live, self-documenting, extensible)
+### Phase 2: the Emacs half (live, self-documenting, extensible) (next)
 
 2.1 **Live REPL / eval-in-editor**: evaluate a region or the form before point,
     redefine functions without restarting. This is the defining Emacs
@@ -253,7 +325,7 @@ The owner was offered these as the next step; 1.1–1.3 recommended first.
 
 3.1 **Multiple buffers**: buffer list, `:e`, `:bn/:bp`, `:ls`.
 3.2 **Windows**: splits (`C-w s/v/h/j/k/l`), layout owned by the server.
-3.3 **Styled frames**: extend the protocol from rows of strings to cells with
+3.3 **Styled frames** (styles done in Phase 1; diffs remain): extend the protocol from rows of strings to cells with
     styles (fg/bg/bold/underline), then send diffs instead of full frames.
     Needed for highlighting, visual mode and search highlights.
 3.4 **Unicode display width** (`unicode-width` crate), configurable tab width.
