@@ -2725,7 +2725,10 @@
     (run-ex! "s")))
 
 ;; :set opt, :set noopt, :set opt=value, :set opt? and :set opt! (toggle).
-(define (set-one-option! arg)
+(define (set-one-option! arg) (set-one-option-with! set-option! arg))
+
+;; The same, setting with `setter` (set-option! or set-local-option!).
+(define (set-one-option-with! setter arg)
   (let* ([eq (let loop ([i 0]) (cond [(>= i (string-length arg)) #f] [(equal? (string-ref arg i) #\=) i] [else (loop (+ i 1))]))]
          [query? (ends-with? arg "?")]
          [toggle? (ends-with? arg "!")]
@@ -2739,9 +2742,9 @@
       [query? (set-status! (string-append (symbol->string name) "=" (to-string (option name))))]
       [eq (let* ([text (substring arg (+ eq 1) (string-length arg))]
                  [n (string->number text)])
-            (set-option! name (if n n text)))]
-      [toggle? (set-option! name (not (option name)))]
-      [(boolean? (option name)) (set-option! name (not no?))]
+            (setter name (if n n text)))]
+      [toggle? (setter name (not (option name)))]
+      [(boolean? (option name)) (setter name (not no?))]
       [else (set-status! (string-append (symbol->string name) "=" (to-string (option name))))])))
 
 (define-ex! '("se" "set")
@@ -2868,6 +2871,7 @@
            (when (and (= id (current-buffer)) alt (not (= alt id)) (memv alt (buffer-list)))
              (go-to-buffer! alt))
            (buffer-kill! id)
+           (kill-buffer-locals! id)
            (when (equal? *alternate-buffer* id) (set! *alternate-buffer* #f))
            (set! *jumps* (filter (lambda (j) (not (= (jump-buffer j) id))) *jumps*))
            (set! *jump-index* (length *jumps*))
@@ -3270,7 +3274,8 @@
 
 (define (imp-init)
   (set-mode! 'normal)
-  (normal-clamp!))
+  (normal-clamp!)
+  (run-hooks 'startup))
 
 (define *last-version* #f)  ; buffer and version after the last key
 

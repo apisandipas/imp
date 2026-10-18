@@ -184,6 +184,8 @@
 (define-leader! "qQ" 'quit-without-saving "quit without saving")
 (define-leader! "qs" 'save-and-quit "save all and quit")
 
+(define-leader! "m" 'local-leader "+major mode")
+
 (define-leader-group! "t" "toggle")
 
 (define (toggle-option-command name)

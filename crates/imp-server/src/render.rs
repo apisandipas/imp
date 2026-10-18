@@ -229,7 +229,11 @@ fn status_line(e: &Editor, line: usize, col: usize, width: usize) -> Row {
     let name = e.buffer.display_name();
     let modified = if e.buffer.is_modified() { " [+]" } else { "" };
     let left = format!(" {} | {name}{modified} | {}", e.mode_name, e.status);
-    let right = format!("{}:{} ", line + 1, col + 1);
+    let right = if e.mode_line_extra.is_empty() {
+        format!("{}:{} ", line + 1, col + 1)
+    } else {
+        format!("{}  {}:{} ", e.mode_line_extra, line + 1, col + 1)
+    };
     let gap = width.saturating_sub(left.chars().count() + right.chars().count());
     let mut s = format!("{left}{}{right}", " ".repeat(gap));
     if s.chars().count() > width {

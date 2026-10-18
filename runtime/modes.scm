@@ -1,0 +1,300 @@
+;;; modes.scm -- major and minor modes.
+;;;
+;;; Every buffer has one major mode, picked from its file name when it
+;;; opens, and any number of minor modes. A mode can have keymaps per
+;;; state ('normal, 'visual, 'insert), set options just for its buffers,
+;;; and bind keys under SPC m (the local leader). Key lookup goes: the
+;;; buffer's minor modes, newest first; its major mode, then that mode's
+;;; parents; the global keymap.
+;;;
+;;;   (define-major-mode! 'lua-mode 'prog-mode '("lua")
+;;;     (lambda () (set-local-option! 'shiftwidth 2)
+;;;                (set-local-option! 'commentstring "-- %s")))
+;;;   (define-mode-key! 'lua-mode 'normal "K" 'describe-function)
+
+(define *major-modes* (hash))  ; name -> (parent extensions setup)
+(define *minor-modes* (hash))  ; name -> (setup teardown)
+(define *file-names* (hash))   ; exact file names ("Makefile") -> mode
+
+(define (define-major-mode! name parent extensions setup)
+  (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup))))
+
+(define (define-minor-mode! name setup teardown)
+  (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown))))
+
+;; Files with no extension, or one that misleads, by their whole name.
+(define (define-file-name-mode! file-name mode)
+  (set! *file-names* (hash-insert *file-names* file-name mode)))
+
+;; The keymap name for `mode` in `state`, e.g. scheme-mode:normal.
+(define (mode-keymap mode state)
+  (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
+
+(define (define-mode-key! mode state key command)
+  (define-key! (mode-keymap mode state) key command))
+
+(define (major-mode) (or (buffer-local 'major-mode) 'fundamental-mode))
+(define (minor-modes) (or (buffer-local 'minor-modes) '()))
+
+;; `mode` and its parents, nearest first.
+(define (mode-lineage mode)
+  (let ([spec (hash-try-get *major-modes* mode)])
+    (if (and spec (car spec)) (cons mode (mode-lineage (car spec))) (list mode))))
+
+(set! *local-keymaps*
+      (lambda (state)
+        (map (lambda (m) (mode-keymap m state))
+             (append (minor-modes) (mode-lineage (major-mode))))))
+
+;;; Choosing and switching major modes
+
+(define (file-name-of path)
+  (let loop ([i (- (string-length path) 1)])
+    (cond [(< i 0) path]
+          [(equal? (string-ref path i) #\/) (substring path (+ i 1) (string-length path))]
+          [else (loop (- i 1))])))
+
+(define (extension-of name)
+  (let loop ([i (- (string-length name) 1)])
+    (cond [(<= i 0) #f]
+          [(equal? (string-ref name i) #\.) (substring name (+ i 1) (string-length name))]
+          [else (loop (- i 1))])))
+
+;; The major mode for a file path.
+(define (mode-for-path path)
+  (let* ([name (file-name-of path)] [ext (extension-of name)])
+    (or (hash-try-get *file-names* name)
+        (and ext
+             (let loop ([modes (hash-keys->list *major-modes*)])
+               (cond [(null? modes) #f]
+                     [(member ext (cadr (hash-ref *major-modes* (car modes)))) (car modes)]
+                     [else (loop (cdr modes))])))
+        'fundamental-mode)))
+
+;; Makes `mode` the current buffer's major mode: its parents' setups run
+;; first, then its own, so a mode can adjust what its parent set.
+(define (set-major-mode! mode)
+  (set-buffer-local! 'major-mode mode)
+  (for-each (lambda (m)
+              (let ([spec (hash-try-get *major-modes* m)])
+                (when (and spec (caddr spec)) ((caddr spec)))))
+            (reverse (mode-lineage mode)))
+  (show-major-mode!)
+  (run-hooks 'major-mode mode))
+
+(define (show-major-mode!)
+  (let ([name (symbol->string (major-mode))])
+    (set-mode-line-extra!
+     (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name))))
+
+;; Turns minor mode `name` on or off in the current buffer.
+(define (minor-mode-on! name)
+  (unless (memq name (minor-modes))
+    (set-buffer-local! 'minor-modes (cons name (minor-modes)))
+    (let ([spec (hash-try-get *minor-modes* name)])
+      (when (and spec (car spec)) ((car spec))))))
+
+(define (minor-mode-off! name)
+  (when (memq name (minor-modes))
+    (set-buffer-local! 'minor-modes (filter (lambda (m) (not (eq? m name))) (minor-modes)))
+    (let ([spec (hash-try-get *minor-modes* name)])
+      (when (and spec (cadr spec)) ((cadr spec))))))
+
+(define (toggle-minor-mode! name)
+  (if (memq name (minor-modes)) (minor-mode-off! name) (minor-mode-on! name)))
+
+;; A buffer gets its major mode when it opens; switching buffers brings
+;; back its options and mode line.
+(define (pick-major-mode!)
+  (set-major-mode! (mode-for-path (or (buffer-path) ""))))
+
+(add-hook! 'buffer-open pick-major-mode!)
+(add-hook! 'buffer-enter
+           (lambda ()
+             (unless (buffer-local 'major-mode) (pick-major-mode!))
+             (refresh-option-watchers!)
+             (show-major-mode!)))
+
+;; Buffers that exist at startup (files on the command line) get theirs
+;; once the user's init.scm has defined any extra modes.
+(add-hook! 'startup
+           (lambda ()
+             (for-each (lambda (id) (with-buffer id pick-major-mode!)) (buffer-list))
+             (refresh-option-watchers!)
+             (show-major-mode!)))
+
+(define-ex! '("setl" "setlocal")
+  (lambda (ex)
+    (for-each (lambda (arg) (set-one-option-with! set-local-option! arg))
+              (split-whitespace (ex-args ex)))))
+
+;; :mode NAME switches major mode (without -mode is fine: :mode rust).
+(define-ex! '("mode")
+  (lambda (ex)
+    (let* ([arg (ex-args ex)]
+           [name (string->symbol (if (ends-with? arg "-mode") arg (string-append arg "-mode")))])
+      (cond [(equal? arg "") (message (symbol->string (major-mode)))]
+            [(or (hash-contains? *major-modes* name) (eq? name 'fundamental-mode)) (set-major-mode! name)]
+            [else (message (string-append "no major mode " arg))]))))
+
+;;; Commenting: gc{motion}, gcc, visual gc
+;;;
+;;; commentstring is "<before>%s<after>", e.g. ";; %s" or "/* %s */". gc
+;;; comments every line in the range at their smallest indent, or, if they
+;;; are all commented already, uncomments them.
+
+(define-option! 'commentstring "# %s" '(cms))
+
+;; (before after) from commentstring, without padding spaces.
+(define (comment-parts)
+  (let* ([cs (option 'commentstring)]
+         [at (let loop ([i 0]) (cond [(>= (+ i 1) (string-length cs)) #f]
+                                     [(and (equal? (string-ref cs i) #\%) (equal? (string-ref cs (+ i 1)) #\s)) i]
+                                     [else (loop (+ i 1))]))])
+    (if at
+        (list (trim-right (substring cs 0 at)) (trim-left (substring cs (+ at 2) (string-length cs))))
+        (list (trim-right cs) ""))))
+
+(define (trim-left s)
+  (let loop ([i 0]) (if (and (< i (string-length s)) (char-whitespace? (string-ref s i))) (loop (+ i 1)) (substring s i (string-length s)))))
+(define (trim-right s)
+  (let loop ([i (string-length s)]) (if (and (> i 0) (char-whitespace? (string-ref s (- i 1)))) (loop (- i 1)) (substring s 0 i))))
+
+(define (line-text line) (buffer-substring (line-start line) (line-end line)))
+
+(define (commented? line before after)
+  (let ([text (trim-left (line-text line))])
+    (and (starts-with? text before)
+         (or (equal? after "") (ends-with? (trim-right text) after)))))
+
+(define (comment-lines! first last)
+  (let* ([parts (comment-parts)] [before (car parts)] [after (cadr parts)]
+         [lines (filter (lambda (l) (not (blank-line? l))) (range first (+ last 1)))])
+    (unless (null? lines)
+      (if (andmap (lambda (l) (commented? l before after)) lines)
+          (for-each (lambda (l) (uncomment-line! l before after)) lines)
+          (let ([indent (apply min (map (lambda (l) (- (line-first-nonblank l) (line-start l))) lines))])
+            (for-each (lambda (l) (comment-line! l indent before after)) lines))))))
+
+(define (andmap pred lst) (or (null? lst) (and (pred (car lst)) (andmap pred (cdr lst)))))
+
+(define (comment-line! line indent before after)
+  (unless (equal? after "")
+    (buffer-insert! (line-end line) (string-append " " after)))
+  (buffer-insert! (+ (line-start line) indent) (string-append before " ")))
+
+(define (uncomment-line! line before after)
+  (let* ([start (line-first-nonblank line)]
+         [n (string-length before)]
+         ;; Take the space after the marker too, if there is one.
+         [n (if (equal? (buffer-char-at (+ start n)) #\space) (+ n 1) n)])
+    (buffer-delete! start (+ start n))
+    (unless (equal? after "")
+      (let* ([text (line-text line)] [end (+ (line-start line) (string-length (trim-right text)))]
+             [m (string-length after)]
+             [m (if (equal? (buffer-char-at (- end m 1)) #\space) (+ m 1) m)])
+        (buffer-delete! (- end m) end)))))
+
+(define-operator! "gc"
+  (lambda (start end linewise?)
+    (let ([first (offset->line start)] [last (offset->line (max start (- end 1)))])
+      (comment-lines! first last)
+      (set-cursor! (line-first-nonblank first)))))
+
+(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)))
+
+;;; The modes that come with imp
+
+(define-major-mode! 'fundamental-mode #f '() #f)
+(define-major-mode! 'text-mode #f '("txt" "text")
+  (lambda () (set-local-option! 'commentstring "# %s")))
+(define-major-mode! 'prog-mode #f '() #f)
+
+(define (indent-with spaces? width)
+  (set-local-option! 'expandtab spaces?)
+  (set-local-option! 'shiftwidth width)
+  (set-local-option! 'tabstop (if spaces? width 4)))
+
+;; (name extensions comment indent-spaces? indent-width)
+(for-each
+ (lambda (spec)
+   (let ([comment (caddr spec)] [spaces? (cadddr spec)] [width (car (cddddr spec))])
+     (define-major-mode! (car spec) 'prog-mode (cadr spec)
+       (lambda ()
+         (set-local-option! 'commentstring comment)
+         (indent-with spaces? width)))))
+ (list (list 'scheme-mode '("scm" "ss" "sld" "rkt") ";; %s" #t 2)
+       (list 'lisp-mode '("lisp" "cl" "el" "clj" "cljs" "fnl") ";; %s" #t 2)
+       (list 'rust-mode '("rs") "// %s" #t 4)
+       (list 'typescript-mode '("ts" "tsx" "mts" "cts") "// %s" #t 2)
+       (list 'javascript-mode '("js" "jsx" "mjs" "cjs") "// %s" #t 2)
+       (list 'json-mode '("json") "// %s" #t 2)
+       (list 'nix-mode '("nix") "# %s" #t 2)
+       (list 'python-mode '("py" "pyi") "# %s" #t 4)
+       (list 'go-mode '("go") "// %s" #f 4)
+       (list 'c-mode '("c" "h") "/* %s */" #t 4)
+       (list 'cpp-mode '("cc" "cpp" "cxx" "hpp" "hh") "// %s" #t 4)
+       (list 'shell-mode '("sh" "bash" "zsh" "fish") "# %s" #t 2)
+       (list 'lua-mode '("lua") "-- %s" #t 2)
+       (list 'toml-mode '("toml") "# %s" #t 2)
+       (list 'yaml-mode '("yml" "yaml") "# %s" #t 2)
+       (list 'html-mode '("html" "htm" "xml" "svg") "<!-- %s -->" #t 2)
+       (list 'css-mode '("css" "scss") "/* %s */" #t 2)
+       (list 'sql-mode '("sql") "-- %s" #t 2)
+       (list 'makefile-mode '("mk" "make") "# %s" #f 8)))
+
+(define-major-mode! 'markdown-mode 'text-mode '("md" "markdown")
+  (lambda () (set-local-option! 'commentstring "<!-- %s -->")))
+
+(define-file-name-mode! "Makefile" 'makefile-mode)
+(define-file-name-mode! "makefile" 'makefile-mode)
+(define-file-name-mode! "init.scm" 'scheme-mode)
+(define-file-name-mode! "flake.lock" 'json-mode)
+(define-file-name-mode! "Cargo.lock" 'toml-mode)
+
+;;; Scheme mode: the editor's own language
+
+;; K describes the symbol under the cursor, gd goes to its definition.
+(define-command! 'describe-symbol-at-point
+  (lambda (count)
+    (let ([name (symbol-at-cursor)])
+      (if name (describe-function name) (message "no symbol at the cursor")))))
+
+(define-mode-key! 'scheme-mode 'normal "K" 'describe-symbol-at-point)
+(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point)
+
+;;; The local leader: SPC m runs the major mode's own bindings.
+
+(define *mode-leaders* (hash))  ; mode -> hash of keys -> (command description)
+
+(define (define-mode-leader! mode keys command description)
+  (let ([table (or (hash-try-get *mode-leaders* mode) (hash))])
+    (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description))))))
+
+;; SPC m shows the bindings of the buffer's major mode (and its parents).
+(define-command! 'local-leader
+  (lambda (count)
+    (let ([bindings (filter (lambda (x) x)
+                            (map (lambda (m) (hash-try-get *mode-leaders* m)) (mode-lineage (major-mode))))])
+      (if (null? bindings)
+          (message (string-append "no SPC m bindings for " (symbol->string (major-mode))))
+          (begin
+            ;; Install them under "m" for this sequence, then continue it.
+            (for-each (lambda (keys) (when (starts-with? keys "m") (undefine-leader! keys)))
+                      (hash-keys->list *leader-bindings*))
+            (for-each (lambda (table)
+                        (for-each (lambda (keys)
+                                    (let ([b (hash-ref table keys)])
+                                      (unless (hash-contains? *leader-bindings* (string-append "m" keys))
+                                        (define-leader! (string-append "m" keys) (car b) (cadr b)))))
+                                  (hash-keys->list table)))
+                      bindings)
+            (set! *leader-keys* "m")
+            (set! *key-interceptor* leader-input!)
+            (show-which-key!))))))
+
+(define-mode-leader! 'scheme-mode "e" 'eval-defun "eval top-level form")
+(define-mode-leader! 'scheme-mode "b" 'eval-buffer "eval buffer")
+(define-mode-leader! 'scheme-mode "s" 'eval-last-sexp "eval form at cursor")
+(define-mode-leader! 'scheme-mode "d" 'find-definition-at-point "go to definition")
+(define-mode-leader! 'scheme-mode "k" 'describe-symbol-at-point "describe symbol")

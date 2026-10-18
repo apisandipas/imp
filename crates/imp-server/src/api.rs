@@ -285,6 +285,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("set-status!", |text: String| {
         editor::with(|e| e.status = text)
     });
+    engine.register_fn("set-mode-line-extra!", |text: String| {
+        editor::with(|e| e.mode_line_extra = text)
+    });
     engine.register_fn("set-mode-name!", |name: String| {
         editor::with(|e| e.mode_name = name)
     });

@@ -36,6 +36,7 @@ const RUNTIME: &[(&str, &str)] = &[
         include_str!("../../../runtime/completion.scm"),
     ),
     ("leader.scm", include_str!("../../../runtime/leader.scm")),
+    ("modes.scm", include_str!("../../../runtime/modes.scm")),
 ];
 
 pub struct Options {

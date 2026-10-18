@@ -22,13 +22,22 @@
 (define (define-key! mode key command)
   (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command))))
 
+;; Keymaps checked before `mode`'s own, given `mode`: modes.scm sets this
+;; so a buffer's minor and major modes can override keys.
+(define *local-keymaps* (lambda (mode) '()))
+
 ;; The procedure `key` runs in `mode`, or #f.
 (define (lookup-key mode key)
-  (let ([binding (hash-try-get (keymap mode) key)])
+  (let ([binding (key-binding mode key)])
     (if (symbol? binding) (command-proc binding) binding)))
 
-;; What `key` is bound to as written: a command name or a procedure.
-(define (key-binding mode key) (hash-try-get (keymap mode) key))
+;; What `key` is bound to as written: a command name or a procedure,
+;; looking in the buffer's mode keymaps first.
+(define (key-binding mode key)
+  (let loop ([maps (append (*local-keymaps* mode) (list mode))])
+    (cond [(null? maps) #f]
+          [(hash-try-get (keymap (car maps)) key) => (lambda (b) b)]
+          [else (loop (cdr maps))])))
 
 ;;; Named commands
 ;;;
@@ -152,9 +161,10 @@
 ;;;
 ;;; A hook is a named list of procedures that run when something happens:
 ;;; (add-hook! 'after-save (lambda () ...)). An error in one hook is shown
-;;; and the others still run. Hooks run by the editor: after-change,
-;;; before-save, after-save, post-command, insert-enter, insert-leave,
-;;; mode-change, buffer-enter, buffer-open, option-change.
+;;; and the others still run. Hooks run by the editor: startup (after
+;;; init.scm), after-change, before-save, after-save, post-command,
+;;; insert-enter, insert-leave, mode-change (Vim states), major-mode,
+;;; buffer-enter, buffer-open, option-change.
 
 (define *hooks* (hash))
 
@@ -231,11 +241,31 @@
               (set! *advice* (hash-remove *advice* name)))
             (set! *advice* (hash-insert *advice* name a)))))))
 
+;;; Buffer-local values
+;;;
+;;; Each buffer has its own table of values, for its major and minor modes
+;;; and options set just for it.
+
+(define *buffer-locals* (hash))  ; buffer id -> hash of name -> value
+
+(define (buffer-locals) (or (hash-try-get *buffer-locals* (current-buffer)) (hash)))
+
+(define (buffer-local name) (hash-try-get (buffer-locals) name))
+
+(define (buffer-local? name) (hash-contains? (buffer-locals) name))
+
+(define (set-buffer-local! name value)
+  (set! *buffer-locals*
+        (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value))))
+
+(define (kill-buffer-locals! id) (set! *buffer-locals* (hash-remove *buffer-locals* id)))
+
 ;;; Options
 ;;;
 ;;; Named settings, read with (option 'name) and changed with set-option!
-;;; or :set. An option can have a watcher that runs when it changes, for
-;;; settings Rust needs to know about (tabstop).
+;;; or :set. A buffer can have its own value (set-local-option!, :setlocal),
+;;; which wins over the global one. An option can have a watcher that runs
+;;; when its value changes, for settings Rust needs to know about (tabstop).
 
 (define *options* (hash))
 (define *option-watchers* (hash))
@@ -252,13 +282,28 @@
         [(hash-try-get *option-aliases* name) => (lambda (n) n)]
         [else #f]))
 
-(define (option name) (hash-ref *options* name))
+(define (option name)
+  (let ([local (buffer-locals)] [key (list 'option name)])
+    (if (hash-contains? local key) (hash-ref local key) (hash-ref *options* name))))
+
+(define (set-local-option! name value)
+  (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+    (set-buffer-local! (list 'option name) value)
+    (let ([watch (hash-try-get *option-watchers* name)])
+      (when watch (watch value)))
+    (run-hooks 'option-change name value)))
+
+;; Runs every watcher with the current buffer's values; after switching
+;; buffers, Rust's copies (tab width, line numbers) follow the buffer.
+(define (refresh-option-watchers!)
+  (for-each (lambda (name) ((hash-ref *option-watchers* name) (option name)))
+            (hash-keys->list *option-watchers*)))
 
 (define (set-option! name value)
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
     (set! *options* (hash-insert *options* name value))
     (let ([watch (hash-try-get *option-watchers* name)])
-      (when watch (watch value)))
+      (when watch (watch (option name))))
     (run-hooks 'option-change name value)))
 
 (define (watch-option! name proc)

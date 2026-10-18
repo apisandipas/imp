@@ -23,6 +23,9 @@ pub struct Editor {
     /// Cursor as a char offset into the buffer.
     pub cursor: usize,
     pub mode_name: String,
+    /// Shown at the right of the status line, before the position (the
+    /// buffer's major mode).
+    pub mode_line_extra: String,
     pub cursor_shape: CursorShape,
     pub status: String,
     /// The command line being typed and the cursor's column in it. While
