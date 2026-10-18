@@ -146,22 +146,40 @@
 (define (define-operator! key proc)
   (set! *operators* (hash-insert *operators* key proc)))
 
-;; Linewise text is stored as whole lines, each ending in a line break,
-;; whichever side of the range the break came from.
+;; Whole lines `first` through `last`, as (start end #t). The range always
+;; starts at the beginning of `first`, so every linewise operator sees the
+;; same shape; only `d` has to care about the file's final newline.
+(define (lines-range first last)
+  (list (line-start first)
+        (if (< last (last-line)) (line-start (+ last 1)) (buffer-length))
+        #t))
+
+;; Linewise text is stored as whole lines, each ending in a line break.
 (define (yank-range! start end linewise?)
   (let ([text (buffer-substring start end)])
     (set! *register*
-          (if linewise?
-              (let* ([text (if (starts-with? text "\n") (substring text 1 (string-length text)) text)])
-                (if (ends-with? text "\n") text (string-append text "\n")))
+          (if (and linewise? (not (ends-with? text "\n")))
+              (string-append text "\n")
               text))
     (set! *register-linewise* linewise?)))
+
+;; End of a linewise range without its final line break, if it has one.
+(define (without-final-break start end)
+  (if (and (> end start) (equal? (buffer-substring (- end 1) end) "\n"))
+      (- end 1)
+      end))
 
 (define-operator! "d"
   (lambda (start end linewise?)
     (yank-range! start end linewise?)
-    (buffer-delete! start end)
-    (set-cursor! (if linewise? (line-first-nonblank (offset->line start)) start))))
+    (if (and linewise? (= end (buffer-length)) (> start 0))
+        ;; Deleting through the last line takes the line break before it
+        ;; instead, so the file keeps its final newline.
+        (buffer-delete! (- start 1) (without-final-break start end))
+        (buffer-delete! start end))
+    (set-cursor! (if linewise?
+                     (line-first-nonblank (min (offset->line start) (last-line)))
+                     start))))
 
 (define-operator! "y"
   (lambda (start end linewise?)
@@ -171,11 +189,9 @@
 (define-operator! "c"
   (lambda (start end linewise?)
     (yank-range! start end linewise?)
-    (if linewise?
-        ;; Keep the line itself: change its text, not its line break.
-        (let ([end (if (> end start) (- end 1) end)])
-          (buffer-delete! start end))
-        (buffer-delete! start end))
+    ;; A linewise change keeps the line itself: its text goes, its line
+    ;; break stays.
+    (buffer-delete! start (if linewise? (without-final-break start end) end))
     (set-cursor! start)
     (set-mode! 'insert)))
 
@@ -183,16 +199,7 @@
 (define (motion-range from target type)
   (let ([lo (min from target)] [hi (max from target)])
     (cond
-      [(eq? type 'linewise)
-       (let* ([first (offset->line lo)]
-              [last (offset->line hi)]
-              [start (line-start first)]
-              [end (if (< last (last-line)) (line-start (+ last 1)) (buffer-length))])
-;; Deleting through the last line takes the line break before it
-         ;; instead, so the file keeps its final newline.
-         (if (and (= last (last-line)) (> first 0))
-             (list (- start 1) (line-end last) #t)
-             (list start end #t)))]
+      [(eq? type 'linewise) (lines-range (offset->line lo) (offset->line hi))]
       [(eq? type 'inclusive) (list lo (min (+ hi 1) (buffer-length)) #f)]
       [else
        ;; An exclusive motion that crosses into a later line stops at the end
@@ -222,6 +229,283 @@
          [range (motion-range from target 'linewise)])
     (undo-boundary!)
     ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
+
+;;; Text objects
+;;;
+;;; A text object maps (from count) straight to the range it selects, as
+;;; (start end linewise?), or #f when there is nothing there. In
+;;; operator-pending and visual mode, `i` and `a` are prefixes, so `diw`
+;;; looks up "iw" here.
+
+(define *text-objects* (hash))
+
+(define (define-text-object! key proc)
+  (set! *text-objects* (hash-insert *text-objects* key proc)))
+
+;; WORD classes: anything that isn't white space is part of a WORD.
+(define (big-class c)
+  (cond [(not c) 0] [(char-whitespace? c) 0] [else 1]))
+
+;; The run of chars sharing p's class, as far as `hi` (exclusive).
+(define (run-end p classify hi)
+  (let ([cls (classify (buffer-char-at p))])
+    (let loop ([q p])
+      (if (and (< q hi) (= (classify (buffer-char-at q)) cls)) (loop (+ q 1)) q))))
+
+(define (run-start p classify lo)
+  (let ([cls (classify (buffer-char-at p))])
+    (let loop ([q p])
+      (if (and (> q lo) (= (classify (buffer-char-at (- q 1))) cls)) (loop (- q 1)) q))))
+
+(define (blank-at? p) (= (char-class (buffer-char-at p)) 0))
+
+;; iw: `count` runs of word, punctuation or white space, on the cursor's line.
+(define (inner-word classify)
+  (lambda (from n)
+    (let* ([line (offset->line from)] [lo (line-start line)] [hi (line-end line)])
+      (if (= lo hi)
+          #f
+          (let loop ([i 1] [end (run-end from classify hi)])
+            (if (and (< i n) (< end hi))
+                (loop (+ i 1) (run-end end classify hi))
+                (list (run-start from classify lo) end #f)))))))
+
+;; aw: words with the white space after them; if a word has none after it,
+;; the white space before it instead. From white space, the white space and
+;; the word after it.
+(define (a-word classify)
+  (lambda (from n)
+    (let* ([line (offset->line from)] [lo (line-start line)] [hi (line-end line)]
+           [skip-word (lambda (p) (if (and (< p hi) (not (blank-at? p))) (run-end p classify hi) p))]
+           [skip-blank (lambda (p) (if (and (< p hi) (blank-at? p)) (run-end p classify hi) p))])
+      (cond
+        [(= lo hi) #f]
+        [(blank-at? from)
+         (let loop ([i 0] [end (run-start from classify lo)])
+           (if (< i n)
+               (loop (+ i 1) (skip-word (skip-blank end)))
+               (list (run-start from classify lo) end #f)))]
+        [else
+         (let* ([start (run-start from classify lo)]
+                [word-end (run-end from classify hi)]
+                [end (let loop ([i 1] [end (skip-blank word-end)])
+                       (if (< i n) (loop (+ i 1) (skip-blank (skip-word end))) end))])
+           (if (and (= end word-end) (> start lo) (blank-at? (- start 1)))
+               (list (run-start (- start 1) classify lo) end #f)
+               (list start end #f)))]))))
+
+(define-text-object! "iw" (inner-word char-class))
+(define-text-object! "aw" (a-word char-class))
+(define-text-object! "iW" (inner-word big-class))
+(define-text-object! "aW" (a-word big-class))
+
+;; Quotes, on the cursor's line only, as in Vim. A quote preceded by a
+;; backslash doesn't count.
+(define (quote-positions q lo hi)
+  (let loop ([p lo] [acc '()])
+    (cond
+      [(>= p hi) (reverse acc)]
+      [(and (equal? (buffer-char-at p) q)
+            (not (and (> p lo) (equal? (buffer-char-at (- p 1)) #\\))))
+       (loop (+ p 1) (cons p acc))]
+      [else (loop (+ p 1) acc)])))
+
+;; The (open close) pair of quotes around `from`. Quotes pair up from the
+;; start of the line; if the cursor isn't inside a pair, the next pair after
+;; it on the line is used.
+(define (quote-pair q from)
+  (let* ([line (offset->line from)]
+         [qs (quote-positions q (line-start line) (line-end line))])
+    (let loop ([qs qs])
+      (cond
+        [(or (null? qs) (null? (cdr qs))) #f]
+        [(<= from (cadr qs)) (list (car qs) (cadr qs))]
+        [else (loop (cddr qs))]))))
+
+(define (quote-object q around?)
+  (lambda (from n)
+    (let ([pair (quote-pair q from)])
+      (cond
+        [(not pair) #f]
+        [(not around?) (list (+ (car pair) 1) (cadr pair) #f)]
+        [else
+         (let* ([open (car pair)] [close (+ (cadr pair) 1)]
+                [hi (line-end (offset->line open))] [lo (line-start (offset->line open))]
+                [after (let loop ([p close]) (if (and (< p hi) (blank-at? p)) (loop (+ p 1)) p))])
+           (if (> after close)
+               (list open after #f)
+               (list (let loop ([p open]) (if (and (> p lo) (blank-at? (- p 1))) (loop (- p 1)) p))
+                     close #f)))]))))
+
+(for-each
+ (lambda (q)
+   (define-text-object! (string-append "i" (string q)) (quote-object q #f))
+   (define-text-object! (string-append "a" (string q)) (quote-object q #t)))
+ (list #\" #\' #\`))
+
+;; Brackets. The count picks the nth enclosing pair. A bracket under the
+;; cursor belongs to the pair it opens or closes.
+(define (find-open open close from n)
+  (let loop ([q from] [depth 0] [n n])
+    (if (< q 0)
+        #f
+        (let ([c (buffer-char-at q)])
+          (cond
+            [(and (equal? c close) (not (= q from))) (loop (- q 1) (+ depth 1) n)]
+            [(equal? c open)
+             (cond [(> depth 0) (loop (- q 1) (- depth 1) n)]
+                   [(= n 1) q]
+                   [else (loop (- q 1) 0 (- n 1))])]
+            [else (loop (- q 1) depth n)])))))
+
+(define (find-close open close from)
+  (let ([len (buffer-length)])
+    (let loop ([q from] [depth 0])
+      (if (>= q len)
+          #f
+          (let ([c (buffer-char-at q)])
+            (cond
+              [(equal? c open) (loop (+ q 1) (+ depth 1))]
+              [(equal? c close) (if (= depth 0) q (loop (+ q 1) (- depth 1)))]
+              [else (loop (+ q 1) depth)]))))))
+
+(define (only-blanks-before? p)
+  (let ([lo (line-start (offset->line p))])
+    (let loop ([q lo]) (cond [(= q p) #t] [(blank-at? q) (loop (+ q 1))] [else #f]))))
+
+(define (bracket-object open close around?)
+  (lambda (from n)
+    (let* ([o (find-open open close from n)]
+           [c (and o (find-close open close (+ o 1)))])
+      (cond
+        [(not c) #f]
+        [around? (list o (+ c 1) #f)]
+        ;; A block whose brackets end and begin lines, as in
+        ;;   if x {
+        ;;       body
+        ;;   }
+        ;; selects the lines between them.
+        [(and (equal? (buffer-char-at (+ o 1)) #\newline)
+              (only-blanks-before? c)
+              (> (offset->line c) (+ (offset->line o) 1)))
+         (lines-range (+ (offset->line o) 1) (- (offset->line c) 1))]
+        [else (list (+ o 1) c #f)]))))
+
+(for-each
+ (lambda (spec)
+   (let ([open (car spec)] [close (cadr spec)])
+     (for-each
+      (lambda (name)
+        (define-text-object! (string-append "i" name) (bracket-object open close #f))
+        (define-text-object! (string-append "a" name) (bracket-object open close #t)))
+      (cddr spec))))
+ (list (list #\( #\) "(" ")" "b")
+       (list #\[ #\] "[" "]")
+       (list #\{ #\} "{" "}" "B")
+       (list #\< #\> "<" ">")))
+
+;; Tags: <name ...> ... </name>. Every tag in the buffer is paired with a
+;; stack, then the count picks the nth innermost pair around the cursor.
+(define (tag-name-end p)
+  (let ([len (buffer-length)])
+    (let loop ([q p])
+      (let ([c (buffer-char-at q)])
+        (if (and (< q len) c (not (char-whitespace? c)) (not (memv c (list #\> #\/))))
+            (loop (+ q 1))
+            q)))))
+
+(define (char-after-tag p)
+  (let ([len (buffer-length)])
+    (let loop ([q p]) (cond [(>= q len) #f] [(equal? (buffer-char-at q) #\>) (+ q 1)] [else (loop (+ q 1))]))))
+
+;; List of (open-start open-end close-start close-end) for every tag pair.
+(define (tag-pairs)
+  (let ([len (buffer-length)])
+    (let loop ([p 0] [stack '()] [pairs '()])
+      (cond
+        [(>= p len) pairs]
+        [(not (equal? (buffer-char-at p) #\<)) (loop (+ p 1) stack pairs)]
+        [else
+         (let* ([closing? (equal? (buffer-char-at (+ p 1)) #\/)]
+                [name-start (if closing? (+ p 2) (+ p 1))]
+                [name-end (tag-name-end name-start)]
+                [name (buffer-substring name-start name-end)]
+                [end (char-after-tag name-end)])
+           (cond
+             [(or (not end) (equal? name "")) (loop (+ p 1) stack pairs)]
+             [closing?
+              ;; Pop to the matching open tag, dropping unclosed ones (<br>).
+              (let pop ([s stack])
+                (cond
+                  [(null? s) (loop end stack pairs)]
+                  [(equal? (car (car s)) name)
+                   (loop end (cdr s)
+                         (cons (list (cadr (car s)) (caddr (car s)) p end) pairs))]
+                  [else (pop (cdr s))]))]
+             [(equal? (buffer-char-at (- end 2)) #\/) (loop end stack pairs)]
+             [else (loop end (cons (list name p end) stack) pairs)]))]))))
+
+(define (tag-object around?)
+  (lambda (from n)
+    (let* ([around (filter (lambda (t) (and (<= (car t) from) (< from (cadddr t)))) (tag-pairs))]
+           ;; Innermost first: the latest-opening pair is the innermost.
+           [sorted (sort around (lambda (a b) (> (car a) (car b))))])
+      (if (< (length sorted) n)
+          #f
+          (let ([t (list-ref sorted (- n 1))])
+            (if around?
+                (list (car t) (cadddr t) #f)
+                (list (cadr t) (caddr t) #f)))))))
+
+(define-text-object! "it" (tag-object #f))
+(define-text-object! "at" (tag-object #t))
+
+;; Paragraphs: runs of non-blank lines, separated by runs of blank lines
+;; (lines that are empty or only white space). Each run counts once.
+(define (blank-line? line)
+  (let ([end (line-end line)])
+    (let loop ([p (line-start line)])
+      (cond [(= p end) #t] [(blank-at? p) (loop (+ p 1))] [else #f]))))
+
+(define (run-last-line line)
+  (let ([blank (blank-line? line)])
+    (let loop ([l line])
+      (if (and (< l (last-line)) (eq? (blank-line? (+ l 1)) blank)) (loop (+ l 1)) l))))
+
+(define (run-first-line line)
+  (let ([blank (blank-line? line)])
+    (let loop ([l line])
+      (if (and (> l 0) (eq? (blank-line? (- l 1)) blank)) (loop (- l 1)) l))))
+
+;; The last line after `n` runs starting at `line`.
+(define (runs-forward line n)
+  (let loop ([i 1] [last (run-last-line line)])
+    (if (and (< i n) (< last (last-line)))
+        (loop (+ i 1) (run-last-line (+ last 1)))
+        last)))
+
+(define-text-object! "ip"
+  (lambda (from n)
+    (let ([line (offset->line from)])
+      (lines-range (run-first-line line) (runs-forward line n)))))
+
+;; ap: a paragraph and the blank lines after it, or before it if there are
+;; none after. From blank lines, the blanks and the paragraph after them.
+(define-text-object! "ap"
+  (lambda (from n)
+    (let* ([line (offset->line from)]
+           [first (run-first-line line)]
+           [last (runs-forward line (* 2 n))])
+      (if (or (blank-line? line) (blank-line? last) (= first 0))
+          (lines-range first last)
+          (let ([before (- first 1)])
+            (lines-range (if (blank-line? before) (run-first-line before) first) last))))))
+
+(define (run-text-object! op-key object-key count)
+  (let ([range ((hash-ref *text-objects* object-key) (cursor) count)])
+    (when range
+      (undo-boundary!)
+      ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range)))))
 
 ;;; Changes and dot-repeat
 
@@ -363,6 +647,8 @@
     ;; Prefix keys: `g` waits for the next key.
     [(and (not *prefix*) (equal? key "g"))
      (set! *prefix* "g")]
+    [(and *operator* (not *prefix*) (member key '("i" "a")))
+     (set! *prefix* key)]
 
     [else
      (let* ([key (if *prefix* (string-append *prefix* key) key)]
@@ -379,6 +665,11 @@
             (cond
               [(hash-contains? *motions* key)
                (let ([change (lambda (n) (run-operator! op key n))])
+                 (set! *operator* #f)
+                 (change count)
+                 (when (changing-operator? op) (record-change! change count)))]
+              [(hash-contains? *text-objects* key)
+               (let ([change (lambda (n) (run-text-object! op key n))])
                  (set! *operator* #f)
                  (change count)
                  (when (changing-operator? op) (record-change! change count)))]

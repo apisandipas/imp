@@ -12,3 +12,9 @@ imp-server = { path = "crates/imp-server" }
 ropey = "1.6.1"
 crossterm = "0.29.0"
 steel = { package = "steel-core", version = "0.8.3" }
+
+# Steel's prelude takes ~1s to load in a debug build, and every test starts a
+# server. Optimizing dependencies (not our own crates) keeps tests fast while
+# leaving our code quick to rebuild and easy to debug.
+[profile.dev.package."*"]
+opt-level = 2

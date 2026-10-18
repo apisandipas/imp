@@ -183,3 +183,122 @@ fn paste_line_into_file_without_final_newline() {
     type_keys(&mut s, "yyjp");
     assert_eq!(s.text(), "a\nb\na");
 }
+
+#[test]
+fn cc_on_last_line_keeps_previous_line() {
+    let mut s = server("a\nb\n");
+    type_keys(&mut s, "jccX<esc>");
+    assert_eq!(s.text(), "a\nX\n");
+}
+
+#[test]
+fn d_to_end_and_start_of_file() {
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, "jdG");
+    assert_eq!(s.text(), "1\n");
+    let mut s = server("1\n2\n3\n");
+    type_keys(&mut s, "jdgg");
+    assert_eq!(s.text(), "3\n");
+}
+
+#[test]
+fn inner_and_a_word() {
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "wdiw");
+    assert_eq!(s.text(), "one  three\n");
+    let mut s = server("one two three\n");
+    type_keys(&mut s, "wdaw");
+    assert_eq!(s.text(), "one three\n");
+    // The last word has no white space after it, so aw takes the space before.
+    let mut s = server("one two\n");
+    type_keys(&mut s, "wdaw");
+    assert_eq!(s.text(), "one\n");
+    // Counts cover word and white space runs.
+    let mut s = server("a b c d\n");
+    type_keys(&mut s, "d3iw");
+    assert_eq!(s.text(), " c d\n");
+}
+
+#[test]
+fn inner_word_on_punctuation_and_words() {
+    let mut s = server("foo.bar baz\n");
+    type_keys(&mut s, "ldiw");
+    assert_eq!(s.text(), ".bar baz\n");
+    let mut s = server("foo.bar baz\n");
+    type_keys(&mut s, "ldiW");
+    assert_eq!(s.text(), " baz\n");
+}
+
+#[test]
+fn change_inner_word_and_dot() {
+    let mut s = server("foo bar\n");
+    type_keys(&mut s, "ciwx<esc>w.");
+    assert_eq!(s.text(), "x x\n");
+}
+
+#[test]
+fn quote_objects() {
+    let mut s = server("say \"hello there\" now\n");
+    type_keys(&mut s, "5ldi\"");
+    assert_eq!(s.text(), "say \"\" now\n");
+    let mut s = server("say \"hello\" now\n");
+    type_keys(&mut s, "8lda\"");
+    assert_eq!(s.text(), "say now\n");
+    // Before the first quote, the next quoted string on the line is used.
+    let mut s = server("x = 'abc'\n");
+    type_keys(&mut s, "ci'z<esc>");
+    assert_eq!(s.text(), "x = 'z'\n");
+}
+
+#[test]
+fn bracket_objects() {
+    let mut s = server("f(a, (b), c)\n");
+    type_keys(&mut s, "6ldi(");
+    assert_eq!(s.text(), "f(a, (), c)\n");
+    let mut s = server("f(a, (b), c)\n");
+    type_keys(&mut s, "6ld2i(");
+    assert_eq!(s.text(), "f()\n");
+    let mut s = server("x[1] y\n");
+    type_keys(&mut s, "lda]");
+    assert_eq!(s.text(), "x y\n");
+    let mut s = server("f(a)\n");
+    type_keys(&mut s, "$dib");
+    assert_eq!(s.text(), "f()\n");
+}
+
+#[test]
+fn inner_block_on_own_lines_is_linewise() {
+    let mut s = server("if x {\n    a\n    b\n}\n");
+    type_keys(&mut s, "jdi{");
+    assert_eq!(s.text(), "if x {\n}\n");
+    let mut s = server("if x {\n    a\n}\n");
+    type_keys(&mut s, "jyi{Gp");
+    assert_eq!(s.text(), "if x {\n    a\n}\n    a\n");
+}
+
+#[test]
+fn tag_objects() {
+    let mut s = server("<a><b>text</b></a>\n");
+    type_keys(&mut s, "7ldit");
+    assert_eq!(s.text(), "<a><b></b></a>\n");
+    let mut s = server("<a><b>text</b></a>\n");
+    type_keys(&mut s, "7ld2it");
+    assert_eq!(s.text(), "<a></a>\n");
+    let mut s = server("<a><b>text</b></a>\n");
+    type_keys(&mut s, "7ldat");
+    assert_eq!(s.text(), "<a></a>\n");
+}
+
+#[test]
+fn paragraph_objects() {
+    let mut s = server("a\nb\n\nc\n");
+    type_keys(&mut s, "dip");
+    assert_eq!(s.text(), "\nc\n");
+    let mut s = server("a\nb\n\nc\n");
+    type_keys(&mut s, "dap");
+    assert_eq!(s.text(), "c\n");
+    // No blank lines after the last paragraph: ap takes the ones before.
+    let mut s = server("a\n\nc\n");
+    type_keys(&mut s, "Gdap");
+    assert_eq!(s.text(), "a\n");
+}
