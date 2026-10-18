@@ -85,6 +85,13 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.cursor = clamp(offset).min(e.buffer.len()))
     });
 
+    // The window: which buffer lines are on screen.
+    engine.register_fn("window-top", || editor::with(|e| e.scroll as isize));
+    engine.register_fn("window-height", || editor::with(|e| e.text_rows() as isize));
+    engine.register_fn("set-window-top!", |line: isize| {
+        editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
+    });
+
     // Telling the user what's going on.
     engine.register_fn("set-status!", |text: String| {
         editor::with(|e| e.status = text)

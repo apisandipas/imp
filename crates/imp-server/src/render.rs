@@ -8,7 +8,7 @@ const TAB_WIDTH: usize = 4;
 
 pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
-    let text_rows = e.height.saturating_sub(1).max(1) as usize;
+    let text_rows = e.text_rows();
 
     let cursor_line = e.buffer.offset_to_line(e.cursor);
     let cursor_col = e.buffer.offset_to_col(e.cursor);

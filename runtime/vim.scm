@@ -89,38 +89,59 @@
         [(char-word? c) 1]
         [else 2]))
 
+;; WORD classes: anything that isn't white space is part of a WORD.
+(define (big-class c)
+  (cond [(not c) 0] [(char-whitespace? c) 0] [else 1]))
+
 (define (class-at p) (char-class (buffer-char-at p)))
 
-(define (next-word-start p)
+;; Word motions take the classifier, char-class for words (w b e ge) or
+;; big-class for WORDs (W B E gE).
+(define (next-word-start p classify)
   (let* ([len (buffer-length)]
-         [cls (class-at p)]
+         [cls-at (lambda (q) (classify (buffer-char-at q)))]
+         [cls (cls-at p)]
          [after-word (let loop ([q p])
-                       (if (and (< q len) (not (= cls 0)) (= (class-at q) cls))
+                       (if (and (< q len) (not (= cls 0)) (= (cls-at q) cls))
                            (loop (+ q 1))
                            q))])
     (let loop ([q after-word])
-      (if (and (< q len) (= (class-at q) 0))
+      (if (and (< q len) (= (cls-at q) 0))
           (loop (+ q 1))
           q))))
 
-(define (prev-word-start p)
-  (let* ([q (let loop ([q (- p 1)])
-              (if (and (> q 0) (= (class-at q) 0)) (loop (- q 1)) q))]
-         [cls (class-at q)])
+(define (prev-word-start p classify)
+  (let* ([cls-at (lambda (q) (classify (buffer-char-at q)))]
+         [q (let loop ([q (- p 1)])
+              (if (and (> q 0) (= (cls-at q) 0)) (loop (- q 1)) q))]
+         [cls (cls-at q)])
     (let loop ([q q])
-      (if (and (> q 0) (= (class-at (- q 1)) cls) (not (= cls 0)))
+      (if (and (> q 0) (= (cls-at (- q 1)) cls) (not (= cls 0)))
           (loop (- q 1))
           (max q 0)))))
 
-(define (next-word-end p)
+(define (next-word-end p classify)
   (let* ([len (buffer-length)]
+         [cls-at (lambda (q) (classify (buffer-char-at q)))]
          [q (let loop ([q (+ p 1)])
-              (if (and (< q len) (= (class-at q) 0)) (loop (+ q 1)) q))]
-         [cls (class-at q)])
+              (if (and (< q len) (= (cls-at q) 0)) (loop (+ q 1)) q))]
+         [cls (cls-at q)])
     (let loop ([q q])
-      (if (and (< (+ q 1) len) (= (class-at (+ q 1)) cls) (not (= cls 0)))
+      (if (and (< (+ q 1) len) (= (cls-at (+ q 1)) cls) (not (= cls 0)))
           (loop (+ q 1))
           (min q (max 0 (- len 1)))))))
+
+;; ge: back to the end of the previous word.
+(define (prev-word-end p classify)
+  (let* ([cls-at (lambda (q) (classify (buffer-char-at q)))]
+         [cls (cls-at p)]
+         [q (let loop ([q p])
+              (if (and (> q 0) (not (= cls 0)) (= (cls-at q) cls)) (loop (- q 1)) q))])
+    (let loop ([q q])
+      (if (and (> q 0) (= (cls-at q) 0)) (loop (- q 1)) q))))
+
+(define (word-motion step classify)
+  (lambda (from n) (repeat-motion n (lambda (p) (step p classify)) from)))
 
 (define (vertical from n)
   (line-col->offset (clamp (+ (offset->line from) n) 0 (last-line)) *goal-col*))
@@ -131,9 +152,14 @@
   (lambda (from n) (min (line-end (offset->line from)) (+ from n))))
 (define-motion! "j" 'linewise (lambda (from n) (vertical from n)))
 (define-motion! "k" 'linewise (lambda (from n) (vertical from (- n))))
-(define-motion! "w" 'exclusive (lambda (from n) (repeat-motion n next-word-start from)))
-(define-motion! "b" 'exclusive (lambda (from n) (repeat-motion n prev-word-start from)))
-(define-motion! "e" 'inclusive (lambda (from n) (repeat-motion n next-word-end from)))
+(define-motion! "w" 'exclusive (word-motion next-word-start char-class))
+(define-motion! "b" 'exclusive (word-motion prev-word-start char-class))
+(define-motion! "e" 'inclusive (word-motion next-word-end char-class))
+(define-motion! "ge" 'inclusive (word-motion prev-word-end char-class))
+(define-motion! "W" 'exclusive (word-motion next-word-start big-class))
+(define-motion! "B" 'exclusive (word-motion prev-word-start big-class))
+(define-motion! "E" 'inclusive (word-motion next-word-end big-class))
+(define-motion! "gE" 'inclusive (word-motion prev-word-end big-class))
 (define-motion! "0" 'exclusive (lambda (from n) (line-start (offset->line from))))
 (define-motion! "^" 'exclusive (lambda (from n) (line-first-nonblank (offset->line from))))
 (define-motion! "$" 'inclusive
@@ -148,6 +174,149 @@
 (define-motion! "<right>" 'exclusive (motion-proc (hash-ref *motions* "l")))
 (define-motion! "<down>" 'linewise (motion-proc (hash-ref *motions* "j")))
 (define-motion! "<up>" 'linewise (motion-proc (hash-ref *motions* "k")))
+(define-motion! "<home>" 'exclusive (motion-proc (hash-ref *motions* "0")))
+(define-motion! "<end>" 'inclusive (motion-proc (hash-ref *motions* "$")))
+;; No line wrapping yet, so display lines are buffer lines.
+(define-motion! "gj" 'linewise (motion-proc (hash-ref *motions* "j")))
+(define-motion! "gk" 'linewise (motion-proc (hash-ref *motions* "k")))
+
+(define (line-motion offset)
+  (lambda (from n)
+    (line-first-nonblank (clamp (+ (offset->line from) (offset n)) 0 (last-line)))))
+
+(define-motion! "+" 'linewise (line-motion (lambda (n) n)))
+(define-motion! "<ret>" 'linewise (line-motion (lambda (n) n)))
+(define-motion! "-" 'linewise (line-motion (lambda (n) (- n))))
+(define-motion! "_" 'linewise (line-motion (lambda (n) (- n 1))))
+(define-motion! "|" 'exclusive
+  (lambda (from n) (line-col->offset (offset->line from) (- n 1))))
+
+;; % jumps between matching brackets: the one under the cursor, or the next
+;; one on the line. With a count, N% goes N percent of the way into the file.
+(define *bracket-pairs* (list (list #\( #\)) (list #\[ #\]) (list #\{ #\})))
+
+(define (bracket-match from)
+  (let* ([hi (line-end (offset->line from))]
+         [p (let loop ([p from])
+              (cond [(>= p hi) #f]
+                    [(memv (buffer-char-at p) (list #\( #\) #\[ #\] #\{ #\})) p]
+                    [else (loop (+ p 1))]))])
+    (and p
+         (let* ([c (buffer-char-at p)]
+                [pair (let loop ([ps *bracket-pairs*])
+                        (if (memv c (car ps)) (car ps) (loop (cdr ps))))]
+                [open (car pair)] [close (cadr pair)])
+           (if (equal? c open)
+               (find-close open close (+ p 1))
+               (and (> p 0) (find-open open close (- p 1) 1)))))))
+
+(define-motion! "%" 'inclusive
+  (lambda (from n)
+    (if *count-given*
+        (line-first-nonblank (- (clamp (quotient (+ (* n (buffer-line-count)) 99) 100) 1 (+ (last-line) 1)) 1))
+        (bracket-match from))))
+
+;; { and }: back and forward to the next empty line.
+(define (empty-line? line) (= (buffer-line-length line) 0))
+
+(define (paragraph-forward from n)
+  (let loop ([i 0] [line (offset->line from)])
+    (if (= i n)
+        (if (empty-line? line) (line-start line) (line-end line))
+        (let* ([l (let skip ([l line]) (if (and (< l (last-line)) (empty-line? l)) (skip (+ l 1)) l))]
+               [l (let skip ([l l]) (if (and (< l (last-line)) (not (empty-line? l))) (skip (+ l 1)) l))])
+          (loop (+ i 1) l)))))
+
+(define (paragraph-backward from n)
+  (let loop ([i 0] [line (offset->line from)])
+    (if (= i n)
+        (line-start line)
+        (let* ([l (let skip ([l line]) (if (and (> l 0) (empty-line? l)) (skip (- l 1)) l))]
+               [l (let skip ([l l]) (if (and (> l 0) (not (empty-line? l))) (skip (- l 1)) l))])
+          (loop (+ i 1) l)))))
+
+(define-motion! "}" 'exclusive paragraph-forward)
+(define-motion! "{" 'exclusive paragraph-backward)
+
+;; H, M and L: lines of the window.
+(define (window-bottom) (min (last-line) (+ (window-top) (window-height) -1)))
+
+(define-motion! "H" 'linewise
+  (lambda (from n) (line-first-nonblank (min (window-bottom) (+ (window-top) (- n 1))))))
+(define-motion! "L" 'linewise
+  (lambda (from n) (line-first-nonblank (max (window-top) (- (window-bottom) (- n 1))))))
+(define-motion! "M" 'linewise
+  (lambda (from n)
+    (line-first-nonblank (+ (window-top) (quotient (- (window-bottom) (window-top)) 2)))))
+
+;;; Motions that take a char: f F t T
+;;;
+;;; (define-char-motion! key type proc) makes `key` a prefix; `proc` is
+;;; (lambda (from count char) target) and `fx` becomes a motion like any
+;;; other, so it works with operators, visual mode and `.`.
+
+(define *char-motions* (hash))
+(define *last-char-search* #f) ; (key char) for ; and ,
+
+(define (define-char-motion! key type proc)
+  (set! *char-motions* (hash-insert *char-motions* key (list type proc))))
+
+;; The char named by a key: "x" is x, "<tab>" a tab. Other named keys are
+;; not chars.
+(define (key-char key)
+  (cond [(= (string-length key) 1) (string-ref key 0)]
+        [(equal? key "<tab>") #\tab]
+        [(equal? key "<space>") #\space]
+        [else #f]))
+
+;; The `n`th `ch` on the line, forward or backward. `till?` stops one short
+;; of it; `skip-adjacent?` (for ; after t) doesn't count one right next to
+;; the cursor, so repeating t moves on.
+(define (char-search from n ch forward? till? skip-adjacent?)
+  (let* ([line (offset->line from)] [lo (line-start line)] [hi (line-end line)]
+         [step (if forward? 1 -1)])
+    (let loop ([p (+ from (if (and till? skip-adjacent?) (* 2 step) step))] [k n])
+      (cond [(or (< p lo) (>= p hi)) #f]
+            [(equal? (buffer-char-at p) ch)
+             (if (= k 1) (if till? (- p step) p) (loop (+ p step) (- k 1)))]
+            [else (loop (+ p step) k)]))))
+
+(define-char-motion! "f" 'inclusive (lambda (from n ch) (char-search from n ch #t #f #f)))
+(define-char-motion! "F" 'exclusive (lambda (from n ch) (char-search from n ch #f #f #f)))
+(define-char-motion! "t" 'inclusive (lambda (from n ch) (char-search from n ch #t #t #f)))
+(define-char-motion! "T" 'exclusive (lambda (from n ch) (char-search from n ch #f #t #f)))
+
+(define (reverse-char-key key)
+  (cond [(equal? key "f") "F"] [(equal? key "F") "f"] [(equal? key "t") "T"] [else "t"]))
+
+;; ; and , repeat the last f F t T, in the same or the other direction.
+(define (repeat-char-motion reverse?)
+  (and *last-char-search*
+       (let* ([key (if reverse? (reverse-char-key (car *last-char-search*)) (car *last-char-search*))]
+              [ch (cadr *last-char-search*)]
+              [forward? (member key '("f" "t"))]
+              [till? (member key '("t" "T"))])
+         (list (car (hash-ref *char-motions* key))
+               (lambda (from n) (char-search from n ch forward? till? #t))))))
+
+;; The motion for `key`, as (type proc), or #f. Besides the motion table
+;; this covers char motions (fx) and ; and ,.
+(define (find-motion key)
+  (cond
+    [(hash-try-get *motions* key) => (lambda (m) m)]
+    [(equal? key ";") (repeat-char-motion #f)]
+    [(equal? key ",") (repeat-char-motion #t)]
+    [(and (> (string-length key) 1) (hash-try-get *char-motions* (substring key 0 1)))
+     => (lambda (m)
+          (let ([ch (key-char (substring key 1 (string-length key)))]
+                [prefix (substring key 0 1)])
+            (and ch
+                 (list (car m)
+                       (lambda (from n)
+                         (when (member prefix '("f" "F" "t" "T"))
+                           (set! *last-char-search* (list prefix ch)))
+                         ((cadr m) from n ch))))))]
+    [else #f]))
 
 ;; Vertical motions keep the goal column; everything else resets it.
 (define (vertical-motion? key) (member key '("j" "k" "<down>" "<up>")))
@@ -217,25 +386,43 @@
       [(eq? type 'linewise) (lines-range (offset->line lo) (offset->line hi))]
       [(eq? type 'inclusive) (list lo (min (+ hi 1) (buffer-length)) #f)]
       [else
-       ;; An exclusive motion that crosses into a later line stops at the end
-       ;; of the first one, so `dw` on a line's last word keeps the newline.
-       (if (> (offset->line hi) (offset->line lo))
-           (list lo (max lo (min hi (line-end (offset->line lo)))) #f)
-           (list lo hi #f))])))
+       ;; Vim's rules for an exclusive motion that ends at the start of a
+       ;; later line: it stops at the end of the line before instead, and
+       ;; if it also began at or before the first non-blank it covers
+       ;; whole lines. So d} deletes whole paragraphs.
+       (let ([lo-line (offset->line lo)] [hi-line (offset->line hi)])
+         (cond
+           [(or (= hi-line lo-line) (not (= (offset->col hi) 0))) (list lo hi #f)]
+           [(<= lo (line-first-nonblank lo-line)) (lines-range lo-line (- hi-line 1))]
+           [else (list lo (line-end (- hi-line 1)) #f)]))])))
 
 (define (run-operator! op-key motion-key count)
   (let* (;; Vim special case: `cw` on a word changes to its end, like `ce`,
          ;; leaving the space after it alone.
-         [motion-key (if (and (equal? op-key "c") (equal? motion-key "w")
-                              (not (= (class-at (cursor)) 0)))
-                         "e"
-                         motion-key)]
-         [m (hash-ref *motions* motion-key)]
+         [motion-key (cond
+                       [(not (and (equal? op-key "c") (not (= (class-at (cursor)) 0)))) motion-key]
+                       [(equal? motion-key "w") "e"]
+                       [(equal? motion-key "W") "E"]
+                       [else motion-key])]
+         [m (find-motion motion-key)]
          [from (cursor)]
-         [target ((motion-proc m) from count)]
-         [range (motion-range from target (motion-type m))])
-    (undo-boundary!)
-    ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))
+         [target ((motion-proc m) from count)])
+    ;; A motion that finds nothing (f with no match) cancels the operator.
+    (when target
+      (let* ([target (if (member motion-key '("w" "W")) (word-operator-end from target) target)]
+             [range (motion-range from target (motion-type m))])
+        (undo-boundary!)
+        ((hash-ref *operators* op-key) (car range) (cadr range) (caddr range))))))
+
+;; Vim special case: with an operator, w stops at the end of the last word
+;; it moved over rather than at the start of a word on a later line, so `dw`
+;; on a line's last word keeps the line break.
+(define (word-operator-end from target)
+  (if (> (offset->line target) (offset->line from))
+      (let ([end (let loop ([p target])
+                   (if (and (> p from) (char-whitespace? (buffer-char-at (- p 1)))) (loop (- p 1)) p))])
+        (if (< (offset->line end) (offset->line target)) end target))
+      target))
 
 ;; `dd`, `cc`, `yy`: the operator over `count` whole lines.
 (define (run-linewise-operator! op-key count)
@@ -256,10 +443,6 @@
 
 (define (define-text-object! key proc)
   (set! *text-objects* (hash-insert *text-objects* key proc)))
-
-;; WORD classes: anything that isn't white space is part of a WORD.
-(define (big-class c)
-  (cond [(not c) 0] [(char-whitespace? c) 0] [else 1]))
 
 ;; The run of chars sharing p's class, as far as `hi` (exclusive).
 (define (run-end p classify hi)
@@ -760,7 +943,100 @@
 (define (without-final-newline text)
   (if (ends-with? text "\n") (substring text 0 (- (string-length text) 1)) text))
 
+;;; Scrolling
+;;;
+;;; These move the window and keep the cursor inside it. They work in normal
+;;; and visual mode.
+
+(define (define-normal-and-visual! key proc)
+  (define-key! 'normal key proc)
+  (define-key! 'visual key proc))
+
+(define (scroll-to! top)
+  (set-window-top! (clamp top 0 (last-line))))
+
+;; Moves the cursor onto `line`'s first non-blank, as Vim's 'startofline'.
+(define (cursor-to-line! line)
+  (set-cursor! (line-first-nonblank (clamp line 0 (last-line)))))
+
+;; C-d and C-u: half a window, or `count` lines.
+(define (half-page-scroll! sign)
+  (lambda (count)
+    (let ([n (if *count-given* count (max 1 (quotient (window-height) 2)))])
+      (scroll-to! (+ (window-top) (* sign n)))
+      (cursor-to-line! (+ (current-line) (* sign n))))))
+
+;; C-f and C-b: a window less two lines, so some context stays on screen.
+(define (page-scroll! sign)
+  (lambda (count)
+    (let ([n (* count (max 1 (- (window-height) 2)))])
+      (scroll-to! (+ (window-top) (* sign n)))
+      (cursor-to-line! (if (> sign 0) (window-top) (window-bottom))))))
+
+;; C-e and C-y: the window moves a line; the cursor only if it must.
+(define (line-scroll! sign)
+  (lambda (count)
+    (scroll-to! (+ (window-top) (* sign count)))
+    (cond
+      [(< (current-line) (window-top)) (cursor-to-line! (window-top))]
+      [(> (current-line) (window-bottom)) (cursor-to-line! (window-bottom))]
+      [else #t])))
+
+(define-normal-and-visual! "C-d" (half-page-scroll! 1))
+(define-normal-and-visual! "C-u" (half-page-scroll! -1))
+(define-normal-and-visual! "C-f" (page-scroll! 1))
+(define-normal-and-visual! "C-b" (page-scroll! -1))
+(define-normal-and-visual! "<pagedown>" (page-scroll! 1))
+(define-normal-and-visual! "<pageup>" (page-scroll! -1))
+(define-normal-and-visual! "C-e" (line-scroll! 1))
+(define-normal-and-visual! "C-y" (line-scroll! -1))
+
+;; zt zz zb put the cursor line at the top, middle or bottom of the window;
+;; z<ret> z. z- do the same and move to the first non-blank.
+(define (cursor-line-at! where first-nonblank?)
+  (lambda (count)
+    (let* ([line (if *count-given* (clamp (- count 1) 0 (last-line)) (current-line))]
+           [h (window-height)])
+      (scroll-to! (cond [(eq? where 'top) line]
+                        [(eq? where 'middle) (- line (quotient (- h 1) 2))]
+                        [else (- line (- h 1))]))
+      (if (or first-nonblank? *count-given*)
+          (cursor-to-line! line)
+          (set-cursor! (line-col->offset line *goal-col*))))))
+
+(define-normal-and-visual! "zt" (cursor-line-at! 'top #f))
+(define-normal-and-visual! "zz" (cursor-line-at! 'middle #f))
+(define-normal-and-visual! "zb" (cursor-line-at! 'bottom #f))
+(define-normal-and-visual! "z<ret>" (cursor-line-at! 'top #t))
+(define-normal-and-visual! "z." (cursor-line-at! 'middle #t))
+(define-normal-and-visual! "z-" (cursor-line-at! 'bottom #t))
+
 ;;; Normal mode dispatch
+
+;; Normal-mode commands that take a char, such as r and m: `proc` is
+;; (lambda (count char) ...).
+(define *char-commands* (hash))
+
+;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
+;; reachable. Char motions and char commands are prefixes automatically.
+(define *prefix-keys* (hash "g" #t "z" #t "Z" #t "[" #t "]" #t))
+
+(define (define-prefix! key)
+  (set! *prefix-keys* (hash-insert *prefix-keys* key #t)))
+
+(define (prefix-key? key)
+  (or (hash-contains? *prefix-keys* key)
+      (hash-contains? *char-motions* key)
+      (and (not *operator*) (hash-contains? *char-commands* key))))
+
+(define (define-char-command! key proc)
+  (set! *char-commands* (hash-insert *char-commands* key proc)))
+
+(define (find-char-command key)
+  (and (> (string-length key) 1)
+       (let ([proc (hash-try-get *char-commands* (substring key 0 1))]
+             [ch (key-char (substring key 1 (string-length key)))])
+         (and proc ch (lambda (count) (proc count ch))))))
 
 (define (digit? key)
   (and (= (string-length key) 1)
@@ -789,9 +1065,9 @@
        (reset-pending!)
        (start-search! (equal? key "/") op count))]
 
-    ;; Prefix keys: `g` waits for the next key.
-    [(and (not *prefix*) (equal? key "g"))
-     (set! *prefix* "g")]
+    ;; Prefix keys wait for the next key: `g`, `z`, char motions like `f`.
+    [(and (not *prefix*) (prefix-key? key))
+     (set! *prefix* key)]
     [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
      (set! *prefix* key)]
 
@@ -808,7 +1084,7 @@
          [*operator*
           (let ([op *operator*])
             (cond
-              [(hash-contains? *motions* key)
+              [(find-motion key)
                (let ([change (lambda (n) (run-operator! op key n))])
                  (set! *operator* #f)
                  (change count)
@@ -844,13 +1120,18 @@
           (set! *operator-count* *count*)
           (set! *count* "")]
 
-         [(hash-contains? *motions* key)
-          (set-cursor! ((motion-proc (hash-ref *motions* key)) (cursor) count))
-          (set! *count* "")]
+         [(find-motion key)
+          => (lambda (m)
+               (let ([target ((motion-proc m) (cursor) count)])
+                 (when target (set-cursor! target)))
+               (set! *count* ""))]
 
          [(and (not (eq? *mode* 'visual)) (lookup-key 'normal key))
           ((lookup-key 'normal key) count)
           (set! *count* "")]
+
+         [(and (not (eq? *mode* 'visual)) (find-char-command key))
+          => (lambda (cmd) (cmd count) (set! *count* ""))]
 
          [else
           (set! *count* "")

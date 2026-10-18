@@ -111,6 +111,7 @@ fn event_loop(
 fn key_name(key: KeyEvent) -> Option<String> {
     let name = match key.code {
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => format!("C-{c}"),
+        KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::ALT) => format!("M-{c}"),
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Esc => "<esc>".into(),
         KeyCode::Enter => "<ret>".into(),
@@ -121,6 +122,13 @@ fn key_name(key: KeyEvent) -> Option<String> {
         KeyCode::Right => "<right>".into(),
         KeyCode::Up => "<up>".into(),
         KeyCode::Down => "<down>".into(),
+        KeyCode::Home => "<home>".into(),
+        KeyCode::End => "<end>".into(),
+        KeyCode::PageUp => "<pageup>".into(),
+        KeyCode::PageDown => "<pagedown>".into(),
+        KeyCode::Insert => "<insert>".into(),
+        KeyCode::BackTab => "<s-tab>".into(),
+        KeyCode::F(n) => format!("<f{n}>"),
         _ => return None,
     };
     Some(name)

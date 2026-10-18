@@ -569,3 +569,203 @@ fn cmdline_editing_keys() {
     type_keys(&mut s, "3<ret>");
     assert_eq!(s.cursor(), 4);
 }
+
+#[test]
+fn find_and_till() {
+    let mut s = server("a,b,c,d\n");
+    type_keys(&mut s, "f,");
+    assert_eq!(s.cursor(), 1);
+    type_keys(&mut s, ";");
+    assert_eq!(s.cursor(), 3);
+    type_keys(&mut s, ",");
+    assert_eq!(s.cursor(), 1);
+    type_keys(&mut s, "$F,");
+    assert_eq!(s.cursor(), 5);
+    type_keys(&mut s, "0t,");
+    assert_eq!(s.cursor(), 0);
+    // ; after t moves on instead of staying put.
+    type_keys(&mut s, ";");
+    assert_eq!(s.cursor(), 2);
+    type_keys(&mut s, "$T,");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "02f,");
+    assert_eq!(s.cursor(), 3);
+}
+
+#[test]
+fn find_with_operators() {
+    let mut s = server("foo(bar, baz)\n");
+    type_keys(&mut s, "dt(");
+    assert_eq!(s.text(), "(bar, baz)\n");
+    let mut s = server("a.b.c.d\n");
+    type_keys(&mut s, "df..");
+    assert_eq!(s.text(), "c.d\n");
+    // No match: nothing happens.
+    let mut s = server("abc\n");
+    type_keys(&mut s, "dfz");
+    assert_eq!(s.text(), "abc\n");
+    let mut s = server("abc def\n");
+    type_keys(&mut s, "$dFa");
+    assert_eq!(s.text(), "f\n");
+}
+
+#[test]
+fn percent_matches_brackets() {
+    let mut s = server("if (a[1]) {\n}\n");
+    type_keys(&mut s, "%");
+    assert_eq!(s.cursor(), 8);
+    type_keys(&mut s, "%");
+    assert_eq!(s.cursor(), 3);
+    type_keys(&mut s, "$%");
+    assert_eq!(s.cursor(), 12);
+    let mut s = server("f(a(b)c)\n");
+    type_keys(&mut s, "ld%");
+    assert_eq!(s.text(), "f\n");
+    // From before the bracket, d% deletes from the cursor.
+    let mut s = server("f(a(b)c) x\n");
+    type_keys(&mut s, "d%");
+    assert_eq!(s.text(), " x\n");
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "50%");
+    assert_eq!(s.cursor(), 2);
+}
+
+#[test]
+fn paragraph_motions() {
+    let mut s = server("a\nb\n\nc\nd\n\ne\n");
+    type_keys(&mut s, "}");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "}");
+    assert_eq!(s.cursor(), 9);
+    type_keys(&mut s, "{");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "gg2}");
+    assert_eq!(s.cursor(), 9);
+    // d} from the start of a paragraph deletes its lines.
+    let mut s = server("a\nb\n\nc\n");
+    type_keys(&mut s, "d}");
+    assert_eq!(s.text(), "\nc\n");
+}
+
+#[test]
+fn big_word_motions() {
+    let mut s = server("a.b c-d e\n");
+    type_keys(&mut s, "W");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "E");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "B");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "dW");
+    assert_eq!(s.text(), "a.b e\n");
+    let mut s = server("a.b c-d\n");
+    type_keys(&mut s, "cWx<esc>");
+    assert_eq!(s.text(), "x c-d\n");
+}
+
+#[test]
+fn ge_goes_to_previous_word_end() {
+    let mut s = server("foo bar baz\n");
+    type_keys(&mut s, "$ge");
+    assert_eq!(s.cursor(), 6);
+    type_keys(&mut s, "2ge");
+    assert_eq!(s.cursor(), 0);
+    let mut s = server("foo bar\n");
+    type_keys(&mut s, "$dge");
+    assert_eq!(s.text(), "fo\n");
+}
+
+#[test]
+fn dw_across_lines_with_count() {
+    let mut s = server("a b\nc d\n");
+    type_keys(&mut s, "wd2w");
+    assert_eq!(s.text(), "a d\n");
+    let mut s = server("one\ntwo\n");
+    type_keys(&mut s, "dw");
+    assert_eq!(s.text(), "\ntwo\n");
+}
+
+#[test]
+fn line_motions() {
+    let mut s = server("a\n  b\nc\n");
+    type_keys(&mut s, "+");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "-");
+    assert_eq!(s.cursor(), 0);
+    type_keys(&mut s, "d<ret>");
+    assert_eq!(s.text(), "c\n");
+    let mut s = server("abcdef\n");
+    type_keys(&mut s, "4|");
+    assert_eq!(s.cursor(), 3);
+}
+
+#[test]
+fn window_motions() {
+    let text: String = (1..=50).map(|i| format!("{i}\n")).collect();
+    let mut s = server(&text);
+    s.handle(imp_core::ClientMsg::Resize {
+        width: 20,
+        height: 11,
+    });
+    s.frame();
+    type_keys(&mut s, "L");
+    assert_eq!(s.text()[..s.cursor()].matches('\n').count(), 9);
+    type_keys(&mut s, "M");
+    assert_eq!(s.text()[..s.cursor()].matches('\n').count(), 4);
+    type_keys(&mut s, "3H");
+    assert_eq!(s.text()[..s.cursor()].matches('\n').count(), 2);
+}
+
+/// The 0-based line the cursor is on.
+fn line_of(s: &Server) -> usize {
+    s.text()[..s.cursor()].matches('\n').count()
+}
+
+fn tall_server(lines: usize, height: u16) -> Server {
+    let text: String = (1..=lines).map(|i| format!("{i}\n")).collect();
+    let mut s = server(&text);
+    s.handle(imp_core::ClientMsg::Resize { width: 20, height });
+    s.frame();
+    s
+}
+
+#[test]
+fn half_and_full_page_scrolling() {
+    // 10 text rows.
+    let mut s = tall_server(100, 11);
+    s.keys(&["C-d"]);
+    assert_eq!(line_of(&s), 5);
+    s.frame();
+    assert_eq!(s.frame().text_rows()[0], "6");
+    s.keys(&["C-u"]);
+    assert_eq!(line_of(&s), 0);
+    s.keys(&["C-f"]);
+    s.frame();
+    assert_eq!(s.frame().text_rows()[0], "9");
+    assert_eq!(line_of(&s), 8);
+    s.keys(&["C-b"]);
+    s.frame();
+    assert_eq!(s.frame().text_rows()[0], "1");
+}
+
+#[test]
+fn line_scrolling_drags_the_cursor() {
+    let mut s = tall_server(100, 11);
+    s.keys(&["C-e", "C-e"]);
+    s.frame();
+    assert_eq!(s.frame().text_rows()[0], "3");
+    assert_eq!(line_of(&s), 2);
+    s.keys(&["C-y"]);
+    assert_eq!(line_of(&s), 2);
+}
+
+#[test]
+fn z_commands_place_the_cursor_line() {
+    let mut s = tall_server(100, 11);
+    type_keys(&mut s, "50Gzt");
+    assert_eq!(s.frame().text_rows()[0], "50");
+    type_keys(&mut s, "zz");
+    assert_eq!(s.frame().text_rows()[0], "46");
+    type_keys(&mut s, "zb");
+    assert_eq!(s.frame().text_rows()[0], "41");
+}

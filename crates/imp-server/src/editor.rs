@@ -50,6 +50,11 @@ pub struct Highlight {
 }
 
 impl Editor {
+    /// Rows available for buffer text: everything but the status line.
+    pub fn text_rows(&self) -> usize {
+        self.height.saturating_sub(1).max(1) as usize
+    }
+
     pub fn face(&self, name: &str) -> Style {
         self.faces.get(name).copied().unwrap_or_default()
     }
