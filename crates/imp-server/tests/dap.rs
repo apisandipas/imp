@@ -29,8 +29,11 @@ fn settle(s: &mut imp_server::Server) {
 
 const PROGRAM: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n}\n";
 
+/// The screen rows, without the message line.
 fn rows(s: &mut imp_server::Server) -> Vec<String> {
-    s.frame().text_rows()
+    let mut rows = s.frame().text_rows();
+    rows.pop();
+    rows
 }
 
 #[test]
@@ -42,7 +45,7 @@ fn breakpoints_toggle_and_follow_edits() {
     type_keys(&mut s, "ggOuse x;<esc>");
     assert!(rows(&mut s)[2].starts_with("● "), "{:?}", rows(&mut s));
     type_keys(&mut s, "3G<f9>");
-    assert!(!rows(&mut s).join("\n").contains('●'));
+    assert!(!rows(&mut s)[..6].join("\n").contains('●'));
 }
 
 #[test]

@@ -38,9 +38,7 @@
 (define (define-debug-adapter! mode command adapter-id launch)
   (set! *debug-adapters* (hash-insert *debug-adapters* mode (list command adapter-id launch))))
 
-(set-face! "debug-line" "bg=#3b3a26")
-(set-face! "sign.breakpoint" "fg=#e06c75 bold")
-(set-face! "sign.debug" "fg=#e5c07b bold")
+;; Faces debug-line, sign.breakpoint and sign.debug come from theme.scm.
 
 ;;; Launch configurations that come with imp
 

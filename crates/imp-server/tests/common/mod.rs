@@ -5,8 +5,13 @@
 use imp_core::Buffer;
 use imp_server::{Options, Server};
 
+/// A server for `text`. The theme's background is left off, so rows hold
+/// only what was drawn (tests/theme.rs checks the theme).
 pub fn server(text: &str) -> Server {
-    Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads")
+    let mut s =
+        Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads");
+    s.eval(r#"(set-face! "normal" "")"#).unwrap();
+    s
 }
 
 /// Splits "dw" into ["d", "w"] and leaves "<esc>"-style names whole;

@@ -140,7 +140,7 @@ fn local_leader_shows_mode_bindings() {
         .frame()
         .text_rows()
         .join("\n")
-        .contains("e   → eval top-level form"));
+        .contains("e → eval top-level form"));
     type_keys(&mut s, "b");
     assert_eq!(s.status(), "9");
 }

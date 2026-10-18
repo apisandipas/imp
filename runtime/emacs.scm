@@ -63,11 +63,11 @@
        (set! *emacs-prefix* keys)
        (message (string-append keys "-"))
        (if (<= (option 'which-key-delay) 0)
-           (set-popup! (emacs-which-key keys))
+           (show-which-key-popup! (emacs-which-key keys) keys)
            (run-after! (option 'which-key-delay)
                        (lambda ()
                          (when (equal? *emacs-prefix* keys)
-                           (set-popup! (emacs-which-key keys))))))]
+                           (show-which-key-popup! (emacs-which-key keys) keys)))))]
       [(and (equal? *emacs-prefix* "") (key-char key) (not (equal? key "<ret>")))
        (run-emacs-command! (lambda (n) (self-insert! key n)))]
       [else
@@ -91,11 +91,12 @@
 (define (emacs-which-key prefix)
   (let* ([start (string-append prefix " ")]
          [keys (filter (lambda (k) (starts-with? k start)) (hash-keys->list (keymap 'emacs)))])
-    (map (lambda (k)
-           (let ([b (hash-ref (keymap 'emacs) k)])
-             (string-append (pad-right (substring k (string-length start) (string-length k)) 10)
-                            "→ " (if (symbol? b) (symbol->string b) "command"))))
-         (sort keys string<?))))
+    (which-key-table
+     (map (lambda (k)
+            (let ([b (hash-ref (keymap 'emacs) k)])
+              (cons (substring k (string-length start) (string-length k))
+                    (if (symbol? b) (symbol->string b) "command"))))
+          (sort keys string<?)))))
 
 (define (keyboard-quit!)
   (set! *emacs-prefix* "")

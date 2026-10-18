@@ -3,8 +3,14 @@
 use imp_core::{Buffer, Color, Span, Style};
 use imp_server::{Options, Server};
 
+/// A server without the theme's background or the default status line
+/// format and faces, so rows hold just what each test draws.
 fn server(text: &str) -> Server {
-    Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads")
+    let mut s =
+        Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads");
+    s.eval(r#"(set-face! "normal" "") (set-statusline! "" "")"#)
+        .unwrap();
+    s
 }
 
 #[test]
@@ -19,7 +25,7 @@ fn rows_show_text_and_tildes() {
     assert_eq!(rows[1], "    two");
     assert_eq!(rows[2], "~");
     // The window's status line, then the message line.
-    assert!(rows[3].starts_with(" NORMAL"));
+    assert!(rows[3].starts_with(" NORMAL"), "{:?}", rows[3]);
     assert_eq!(rows[4], "");
 }
 

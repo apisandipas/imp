@@ -57,18 +57,37 @@
 
 ;; The which-key popup for `prefix`: entries in columns across the window.
 (define (which-key-lines prefix)
-  (let* ([entries (map (lambda (e) (string-append (pad-right (key-label (car e)) 4) "→ " (cdr e)))
-                       (leader-continuations prefix))]
-         [width (max 20 (+ 2 (apply max (cons 0 (map string-length entries)))))]
-         [columns (max 1 (quotient (window-width) width))]
-         [rows (quotient (+ (length entries) (- columns 1)) columns)])
+  (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e))) (leader-continuations prefix))))
+
+;; Popup rows for (key . description) pairs, in columns down then across.
+;; Keys, the arrow, groups (+name) and commands each have a face.
+(define (which-key-table entries)
+  (let* ([key-width (apply max (cons 3 (map (lambda (e) (string-length (car e))) entries)))]
+         [width (max 22 (+ key-width 6 (apply max (cons 0 (map (lambda (e) (string-length (cdr e))) entries)))))]
+         [columns (max 1 (quotient (- (window-width) 2) width))]
+         [rows (quotient (+ (length entries) (- columns 1)) columns)]
+         [cell (lambda (e)
+                 (let ([group? (starts-with? (cdr e) "+")])
+                   (list (list (pad-left (car e) key-width) "which-key.key")
+                         (list " → " "which-key.separator")
+                         (list (pad-right (cdr e) (- width key-width 3))
+                               (if group? "which-key.group" "which-key.command")))))])
     (map (lambda (r)
-           (apply string-append
-                  (map (lambda (c)
-                         (let ([i (+ (* c rows) r)])
-                           (if (< i (length entries)) (pad-right (list-ref entries i) width) "")))
-                       (range 0 columns))))
+           (cons " "
+                 (apply append
+                        (map (lambda (c)
+                               (let ([i (+ (* c rows) r)])
+                                 (if (< i (length entries)) (cell (list-ref entries i)) '())))
+                             (range 0 columns)))))
          (range 0 rows))))
+
+(define (pad-left text width)
+  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
+
+;; Shows `lines` as the which-key popup, titled with the keys so far.
+(define (show-which-key-popup! lines title)
+  (set-popup! lines)
+  (set-popup-place! "bottom" 0 title))
 
 (define (leader-prompt)
   (string-append "SPC " (apply string-append (map (lambda (k) (string-append (key-label k) " "))
@@ -115,14 +134,14 @@
   (set! *which-key-timer* #f)
   (let ([keys *leader-keys*])
     (if (<= (option 'which-key-delay) 0)
-        (set-popup! (which-key-lines keys))
+        (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))
         (set! *which-key-timer*
               (run-after! (option 'which-key-delay)
                           (lambda ()
                             (set! *which-key-timer* #f)
                             ;; Only if still waiting on the same keys.
                             (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
-                              (set-popup! (which-key-lines keys)))))))))
+                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt))))))))))
 
 ;; Start a leader sequence.
 (define-command! 'leader

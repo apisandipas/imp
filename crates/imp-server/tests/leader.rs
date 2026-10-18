@@ -20,11 +20,13 @@ fn which_key_shows_the_next_keys() {
     let mut s = server("");
     type_keys(&mut s, " ");
     let r = rows(&mut s);
-    assert!(r.contains("b   → +buffer"), "{r}");
+    assert!(r.contains("b → +buffer"), "{r}");
     assert!(r.contains("SPC → find file"), "{r}");
+    // Titled with the keys so far.
+    assert!(r.contains("─ SPC ─"), "{r}");
     type_keys(&mut s, "h");
     let r = rows(&mut s);
-    assert!(r.contains("k   → describe key"), "{r}");
+    assert!(r.contains("k → describe key"), "{r}");
     assert!(!r.contains("+buffer"));
     assert!(s.status().starts_with("SPC h"));
     type_keys(&mut s, "<esc>");
@@ -60,9 +62,9 @@ fn user_leader_bindings() {
     )
     .unwrap();
     type_keys(&mut s, " ");
-    assert!(rows(&mut s).contains("o   → +open"));
+    assert!(rows(&mut s).contains("o → +open"));
     type_keys(&mut s, "o");
-    assert!(rows(&mut s).contains("x   → say hi"));
+    assert!(rows(&mut s).contains("x → say hi"));
     type_keys(&mut s, "x");
     assert_eq!(s.text(), "hi");
 }

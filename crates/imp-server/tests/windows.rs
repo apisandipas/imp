@@ -24,7 +24,7 @@ fn horizontal_split_shows_the_buffer_twice() {
     assert_eq!(r[0], "one");
     assert!(r[3].starts_with(" NORMAL"), "{r:?}");
     assert_eq!(r[4], "one");
-    assert!(r[7].starts_with(" [No Name]"), "{r:?}");
+    assert!(r[7].starts_with("  [No Name]"), "{r:?}");
     assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
 }
 

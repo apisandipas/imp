@@ -8,7 +8,7 @@ fn rows(s: &mut imp_server::Server) -> Vec<String> {
     s.frame()
         .text_rows()
         .into_iter()
-        .map(|r| r.trim_end().to_string())
+        .map(|r| r.trim().to_string())
         .collect()
 }
 

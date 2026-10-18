@@ -149,7 +149,17 @@ Done and committed on `phase-4`:
   between a pipe and a socket held replies until input closed; it now
   relays each read at once.
 
-The cosmetic polish pass and Phase 5 come next (see HANDOFF).
+- **Polish pass** (after MCP, asked for by the owner after Phase 3):
+  `runtime/theme.scm` makes every face from a palette (one-dark,
+  gruvbox-dark, one-light; `define-theme!` with a parent, `:theme`); a
+  `normal` face under everything (rows padded so the background reaches
+  the edge); the status line is a Vim-style format string rendered per
+  window in Rust (`%m %f %M %l %c %L %p %{name} %#face# %* %=`, values
+  dropped first when narrow); popups take styled runs, a title in a top
+  rule, and can float in a bordered box at the cursor (LSP completion,
+  hover). Checked with screenshots (`tools/shot.py`).
+
+Phase 5 comes next (see HANDOFF).
 
 ## Outcome
 

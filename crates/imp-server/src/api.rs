@@ -21,6 +21,27 @@ use crate::shell;
 use std::path::{Path, PathBuf};
 use steel::SteelVal;
 
+/// A popup line from Scheme: a string, or a list of strings and (text
+/// face) lists.
+fn popup_line(value: &SteelVal) -> crate::editor::PopupLine {
+    let text = |v: &SteelVal| match v {
+        SteelVal::StringV(s) => s.to_string(),
+        other => other.to_string(),
+    };
+    match value {
+        SteelVal::ListV(runs) => runs
+            .iter()
+            .map(|run| match run {
+                SteelVal::ListV(parts) if parts.len() == 2 => {
+                    (text(&parts[0]), text(parts.iter().nth(1).unwrap()))
+                }
+                other => (text(other), String::new()),
+            })
+            .collect(),
+        other => vec![(text(other), String::new())],
+    }
+}
+
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
 }
@@ -530,9 +551,50 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.cmdline = Some((text, clamp(col))))
     });
     engine.register_fn("clear-cmdline!", || editor::with(|e| e.cmdline = None));
-    engine.register_fn("set-popup!", |lines: Vec<String>| {
-        editor::with(|e| e.popup = lines)
+    // Each line is a string, or a list of runs: strings, or (text face)
+    // lists. Clearing the popup puts it back at the bottom, untitled.
+    engine.register_fn("set-popup!", |lines: Vec<SteelVal>| {
+        let lines: Vec<crate::editor::PopupLine> = lines.iter().map(popup_line).collect();
+        editor::with(|e| {
+            if lines.is_empty() {
+                e.popup_at_cursor = None;
+                e.popup_title.clear();
+            }
+            e.popup = lines
+        })
     });
+    // Where the popup goes: "bottom", or "cursor" shifted `dx` columns;
+    // and its title.
+    engine.register_fn(
+        "set-popup-place!",
+        |place: String, dx: isize, title: String| {
+            editor::with(|e| {
+                e.popup_at_cursor = (place == "cursor").then_some(dx);
+                e.popup_title = title;
+            })
+        },
+    );
+    // The status line formats (see render::status_line) and their values.
+    engine.register_fn("set-statusline!", |focused: String, others: String| {
+        editor::with(|e| {
+            e.statusline = focused;
+            e.statusline_inactive = others;
+        })
+    });
+    engine.register_fn("set-mode-face!", |face: String| {
+        editor::with(|e| e.mode_face = face)
+    });
+    // A %{name} value for the current buffer, or every buffer if
+    // `global?`.
+    engine.register_fn(
+        "set-status-value!",
+        |name: String, value: String, global: bool| {
+            editor::with(|e| {
+                let id = if global { usize::MAX } else { e.current };
+                e.status_values.entry(id).or_default().insert(name, value);
+            })
+        },
+    );
 
     // Faces and highlights. Scheme decides what is highlighted; Rust draws it.
     engine.register_fn("set-face!", |name: String, spec: String| {
@@ -632,7 +694,14 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
-    engine.register_fn("popup-lines", || editor::with(|e| e.popup.clone()));
+    engine.register_fn("popup-lines", || {
+        editor::with(|e| {
+            e.popup
+                .iter()
+                .map(|l| l.iter().map(|(t, _)| t.as_str()).collect::<String>())
+                .collect::<Vec<_>>()
+        })
+    });
 
     // JSON and the framing LSP and DAP use (json.rs).
     engine.register_fn("json-decode", |text: String| {

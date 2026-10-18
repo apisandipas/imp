@@ -36,10 +36,25 @@ pub struct Editor {
     /// Scheme sources loaded so far: (name, path on disk if any, text), for
     /// documentation and jumping to definitions.
     pub sources: Vec<(String, Option<String>, String)>,
-    /// Lines drawn over the bottom of the window, above the status line.
-    pub popup: Vec<String>,
+    /// Lines drawn over the windows: at the bottom of the screen, or in a
+    /// box at the cursor (see `popup_at_cursor`).
+    pub popup: Vec<PopupLine>,
     /// The popup line drawn as selected, for completion menus.
     pub popup_selected: Option<usize>,
+    /// None puts the popup at the bottom; Some(dx) in a bordered box under
+    /// (or over) the cursor, shifted `dx` columns.
+    pub popup_at_cursor: Option<isize>,
+    /// Shown in the popup's top border; empty for none.
+    pub popup_title: String,
+    /// The status line formats (see render::status_line), for the focused
+    /// window and the others.
+    pub statusline: String,
+    pub statusline_inactive: String,
+    /// The face `%#mode#` uses in the status line, set with the mode.
+    pub mode_face: String,
+    /// Values for `%{name}` in the status line: per buffer, and global
+    /// ones under `usize::MAX`.
+    pub status_values: HashMap<usize, HashMap<String, String>>,
     pub quit: bool,
     /// Set by :kill-server: a daemon stops instead of detaching a client.
     pub kill_server: bool,
@@ -77,6 +92,9 @@ pub struct Editor {
     /// Highlight layers in drawing order: later layers draw over earlier ones.
     pub layers: Vec<Layer>,
 }
+
+/// One popup row: runs of (text, face); an empty face means the popup's.
+pub type PopupLine = Vec<(String, String)>;
 
 /// A window: a view of a buffer.
 #[derive(Debug, Clone)]
@@ -220,6 +238,7 @@ impl Editor {
         self.parked.remove(&id);
         self.syntax.remove(&id);
         self.signs.remove(&id);
+        self.status_values.remove(&id);
         true
     }
 

@@ -92,6 +92,10 @@
   (show-mode!))
 
 (define (show-mode!)
+  ;; %#mode# in the status line: status.mode.normal, .insert, .visual...
+  (set-mode-face! (string-append "status.mode."
+                                 (cond [(eq? *mode* 'cmdline) "command"]
+                                       [else (symbol->string *mode*)])))
   (set-mode-name!
    (string-append
     (cond

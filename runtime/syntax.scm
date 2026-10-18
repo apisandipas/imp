@@ -7,40 +7,7 @@
 ;;; here from node kinds, using two primitives: syntax-ancestors (the nodes
 ;;; around a position) and syntax-children (a node's children).
 
-;;; The theme (One Dark colors)
-
-(for-each
- (lambda (f) (set-face! (car f) (cadr f)))
- (list (list "syntax.keyword" "fg=#c678dd")
-       (list "syntax.string" "fg=#98c379")
-       (list "syntax.string.special" "fg=#56b6c2")
-       (list "syntax.escape" "fg=#56b6c2")
-       (list "syntax.comment" "fg=#7f848e italic")
-       (list "syntax.function" "fg=#61afef")
-       (list "syntax.function.macro" "fg=#56b6c2")
-       (list "syntax.type" "fg=#e5c07b")
-       (list "syntax.constructor" "fg=#e5c07b")
-       (list "syntax.module" "fg=#e5c07b")
-       (list "syntax.constant" "fg=#d19a66")
-       (list "syntax.number" "fg=#d19a66")
-       (list "syntax.boolean" "fg=#d19a66")
-       (list "syntax.variable.builtin" "fg=#e06c75")
-       (list "syntax.variable.parameter" "fg=#e06c75")
-       (list "syntax.property" "fg=#e06c75")
-       (list "syntax.label" "fg=#e06c75")
-       (list "syntax.tag" "fg=#e06c75")
-       (list "syntax.attribute" "fg=#e5c07b")
-       (list "syntax.operator" "fg=#56b6c2")
-       (list "syntax.punctuation" "fg=#848b98")
-       (list "syntax.punctuation.special" "fg=#c678dd")
-       (list "syntax.embedded" "fg=#e06c75")
-       ;; Markdown
-       (list "syntax.text.title" "fg=#e06c75 bold")
-       (list "syntax.text.literal" "fg=#98c379")
-       (list "syntax.text.uri" "fg=#61afef underline")
-       (list "syntax.text.reference" "fg=#61afef")
-       (list "syntax.text.emphasis" "italic")
-       (list "syntax.text.strong" "bold")))
+;;; The colors are faces named syntax.<capture>; theme.scm sets them.
 
 ;;; Languages by major mode
 

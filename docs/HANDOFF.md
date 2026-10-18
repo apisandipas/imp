@@ -97,6 +97,7 @@ runtime/                   loaded in this order
   dap.scm                  debugging: breakpoints, stepping, stack, variables
   mouse.scm                clicks, drag to select, the scroll wheel
   mcp.scm                  MCP: AI agents use the editor (opt-in)
+  theme.scm                themes (palettes -> every face), the status line
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -179,6 +180,10 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `(line text face)`); `status-text`. Scheme code should use
   `(set-sign-source! name priority signs)` (core.scm) instead, so sources
   share the column.
+- Look: `set-popup!` takes strings or rows of runs (`(text face)`
+  lists); `set-popup-place!` ("bottom", or "cursor" with a column shift,
+  and a title); `set-statusline!` (formats, see render.rs `status_line`),
+  `set-mode-face!`, `set-status-value!` (`%{name}` values).
 - Mouse: `screen-position` (`(window offset)` under a screen cell, offset
   #f on a status line); the server calls `(imp-handle-mouse action button
   x y)` for `ClientMsg::Mouse`.
@@ -242,6 +247,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Sockets: `(listen-socket! path on-open on-line on-close)`.
 - MCP: `(mcp-enable!)`, `(define-mcp-tool! "name" "description" schema
   handler)`.
+- Themes: `(define-theme! 'name 'parent palette-hash extra-faces)`,
+  `(load-theme! 'name)`, `:theme`; options `statusline` and
+  `statusline-inactive` (Vim-style `%` items, `%{name}` values).
 - Cross-file extension inside the runtime: a later runtime file can't be
   called by name from an earlier one, and a `define` there won't replace an
   earlier file's function for its callers. Use hooks, tables
@@ -327,6 +335,12 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
   Tools to read/edit/open/save buffers, the cursor, search, commands, ex
   commands, diagnostics and Scheme; agent changes show on the status line
   and in `:mcp-log`.
+- The look (the polish pass the owner asked for): themes `one-dark`
+  (default), `gruvbox-dark`, `one-light` via `:theme` / `SPC t T`; a status
+  line with a colored mode badge, file, modified dot, diagnostics counts,
+  major mode, position and percent; which-key and menus under a titled
+  rule with colored keys; LSP completion and hover in a bordered box at
+  the cursor.
 - The mouse: click to move (focusing the window), drag to select, wheel to
   scroll; `:set nomouse` turns it off (shift-drag still selects in most
   terminals while imp captures the mouse).
@@ -372,7 +386,10 @@ Conventions:
 - `tools/check.sh` runs tests, clippy and fmt and fails if any fail; gate
   every commit on it. `tools/parens.py FILE.scm` finds unbalanced brackets
   (Steel's parse errors don't say where). `tools/drive.py` drives the real
-  binary in a pty (see its docstring).
+  binary in a pty (see its docstring); `tools/shot.py` does the same and
+  saves the screen as a PNG, colors and all, for checking how things look.
+  Tests clear the theme's `normal` background (tests/common) so rows hold
+  only what was drawn; tests/theme.rs covers the theme.
 - Git: phase branches (`phase-1` ... each on top of the previous) are pushed
   to origin as work lands; `main` is left alone.
 - Current work and the detailed next steps are at the end of the latest

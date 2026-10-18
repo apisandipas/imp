@@ -83,9 +83,11 @@
   (run-hooks 'major-mode mode))
 
 (define (show-major-mode!)
-  (let ([name (symbol->string (major-mode))])
-    (set-mode-line-extra!
-     (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name))))
+  (let* ([name (symbol->string (major-mode))]
+         [short (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name)])
+    (set-mode-line-extra! short)
+    ;; %{major} in the status line, per buffer.
+    (set-status-value! "major" short #f)))
 
 ;; Turns minor mode `name` on or off in the current buffer.
 (define (minor-mode-on! name)

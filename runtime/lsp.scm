@@ -392,14 +392,7 @@
 
 ;;; Diagnostics
 
-(set-face! "diagnostic.error" "fg=#e06c75 underline")
-(set-face! "diagnostic.warning" "fg=#e5c07b underline")
-(set-face! "diagnostic.info" "underline")
-(set-face! "diagnostic.hint" "underline")
-(set-face! "sign.error" "fg=#e06c75 bold")
-(set-face! "sign.warning" "fg=#e5c07b bold")
-(set-face! "sign.info" "fg=#61afef")
-(set-face! "sign.hint" "fg=#7f848e")
+;; Faces diagnostic.error/warning/info/hint and sign.* come from theme.scm.
 
 (define (severity d) (or (jget d "severity") 1))
 
@@ -444,7 +437,18 @@
     (set-sign-source! 'diagnostics 10 (map (lambda (line)
                        (let ([d (hash-ref signs line)])
                          (list line (severity-letter d) (string-append "sign." (severity-name d)))))
-                     (hash-keys->list signs)))))
+                     (hash-keys->list signs))))
+  (show-diagnostic-counts!))
+
+;; %{diagnostics} in the status line: errors and warnings in the buffer.
+(define (show-diagnostic-counts!)
+  (let* ([ds (map caddr (buffer-diagnostics))]
+         [count (lambda (s) (length (filter (lambda (d) (= (severity d) s)) ds)))]
+         [errors (count 1)] [warnings (count 2)])
+    (set-status-value! "diagnostics"
+                       (string-append (if (> errors 0) (string-append "%#status.error#E" (number->string errors) "%* ") "")
+                                      (if (> warnings 0) (string-append "%#status.warning#W" (number->string warnings) "%* ") ""))
+                       #f)))
 
 (define (lsp-show-diagnostics!)
   (highlight-clear! "diagnostics")
@@ -623,7 +627,9 @@
                                 (let ([lines (hover-lines (jget result "contents"))])
                                   (if (null? lines)
                                       (message "no information here")
-                                      (show-popup! lines)))))))))
+                                      (begin
+                                        (show-popup! (take lines (min 20 (length lines))))
+                                        (set-popup-place! "cursor" 0 ""))))))))))
 
 ;;; Changing text from the server
 
@@ -919,9 +925,11 @@
 
 (define (menu-rows) (max 1 (min 10 (- (window-height) 2))))
 
-(define (menu-line c)
+;; A menu row: the label, then its detail dimmed.
+(define (menu-line c width)
   (let ([detail (cadr c)])
-    (string-append " " (pad-right (car c) 24) (if (equal? detail "") "" (string-append " " detail)) " ")))
+    (list (list (pad-right (car c) width) "")
+          (list (if (equal? detail "") "" (string-append "  " (clip detail 40))) "popup.detail"))))
 
 (define (draw-menu!)
   (let* ([n (length *menu-matches*)] [rows (menu-rows)]
@@ -929,7 +937,10 @@
          [top (max 0 (min (- i (- rows 1)) (- n rows)))]
          [top (max 0 (min top i))]
          [shown (take (list-tail *menu-matches* top) (min rows (- n top)))])
-    (set-popup! (map menu-line shown))
+    (let ([width (min 30 (apply max (cons 1 (map (lambda (c) (string-length (car c))) shown))))])
+      (set-popup! (map (lambda (c) (menu-line c width)) shown)))
+    ;; In a box at the cursor, its labels lined up with the word typed.
+    (set-popup-place! "cursor" (- -1 (- (cursor) *menu-start*)) "")
     (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
 
 ;; Narrows the menu to what has been typed since it opened; closes it

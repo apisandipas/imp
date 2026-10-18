@@ -30,7 +30,12 @@
          [top (max 0 (min (- *completion-index* (- rows 1)) (- n rows)))]
          [top (max 0 (min top *completion-index*))]
          [shown (take (list-tail *completion-matches* top) (min rows (- n top)))])
-    (set-popup! (if (null? shown) (list "  (no matches)") shown))
+    (set-popup! (if (null? shown)
+                    (list (list (list "  (no matches)" "popup.detail")))
+                    (map (lambda (c) (string-append " " c)) shown)))
+    ;; Titled with the prompt, without its colon.
+    (set-popup-place! "bottom" 0 (trim (let ([p (trim *cmdline-prompt*)])
+                                         (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))
     (set-popup-selected! (if (null? shown) -1 (- *completion-index* top)))
     (set-cmdline! (string-append *cmdline-prompt* *cmdline*
                                  (if (null? *completion-matches*)

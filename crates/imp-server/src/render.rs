@@ -92,19 +92,12 @@ pub fn frame(e: &mut Editor) -> Frame {
         })
         .collect();
 
-    // The popup covers the bottom rows above the message line.
     let area = height - 1;
-    let shown = e.popup.len().min(area);
-    let first = e.popup.len() - shown;
-    for (i, line) in e.popup[first..].iter().enumerate() {
-        let text = clip(line, width);
-        let pad = width.saturating_sub(text_width(&text));
-        let face = if e.popup_selected == Some(first + i) {
-            e.face("popup-selected")
-        } else {
-            e.face("popup")
-        };
-        rows[area - shown + i] = vec![Span::new(text + &" ".repeat(pad), face)];
+    if !e.popup.is_empty() {
+        match e.popup_at_cursor {
+            None => bottom_popup(e, &mut rows, area, width),
+            Some(dx) => cursor_popup(e, &mut rows, area, width, cursor, dx),
+        }
     }
 
     match &e.cmdline {
@@ -118,11 +111,183 @@ pub fn frame(e: &mut Editor) -> Frame {
         None => rows.push(vec![Span::new(clip(&e.status, width), Style::default())]),
     }
 
+    // The theme's "normal" face is under everything; with a background,
+    // rows are padded so it reaches the right edge.
+    let normal = e.face("normal");
+    if normal != Style::default() {
+        for row in rows.iter_mut() {
+            for span in row.iter_mut() {
+                span.style = span.style.over(normal);
+            }
+            let used: usize = row.iter().map(|s| text_width(&s.text)).sum();
+            if used < width && normal.bg.is_some() {
+                push(row, &" ".repeat(width - used), normal);
+            }
+        }
+    }
+
     Frame {
         rows,
         cursor: (cursor.0 as u16, cursor.1 as u16),
         cursor_shape: e.cursor_shape,
     }
+}
+
+/// A popup row `width` cells wide: its runs over the popup's face (or the
+/// selected one), padded.
+fn popup_row(e: &Editor, line: &[(String, String)], selected: bool, width: usize) -> Row {
+    let base = e.face(if selected { "popup-selected" } else { "popup" });
+    let mut row = Vec::new();
+    let mut used = 0;
+    for (text, face) in line {
+        let style = if face.is_empty() {
+            base
+        } else {
+            e.face(face).over(base)
+        };
+        let text = clip(text, width - used);
+        used += text_width(&text);
+        push(&mut row, &text, style);
+        if used >= width {
+            break;
+        }
+    }
+    if used < width {
+        push(&mut row, &" ".repeat(width - used), base);
+    }
+    row
+}
+
+/// A border row: `left`, the title (if any), `fill` to the width, `right`.
+fn border_row(e: &Editor, left: &str, right: &str, width: usize) -> Row {
+    let border = e.face("popup-border");
+    let mut row = Vec::new();
+    let inner = width.saturating_sub(text_width(left) + text_width(right));
+    push(&mut row, left, border);
+    let title = if e.popup_title.is_empty() {
+        String::new()
+    } else {
+        clip(&format!(" {} ", e.popup_title), inner.saturating_sub(1))
+    };
+    let mut used = 0;
+    if !title.is_empty() {
+        push(&mut row, "─", border);
+        push(&mut row, &title, e.face("popup-title").over(border));
+        used = 1 + text_width(&title);
+    }
+    push(&mut row, &"─".repeat(inner.saturating_sub(used)), border);
+    push(&mut row, right, border);
+    row
+}
+
+/// The popup across the bottom of the screen, above the message line,
+/// under a border with its title.
+fn bottom_popup(e: &Editor, rows: &mut [Row], area: usize, width: usize) {
+    let shown = e.popup.len().min(area.saturating_sub(1));
+    let first = e.popup.len() - shown;
+    let top = area - shown - 1;
+    rows[top] = border_row(e, "", "", width);
+    for (i, line) in e.popup[first..].iter().enumerate() {
+        rows[top + 1 + i] = popup_row(e, line, e.popup_selected == Some(first + i), width);
+    }
+}
+
+/// The popup in a box below the cursor, or above it when there is more
+/// room there, `dx` columns from it.
+fn cursor_popup(
+    e: &Editor,
+    rows: &mut [Row],
+    area: usize,
+    width: usize,
+    cursor: (usize, usize),
+    dx: isize,
+) {
+    let content = e
+        .popup
+        .iter()
+        .map(|l| l.iter().map(|(t, _)| text_width(t)).sum::<usize>())
+        .max()
+        .unwrap_or(0)
+        .max(text_width(&e.popup_title) + 3);
+    let inner = (content + 2).min(width.saturating_sub(2)).max(1);
+    let below = area.saturating_sub(cursor.1 + 1);
+    let above = cursor.1;
+    let fits_below = e.popup.len() + 2 <= below;
+    let (room, under) = if fits_below || below >= above {
+        (below, true)
+    } else {
+        (above, false)
+    };
+    if room < 3 {
+        return;
+    }
+    let shown = e.popup.len().min(room - 2);
+    let top = if under {
+        cursor.1 + 1
+    } else {
+        cursor.1 - shown - 2
+    };
+    let x =
+        (cursor.0 as isize + dx - 1).clamp(0, width.saturating_sub(inner + 2) as isize) as usize;
+    let border = e.face("popup-border");
+    rows[top] = splice(&rows[top], x, border_row(e, "╭", "╮", inner + 2), inner + 2);
+    for i in 0..shown {
+        let mut line = vec![(String::from(" "), String::new())];
+        line.extend(e.popup[i].iter().cloned());
+        let mut row = vec![Span::new("│", border)];
+        row.extend(popup_row(e, &line, e.popup_selected == Some(i), inner));
+        push(&mut row, "│", border);
+        rows[top + 1 + i] = splice(&rows[top + 1 + i], x, row, inner + 2);
+    }
+    let bottom = top + shown + 1;
+    let mut row = vec![Span::new("╰", border)];
+    push(&mut row, &"─".repeat(inner), border);
+    push(&mut row, "╯", border);
+    rows[bottom] = splice(&rows[bottom], x, row, inner + 2);
+}
+
+/// `row` with cells `x..x + width` replaced by `insert`. A wide char cut
+/// in half becomes spaces.
+fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for span in row {
+        for ch in span.text.chars() {
+            let w = ch.width().unwrap_or(0);
+            if at + w <= x {
+                push(&mut out, &ch.to_string(), span.style);
+            } else if at < x {
+                push(&mut out, &" ".repeat(x - at), span.style);
+            }
+            at += w;
+            if at >= x {
+                break;
+            }
+        }
+        if at >= x {
+            break;
+        }
+    }
+    if at < x {
+        push(&mut out, &" ".repeat(x - at), Style::default());
+    }
+    for span in insert {
+        push(&mut out, &span.text, span.style);
+    }
+    let end = x + width;
+    let mut at = 0;
+    for span in row {
+        for ch in span.text.chars() {
+            let w = ch.width().unwrap_or(0);
+            if at >= end {
+                push(&mut out, &ch.to_string(), span.style);
+            } else if at + w > end {
+                push(&mut out, &" ".repeat(at + w - end), span.style);
+            }
+            at += w;
+        }
+    }
+    out
 }
 
 struct DrawnWindow {
@@ -250,6 +415,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     }
     rows.push(status_line(
         e,
+        buffer_id,
         buffer,
         focused,
         cursor_line,
@@ -601,43 +767,206 @@ fn clip(text: &str, width: usize) -> String {
         .collect()
 }
 
+/// A window's status line, from the `statusline` format (or
+/// `statusline_inactive` for windows without focus), as Vim's: text, and
+///
+///   %m mode   %f buffer name   %F path   %M ● when modified
+///   %l line   %c column   %L lines   %p percent through the buffer
+///   %{name}   a value set from Scheme for the buffer (or globally); it
+///             may hold %# items itself
+///   %#face#   draw what follows with `face` (%#mode#: the mode's face)
+///   %*        back to the status line's own face
+///   %=        what follows goes on the right
+///   %%        a %
+///
+/// When it doesn't fit, `%{...}` values on the right go first, then the
+/// left is cut short; the end of the right side (the position) stays.
 fn status_line(
     e: &Editor,
+    buffer_id: usize,
     buffer: &Buffer,
     focused: bool,
     line: usize,
     col: usize,
     width: usize,
 ) -> Row {
-    let name = buffer.display_name();
-    let modified = if buffer.is_modified() { " [+]" } else { "" };
-    let left = if focused {
-        format!(" {} | {name}{modified}", e.mode_name)
-    } else {
-        format!(" {name}{modified}")
+    let base = e.face(if focused { "status" } else { "status-inactive" });
+    let format = match (
+        focused,
+        e.statusline.as_str(),
+        e.statusline_inactive.as_str(),
+    ) {
+        (true, "", _) => " %m | %f%M%=%{major}  %l:%c ",
+        (false, _, "") => " %f%M%=%l:%c ",
+        (true, f, _) => f,
+        (false, _, f) => f,
     };
-    // What shows, in order of priority when the window is narrow: the
-    // position, then the mode and buffer name, then the major mode.
-    let position = clip(&format!("{}:{} ", line + 1, col + 1), width);
-    let room = width.saturating_sub(text_width(&position));
-    let extra = if focused && !e.mode_line_extra.is_empty() {
-        format!("{}  ", e.mode_line_extra)
-    } else {
-        String::new()
+    let render = |drop_values: bool| {
+        let mut status = Status {
+            e,
+            buffer_id,
+            buffer,
+            focused,
+            line,
+            col,
+            base,
+            style: base,
+            left: Vec::new(),
+            right: Vec::new(),
+            on_right: false,
+            drop_values,
+        };
+        status.expand(format, 0);
+        (status.left, status.right)
     };
-    let (left, extra) = if text_width(&left) + text_width(&extra) < room {
-        (left, extra)
-    } else {
-        (clip(&left, room.saturating_sub(1)), String::new())
-    };
-    let gap = width.saturating_sub(text_width(&left) + text_width(&extra) + text_width(&position));
-    let s = format!("{left}{}{extra}{position}", " ".repeat(gap));
-    let face = if focused {
-        e.face("status")
-    } else {
-        e.face("status-inactive")
-    };
-    vec![Span::new(s, face)]
+    let row_width = |row: &Row| row.iter().map(|s| text_width(&s.text)).sum::<usize>();
+    let (mut left, mut right) = render(false);
+    if row_width(&left) + row_width(&right) > width {
+        (left, right) = render(true);
+    }
+    let right = clip_row_end(&right, width);
+    let room = width - row_width(&right);
+    let mut row = clip_row(&left, room);
+    let used = row_width(&row);
+    push(&mut row, &" ".repeat(room - used), base);
+    for span in right {
+        push(&mut row, &span.text, span.style);
+    }
+    row
+}
+
+/// The last `width` cells of a row.
+fn clip_row_end(row: &Row, width: usize) -> Row {
+    let total: usize = row.iter().map(|s| text_width(&s.text)).sum();
+    let mut skip = total.saturating_sub(width);
+    let mut out = Vec::new();
+    for span in row {
+        let mut text = String::new();
+        for ch in span.text.chars() {
+            let w = ch.width().unwrap_or(0);
+            if skip >= w && skip > 0 {
+                skip -= w;
+            } else if skip > 0 {
+                text.push(' ');
+                skip = 0;
+            } else {
+                text.push(ch);
+            }
+        }
+        push(&mut out, &text, span.style);
+    }
+    out
+}
+
+struct Status<'a> {
+    e: &'a Editor,
+    buffer_id: usize,
+    buffer: &'a Buffer,
+    focused: bool,
+    line: usize,
+    col: usize,
+    base: Style,
+    style: Style,
+    left: Row,
+    right: Row,
+    on_right: bool,
+    /// Leave out %{...} values on the right, to make room.
+    drop_values: bool,
+}
+
+impl Status<'_> {
+    fn add(&mut self, text: &str) {
+        let side = if self.on_right {
+            &mut self.right
+        } else {
+            &mut self.left
+        };
+        push(side, text, self.style);
+    }
+
+    fn value(&self, name: &str) -> Option<String> {
+        let values = &self.e.status_values;
+        values
+            .get(&self.buffer_id)
+            .and_then(|v| v.get(name))
+            .or_else(|| values.get(&usize::MAX).and_then(|v| v.get(name)))
+            .cloned()
+    }
+
+    fn expand(&mut self, format: &str, depth: usize) {
+        let mut chars = format.chars();
+        while let Some(c) = chars.next() {
+            if c != '%' {
+                self.add(&c.to_string());
+                continue;
+            }
+            match chars.next() {
+                Some('m') if self.focused => {
+                    let mode = self.e.mode_name.clone();
+                    self.add(&mode)
+                }
+                Some('m') => {}
+                Some('f') => self.add(&self.buffer.display_name()),
+                Some('F') => {
+                    let path = self
+                        .buffer
+                        .path()
+                        .map_or_else(|| self.buffer.display_name(), |p| p.display().to_string());
+                    self.add(&path)
+                }
+                Some('M') if self.buffer.is_modified() => self.add("●"),
+                Some('M') => {}
+                Some('l') => self.add(&(self.line + 1).to_string()),
+                Some('c') => self.add(&(self.col + 1).to_string()),
+                Some('L') => self.add(&self.buffer.line_count().to_string()),
+                Some('p') => {
+                    let pct = (self.line + 1) * 100 / self.buffer.line_count().max(1);
+                    self.add(&format!("{pct}%"))
+                }
+                Some('=') => self.on_right = true,
+                Some('*') => self.style = self.base,
+                Some('%') => self.add("%"),
+                Some('#') => {
+                    let name: String = chars.by_ref().take_while(|&c| c != '#').collect();
+                    let name = if name == "mode" {
+                        self.e.mode_face.clone()
+                    } else {
+                        name
+                    };
+                    self.style = if self.focused || !name.starts_with("status.mode") {
+                        self.e.face(&name).over(self.base)
+                    } else {
+                        self.base
+                    };
+                }
+                Some('{') => {
+                    let name: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                    if let Some(value) = self.value(&name) {
+                        if depth < 2 && !(self.drop_values && self.on_right) {
+                            self.expand(&value, depth + 1);
+                        }
+                    }
+                }
+                Some(other) => self.add(&format!("%{other}")),
+                None => self.add("%"),
+            }
+        }
+    }
+}
+
+/// The first `width` cells of a row.
+fn clip_row(row: &Row, width: usize) -> Row {
+    let mut out = Vec::new();
+    let mut used = 0;
+    for span in row {
+        let text = clip(&span.text, width - used);
+        used += text_width(&text);
+        push(&mut out, &text, span.style);
+        if used >= width {
+            break;
+        }
+    }
+    out
 }
 
 /// What is at screen cell (`x`, `y`): the window there, and the buffer

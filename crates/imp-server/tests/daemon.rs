@@ -92,18 +92,18 @@ fn clients_share_one_editor() {
     let socket = start_daemon("share");
     let mut a = Client::connect(&socket);
     a.keys(&["i", "h", "i", "<esc>"]);
-    assert!(a.until(|f| f.text_rows()[0] == "hi"));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi"));
     // A second client sees the same buffer.
     let mut b = Client::connect(&socket);
     b.keys(&["$"]);
-    assert!(b.until(|f| f.text_rows()[0] == "hi"));
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "hi"));
     b.keys(&["A", "!", "<esc>"]);
-    assert!(a.until(|f| f.text_rows()[0] == "hi!"));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi!"));
     // :q detaches b; a carries on.
     b.keys(&[":", "q", "!", "<ret>"]);
     assert!(!b.until(|_| false));
     a.keys(&["x"]);
-    assert!(a.until(|f| f.text_rows()[0] == "hi"));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi"));
     // :kill-server stops the daemon for everyone.
     a.keys(&[
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
@@ -120,14 +120,14 @@ fn clients_open_files_and_get_their_own_size() {
     std::fs::write(&path, "from disk\n").unwrap();
     let mut a = Client::connect(&socket);
     a.send(ClientMsg::Open(vec![path.display().to_string()]));
-    assert!(a.until(|f| f.text_rows()[0] == "from disk"));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "from disk"));
     let mut b = Client::connect(&socket);
     b.send(ClientMsg::Resize {
         width: 20,
         height: 4,
     });
     b.keys(&["l"]);
-    assert!(b.until(|f| f.rows.len() == 4 && f.text_rows()[0] == "from disk"));
+    assert!(b.until(|f| f.rows.len() == 4 && f.text_rows()[0].trim_end() == "from disk"));
     assert_eq!(a.screen.rows.len(), 6);
     a.keys(&[
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",

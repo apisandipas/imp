@@ -1244,10 +1244,10 @@ fn cmdline_shows_on_bottom_row_with_cursor() {
     let mut s = server("a\n");
     type_keys(&mut s, ":abc<left>");
     let f = s.frame();
-    assert_eq!(f.text_rows().last().unwrap(), ":abc");
+    assert_eq!(f.text_rows().last().unwrap().trim_end(), ":abc");
     assert_eq!(f.cursor, (3, 23));
     type_keys(&mut s, "X<home>Y");
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":YabXc");
+    assert_eq!(s.frame().text_rows().last().unwrap().trim_end(), ":YabXc");
 }
 
 #[test]
@@ -1255,15 +1255,15 @@ fn cmdline_history() {
     let mut s = server("1\n2\n3\n");
     type_keys(&mut s, ":2<ret>:3<ret>:eval 9<ret>:");
     s.keys(&["<up>"]);
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":eval 9");
+    assert_eq!(s.frame().text_rows().last().unwrap().trim_end(), ":eval 9");
     s.keys(&["<up>"]);
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":3");
+    assert_eq!(s.frame().text_rows().last().unwrap().trim_end(), ":3");
     s.keys(&["<down>", "<down>"]);
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":");
+    assert_eq!(s.frame().text_rows().last().unwrap().trim_end(), ":");
     // <up> matches what was typed.
     type_keys(&mut s, "2");
     s.keys(&["<up>"]);
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":2");
+    assert_eq!(s.frame().text_rows().last().unwrap().trim_end(), ":2");
     type_keys(&mut s, "<esc>/x<ret>/");
     s.keys(&["<up>"]);
     assert_eq!(s.frame().text_rows().last().unwrap(), "/x");
@@ -1273,7 +1273,10 @@ fn cmdline_history() {
 fn cmdline_tab_completes_commands() {
     let mut s = server("a\n");
     type_keys(&mut s, ":noh<tab>");
-    assert_eq!(s.frame().text_rows().last().unwrap(), ":nohlsearch");
+    assert_eq!(
+        s.frame().text_rows().last().unwrap().trim_end(),
+        ":nohlsearch"
+    );
 }
 
 #[test]

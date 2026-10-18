@@ -504,18 +504,7 @@
 ;;; (colors are #rrggbb, ANSI names such as bright-blue, or 0-255). Redefine
 ;;; a face in init.scm to restyle everything that uses it.
 
-(set-face! "status" "reverse")
-(set-face! "status-inactive" "bg=#3a3f4b")
-(set-face! "separator" "fg=#5c6370")
-(set-face! "nontext" "fg=blue")
-(set-face! "popup" "bg=#262a33")
-(set-face! "line-number" "fg=bright-black")
-(set-face! "line-number-current" "fg=yellow bold")
-(set-face! "cursorline" "bg=#2c313a")
-(set-face! "popup-selected" "bg=#3e4452 bold")
-(set-face! "visual" "bg=#3e4452")
-(set-face! "search" "fg=black bg=yellow")
-(set-face! "search-current" "fg=black bg=#ff8800")
+;; theme.scm, loaded last, sets every face the editor uses.
 
 ;; Layers draw in the order they are first used, later over earlier, so
 ;; declare them here in the order they should stack.
