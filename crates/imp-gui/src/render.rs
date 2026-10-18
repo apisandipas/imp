@@ -229,6 +229,13 @@ impl Renderer {
         m.max(1.0)
     }
 
+    /// Changes the font size; everything is laid out again.
+    pub fn set_font_size(&mut self, size: f32) {
+        self.metrics = Metrics::new(size, (size * 1.3).round());
+        self.cell = (self.measure_cell(), self.metrics.line_height);
+        self.rows.clear();
+    }
+
     /// How many cells fit in `width` x `height` pixels.
     pub fn grid(&self, width: u32, height: u32) -> (u16, u16) {
         (

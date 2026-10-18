@@ -1,0 +1,50 @@
+;;; A starter ~/.config/imp/init.scm. Everything here is ordinary Scheme
+;;; evaluated after the runtime loads, so any of it can be changed live:
+;;; edit, then SPC e b (eval buffer) or :source %. Look things up with
+;;; SPC h (describe key/function/option) and :help.
+
+;;; Options (:set works too, e.g. :set rnu)
+(set-option! 'number #t)
+(set-option! 'relativenumber #t)
+(set-option! 'cursorline #t)
+(set-option! 'tabstop 4)
+(set-option! 'shiftwidth 4)
+(set-option! 'clipboard "unnamedplus")   ; y and p use the system clipboard
+(set-option! 'which-key-delay 200)
+(set-option! 'mouse-scroll 5)
+
+;;; Look: one-dark (default), gruvbox-dark, one-light, or your own
+(load-theme! 'gruvbox-dark)
+
+;; A theme of your own: start from one, change a few colors and faces.
+(define-theme! 'midnight 'one-dark
+  (hash 'bg "#1a1b26" 'bg-alt "#16161e" 'blue "#7aa2f7")
+  (list (list "syntax.comment" "fg=#565f89 italic")))
+;; (load-theme! 'midnight)
+
+;;; Keys
+(define-key! 'normal "C-s" 'save-buffer)
+;; Tab cycles buffers (it replaces C-i, which is the same key in a terminal).
+(define-key! 'normal "<tab>" 'next-buffer)
+(define-key! 'normal "<s-tab>" 'previous-buffer)
+
+;; Your own command, on the leader and in M-x.
+(define-command! 'insert-date
+  (lambda (count)
+    (begin-change!)
+    (buffer-insert! (cursor) (without-final-newline (cadr (run-shell "date +%F" ""))))))
+(define-leader! "id" 'insert-date "insert date")
+
+;;; Per-language settings
+(add-hook! 'major-mode
+  (lambda (mode)
+    (when (member mode '(typescript-mode javascript-mode))
+      (set-local-option! 'tabstop 2)
+      (set-local-option! 'shiftwidth 2))))
+
+;;; Trim trailing whitespace on save, keeping the cursor where it was
+(add-hook! 'before-save
+  (lambda ()
+    (let ([line (current-line)] [col (current-col)])
+      (run-ex! "%s/\\s\\+$//e")
+      (set-cursor! (line-col->offset line col)))))

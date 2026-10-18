@@ -85,3 +85,37 @@ fn init_can_define_new_functions_and_macros() {
     s.keys(&["Q"]);
     assert_eq!(s.text(), "!!one two three\n");
 }
+
+/// examples/init.scm, the starter config, loads cleanly and does what it
+/// says.
+#[test]
+fn the_example_config_works() {
+    let config = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/init.scm");
+    let file = std::env::temp_dir().join(format!("imp-test-example-{}.ts", std::process::id()));
+    std::fs::write(&file, "let a = 1;   \nlet b = 2;\n").unwrap();
+    let mut s = Server::new(
+        Buffer::open(&file).unwrap(),
+        Options {
+            user_config: Some(config.into()),
+        },
+    )
+    .expect("runtime loads");
+    assert!(!s.status().starts_with("error"), "{}", s.status());
+    assert_eq!(s.eval("*theme*").unwrap(), "gruvbox-dark");
+    assert_eq!(s.eval("(option 'number)").unwrap(), "#true");
+    // TypeScript gets two-space indents.
+    s.eval("(set-major-mode! 'typescript-mode)").unwrap();
+    assert_eq!(s.eval("(option 'shiftwidth)").unwrap(), "2");
+    // SPC i d inserts the date; C-s saves, trimming trailing spaces.
+    s.keys(&["j", " ", "i", "d"]);
+    let today = std::process::Command::new("date")
+        .arg("+%F")
+        .output()
+        .unwrap();
+    let today = String::from_utf8(today.stdout).unwrap();
+    assert!(s.text().contains(today.trim()), "{}", s.text());
+    s.keys(&["C-s"]);
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert!(saved.starts_with("let a = 1;\n"), "{saved:?}");
+    let _ = std::fs::remove_file(file);
+}

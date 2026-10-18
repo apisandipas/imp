@@ -9,7 +9,10 @@
 //!                                     draw off-screen and save a PNG
 //!
 //! `--font FAMILY` (default monospace), `--font-file PATH` (repeatable),
-//! `--font-size PX` (default 15), `--name N` / `--socket PATH` as for imp.
+//! `--font-size PX` (default 15), `--scale F` (multiplies the size; default
+//! $IMP_GUI_SCALE or 1, on top of the display's own scale factor),
+//! `--name N` / `--socket PATH` as for imp. In the window, C-= and C--
+//! zoom and C-0 resets.
 
 mod keys;
 mod render;
@@ -38,10 +41,12 @@ struct Args {
     font: Option<String>,
     font_files: Vec<PathBuf>,
     font_size: f32,
+    scale: f32,
     files: Vec<PathBuf>,
 }
 
-const USAGE: &str = "usage: imp-gui [--font FAMILY] [--font-file PATH] [--font-size PX] [FILE...]
+const USAGE: &str =
+    "usage: imp-gui [--font FAMILY] [--font-file PATH] [--font-size PX] [--scale F] [FILE...]
        imp-gui --connect [--name NAME | --socket PATH] [FILE...]
        imp-gui --screenshot OUT.png [--grid COLSxROWS] [--keys KEYS] [FILE...]";
 
@@ -49,6 +54,10 @@ fn parse_args() -> Result<Args, String> {
     let mut args = Args {
         grid: (100, 30),
         font_size: 15.0,
+        scale: std::env::var("IMP_GUI_SCALE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0),
         ..Args::default()
     };
     let mut it = std::env::args_os().skip(1);
@@ -71,6 +80,7 @@ fn parse_args() -> Result<Args, String> {
                     .parse()
                     .map_err(|_| "bad --font-size")?
             }
+            Some("--scale") => args.scale = value("--scale")?.parse().map_err(|_| "bad --scale")?,
             Some("--grid") => {
                 let grid = value("--grid")?;
                 let (w, h) = grid.split_once('x').ok_or("--grid is COLSxROWS")?;
@@ -110,7 +120,7 @@ fn font(args: &Args) -> Font {
     Font {
         family: args.font.clone().unwrap_or_else(|| "monospace".into()),
         files: args.font_files.clone(),
-        size: args.font_size,
+        size: args.font_size * args.scale,
     }
 }
 
@@ -323,6 +333,7 @@ fn window(args: &Args) -> Result<(), String> {
         font: font(args),
         screen: Frame::default(),
         state: None,
+        zoom: 1.0,
         modifiers: Modifiers::default(),
         mouse: (0, 0),
         pressed: None,
@@ -347,6 +358,8 @@ struct App {
     font: Font,
     screen: Frame,
     state: Option<WindowState>,
+    /// C-= and C-- change this; the font size is multiplied by it.
+    zoom: f32,
     modifiers: Modifiers,
     /// The mouse's cell, and the button held down.
     mouse: (u16, u16),
@@ -394,12 +407,11 @@ impl App {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
-        let mut font = Font {
+        let font = Font {
             family: self.font.family.clone(),
             files: self.font.files.clone(),
-            size: self.font.size,
+            size: self.font.size * self.zoom * window.scale_factor() as f32,
         };
-        font.size *= window.scale_factor() as f32;
         let renderer = Renderer::new(device, queue, format, &font);
         let grid = renderer.grid(config.width, config.height);
         self.send(ClientMsg::Resize {
@@ -414,6 +426,20 @@ impl App {
             window,
         });
         Ok(())
+    }
+
+    /// Sets the zoom (1 is the starting size) and redraws at the new size.
+    fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(0.25, 8.0);
+        let Some(state) = &mut self.state else { return };
+        let scale = state.window.scale_factor() as f32;
+        state
+            .renderer
+            .set_font_size(self.font.size * self.zoom * scale);
+        // A new cell size: the grid changes even though the window doesn't.
+        state.grid = (0, 0);
+        let (w, h) = (state.config.width, state.config.height);
+        self.resize(w, h);
     }
 
     fn resize(&mut self, width: u32, height: u32) {
@@ -501,8 +527,16 @@ impl ApplicationHandler<ServerMsg> for App {
             WindowEvent::Resized(size) => self.resize(size.width, size.height),
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::ModifiersChanged(m) => self.modifiers = m,
+            WindowEvent::ScaleFactorChanged { .. } => self.set_zoom(self.zoom),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                if let Some(key) = keys::key_name(&event, &self.modifiers) {
+                let key = keys::key_name(&event, &self.modifiers);
+                match key.as_deref() {
+                    Some("C-=" | "C-+") => return self.set_zoom(self.zoom * 1.1),
+                    Some("C--") => return self.set_zoom(self.zoom / 1.1),
+                    Some("C-0") => return self.set_zoom(1.0),
+                    _ => {}
+                }
+                if let Some(key) = key {
                     self.send(ClientMsg::Key(key));
                 }
             }
