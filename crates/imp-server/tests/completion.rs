@@ -97,3 +97,11 @@ fn switch_buffer_by_name() {
     type_keys(&mut s, "<ret>");
     assert_eq!(s.text(), "scratch\n");
 }
+
+#[test]
+fn m_x_works_in_normal_mode() {
+    let mut s = server("(+ 1 1)\n");
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "eval buf<ret>");
+    assert_eq!(s.status(), "2");
+}
