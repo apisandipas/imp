@@ -1,11 +1,16 @@
 //! The client/server protocol.
 //!
+//! In-process the messages travel over channels; between processes (the
+//! daemon) as JSON, one message per line (`to_line`, `from_line`).
+//!
 //! Clients are dumb: they send raw input and draw whatever frame they are
 //! given. Modes, keymaps and layout all live in the server, where Scheme can
 //! reach them.
 
+use serde::{Deserialize, Serialize};
+
 /// Client -> server.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClientMsg {
     /// A key in imp's notation: `"j"`, `"<esc>"`, `"<ret>"`, `"C-c"`.
     Key(String),
@@ -13,10 +18,22 @@ pub enum ClientMsg {
         width: u16,
         height: u16,
     },
+    /// Open these files (absolute paths) in the editor, as `imp --connect
+    /// FILE...` asks the daemon to.
+    Open(Vec<String>),
+}
+
+/// One message as a line of JSON, without the line break.
+pub fn to_line<T: Serialize>(msg: &T) -> String {
+    serde_json::to_string(msg).expect("protocol messages always serialize")
+}
+
+pub fn from_line<'a, T: Deserialize<'a>>(line: &'a str) -> Result<T, String> {
+    serde_json::from_str(line).map_err(|e| e.to_string())
 }
 
 /// Server -> client.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ServerMsg {
     /// A whole screen: the first one, and after a resize.
     Frame(Frame),
@@ -27,7 +44,7 @@ pub enum ServerMsg {
 
 /// Changes to apply to the last frame: replaced rows, by index, and where
 /// the cursor is now.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Patch {
     pub rows: Vec<(u16, Row)>,
     pub cursor: (u16, u16),
@@ -51,7 +68,7 @@ impl Patch {
 ///
 /// Full frames are sent every time for now; incremental updates come later
 /// without changing who decides what.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Frame {
     pub rows: Vec<Row>,
     /// Screen position (column, row) of the cursor.
@@ -62,7 +79,7 @@ pub struct Frame {
 /// One screen row, as runs of text that share a style.
 pub type Row = Vec<Span>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Span {
     pub text: String,
     pub style: Style,
@@ -78,7 +95,7 @@ impl Span {
 }
 
 /// How text looks. `None` colors mean the terminal's default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Style {
     pub fg: Option<Color>,
     pub bg: Option<Color>,
@@ -130,7 +147,7 @@ impl Style {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Color {
     /// 0-15 are the terminal's ANSI colors, 16-255 the fixed 256-color cube.
     Indexed(u8),
@@ -201,6 +218,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn messages_round_trip_as_lines() {
+        let msg = ServerMsg::Frame(Frame {
+            rows: vec![vec![Span::new(
+                "hi\nthere",
+                Style {
+                    fg: Some(Color::Rgb(1, 2, 3)),
+                    ..Style::default()
+                },
+            )]],
+            cursor: (1, 2),
+            cursor_shape: CursorShape::Bar,
+        });
+        let line = to_line(&msg);
+        assert!(!line.contains('\n'));
+        assert_eq!(from_line::<ServerMsg>(&line).unwrap(), msg);
+        let key = ClientMsg::Key("<esc>".into());
+        assert_eq!(from_line::<ClientMsg>(&to_line(&key)).unwrap(), key);
+    }
+
+    #[test]
     fn diffs_apply() {
         let a = Frame {
             rows: vec![vec![Span::new("a", Style::default())], vec![]],
@@ -232,7 +269,7 @@ mod tests {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CursorShape {
     #[default]
     Block,

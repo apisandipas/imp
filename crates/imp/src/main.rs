@@ -1,11 +1,18 @@
 //! `imp`: the terminal client.
 //!
 //! It turns terminal events into keys, sends them to the server and draws the
-//! frames that come back. It knows nothing about modes or keymaps. For now
-//! the server runs on a thread in this process; the channels between them are
-//! where a socket goes later.
+//! frames that come back. It knows nothing about modes or keymaps.
+//!
+//!   imp [FILE...]                  the editor in this terminal (in-process)
+//!   imp --daemon [--name N]        an editor with no terminal, on a socket
+//!   imp --connect [FILE...]        attach this terminal to the daemon
+//!   imp --connect --via CMD        ... through CMD's stdin/stdout, e.g.
+//!                                  --via 'ssh host imp --bridge'
+//!   imp --bridge                   relay stdin/stdout to the local daemon
+//!
+//! `--socket PATH` picks a socket instead of the named one.
 
-use std::io::{self, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -18,18 +25,91 @@ use crossterm::style::{
 };
 use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{execute, queue};
-use imp_core::{Buffer, ClientMsg, Color, CursorShape, Frame, ServerMsg, Style};
+use imp_core::{protocol, Buffer, ClientMsg, Color, CursorShape, Frame, ServerMsg, Style};
 use imp_server::Options;
 
+/// What the command line asked for.
+#[derive(Debug, Default)]
+struct Args {
+    daemon: bool,
+    connect: bool,
+    bridge: bool,
+    name: String,
+    socket: Option<PathBuf>,
+    via: Option<String>,
+    files: Vec<PathBuf>,
+}
+
+fn parse_args() -> Result<Args, String> {
+    let mut args = Args {
+        name: "default".into(),
+        ..Args::default()
+    };
+    let mut it = std::env::args_os().skip(1);
+    while let Some(arg) = it.next() {
+        let mut value = |what: &str| {
+            it.next()
+                .map(|v| v.to_string_lossy().into_owned())
+                .ok_or(format!("{what} needs a value"))
+        };
+        match arg.to_str() {
+            Some("--daemon") => args.daemon = true,
+            Some("--connect") => args.connect = true,
+            Some("--bridge") => args.bridge = true,
+            Some("--name") => args.name = value("--name")?,
+            Some("--socket") => args.socket = Some(PathBuf::from(value("--socket")?)),
+            Some("--via") => args.via = Some(value("--via")?),
+            Some("--help" | "-h") => {
+                println!("{}", USAGE);
+                std::process::exit(0);
+            }
+            Some(flag) if flag.starts_with("--") => {
+                return Err(format!("unknown option {flag}\n{USAGE}"))
+            }
+            _ => args.files.push(PathBuf::from(arg)),
+        }
+    }
+    Ok(args)
+}
+
+const USAGE: &str = "usage: imp [FILE...]
+       imp --daemon [--name NAME | --socket PATH]
+       imp --connect [--name NAME | --socket PATH | --via COMMAND] [FILE...]
+       imp --bridge [--name NAME | --socket PATH]";
+
 fn main() {
-    let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
-    if let Err(e) = run(paths) {
+    let result = parse_args().and_then(|args| {
+        let socket = || {
+            args.socket
+                .clone()
+                .unwrap_or_else(|| imp_server::daemon::socket_path(&args.name))
+        };
+        if args.daemon {
+            eprintln!("imp: daemon on {}", socket().display());
+            imp_server::daemon::run(&socket(), options())
+        } else if args.bridge {
+            bridge(&socket())
+        } else if args.connect {
+            connect(&args, &socket())
+        } else {
+            standalone(args.files)
+        }
+    });
+    if let Err(e) = result {
         eprintln!("imp: {e}");
         std::process::exit(1);
     }
 }
 
-fn run(paths: Vec<PathBuf>) -> Result<(), String> {
+fn options() -> Options {
+    Options {
+        user_config: imp_server::user_config_path(),
+    }
+}
+
+/// The editor in this process: the server on a thread, talking over
+/// channels.
+fn standalone(paths: Vec<PathBuf>) -> Result<(), String> {
     let buffers = paths
         .iter()
         .map(|path| Buffer::open(path).map_err(|e| format!("{}: {e}", path.display())))
@@ -37,19 +117,111 @@ fn run(paths: Vec<PathBuf>) -> Result<(), String> {
 
     let (to_server, from_client) = mpsc::channel();
     let (to_client, from_server) = mpsc::channel();
-    let server = thread::spawn(move || {
-        imp_server::run(
-            buffers,
-            Options {
-                user_config: imp_server::user_config_path(),
-            },
-            from_client,
-            to_client,
-        )
+    let server = thread::spawn(move || imp_server::run(buffers, options(), from_client, to_client));
+
+    let result = terminal_session(to_server, from_server, Vec::new());
+    result?;
+    match server.join() {
+        Ok(r) => r,
+        Err(_) => Err("server thread panicked".to_string()),
+    }
+}
+
+/// Attaches to a daemon over its socket, or over `--via`'s stdio.
+fn connect(args: &Args, socket: &std::path::Path) -> Result<(), String> {
+    let (reader, writer): (Box<dyn Read + Send>, Box<dyn Write + Send>) = match &args.via {
+        Some(command) => {
+            let mut child = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("{command}: {e}"))?;
+            let out = child.stdout.take().expect("piped");
+            let input = child.stdin.take().expect("piped");
+            (Box::new(out), Box::new(input))
+        }
+        None => {
+            let stream = std::os::unix::net::UnixStream::connect(socket).map_err(|e| {
+                format!(
+                    "can't reach a daemon on {} ({e}); start one with imp --daemon",
+                    socket.display()
+                )
+            })?;
+            let write_half = stream.try_clone().map_err(|e| e.to_string())?;
+            (Box::new(stream), Box::new(write_half))
+        }
+    };
+
+    // Lines from the daemon become ServerMsgs; ClientMsgs become lines.
+    let (to_server, outgoing) = mpsc::channel::<ClientMsg>();
+    let (incoming, from_server) = mpsc::channel::<ServerMsg>();
+    thread::spawn(move || {
+        let mut w = io::BufWriter::new(writer);
+        for msg in outgoing {
+            if writeln!(w, "{}", protocol::to_line(&msg)).is_err() || w.flush().is_err() {
+                break;
+            }
+        }
+    });
+    thread::spawn(move || {
+        for line in BufReader::new(reader).lines().map_while(Result::ok) {
+            match protocol::from_line::<ServerMsg>(&line) {
+                Ok(msg) => {
+                    if incoming.send(msg).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
     });
 
+    // Paths are resolved here, where the user typed them.
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let files: Vec<String> = args
+        .files
+        .iter()
+        .map(|p| cwd.join(p).display().to_string())
+        .collect();
+    let first = if files.is_empty() {
+        Vec::new()
+    } else {
+        vec![ClientMsg::Open(files)]
+    };
+    terminal_session(to_server, from_server, first)
+}
+
+/// Relays stdin to the daemon's socket and its replies to stdout, so a
+/// client elsewhere can use `--via 'ssh host imp --bridge'`.
+fn bridge(socket: &std::path::Path) -> Result<(), String> {
+    let stream = std::os::unix::net::UnixStream::connect(socket)
+        .map_err(|e| format!("can't reach a daemon on {}: {e}", socket.display()))?;
+    let mut to_daemon = stream.try_clone().map_err(|e| e.to_string())?;
+    let mut from_daemon = stream;
+    let up = thread::spawn(move || {
+        let _ = io::copy(&mut io::stdin().lock(), &mut to_daemon);
+        let _ = to_daemon.shutdown(std::net::Shutdown::Write);
+    });
+    let mut stdout = io::stdout().lock();
+    let _ = io::copy(&mut from_daemon, &mut stdout);
+    drop(up);
+    Ok(())
+}
+
+/// Runs the terminal: raw mode, the alternate screen, and the loop that
+/// sends keys and draws frames. `first` goes to the server after the size.
+fn terminal_session(
+    to_server: mpsc::Sender<ClientMsg>,
+    from_server: mpsc::Receiver<ServerMsg>,
+    first: Vec<ClientMsg>,
+) -> Result<(), String> {
     let (width, height) = terminal::size().map_err(|e| e.to_string())?;
     let _ = to_server.send(ClientMsg::Resize { width, height });
+    for msg in first {
+        let _ = to_server.send(msg);
+    }
 
     let mut out = io::stdout();
     terminal::enable_raw_mode().map_err(|e| e.to_string())?;
@@ -60,12 +232,7 @@ fn run(paths: Vec<PathBuf>) -> Result<(), String> {
     let _ = execute!(out, SetCursorStyle::DefaultUserShape, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
     drop(to_server);
-
-    result?;
-    match server.join() {
-        Ok(r) => r,
-        Err(_) => Err("server thread panicked".to_string()),
-    }
+    result
 }
 
 fn event_loop(

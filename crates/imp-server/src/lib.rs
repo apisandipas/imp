@@ -7,6 +7,8 @@
 
 mod api;
 mod clipboard;
+#[cfg(unix)]
+pub mod daemon;
 mod editor;
 mod events;
 mod files;
@@ -152,6 +154,9 @@ impl Server {
                     SteelVal::StringV(text.into()),
                 ],
             ),
+            // Daemon events are handled by its own loop (daemon.rs).
+            Event::FromClient(_, msg) => self.handle(msg),
+            Event::Connected(..) | Event::Disconnected(_) => {}
             Event::JobExit(id) => {
                 let code = editor::with(|e| e.background.job_finished(id));
                 self.call(
@@ -175,6 +180,13 @@ impl Server {
 
     pub fn handle(&mut self, msg: ClientMsg) {
         match msg {
+            ClientMsg::Open(paths) => {
+                let list = paths
+                    .into_iter()
+                    .map(|p| SteelVal::StringV(p.into()))
+                    .collect();
+                self.call("imp-open-files", vec![SteelVal::ListV(list)])
+            }
             ClientMsg::Key(key) => self.call("imp-handle-key", vec![SteelVal::StringV(key.into())]),
             ClientMsg::Resize { width, height } => editor::with(|e| {
                 e.width = width;
@@ -219,6 +231,25 @@ impl Server {
 
     pub fn should_quit(&self) -> bool {
         editor::with(|e| e.quit)
+    }
+
+    /// Whether quitting should stop a daemon rather than detach a client.
+    pub fn kill_requested(&self) -> bool {
+        editor::with(|e| e.kill_server)
+    }
+
+    /// Clears the quit request, as after a daemon client detaches.
+    pub fn clear_quit(&mut self) {
+        editor::with(|e| e.quit = false);
+    }
+
+    /// Sets the screen size used for the next frame (each daemon client
+    /// has its own).
+    pub fn set_size(&mut self, width: u16, height: u16) {
+        editor::with(|e| {
+            e.width = width;
+            e.height = height;
+        });
     }
 
     pub fn text(&self) -> String {

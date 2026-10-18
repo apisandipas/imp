@@ -41,6 +41,8 @@ pub struct Editor {
     /// The popup line drawn as selected, for completion menus.
     pub popup_selected: Option<usize>,
     pub quit: bool,
+    /// Set by :kill-server: a daemon stops instead of detaching a client.
+    pub kill_server: bool,
     /// First buffer line shown in the current window.
     pub scroll: usize,
     /// First display column shown in the current window (without wrap).

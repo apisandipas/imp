@@ -502,6 +502,13 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
+    // Stops a daemon (for every client). Standalone, the same as quit!.
+    engine.register_fn("kill-server!", || {
+        editor::with(|e| {
+            e.kill_server = true;
+            e.quit = true;
+        })
+    });
     // Lines shown above the status line until cleared, for output longer
     // than the status line (:registers) and menus (which-key).
     engine.register_fn("set-cmdline!", |text: String, col: isize| {

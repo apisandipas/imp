@@ -12,12 +12,18 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use imp_core::ClientMsg;
+use imp_core::{ClientMsg, ServerMsg};
 
 /// Everything the server's loop reacts to.
 #[derive(Debug)]
 pub enum Event {
+    /// From the only client, when the server runs in-process.
     Client(ClientMsg),
+    /// From client `id` of a daemon.
+    FromClient(u64, ClientMsg),
+    /// A daemon client connected; frames for it go to the sender.
+    Connected(u64, Sender<ServerMsg>),
+    Disconnected(u64),
     Timer(u64),
     /// Output from a job: (job, stream, text). Stream is "stdout" or
     /// "stderr".

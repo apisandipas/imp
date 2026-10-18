@@ -2719,6 +2719,9 @@
 (define-ex! '("x" "xit" "exit")
   (lambda (ex)
     (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
+;; In a daemon, stops it for every client (:q only detaches one).
+(define-ex! '("kill-server") (lambda (ex) (kill-server!)))
+
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
 
@@ -2837,6 +2840,9 @@
             (go-to-buffer! r)
             (when new? (mark-buffer-seen! r) (run-hooks 'buffer-open)))
           r))))
+
+;; Called when a daemon client asks for files (imp --connect FILE...).
+(define (imp-open-files paths) (for-each open-file! paths))
 
 (define *seen-buffers* (hash))
 (define (buffer-seen? id) (hash-contains? *seen-buffers* id))
