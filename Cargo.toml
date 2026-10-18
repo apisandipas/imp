@@ -32,6 +32,8 @@ wasmtime = { version = "38", default-features = false, features = ["cranelift", 
 yrs = "0.28"
 base64 = "0.22"
 kdl = { version = "6", default-features = false, features = ["span"] }
+vt100 = "0.17"
+portable-pty = "0.9"
 
 # Steel's prelude takes ~1s to load in a debug build, and every test starts a
 # server. Optimizing dependencies (not our own crates) keeps tests fast while

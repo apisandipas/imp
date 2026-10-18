@@ -38,6 +38,10 @@ pub enum Event {
     /// A line from a connection, without its line break.
     SocketLine(u64, String),
     SocketClosed(u64),
+    /// Output from a terminal buffer's program (term.rs).
+    TermOutput(u64, Vec<u8>),
+    /// A terminal's program exited: (terminal, exit code).
+    TermExit(u64, i32),
     /// A background parse finished: (buffer, buffer version it parsed,
     /// tree).
     Parsed(usize, u64, tree_sitter::Tree),

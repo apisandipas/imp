@@ -768,6 +768,65 @@ pub fn register(engine: &mut Engine) {
             Err(err) => SteelVal::StringV(err.into()),
         })
     });
+    // Terminal buffers (term.rs). term-start! returns the terminal's id,
+    // or the error as a string.
+    engine.register_fn(
+        "term-start!",
+        |command: String, cwd: String, rows: isize, cols: isize| {
+            editor::with(|e| match e.background.sender.clone() {
+                Some(sender) => {
+                    match crate::term::spawn(
+                        &command,
+                        &cwd,
+                        clamp(rows) as u16,
+                        clamp(cols) as u16,
+                        sender,
+                    ) {
+                        Ok(id) => SteelVal::IntV(id as isize),
+                        Err(err) => SteelVal::StringV(err.into()),
+                    }
+                }
+                None => SteelVal::StringV("no event loop".into()),
+            })
+        },
+    );
+    engine.register_fn("term-send!", |id: isize, text: String| {
+        crate::term::send(clamp(id) as u64, &text)
+    });
+    engine.register_fn("term-resize!", |id: isize, rows: isize, cols: isize| {
+        crate::term::resize(clamp(id) as u64, clamp(rows) as u16, clamp(cols) as u16)
+    });
+    engine.register_fn(
+        "term-kill!",
+        |id: isize| crate::term::kill(clamp(id) as u64),
+    );
+    engine.register_fn("term-application-cursor?", |id: isize| {
+        crate::term::application_cursor(clamp(id) as u64)
+    });
+    // Draws terminal `id` into buffer `buf`; returns its cursor's offset.
+    engine.register_fn("term-render!", |id: isize, buf: isize| {
+        editor::with(|e| {
+            let buf = clamp(buf);
+            let mut faces = std::mem::take(&mut e.faces);
+            let mut layers = e.buffer_layers.remove(&buf).unwrap_or_default();
+            let i = match layers.iter().position(|l| l.name == "term") {
+                Some(i) => i,
+                None => {
+                    layers.push(editor::Layer {
+                        name: "term".into(),
+                        ..Default::default()
+                    });
+                    layers.len() - 1
+                }
+            };
+            let at = e.buffer_and_cursor_mut(buf).and_then(|(buffer, _)| {
+                crate::term::render(clamp(id) as u64, buffer, &mut faces, &mut layers[i])
+            });
+            e.faces = faces;
+            e.buffer_layers.insert(buf, layers);
+            at.map(|a| a as isize)
+        })
+    });
     // A connection id, or the error as a string.
     engine.register_fn("socket-connect!", |path: String| {
         editor::with(|e| match e.background.connect(Path::new(&path)) {

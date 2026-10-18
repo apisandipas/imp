@@ -241,3 +241,20 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     `.`: run-shell pipes stdin, and rg then searches stdin. Without rg it
     falls back to `grep -rnI`.
   - Fixed `write_atomic` temporary names colliding between threads.
+- 6.5 Terminal buffers: done (`src/term.rs`, `runtime/term.scm`).
+  - Mechanics:
+    - portable-pty runs the program and vt100 keeps the screen;
+    - output events are coalesced into a redraw every 15 ms;
+    - a redraw changes only the differing text (the CRDT's
+      `common_ends`), and colors become `term:*` faces on a per-buffer
+      layer.
+  - History: vt100's `scrollback_len()` is its capacity, not its use. Each
+    redraw moves the lines that scrolled off into a history of our own (up
+    to 10,000 lines) and clears vt100's scrollback.
+  - The exit is reported from a waiter thread after the output drains, so
+    `[process exited N]` comes last, with the real code.
+  - Keys: the TERMINAL state is a `define-state!`, so every key, `<esc>`
+    and `:` included, goes to the program. `C-\ C-n` leaves; `i`, `a`, `I`
+    or `A` returns.
+  - Not done: mouse reporting to the program, bracketed paste, and
+    resizing for windows other than the current one.

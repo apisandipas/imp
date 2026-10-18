@@ -99,8 +99,7 @@ fn apply_edits(buffer: &mut imp_core::Buffer, cursor: &mut usize, edits: &[Edit]
 
 /// Bytes `old` and `new` share at the start and (not overlapping) at the
 /// end, on char boundaries.
-#[cfg_attr(not(feature = "crdt"), allow(dead_code))]
-fn common_ends(old: &str, new: &str) -> (usize, usize) {
+pub(crate) fn common_ends(old: &str, new: &str) -> (usize, usize) {
     let prefix = old
         .char_indices()
         .zip(new.chars())

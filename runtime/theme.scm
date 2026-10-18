@@ -49,6 +49,7 @@
      (list "status.mode.replace" (mode-face 'red))
      (list "status.mode.command" (mode-face 'yellow))
      (list "status.mode.emacs" (mode-face 'orange))
+     (list "status.mode.terminal" (mode-face 'cyan))
      (list "status.file" "bold")
      (list "status.modified" (fg 'yellow))
      (list "status.dim" (fg 'dim))

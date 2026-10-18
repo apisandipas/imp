@@ -22,6 +22,7 @@ mod scan;
 mod search;
 mod shell;
 mod syntax;
+mod term;
 mod wasm;
 
 use std::path::{Path, PathBuf};
@@ -65,6 +66,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("org.scm", include_str!("../../../runtime/org.scm")),
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
     ("project.scm", include_str!("../../../runtime/project.scm")),
+    ("term.scm", include_str!("../../../runtime/term.scm")),
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
@@ -215,6 +217,14 @@ impl Server {
                 editor::with(|e| e.background.connection_closed(conn));
                 self.call("imp-socket-closed", vec![SteelVal::IntV(conn as isize)])
             }
+            Event::TermOutput(id, bytes) => {
+                term::feed(id, &bytes);
+                self.call("imp-term-output", vec![SteelVal::IntV(id as isize)])
+            }
+            Event::TermExit(id, code) => self.call(
+                "imp-term-exit",
+                vec![SteelVal::IntV(id as isize), SteelVal::IntV(code as isize)],
+            ),
             Event::JobExit(id) => {
                 let code = editor::with(|e| e.background.job_finished(id));
                 self.call(
