@@ -65,6 +65,10 @@ pub struct Editor {
     pub tab_width: usize,
     /// Parse trees, by buffer id, for buffers with a language.
     pub syntax: HashMap<usize, crate::syntax::Syntax>,
+    /// Gutter signs by buffer id: line -> (text, face). A buffer with any
+    /// gets a two-cell column before its line numbers (diagnostics,
+    /// breakpoints).
+    pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// Timers and jobs, which report back through the server's events.
     pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
@@ -215,6 +219,7 @@ impl Editor {
         }
         self.parked.remove(&id);
         self.syntax.remove(&id);
+        self.signs.remove(&id);
         true
     }
 

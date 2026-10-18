@@ -9,12 +9,17 @@ pub fn server(text: &str) -> Server {
     Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads")
 }
 
-/// Splits "dw" into ["d", "w"] and leaves "<esc>"-style names whole.
+/// Splits "dw" into ["d", "w"] and leaves "<esc>"-style names whole;
+/// "<C-o>" is the key "C-o".
 pub fn keys(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '<' && chars.peek().is_some_and(|c| c.is_ascii_lowercase()) {
+        let rest: String = chars.clone().take(4).collect();
+        if c == '<' && (rest.starts_with("C-") || rest.starts_with("M-")) && rest.ends_with('>') {
+            out.push(rest[..3].to_string());
+            chars.nth(3);
+        } else if c == '<' && chars.peek().is_some_and(|c| c.is_ascii_lowercase()) {
             let mut name = String::from("<");
             for c in chars.by_ref() {
                 name.push(c);

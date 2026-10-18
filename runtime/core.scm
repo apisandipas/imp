@@ -207,7 +207,8 @@
 ;;; and the others still run. Hooks run by the editor: startup (after
 ;;; init.scm), after-change, before-save, after-save, post-command,
 ;;; insert-enter, insert-leave, mode-change (Vim states), major-mode,
-;;; buffer-enter, buffer-open, option-change.
+;;; buffer-enter, buffer-open, buffer-kill (with the id, before it goes),
+;;; option-change.
 
 (define *hooks* (hash))
 
@@ -478,7 +479,7 @@
 
 ;; Layers draw in the order they are first used, later over earlier, so
 ;; declare them here in the order they should stack.
-(for-each highlight-clear! '("syntax" "search" "visual"))
+(for-each highlight-clear! '("syntax" "diagnostics" "search" "visual"))
 
 ;;; Environment
 

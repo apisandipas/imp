@@ -88,68 +88,31 @@ Done and committed on `phase-4`:
   bytes), `path->uri`, `uri->path`, `find-executable`, `absolute-path`.
   Jobs are killed when the server drops.
 
-### Next: `runtime/lsp.scm` (4.2), planned in detail
-
-Add it to `RUNTIME` in `lib.rs` after `syntax.scm`.
-
-- **Config**: `(define-language-server! 'rust-mode "rust-analyzer"
-  '("Cargo.toml" ".git") "rust")` keyed by *major mode* (python has no
-  tree-sitter language), with the LSP languageId. Defaults: rust-analyzer;
-  `typescript-language-server --stdio` for typescript/tsx/javascript
-  (languageIds typescript, typescriptreact, javascript); `nil` for nix;
-  `marksman server` for markdown; `pyright-langserver --stdio` for python.
-  Start only if `find-executable` finds it and option `lsp` is on.
-  `rust-analyzer` and `nil` are installed on the owner's machine.
-- **Server state**, keyed by (mode . root): job id (started with input #f
-  so stdin stays open), receive buffer string, next request id, pending
-  `id -> callback` hash, capabilities, position encoding, initialized flag,
-  queue of messages sent before `initialized`.
-- **Root**: walk up from the file's directory for the markers.
-- **initialize**: offer `general.positionEncodings ["utf-32","utf-16"]`
-  (imp offsets are chars = utf-32); honor the server's choice; utf-16 needs
-  converting columns via the line text (chars > #xFFFF count 2). Then
-  `initialized`, then flush the queue.
-- **Sync**: `didOpen` when a buffer gets its major mode (hook
-  `major-mode`/`buffer-open`); `didChange` with the full text, debounced
-  ~200 ms with `run-after!`/`cancel-timer!` from the `after-change` hook;
-  `didSave` from `after-save`; `didClose` from `:bd` (add a
-  `buffer-kill` hook there).
-- **Incoming**: `lsp-take-message` in a loop on job output. Responses (id +
-  result/error) go to the pending callback. Server requests (method + id)
-  get replies: `workspace/configuration` → list of nulls,
-  `client/registerCapability` and `window/workDoneProgress/create` → null,
-  `workspace/applyEdit` → apply, `{applied: true}`. Notifications:
-  `textDocument/publishDiagnostics`, `window/showMessage` (message),
-  `$/progress` (message with percentage).
-- **Diagnostics**: stored per URI; a `diagnostics` highlight layer for the
-  current buffer, refreshed on `buffer-enter` (faces `diagnostic.error`,
-  `.warning`, `.info`, `.hint`: underline plus color); the message shown on
-  the status line when the cursor is on a diagnostic's line (post-command
-  hook, only if the status is empty); `]d` `[d`; `:diagnostics` through
-  completing-read to jump. Gutter signs need a small renderer addition
-  (signs per buffer, a 2-cell column) — do it if cheap.
-- **Commands**, in an `lsp-mode` minor mode turned on for attached buffers
-  (minor-mode keymaps win over major ones): `K` hover (popup of the
-  markdown text), `gd` definition (Location, Location[] or LocationLink[]:
-  jump, or completing-read if several), `gr` references
-  (completing-read of "file:line: text"), `SPC c r` rename (prompt prefilled
-  with the word; apply WorkspaceEdit `changes` or `documentChanges` across
-  files, edits sorted last-first, one undo group per buffer), `SPC c a` code
-  actions (range = cursor or selection; Command → `workspace/executeCommand`,
-  CodeAction with edit → apply, with only data → `codeAction/resolve`),
-  `SPC c f` format (TextEdit[] with tabSize/insertSpaces), `SPC c` group in
-  leader.scm-style `define-leader!`.
-- **Completion** in insert mode: `C-x C-o` and `C-n`/`C-p` (buffer words
-  when no server), plus automatic after identifier chars or trigger chars
-  (option, ~150 ms delay). A menu in the popup; `C-n C-p <tab>` move, `<ret>`
-  accepts (textEdit, else insertText, else label; strip snippet
-  placeholders `${1:x}` → x, `$0` → ""), `<esc>` closes; other keys type
-  and refilter. Use `*key-interceptor*` and fall through to
-  `insert-mode-key!`.
-- **Tests**: a scripted fake server in Python (`tests/fake_lsp.py`, skip the
-  tests if `python3` is missing) answering initialize, hover, definition,
-  references, rename, formatting, codeAction, completion, and publishing a
-  diagnostic on didOpen/didChange. Also try rust-analyzer by hand in a pty.
+- **4.2 LSP** (`runtime/lsp.scm`, tests in `tests/lsp.rs` against the
+  scripted `tests/fake_lsp.py`): servers per major mode
+  (`define-language-server!`), one per (command, root); initialize with
+  utf-32/utf-16 negotiation; didOpen/didChange (full text, debounced by
+  `lsp-change-delay`)/didSave/didClose (new `buffer-kill` hook, run by
+  `:bd`); replies to the usual server requests including
+  `workspace/applyEdit`; diagnostics as a `diagnostics` highlight layer
+  (between syntax and search), gutter signs (new `set-signs!` primitive:
+  a 2-cell column before the numbers, only in buffers that have signs),
+  the message on the status line in normal mode (new `status-text`
+  primitive so it never overwrites another message), `]d` `[d`
+  `:diagnostics`; `lsp-mode` keys `K` `gd` `gr`; `SPC c` (`r` rename, `a`
+  code actions incl. commands and resolve, `f` format, `x` diagnostics,
+  `R` restart); `:lsp-info :lsp-log :lsp-restart :lsp-stop`; insert-mode
+  completion (`C-x C-o`, `C-n`/`C-p` falling back to buffer words, and as
+  you type after word or trigger chars, `lsp-complete-delay`), sorted by
+  sortText, snippets stripped, `additionalTextEdits` applied,
+  `isIncomplete` lists re-requested.
+  Checked by hand in a pty with nil (diagnostics) and rust-analyzer
+  (diagnostics, hover, definition, completion after `.`).
+  Known gaps: diagnostics/sign positions don't move with edits until the
+  server republishes; file create/rename/delete in workspace edits is
+  refused; no signature help or inlay hints; the completion menu is drawn
+  in the bottom popup, not at the cursor (polish pass); dot-repeat of a
+  completion replays it as backspaces plus the typed word.
 
 ### After LSP
 

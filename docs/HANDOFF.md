@@ -42,7 +42,7 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 3, branch `phase-3`)
+## 3. Current state (Phase 4 in progress, branch `phase-4`)
 
 Phases 1 (daily-driver Vim), 2 (the Emacs half) and 3 (editor
 infrastructure) are done. The owner was away while they were built; every
@@ -91,6 +91,9 @@ runtime/                   loaded in this order
   emacs.scm                the Emacs state (holy bindings)
   packages.scm             use-package!, :packages
   files.scm                autoread, autosave/:recover, fileformat options
+  syntax.scm               tree-sitter faces, languages, af/if ac/ic aa/ia
+  lsp.scm                  language servers: diagnostics, K gd gr, rename,
+                           code actions, format, insert-mode completion
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -168,7 +171,13 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   write-text-file! delete-file! state-dir`; `kill-server!`
 - Styling: `set-face!` (spec like `"fg=#ff8800 bg=blue bold"`),
   `highlight-clear! highlight-add! highlight-pattern!` on named layers
-  (`syntax`, `search`, `visual` in that order).
+  (`syntax`, `diagnostics`, `search`, `visual` in that order);
+  `set-signs!` (gutter signs for the current buffer, a list of
+  `(line text face)`); `status-text`.
+- Tree-sitter: `set-buffer-language! buffer-language syntax-ancestors
+  syntax-children syntax-tree` (see syntax.rs / api.rs).
+- JSON/LSP: `json-decode json-encode lsp-frame lsp-take-message path->uri
+  uri->path find-executable absolute-path`.
 
 ### Extension points in Scheme
 
@@ -198,7 +207,7 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Hooks: `add-hook! remove-hook! run-hooks`; the editor runs `startup
   after-change before-save after-save post-command insert-enter
   insert-leave mode-change major-mode buffer-enter buffer-open
-  option-change`. Advice: `(advice-add! 'fn 'before|'after|'around proc)`,
+  buffer-kill option-change`. Advice: `(advice-add! 'fn 'before|'after|'around proc)`,
   `advice-remove!`.
 - Leader: `(define-leader! "keys" command "description")`,
   `define-leader-group!`; major modes: `define-mode-leader!` (under SPC m).
@@ -212,6 +221,10 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `(start-job! command input on-output on-exit)` (input `#f` keeps stdin
   open for `job-send!`).
 - Options backed by something else: `define-computed-option!`.
+- Tree-sitter: `(define-mode-language! 'mode "lang")`,
+  `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`.
+- Language servers: `(define-language-server! 'mode "command args"
+  '("root-marker" ...) "languageId")`; option `lsp` turns them off.
 - Cross-file extension inside the runtime: a later runtime file can't be
   called by name from an earlier one, and a `define` there won't replace an
   earlier file's function for its callers. Use hooks, tables
@@ -280,6 +293,15 @@ Phase 3 adds:
   refusing to overwrite outside changes without `!`, autosave and
   `:recover`.
 - The daemon (`--daemon`, `--connect`, `--bridge`, `--via`), `:kill-server`.
+
+Phase 4 so far adds (details in `docs/design/phase-4.md`):
+
+- Tree-sitter (Rust, Scheme, TS/TSX, JS, Nix, Markdown): highlighting
+  through `syntax.*` faces, `af if ac ic aa ia`, smartindent.
+- LSP: diagnostics (underline, gutter sign, status-line message, `]d [d
+  :diagnostics`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
+  (`C-x C-o`, `C-n C-p`, and as you type). Defaults for rust-analyzer,
+  typescript-language-server, nil, marksman, pyright, used when installed.
 
 ### Verified
 
@@ -385,7 +407,8 @@ Fix these when the roadmap item touching them comes up, not all at once.
    once on one thread (one after another is fine).
 2. **Daemon clients share one cursor and layout**, like tmux sessions; each
    only has its own size. Scroll can differ per client size.
-3. **No syntax highlighting yet** (Phase 4.1 adds tree-sitter as a layer).
+3. **Diagnostics don't move with edits** until the server republishes them
+   (highlight ranges and signs are fixed offsets and lines).
 4. **Undo** is whole-text snapshots; no undo tree. Marks aren't restored by
    undo (they are clamped into the text).
 5. **Dot-repeat of inserts** replays the typed keys.
@@ -486,7 +509,7 @@ All of 3.1–3.8 is built; see §3 and `docs/design/phase-3.md`.
 3.8 **File handling**: detect external changes, line endings, encodings,
     backups/autosave.
 
-### Phase 4: IDE features through protocols (in progress: 4.1 done, see docs/design/phase-4.md)
+### Phase 4: IDE features through protocols (in progress: 4.1 and 4.2 done, see docs/design/phase-4.md)
 
 4.1 **Tree-sitter**: syntax highlighting (needs 3.3), structural text objects
     (`af`, `if`, `aa`...), indentation, folding.

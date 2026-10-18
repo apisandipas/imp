@@ -500,6 +500,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("set-status!", |text: String| {
         editor::with(|e| e.status = text)
     });
+    engine.register_fn("status-text", || editor::with(|e| e.status.clone()));
     engine.register_fn("set-mode-line-extra!", |text: String| {
         editor::with(|e| e.mode_line_extra = text)
     });
@@ -554,6 +555,23 @@ pub fn register(engine: &mut Engine) {
             Ok::<(), String>(())
         },
     );
+
+    // Gutter signs for the current buffer: a list of (line text face);
+    // '() removes them, and the sign column with them.
+    engine.register_fn("set-signs!", |signs: Vec<Vec<SteelVal>>| {
+        let mut map = std::collections::BTreeMap::new();
+        for sign in signs {
+            if let [SteelVal::IntV(line), SteelVal::StringV(text), SteelVal::StringV(face)] =
+                sign.as_slice()
+            {
+                map.insert(clamp(*line), (text.to_string(), face.to_string()));
+            }
+        }
+        editor::with(|e| {
+            let id = e.current;
+            e.signs.insert(id, map);
+        })
+    });
 
     // JSON and the framing LSP and DAP use (json.rs).
     engine.register_fn("json-decode", |text: String| {

@@ -4,6 +4,8 @@
 //! bottom row, the message line or the command line being typed. Windows
 //! side by side are separated by a border column.
 
+use std::collections::BTreeMap;
+
 use imp_core::{Buffer, Frame, Row, Span, Style};
 use unicode_width::UnicodeWidthChar;
 
@@ -139,6 +141,8 @@ struct View<'a> {
     /// Whether this window shows the current buffer, whose highlight
     /// ranges (selection) apply.
     current_buffer: bool,
+    /// The buffer's gutter signs, if it has any.
+    signs: Option<&'a BTreeMap<usize, (String, String)>>,
     cursor_line: usize,
     gutter: usize,
     text_width: usize,
@@ -162,7 +166,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     let text_rows = rect.h.saturating_sub(1).max(1);
     let cursor_line = buffer.offset_to_line(cursor);
     let cursor_col = buffer.offset_to_col(cursor);
-    let gutter = gutter_width(e, buffer);
+    let gutter = gutter_width(e, buffer_id, buffer);
     let text_width = rect.w.saturating_sub(gutter).max(1);
 
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
@@ -216,6 +220,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer,
         syntax: syntax.unwrap_or_default(),
         current_buffer: buffer_id == e.current,
+        signs: e.signs.get(&buffer_id).filter(|s| !s.is_empty()),
         cursor_line,
         gutter,
         text_width,
@@ -408,16 +413,29 @@ impl View<'_> {
         rows.into_iter()
             .enumerate()
             .map(|(i, text_row)| {
-                let mut row = if self.gutter == 0 {
-                    Vec::new()
-                } else if i == 0 {
-                    vec![Span::new(
-                        gutter_text(e, line, self.cursor_line, self.gutter),
-                        gutter_face,
-                    )]
-                } else {
-                    vec![Span::new(" ".repeat(self.gutter), gutter_face)]
-                };
+                let mut row = Vec::new();
+                let mut numbers = self.gutter;
+                if let Some(signs) = self.signs {
+                    numbers -= SIGN_WIDTH;
+                    match signs.get(&line).filter(|_| i == 0) {
+                        Some((text, face)) => {
+                            let text: String = text.chars().take(SIGN_WIDTH).collect();
+                            let pad = SIGN_WIDTH.saturating_sub(text_width(&text));
+                            row.push(Span::new(
+                                format!("{text}{}", " ".repeat(pad)),
+                                e.face(face),
+                            ));
+                        }
+                        None => row.push(Span::new(" ".repeat(SIGN_WIDTH), e.face("sign-column"))),
+                    }
+                }
+                if numbers > 0 {
+                    row.push(if i == 0 {
+                        Span::new(gutter_text(e, line, self.cursor_line, numbers), gutter_face)
+                    } else {
+                        Span::new(" ".repeat(numbers), gutter_face)
+                    });
+                }
                 let used: usize = text_row.iter().map(|s| text_width(&s.text)).sum();
                 row.extend(text_row);
                 // The cursor line's face runs to the window's edge.
@@ -443,12 +461,20 @@ fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
     push(row, &text, styles[cell.index]);
 }
 
-fn gutter_width(e: &Editor, buffer: &Buffer) -> usize {
+/// Cells of the sign column, when a buffer has signs.
+const SIGN_WIDTH: usize = 2;
+
+fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
+    let signs = if e.signs.get(&buffer_id).is_some_and(|s| !s.is_empty()) {
+        SIGN_WIDTH
+    } else {
+        0
+    };
     if e.line_numbers == LineNumbers::Off {
-        return 0;
+        return signs;
     }
     let digits = buffer.line_count().to_string().len();
-    digits.max(3) + 1
+    signs + digits.max(3) + 1
 }
 
 fn gutter_text(e: &Editor, line: usize, cursor_line: usize, gutter: usize) -> String {
@@ -554,7 +580,9 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
 /// Columns for text in the current window: its width less the gutter.
 pub fn window_text_width(e: &Editor) -> usize {
     let rect = e.window_rect(e.current_window);
-    rect.w.saturating_sub(gutter_width(e, &e.buffer)).max(1)
+    rect.w
+        .saturating_sub(gutter_width(e, e.current, &e.buffer))
+        .max(1)
 }
 
 /// Display width of a string.

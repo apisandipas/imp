@@ -2981,6 +2981,7 @@
            ;; Prefer going back to the alternate buffer, as Vim does.
            (when (and (= id (current-buffer)) alt (not (= alt id)) (memv alt (buffer-list)))
              (go-to-buffer! alt))
+           (run-hooks 'buffer-kill id)
            (buffer-kill! id)
            (kill-buffer-locals! id)
            (when (equal? *alternate-buffer* id) (set! *alternate-buffer* #f))
