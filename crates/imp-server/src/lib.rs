@@ -53,6 +53,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("files.scm", include_str!("../../../runtime/files.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
     ("lsp.scm", include_str!("../../../runtime/lsp.scm")),
+    ("mouse.scm", include_str!("../../../runtime/mouse.scm")),
 ];
 
 pub struct Options {
@@ -195,6 +196,20 @@ impl Server {
                 self.call("imp-open-files", vec![SteelVal::ListV(list)])
             }
             ClientMsg::Key(key) => self.call("imp-handle-key", vec![SteelVal::StringV(key.into())]),
+            ClientMsg::Mouse {
+                action,
+                button,
+                x,
+                y,
+            } => self.call(
+                "imp-handle-mouse",
+                vec![
+                    SteelVal::StringV(action.into()),
+                    SteelVal::StringV(button.into()),
+                    SteelVal::IntV(x as isize),
+                    SteelVal::IntV(y as isize),
+                ],
+            ),
             ClientMsg::Resize { width, height } => editor::with(|e| {
                 e.width = width;
                 e.height = height;

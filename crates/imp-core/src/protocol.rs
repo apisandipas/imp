@@ -21,6 +21,15 @@ pub enum ClientMsg {
     /// Open these files (absolute paths) in the editor, as `imp --connect
     /// FILE...` asks the daemon to.
     Open(Vec<String>),
+    /// The mouse at screen cell (`x`, `y`). `action` is "press", "drag",
+    /// "release", "scroll-up" or "scroll-down"; `button` is "left",
+    /// "middle", "right" (or "" for scrolling).
+    Mouse {
+        action: String,
+        button: String,
+        x: u16,
+        y: u16,
+    },
 }
 
 /// One message as a line of JSON, without the line break.

@@ -573,6 +573,19 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // (window offset) under screen cell (x, y), offset #f on a status
+    // line; #f outside every window.
+    engine.register_fn("screen-position", |x: isize, y: isize| {
+        editor::with(|e| {
+            crate::render::screen_position(e, clamp(x), clamp(y)).map(|(w, at)| {
+                vec![
+                    SteelVal::IntV(w as isize),
+                    at.map_or(SteelVal::BoolV(false), |p| SteelVal::IntV(p as isize)),
+                ]
+            })
+        })
+    });
+
     // JSON and the framing LSP and DAP use (json.rs).
     engine.register_fn("json-decode", |text: String| {
         serde_json::from_str::<serde_json::Value>(&text)

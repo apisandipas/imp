@@ -18,7 +18,10 @@ use std::sync::mpsc;
 use std::thread;
 
 use crossterm::cursor::{MoveTo, SetCursorStyle};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use crossterm::style::{
     Attribute, Color as TermColor, Print, ResetColor, SetAttribute, SetBackgroundColor,
     SetForegroundColor,
@@ -225,11 +228,16 @@ fn terminal_session(
 
     let mut out = io::stdout();
     terminal::enable_raw_mode().map_err(|e| e.to_string())?;
-    execute!(out, EnterAlternateScreen).map_err(|e| e.to_string())?;
+    execute!(out, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
 
     let result = event_loop(&mut out, &to_server, &from_server);
 
-    let _ = execute!(out, SetCursorStyle::DefaultUserShape, LeaveAlternateScreen);
+    let _ = execute!(
+        out,
+        SetCursorStyle::DefaultUserShape,
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
     let _ = terminal::disable_raw_mode();
     drop(to_server);
     result
@@ -279,6 +287,7 @@ fn event_loop(
                 key_name(key).map(ClientMsg::Key)
             }
             Event::Resize(width, height) => Some(ClientMsg::Resize { width, height }),
+            Event::Mouse(mouse) => mouse_msg(mouse),
             _ => None,
         };
         if let Some(msg) = msg {
@@ -287,6 +296,29 @@ fn event_loop(
             }
         }
     }
+}
+
+/// A mouse event as the server wants it; plain movement isn't sent.
+fn mouse_msg(mouse: MouseEvent) -> Option<ClientMsg> {
+    let button = |b: MouseButton| match b {
+        MouseButton::Left => "left",
+        MouseButton::Right => "right",
+        MouseButton::Middle => "middle",
+    };
+    let (action, button) = match mouse.kind {
+        MouseEventKind::Down(b) => ("press", button(b)),
+        MouseEventKind::Drag(b) => ("drag", button(b)),
+        MouseEventKind::Up(b) => ("release", button(b)),
+        MouseEventKind::ScrollUp => ("scroll-up", ""),
+        MouseEventKind::ScrollDown => ("scroll-down", ""),
+        _ => return None,
+    };
+    Some(ClientMsg::Mouse {
+        action: action.into(),
+        button: button.into(),
+        x: mouse.column,
+        y: mouse.row,
+    })
 }
 
 /// Names a key in imp's notation: `"j"`, `"<esc>"`, `"C-r"`.

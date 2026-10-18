@@ -639,3 +639,64 @@ fn status_line(
     };
     vec![Span::new(s, face)]
 }
+
+/// What is at screen cell (`x`, `y`): the window there, and the buffer
+/// offset under the cell, or `None` on its status line. Clicking past a
+/// line's end gives the end of that screen row. Uses the scroll positions
+/// of the last frame drawn.
+pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<usize>)> {
+    let (id, rect) = e
+        .layout
+        .rects(e.windows_area())
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
+    if y + 1 == rect.y + rect.h {
+        return Some((id, None));
+    }
+    let (buffer_id, scroll, hscroll) = if id == e.current_window {
+        (e.current, e.scroll, e.hscroll)
+    } else {
+        let w = &e.windows[&id];
+        (w.buffer, w.scroll, w.hscroll)
+    };
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let gutter = gutter_width(e, buffer_id, buffer);
+    let width = rect.w.saturating_sub(gutter).max(1);
+    let dx = (x - rect.x).saturating_sub(gutter);
+    let mut row = y - rect.y;
+    let mut line = scroll;
+    while line < buffer.line_count() {
+        let cells = layout_line(&buffer.line_text(line), e.tab_width);
+        let start = buffer.line_col_to_offset(line, 0);
+        if !e.wrap {
+            if row == 0 {
+                let at = dx + hscroll;
+                let col = cells
+                    .iter()
+                    .position(|c| at < c.x + c.w.max(1))
+                    .unwrap_or(cells.len());
+                return Some((id, Some(start + col)));
+            }
+        } else {
+            let at = wrapped(&cells, width);
+            let rows = at.last().map_or(1, |(r, _)| r + 1);
+            if row < rows {
+                // The cell under the click, or the last one on that row.
+                let on_row: Vec<usize> = (0..cells.len()).filter(|&i| at[i].0 == row).collect();
+                let col = on_row
+                    .iter()
+                    .copied()
+                    .find(|&i| dx < at[i].1 + cells[i].w.max(1))
+                    .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
+                    .unwrap_or(cells.len());
+                return Some((id, Some(start + col)));
+            }
+            row -= rows;
+            line += 1;
+            continue;
+        }
+        row -= 1;
+        line += 1;
+    }
+    Some((id, Some(buffer.len())))
+}

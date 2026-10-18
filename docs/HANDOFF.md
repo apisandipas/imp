@@ -94,6 +94,7 @@ runtime/                   loaded in this order
   syntax.scm               tree-sitter faces, languages, af/if ac/ic aa/ia
   lsp.scm                  language servers: diagnostics, K gd gr, rename,
                            code actions, format, insert-mode completion
+  mouse.scm                clicks, drag to select, the scroll wheel
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -174,6 +175,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   (`syntax`, `diagnostics`, `search`, `visual` in that order);
   `set-signs!` (gutter signs for the current buffer, a list of
   `(line text face)`); `status-text`.
+- Mouse: `screen-position` (`(window offset)` under a screen cell, offset
+  #f on a status line); the server calls `(imp-handle-mouse action button
+  x y)` for `ClientMsg::Mouse`.
 - Tree-sitter: `set-buffer-language! buffer-language syntax-ancestors
   syntax-children syntax-tree` (see syntax.rs / api.rs).
 - JSON/LSP: `json-decode json-encode lsp-frame lsp-take-message path->uri
@@ -302,6 +306,9 @@ Phase 4 so far adds (details in `docs/design/phase-4.md`):
   :diagnostics`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
   (`C-x C-o`, `C-n C-p`, and as you type). Defaults for rust-analyzer,
   typescript-language-server, nil, marksman, pyright, used when installed.
+- The mouse: click to move (focusing the window), drag to select, wheel to
+  scroll; `:set nomouse` turns it off (shift-drag still selects in most
+  terminals while imp captures the mouse).
 
 ### Verified
 
