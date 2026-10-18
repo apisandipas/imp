@@ -19,8 +19,17 @@
 (define *operator-count* "")   ; count typed before the operator
 (define *prefix* #f)           ; pending prefix key, e.g. "g"
 (define *goal-col* 0)          ; column j/k try to keep
-(define *register* "")         ; last yanked or deleted text
-(define *register-linewise* #f)
+(define *registers* (hash))    ; register char -> (text linewise?)
+(define *register-prefix* #f)  ; the register named with "x for this command
+(define *register-just-set* #f)
+(define *last-inserted* "")    ; the ". register
+(define *last-ex* #f)          ; the ": register
+(define *recording* #f)        ; the register q is recording into
+(define *recorded-keys* '())   ; reversed
+(define *last-macro* #f)       ; for @@
+(define *command-failed* #f)   ; set when a key fails; stops a running macro
+(define *insert-pending* #f)   ; C-r in insert mode waits for a register
+(define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
 (define *last-change-count* 1)
 (define *insert-entry* #f)     ; how the current insert began, for `.`
@@ -48,14 +57,19 @@
 
 (define (set-mode! mode)
   (set! *mode* mode)
-  (cond
-    [(eq? mode 'insert) (set-mode-name! "INSERT") (set-cursor-shape! "bar")]
-    [(eq? mode 'replace) (set-mode-name! "REPLACE") (set-cursor-shape! "underline")]
-    [(eq? mode 'cmdline) (set-mode-name! "COMMAND") (set-cursor-shape! "block")]
-    [(eq? mode 'visual)
-     (set-mode-name! (if (eq? *visual* 'line) "VISUAL LINE" "VISUAL"))
-     (set-cursor-shape! "block")]
-    [else (set-mode-name! "NORMAL") (set-cursor-shape! "block")]))
+  (set-cursor-shape! (cond [(eq? mode 'insert) "bar"] [(eq? mode 'replace) "underline"] [else "block"]))
+  (show-mode!))
+
+(define (show-mode!)
+  (set-mode-name!
+   (string-append
+    (cond
+      [(eq? *mode* 'insert) "INSERT"]
+      [(eq? *mode* 'replace) "REPLACE"]
+      [(eq? *mode* 'cmdline) "COMMAND"]
+      [(eq? *mode* 'visual) (if (eq? *visual* 'line) "VISUAL LINE" "VISUAL")]
+      [else "NORMAL"])
+    (if *recording* (string-append " recording @" (string *recording*)) ""))))
 
 (define (reset-pending!)
   (set! *count* "")
@@ -151,13 +165,19 @@
 (define (word-motion step classify)
   (lambda (from n) (repeat-motion n (lambda (p) (step p classify)) from)))
 
+;; j and k go as far as they can, but fail (#f) if they can't move at all,
+;; as Vim's do: that stops a macro at the end of the file.
 (define (vertical from n)
-  (line-col->offset (clamp (+ (offset->line from) n) 0 (last-line)) *goal-col*))
+  (let ([line (clamp (+ (offset->line from) n) 0 (last-line))])
+    (and (not (= line (offset->line from)))
+         (line-col->offset line *goal-col*))))
 
 (define-motion! "h" 'exclusive
-  (lambda (from n) (max (line-start (offset->line from)) (- from n))))
+  (lambda (from n)
+    (let ([lo (line-start (offset->line from))]) (and (> from lo) (max lo (- from n))))))
 (define-motion! "l" 'exclusive
-  (lambda (from n) (min (line-end (offset->line from)) (+ from n))))
+  (lambda (from n)
+    (let ([hi (line-end (offset->line from))]) (and (< from hi) (min hi (+ from n))))))
 (define-motion! "j" 'linewise (lambda (from n) (vertical from n)))
 (define-motion! "k" 'linewise (lambda (from n) (vertical from (- n))))
 (define-motion! "w" 'exclusive (word-motion next-word-start char-class))
@@ -360,14 +380,84 @@
         (if (< last (last-line)) (line-start (+ last 1)) (buffer-length))
         #t))
 
-;; Linewise text is stored as whole lines, each ending in a line break.
-(define (yank-range! start end linewise?)
-  (let ([text (buffer-substring start end)])
-    (set! *register*
-          (if (and linewise? (not (ends-with? text "\n")))
-              (string-append text "\n")
-              text))
-    (set! *register-linewise* linewise?)))
+;;; Registers
+;;;
+;;; As in Vim: yanks go to "0, deletes of a line or more shift through "1-"9
+;;; and smaller ones go to "-; "a-"z are yours ("A-"Z append), "_ discards,
+;;; "+ and "* are the system clipboard and selection, and ". ": "/ "% are
+;;; the last insert, command line, search and file name. The unnamed
+;;; register "" is whichever was written last. A register is (text
+;;; linewise?); linewise text is whole lines, each ending in a line break.
+
+(define (upper-letter? c) (let ([n (char->integer c)]) (and (>= n 65) (<= n 90))))
+
+(define (valid-register? c)
+  (or (letter? c) (char-numeric-ascii? c) (memv c (string->list "\"-_+*.:/%"))))
+
+(define (current-register) (or *register-prefix* #\"))
+
+(define (clipboard-register c) (memv c (list #\+ #\*)))
+
+(define (register-get c)
+  (let ([c (char-downcase c)])
+    (cond
+      [(clipboard-register c)
+       (let ([text (clipboard-get (equal? c #\*))])
+         (if text
+             (list text (ends-with? text "\n"))
+             (hash-try-get *registers* c)))]
+      [(and (equal? c #\") (equal? (option 'clipboard) "unnamedplus")) (register-get #\+)]
+      [(equal? c #\.) (list *last-inserted* #f)]
+      [(equal? c #\:) (and *last-ex* (list *last-ex* #f))]
+      [(equal? c #\/) (and *last-search* (list *last-search* #f))]
+      [(equal? c #\%) (list (buffer-name) #f)]
+      [else (hash-try-get *registers* c)])))
+
+(define (store! c value)
+  (set! *registers* (hash-insert *registers* c value)))
+
+;; Puts `text` in register `c`. `kind` is 'yank or 'delete, which decides
+;; where an unnamed write also goes.
+(define (register-set! c text linewise? kind)
+  (let* ([text (if (and linewise? (not (ends-with? text "\n"))) (string-append text "\n") text)]
+         [value (list text linewise?)])
+    (cond
+      [(equal? c #\_) #t]
+      [(upper-letter? c)
+       ;; Appending: if either side is lines, the result is lines.
+       (let* ([lower (char-downcase c)]
+              [old (hash-try-get *registers* lower)]
+              [value (cond
+                       [(not old) value]
+                       [(or linewise? (cadr old))
+                        (list (string-append (car old) (if (ends-with? (car old) "\n") "" "\n") text) #t)]
+                       [else (list (string-append (car old) text) #f)])])
+         (store! lower value)
+         (store! #\" value))]
+      [(clipboard-register c)
+       (clipboard-set! text (equal? c #\*))
+       (store! c value)
+       (store! #\" value)]
+      [(equal? c #\")
+       (store! #\" value)
+       (when (equal? (option 'clipboard) "unnamedplus") (clipboard-set! text #f))
+       (cond
+         [(eq? kind 'yank) (store! #\0 value)]
+         [(or linewise? (string-contains? text "\n"))
+          ;; Shift "1-"8 down to "2-"9.
+          (let loop ([i 8])
+            (when (>= i 1)
+              (let ([v (hash-try-get *registers* (integer->char (+ 48 i)))])
+                (when v (store! (integer->char (+ 49 i)) v)))
+              (loop (- i 1))))
+          (store! #\1 value)]
+         [else (store! #\- value)])]
+      [else (store! c value) (store! #\" value)])))
+
+(define (store-range! start end linewise? kind)
+  (register-set! (current-register) (buffer-substring start end) linewise? kind))
+
+(define (yank-range! start end linewise?) (store-range! start end linewise? 'delete))
 
 ;; End of a linewise range without its final line break, if it has one.
 (define (without-final-break start end)
@@ -389,7 +479,7 @@
 
 (define-operator! "y"
   (lambda (start end linewise?)
-    (yank-range! start end linewise?)
+    (store-range! start end linewise? 'yank)
     (set-cursor! start)))
 
 (define-operator! "c"
@@ -735,9 +825,28 @@
 ;; record is completed when insert mode exits, with the text that was typed.
 (define (record-change! change count)
   (set! *last-change-count* count)
+  (let ([change (with-register change (next-register *register-prefix*))])
   (if (typing-mode?)
       (begin (set! *insert-entry* change) (set! *insert-keys* '()))
-      (set! *last-change* change)))
+      (set! *last-change* change))))
+
+;; A change that runs with register `reg` named, as when it was made. "1p
+;; repeated with . pastes "2, then "3 and so on, as in Vim.
+(define (with-register change reg)
+  (if (not reg)
+      change
+      (lambda (n)
+        (set! *register-prefix* reg)
+        (change n)
+        (set! *register-prefix* #f)
+        (unless (equal? reg (next-register reg))
+          (set! *last-change* (with-register change (next-register reg)))))))
+
+;; The register . uses after one: "1 to "8 step to the next, others stay.
+(define (next-register reg)
+  (if (and reg (char-numeric-ascii? reg) (not (memv reg (list #\0 #\9))))
+      (integer->char (+ 1 (char->integer reg)))
+      reg))
 
 (define (typing-mode?) (member *mode* '(insert replace)))
 
@@ -746,8 +855,19 @@
   (let loop ([i 0])
     (when (< i n)
       (when reentry (reentry))
-      (for-each insert-key! keys)
+      (replay-insert-keys! keys)
       (loop (+ i 1)))))
+
+;; Types keys recorded in insert mode again, including C-r {register}.
+(define (replay-insert-keys! keys)
+  (let loop ([ks keys])
+    (cond
+      [(null? ks) #t]
+      [(and (equal? (car ks) "C-r") (pair? (cdr ks)))
+       (let* ([c (key-char (cadr ks))] [reg (and c (valid-register? c) (register-get c))])
+         (when reg (insert-text! (car reg))))
+       (loop (cddr ks))]
+      [else (insert-key! (car ks)) (loop (cdr ks))])))
 
 (define (finish-insert-record! keys)
   (let ([entry *insert-entry*] [counted? (> *insert-count* 0)] [reentry *insert-reentry*])
@@ -755,7 +875,7 @@
       (set! *last-change*
             (lambda (count)
               (entry count)
-              (for-each insert-key! keys)
+              (replay-insert-keys! keys)
               ;; The count repeats the text only for insert commands; for
               ;; 3cw it was the operator's.
               (when counted? (repeat-insert! keys (- count 1) reentry))
@@ -854,32 +974,48 @@
   (let loop ([i 0] [acc '()])
     (if (< i n) (loop (+ i 1) (cons text acc)) (apply string-append acc))))
 
-(define (paste! after?)
+(define (paste! after? cursor-after?)
   (lambda (count)
-    (undo-boundary!)
-    (let ([text (string-repeat *register* count)])
-      (if *register-linewise*
-          (let* ([line (current-line)]
-                 [at (if after?
-                         (if (< line (last-line)) (line-start (+ line 1)) (buffer-length))
-                         (line-start line))]
-                 ;; At the end of a file with no final newline, the break goes
-                 ;; before the pasted lines instead of after them.
-                 [no-break? (and (= at (buffer-length)) (> at 0)
-                                 (not (equal? (buffer-substring (- at 1) at) "\n")))]
-                 [text (if no-break?
-                           (string-append "\n" (substring text 0 (- (string-length text) 1)))
-                           text)])
-            (buffer-insert! at text)
-            (set-cursor! (line-first-nonblank (if after? (+ line 1) line))))
-          (let ([at (if after? (min (+ (cursor) 1) (line-end (current-line))) (cursor))])
-            (buffer-insert! at text)
-            (set-cursor! (+ at (- (string-length text) 1))))))))
+    (let ([reg (register-get (current-register))])
+      (if reg
+          (begin (undo-boundary!) (put-text! (string-repeat (car reg) count) (cadr reg) after? cursor-after?) #t)
+          (begin
+            (set-status! (string-append "nothing in register " (string (current-register))))
+            #f)))))
 
-(define-key! 'normal "p"
-  (lambda (count) ((paste! #t) count) (record-change! (paste! #t) count)))
-(define-key! 'normal "P"
-  (lambda (count) ((paste! #f) count) (record-change! (paste! #f) count)))
+;; Puts text after or before the cursor (whole lines go below or above its
+;; line). The cursor ends on the last char put, or with gp just after it.
+(define (put-text! text linewise? after? cursor-after?)
+  (if linewise?
+      (let* ([line (current-line)]
+             [at (if after?
+                     (if (< line (last-line)) (line-start (+ line 1)) (buffer-length))
+                     (line-start line))]
+             ;; At the end of a file with no final newline, the break goes
+             ;; before the pasted lines instead of after them.
+             [no-break? (and (= at (buffer-length)) (> at 0)
+                             (not (equal? (buffer-substring (- at 1) at) "\n")))]
+             [text (if no-break?
+                       (string-append "\n" (substring text 0 (- (string-length text) 1)))
+                       text)])
+        (buffer-insert! at text)
+        (set-cursor! (if cursor-after?
+                         (min (+ at (string-length text)) (buffer-length))
+                         (line-first-nonblank (if after? (+ line 1) line)))))
+      (let ([at (if after? (min (+ (cursor) 1) (line-end (current-line))) (cursor))])
+        (buffer-insert! at text)
+        (set-cursor! (+ at (string-length text) (if cursor-after? 0 -1))))))
+
+(define (paste-command! key after? cursor-after?)
+  (define-key! 'normal key
+    (lambda (count)
+      (let ([paste (paste! after? cursor-after?)])
+        (when (paste count) (record-change! paste count))))))
+
+(paste-command! "p" #t #f)
+(paste-command! "P" #f #f)
+(paste-command! "gp" #t #t)
+(paste-command! "gP" #f #t)
 
 (define-key! 'normal "u"
   (lambda (count)
@@ -1002,9 +1138,12 @@
 ;; text becomes the register, so pasting again swaps back.
 (define-key! 'visual "p"
   (lambda (count)
-    (let* ([text *register*] [text-linewise? *register-linewise*]
+    (let* ([reg (or (register-get (current-register)) (list "" #f))]
+           [text (string-repeat (car reg) count)] [text-linewise? (cadr reg)]
            [range (visual-range)] [start (car range)] [linewise? (caddr range)])
       (leave-visual!)
+      ;; The replaced text goes to the unnamed register, not the one pasted.
+      (set! *register-prefix* #f)
       (undo-boundary!)
       (yank-range! start (cadr range) linewise?)
       (buffer-delete! start (if linewise? (without-final-break start (cadr range)) (cadr range)))
@@ -1246,6 +1385,87 @@
                                   " " (number->string lines) (if (= lines 1) " line" " lines")
                                   " --" (number->string (quotient (* 100 (+ (current-line) 1)) lines)) "%--")))))
 
+;;; Macros
+;;;
+;;; q{reg} records keys into a register as text, in Vim's key notation
+;;; ("<esc>", "<C-r>", "<lt>" for <), so a macro can be pasted, edited and
+;;; yanked back. @{reg} plays it; @@ plays the last one again and @: repeats
+;;; the last command line. A key that fails stops the macro, as in Vim.
+
+(define (key->notation key)
+  (cond [(equal? key "<") "<lt>"]
+        [(= (string-length key) 1) key]
+        [(starts-with? key "<") key]
+        [else (string-append "<" key ">")]))
+
+(define (keys->string keys) (apply string-append (map key->notation keys)))
+
+;; The inverse: splits text back into keys.
+(define (string->keys text)
+  (let ([n (string-length text)])
+    (let loop ([i 0] [acc '()])
+      (if (>= i n)
+          (reverse acc)
+          (let* ([close (and (equal? (string-ref text i) #\<)
+                             (let find ([j (+ i 1)])
+                               (cond [(>= j n) #f]
+                                     [(equal? (string-ref text j) #\>) j]
+                                     [(char-whitespace? (string-ref text j)) #f]
+                                     [else (find (+ j 1))])))]
+                 [name (and close (> close (+ i 1)) (substring text (+ i 1) close))])
+            (cond
+              [(not name)
+               (let ([c (string-ref text i)])
+                 (loop (+ i 1) (cons (if (equal? c #\newline) "<ret>" (string c)) acc)))]
+              [(equal? name "lt") (loop (+ close 1) (cons "<" acc))]
+              [(or (starts-with? name "C-") (starts-with? name "M-")) (loop (+ close 1) (cons name acc))]
+              [else (loop (+ close 1) (cons (string-append "<" name ">") acc))]))))))
+
+(define (start-recording! c)
+  (set! *recording* c)
+  (set! *recorded-keys* '())
+  (show-mode!))
+
+(define (stop-recording!)
+  (let ([c *recording*])
+    (set! *recording* #f)
+    (register-set! c (keys->string (reverse *recorded-keys*)) #f 'macro)
+    (show-mode!)))
+
+(define-char-command! "q"
+  (lambda (count c)
+    (if (or (letter? c) (char-numeric-ascii? c) (equal? c #\"))
+        (start-recording! c)
+        (set-status! (string-append "invalid register " (string c))))))
+
+;; Feeds `keys` to the editor, stopping early if one fails.
+(define (play-keys! keys)
+  (set! *command-failed* #f)
+  (let loop ([ks keys])
+    (unless (or (null? ks) *command-failed*)
+      (process-key! (car ks))
+      (loop (cdr ks)))))
+
+(define-char-command! "@"
+  (lambda (count c)
+    (let ([c (if (equal? c #\@) *last-macro* c)])
+      (cond
+        [(not c) (set-status! "no previous macro")]
+        [(equal? c #\:)
+         (if *last-ex* (let loop ([i 0]) (when (< i count) (run-ex! *last-ex*) (loop (+ i 1))))
+             (set-status! "no previous command line"))]
+        [else
+         (let ([reg (register-get c)])
+           (set! *last-macro* c)
+           (if reg
+               (let ([keys (string->keys (car reg))])
+                 (let loop ([i 0])
+                   (when (and (< i count) (not *command-failed*))
+                     (play-keys! keys)
+                     (loop (+ i 1))))
+                 (set! *command-failed* #f))
+               (set-status! (string-append "nothing in register " (string c)))))]))))
+
 ;;; Scrolling
 ;;;
 ;;; These move the window and keep the cursor inside it. They work in normal
@@ -1318,7 +1538,7 @@
 
 ;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
 ;; reachable. Char motions and char commands are prefixes automatically.
-(define *prefix-keys* (hash "g" #t "z" #t "Z" #t "[" #t "]" #t))
+(define *prefix-keys* (hash "g" #t "z" #t "Z" #t "[" #t "]" #t "\"" #t))
 
 (define (define-prefix! key)
   (set! *prefix-keys* (hash-insert *prefix-keys* key #t)))
@@ -1345,7 +1565,7 @@
      (reset-pending!)]
 
     ;; Counts. A leading 0 is the motion, not a count.
-    [(and (digit? key) (not (and (equal? key "0") (equal? *count* ""))))
+    [(and (digit? key) (not *prefix*) (not (and (equal? key "0") (equal? *count* ""))))
      (set! *count* (string-append *count* key))]
 
     ;; Search prompts. With an operator pending, the search is its motion.
@@ -1369,7 +1589,15 @@
             [count (* (count-value *operator-count*) (count-value *count*))])
        (set! *prefix* #f)
        (set! *count-given* given)
+       (set! *register-just-set* #f)
        (cond
+         ;; "x names the register for the command that follows.
+         [(and (= (string-length key) 2) (starts-with? key "\""))
+          (let ([c (string-ref key 1)])
+            (if (valid-register? c)
+                (begin (set! *register-prefix* c) (set! *register-just-set* #t))
+                (set-status! (string-append "invalid register " (string c)))))]
+
          ;; An operator is pending: this key is its motion, or the operator
          ;; again for the linewise form (dd).
          [*operator*
@@ -1397,8 +1625,8 @@
           (set! *operator-count* "")]
 
          [(and (eq? *mode* 'visual) (lookup-key 'visual key))
-          ((lookup-key 'visual key) count)
-          (set! *count* "")]
+          (set! *count* "")
+          ((lookup-key 'visual key) count)]
 
          [(and (eq? *mode* 'visual) (hash-contains? *operators* key))
           (visual-operator! key #f)
@@ -1409,7 +1637,7 @@
           (set! *count* "")]
 
          [(and (eq? *mode* 'visual) (find-char-command key))
-          => (lambda (cmd) (cmd count) (set! *count* ""))]
+          => (lambda (cmd) (set! *count* "") (cmd count))]
 
          [(hash-contains? *operators* key)
           (set! *operator* key)
@@ -1419,20 +1647,27 @@
          [(find-motion key)
           => (lambda (m)
                (let ([target ((motion-proc m) (cursor) count)])
-                 (when target (set-cursor! target)))
+                 (if target (set-cursor! target) (set! *command-failed* #t)))
                (set! *count* ""))]
 
+         ;; The count is cleared before a command runs, so keys it feeds itself
+         ;; (a macro) start fresh.
          [(and (not (eq? *mode* 'visual)) (lookup-key 'normal key))
-          ((lookup-key 'normal key) count)
-          (set! *count* "")]
+          (set! *count* "")
+          ((lookup-key 'normal key) count)]
 
          [(and (not (eq? *mode* 'visual)) (find-char-command key))
-          => (lambda (cmd) (cmd count) (set! *count* ""))]
+          => (lambda (cmd) (set! *count* "") (cmd count))]
 
          [else
           (set! *count* "")
+          (set! *command-failed* #t)
           (set-status! (string-append "no binding for " key))])
        (set! *count-given* #f))])
+
+  ;; The register named with "x lasts for one command.
+  (unless (or *operator* *prefix* *register-just-set* (not (equal? *count* "")))
+    (set! *register-prefix* #f))
 
   (when (member *mode* '(normal visual))
     (normal-clamp!)
@@ -1440,6 +1675,16 @@
       (set! *goal-col* (current-col)))))
 
 ;;; Insert and replace mode
+
+;; The text that typing `keys` inserts, near enough for the ". register.
+(define (keys->text keys)
+  (apply string-append
+         (map (lambda (k)
+                (cond [(= (string-length k) 1) k]
+                      [(equal? k "<ret>") "\n"]
+                      [(equal? k "<tab>") "\t"]
+                      [else ""]))
+              keys)))
 
 ;; The display column of offset `p`, counting tabs to the next tab stop.
 (define (display-col p)
@@ -1563,8 +1808,18 @@
 
 (define (insert-mode-key! key)
   (cond
+    ;; C-r {register} inserts the register's text.
+    [*insert-pending*
+     (set! *insert-pending* #f)
+     (set! *insert-keys* (cons key *insert-keys*))
+     (let* ([c (key-char key)] [reg (and c (valid-register? c) (register-get c))])
+       (when reg (insert-text! (car reg))))]
+    [(equal? key "C-r")
+     (set! *insert-keys* (cons key *insert-keys*))
+     (set! *insert-pending* #t)]
     [(member key '("<esc>" "C-c" "C-["))
      (let ([keys (reverse *insert-keys*)])
+       (set! *last-inserted* (keys->text keys))
        (repeat-insert! keys (- *insert-count* 1) *insert-reentry*)
        (leave-insert!)
        (finish-insert-record! keys)
@@ -1620,6 +1875,18 @@
 
 (define (cmdline-key! key)
   (cond
+    ;; C-r {register} inserts a register; C-r C-w the word under the cursor.
+    [*cmdline-pending*
+     (set! *cmdline-pending* #f)
+     (let ([text (cond
+                   [(equal? key "C-w")
+                    (let ([w (word-at (cursor))]) (if w (buffer-substring (car w) (cadr w)) ""))]
+                   [(and (key-char key) (valid-register? (key-char key)))
+                    (let ([reg (register-get (key-char key))])
+                      (if reg (without-final-newline (car reg)) ""))]
+                   [else ""])])
+       (cmdline-edit! (string-append *cmdline* text)))]
+    [(equal? key "C-r") (set! *cmdline-pending* #t)]
     [(member key '("<esc>" "C-c"))
      (close-cmdline!)
      (when *cmdline-cancel* (*cmdline-cancel*))]
@@ -1667,7 +1934,10 @@
           p)
         (let ([r (search-next pattern p forward?)])
           (cond
-            [(not r) (set-status! (string-append "Pattern not found: " pattern)) #f]
+            [(not r)
+             (set-status! (string-append "Pattern not found: " pattern))
+             (set! *command-failed* #t)
+             #f]
             [(and (= (cadr r) 1) (not (option 'wrapscan)))
              (set-status! (string-append "search hit " (if forward? "BOTTOM" "TOP")
                                          " without match for: " pattern))
@@ -1886,6 +2156,7 @@
     (list name (list range (cadr r) bang? args))))
 
 (define (run-ex! line)
+  (unless (equal? line "") (set! *last-ex* line))
   (let ([parsed (with-handler (lambda (e) (error-message e)) (parse-ex line))])
     (if (string? parsed)
         (set-status! parsed)
@@ -2032,7 +2303,29 @@
   (normal-clamp!))
 
 (define (imp-handle-key key)
+  (when (and *recording* (not (stops-recording? key)))
+    (set! *recorded-keys* (cons key *recorded-keys*)))
+  (process-key! key))
+
+;; q stops recording, when it isn't part of a longer command.
+(define (stops-recording? key)
+  (and *recording* (equal? key "q") (member *mode* '(normal visual))
+       (not *operator*) (not *prefix*) (equal? *count* "")))
+
+;; Handles one key without recording it; macros play keys through here.
+(define (process-key! key)
   (define typing? (typing-mode?))
+  (if (stops-recording? key)
+      (stop-recording!)
+      (handle-key! key))
+  ;; After C-o's one command (once nothing is pending), back to insert.
+  (when (and *insert-return* (not typing?) (eq? *mode* 'normal)
+             (not *operator*) (not *prefix*) (equal? *count* ""))
+    (set-mode! *insert-return*)
+    (set! *insert-return* #f))
+  (update-visual-highlight!))
+
+(define (handle-key! key)
   (cond
     [(typing-mode?) (insert-mode-key! key)]
     [(eq? *mode* 'cmdline) (cmdline-key! key)]
@@ -2040,10 +2333,4 @@
      ;; A fresh command clears the last message.
      (when (and (not *operator*) (not *prefix*) (equal? *count* ""))
        (set-status! ""))
-     (normal-key! key)])
-  ;; After C-o's one command (once nothing is pending), back to insert.
-  (when (and *insert-return* (not typing?) (eq? *mode* 'normal)
-             (not *operator*) (not *prefix*) (equal? *count* ""))
-    (set-mode! *insert-return*)
-    (set! *insert-return* #f))
-  (update-visual-highlight!))
+     (normal-key! key)]))

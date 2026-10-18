@@ -6,6 +6,7 @@
 //! user's `init.scm` may redefine.
 
 mod api;
+mod clipboard;
 mod editor;
 mod render;
 mod search;

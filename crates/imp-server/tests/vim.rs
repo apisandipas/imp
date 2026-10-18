@@ -51,6 +51,18 @@ fn hjkl_moves() {
 }
 
 #[test]
+fn motions_that_cannot_move_cancel_operators() {
+    let mut s = server("a\nb\n");
+    type_keys(&mut s, "jdj");
+    assert_eq!(s.text(), "a\nb\n");
+    type_keys(&mut s, "dh");
+    assert_eq!(s.text(), "a\nb\n");
+    let mut s = server("\nb\n");
+    type_keys(&mut s, "x");
+    assert_eq!(s.text(), "\nb\n");
+}
+
+#[test]
 fn h_and_l_stop_at_line_edges() {
     let mut s = server("ab\ncd\n");
     type_keys(&mut s, "hlllll");
@@ -984,4 +996,136 @@ fn set_options() {
     assert_eq!(s.status(), "autoindent=#false");
     type_keys(&mut s, ":set bogus<ret>");
     assert!(s.status().contains("unknown option"));
+}
+
+#[test]
+fn named_registers() {
+    let mut s = server("one two\n");
+    type_keys(&mut s, "\"ayiww\"byiw\"ap\"bP");
+    assert_eq!(s.text(), "one tontwoewo\n");
+    // Appending with a capital.
+    let mut s = server("a b\n");
+    type_keys(&mut s, "\"xyl w\"Xyl$\"xp");
+    assert_eq!(s.text(), "a bab\n");
+}
+
+#[test]
+fn yank_register_survives_deletes() {
+    let mut s = server("keep\nzap\n");
+    type_keys(&mut s, "yyjdd\"0P");
+    assert_eq!(s.text(), "keep\nkeep\n");
+    // The unnamed register still has the delete.
+    type_keys(&mut s, "p");
+    assert_eq!(s.text(), "keep\nzap\nkeep\n");
+}
+
+#[test]
+fn numbered_registers_shift() {
+    let mut s = server("1\n2\n3\nx\n");
+    type_keys(&mut s, "dddddd\"1p\"2p\"3p");
+    assert_eq!(s.text(), "x\n3\n2\n1\n");
+    // "1p... pastes "1, then "2, then "3.
+    let mut s = server("1\n2\n3\nx\n");
+    type_keys(&mut s, "dddddd\"1p..");
+    assert_eq!(s.text(), "x\n3\n2\n1\n");
+}
+
+#[test]
+fn small_delete_register() {
+    let mut s = server("ab cd\n");
+    type_keys(&mut s, "dwyl$\"-p");
+    assert_eq!(s.text(), "cdab \n");
+}
+
+#[test]
+fn black_hole_register() {
+    let mut s = server("a\nb\n");
+    type_keys(&mut s, "yyj\"_ddP");
+    assert_eq!(s.text(), "a\na\n");
+}
+
+#[test]
+fn count_before_register() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "2\"ayyG\"ap");
+    assert_eq!(s.text(), "1\n2\n3\n4\n1\n2\n");
+}
+
+#[test]
+fn read_only_registers() {
+    let mut s = server("\n");
+    type_keys(&mut s, "ihello<esc>\".p");
+    assert_eq!(s.text(), "hellohello\n");
+    let mut s = server("\n");
+    type_keys(&mut s, ":eval 1<ret>\":p");
+    assert_eq!(s.text(), "eval 1\n");
+    let mut s = server("foo\n");
+    type_keys(&mut s, "/oo<ret>\"/P");
+    assert_eq!(s.text(), "foooo\n");
+}
+
+#[test]
+fn insert_and_cmdline_ctrl_r() {
+    let mut s = server("word\n");
+    type_keys(&mut s, "yiwA ");
+    s.keys(&["C-r", "\""]);
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.text(), "word word\n");
+    let mut s = server("abc abc\n");
+    type_keys(&mut s, ":s/");
+    s.keys(&["C-r", "C-w"]);
+    type_keys(&mut s, "/x/g<ret>");
+    assert_eq!(s.text(), "x x\n");
+}
+
+#[test]
+fn macros_record_and_play() {
+    let mut s = server("1\n2\n3\n4\n");
+    type_keys(&mut s, "qaA!<esc>jq");
+    assert_eq!(s.text(), "1!\n2\n3\n4\n");
+    type_keys(&mut s, "@a");
+    assert_eq!(s.text(), "1!\n2!\n3\n4\n");
+    type_keys(&mut s, "@@");
+    assert_eq!(s.text(), "1!\n2!\n3!\n4\n");
+    // The macro is text in its register.
+    type_keys(&mut s, "G\"ap");
+    assert_eq!(s.text(), "1!\n2!\n3!\n4A!<esc>j\n");
+}
+
+#[test]
+fn macro_with_count_stops_on_failure() {
+    let mut s = server("a1\na2\na3\n");
+    // j fails on the last line, which ends the macro early.
+    type_keys(&mut s, "qq0xjq10@q");
+    assert_eq!(s.text(), "1\n2\n3\n");
+}
+
+#[test]
+fn recording_shows_in_mode_line() {
+    let mut s = server("a\n");
+    type_keys(&mut s, "qz");
+    assert!(s
+        .frame()
+        .text_rows()
+        .last()
+        .unwrap()
+        .contains("recording @z"));
+    type_keys(&mut s, "q");
+    assert!(!s.frame().text_rows().last().unwrap().contains("recording"));
+}
+
+#[test]
+fn gp_leaves_cursor_after_text() {
+    let mut s = server("a\nb\n");
+    type_keys(&mut s, "yygpix<esc>");
+    assert_eq!(s.text(), "a\na\nxb\n");
+}
+
+#[test]
+fn macro_keys_round_trip() {
+    let mut s = server("");
+    let out = s
+        .eval(r#"(string->keys (keys->string (list "a" "<" "<esc>" "C-r" "<ret>")))"#)
+        .unwrap();
+    assert_eq!(out, r#"("a" "<" "<esc>" "C-r" "<ret>")"#);
 }

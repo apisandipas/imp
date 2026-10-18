@@ -62,6 +62,8 @@
 (define-option! 'wrapscan #t '(ws))
 (define-option! 'hlsearch #t '(hls))
 (define-option! 'incsearch #t '(is))
+;; "unnamedplus" makes the unnamed register the system clipboard.
+(define-option! 'clipboard "" '(cb))
 (watch-option! 'tabstop set-tab-width!)
 
 ;;; Faces and highlight layers

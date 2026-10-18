@@ -11,6 +11,7 @@ use imp_core::{CursorShape, Style};
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
+use crate::clipboard;
 use crate::editor::{self, Highlight};
 use crate::search;
 
@@ -83,6 +84,12 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("cursor", || editor::with(|e| e.cursor as isize));
     engine.register_fn("set-cursor!", |offset: isize| {
         editor::with(|e| e.cursor = clamp(offset).min(e.buffer.len()))
+    });
+
+    // The system clipboard. `primary?` picks the primary selection ("*).
+    engine.register_fn("clipboard-get", |primary: bool| clipboard::get(primary));
+    engine.register_fn("clipboard-set!", |text: String, primary: bool| {
+        clipboard::set(&text, primary)
     });
 
     // The window: which buffer lines are on screen.
