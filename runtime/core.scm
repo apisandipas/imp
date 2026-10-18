@@ -31,6 +31,15 @@
   (let ([binding (key-binding mode key)])
     (if (symbol? binding) (command-proc binding) binding)))
 
+;; The procedure `key` runs in the buffer's mode keymaps for `mode` only,
+;; or #f. Insert mode checks these before its own keys (<ret>, <tab>).
+(define (local-key-proc mode key)
+  (let loop ([maps (*local-keymaps* mode)])
+    (cond [(null? maps) #f]
+          [(hash-try-get (keymap (car maps)) key)
+           => (lambda (b) (if (symbol? b) (command-proc b) b))]
+          [else (loop (cdr maps))])))
+
 ;; What `key` is bound to as written: a command name or a procedure,
 ;; looking in the buffer's mode keymaps first.
 (define (key-binding mode key)

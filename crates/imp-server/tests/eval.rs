@@ -140,3 +140,18 @@ fn names_defined_later_are_allowed() {
     s.eval("(define (later-fn) 'here)").unwrap();
     assert_eq!(s.eval("(use-later)").unwrap(), "here");
 }
+
+#[test]
+fn repl_buffer_evaluates_input() {
+    let mut s = server("");
+    type_keys(&mut s, ":repl<ret>(+ 1 2)<ret>");
+    assert!(
+        s.text().ends_with("imp> (+ 1 2)\n3\nimp> "),
+        "{:?}",
+        s.text()
+    );
+    type_keys(&mut s, "(define (sq x) (* x x))<ret>(sq 5)<ret>");
+    assert!(s.text().ends_with("(sq 5)\n25\nimp> "), "{:?}", s.text());
+    feed(&mut s, "(car 1)<ret>");
+    assert!(s.text().contains("error: car"), "{:?}", s.text());
+}

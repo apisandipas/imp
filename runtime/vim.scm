@@ -2064,6 +2064,8 @@
 (define (insert-key! key)
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
   (cond
+    ;; A mode's own insert keys come first (the REPL's <ret>).
+    [(local-key-proc 'insert key) => (lambda (proc) (proc))]
     [(member key '("<ret>" "C-j" "C-m")) (insert-newline!)]
     [(equal? key "<tab>") (insert-tab!)]
     [(and (member key '("<bs>" "C-h")) (eq? *mode* 'replace)) (replace-backspace!)]
