@@ -42,7 +42,7 @@ Optional naming theme the owner liked (user-facing names only, never in Rust
 internals): commands are "spells", packages are "tomes", the config is your
 "grimoire". Not adopted in code yet; ask before using it.
 
-## 3. Current state (end of Phase 6, branch `phase-6`)
+## 3. Current state (end of Phase 6, on `main`)
 
 The whole roadmap is built:
 - Phase 1, daily-driver Vim;
@@ -52,9 +52,9 @@ The whole roadmap is built:
 - Phase 5, prototypes behind features;
 - Phase 6, the ecosystem packages.
 
-Every step is a separate commit on a branch per phase, each on top of the
-last (`phase-1` ... `phase-6`), pushed to origin. Nothing is merged to
-`main`. Design notes per phase are in `docs/design/`.
+Every step is a separate commit. The phases were built on stacked branches
+(`phase-1` ... `phase-6`), since fast-forwarded into `main` and deleted.
+Design notes per phase are in `docs/design/`.
 
 ### Layout
 
@@ -481,8 +481,8 @@ Conventions:
   saves the screen as a PNG, colors and all, for checking how things look.
   Tests clear the theme's `normal` background (tests/common) so rows hold
   only what was drawn; tests/theme.rs covers the theme.
-- Git: phase branches (`phase-1` ... each on top of the previous) are pushed
-  to origin as work lands; `main` is left alone.
+- Git: all six phases are on `main` (pushed to origin); the phase branches
+  are gone. Ask the owner how to branch new work.
 - Current work and the detailed next steps are at the end of the latest
   `docs/design/phase-N.md` ("Progress").
 
