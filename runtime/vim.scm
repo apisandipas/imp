@@ -3458,11 +3458,10 @@
             (set-cursor! (line-first-nonblank (+ after (length (split-lines text))))))))))
 
 (define (split-lines text)
-  (let loop ([cs (string->list text)] [cur '()] [acc '()])
-    (cond
-      [(null? cs) (reverse (if (null? cur) acc (cons (list->string (reverse cur)) acc)))]
-      [(equal? (car cs) #\newline) (loop (cdr cs) '() (cons (list->string (reverse cur)) acc))]
-      [else (loop (cdr cs) (cons (car cs) cur) acc)])))
+  ;; split-many is native: a char-by-char loop here was most of the time
+  ;; M-x spent reading doc comments.
+  (let ([lines (split-many text "\n")])
+    (if (equal? (last lines) "") (reverse (cdr (reverse lines))) lines)))
 
 (define-ex! '("k" "ma" "mark")
   (lambda (ex)
