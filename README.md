@@ -103,6 +103,9 @@ imp --connect --via 'ssh host imp --bridge'
 
 ## Developing
 
+`make` lists every build and test target (`make run`, `make dev`, `make
+check`, `make install` ...). Underneath:
+
 ```sh
 nix develop          # or any recent stable Rust toolchain
 cargo run -- FILE

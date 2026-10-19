@@ -7,6 +7,11 @@
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # What winit and wgpu load at run time on Linux for the window.
+      guiLibs = pkgs: pkgs.lib.makeLibraryPath (with pkgs; [
+        vulkan-loader libGL libxkbcommon wayland
+        libx11 libxcursor libxi libxrandr
+      ]);
     in
     {
       packages = forAllSystems (pkgs:
@@ -22,11 +27,8 @@
             # winit and wgpu load the windowing and graphics libraries at
             # run time; an rpath (not LD_LIBRARY_PATH, which programs imp
             # starts would inherit) lets them find these.
-            postFixup = pkgs.lib.optionalString (gui && pkgs.stdenv.isLinux) ''
-              patchelf --add-rpath ${pkgs.lib.makeLibraryPath (with pkgs; [
-                vulkan-loader libGL libxkbcommon wayland
-                xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr
-              ])} $out/bin/imp
+            postFixup = pkgs.lib.optionalString (gui && pkgs.stdenv.hostPlatform.isLinux) ''
+              patchelf --add-rpath ${guiLibs pkgs} $out/bin/imp
             '';
             # The runtime Scheme files are embedded at build time.
             meta.mainProgram = "imp";
@@ -43,11 +45,14 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
+          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer gnumake ];
           # Load runtime/*.scm from the checkout, so editing them needs only a
-          # restart of imp, not a rebuild.
+          # restart of imp, not a rebuild. On Linux, let cargo-built imp
+          # open its window.
           shellHook = ''
             export IMP_RUNTIME="$PWD/runtime"
+          '' + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+            export LD_LIBRARY_PATH="${guiLibs pkgs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           '';
         };
       });
