@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Pre-commit checks: tests, clippy, fmt. Exits non-zero if any fail.
 cd "$(dirname "$0")/.."
-nix develop -c bash -c '
+# With Nix, use the toolchain flake.lock pins; otherwise the cargo on PATH.
+if [ -z "$IN_NIX_SHELL" ] && command -v nix >/dev/null; then
+  shell=(nix develop -c bash -c)
+else
+  shell=(bash -c)
+fi
+"${shell[@]}" '
   out=$(cargo test -q 2>&1); t=$?
   echo "$out" | grep -E "test result|^error"
   # A panic message is on the lines after "panicked at".

@@ -11,37 +11,46 @@ that you can read, redefine and extend while it runs.
 
 ## Install
 
-With [Nix](https://nixos.org):
+**Download a binary.** Each
+[release](https://github.com/apisandipas/imp/releases) has one for Linux
+(x86_64, aarch64) and macOS (Apple silicon). It is a single self-contained
+file (the Scheme runtime is built in); put it anywhere on your `PATH`:
 
 ```sh
-nix run github:apisandipas/imp -- FILE        # try it
-nix profile install github:apisandipas/imp   # install it
+tar xzf imp-*.tar.gz
+install -m 755 imp-*/imp ~/.local/bin/    # or: sudo install -m 755 imp-*/imp /usr/local/bin/
 ```
 
-With Rust (a recent stable toolchain and a C compiler, for the tree-sitter
-grammars):
+On macOS, a downloaded binary is quarantined; clear it with
+`xattr -d com.apple.quarantine ~/.local/bin/imp`.
 
-```sh
-cargo install --git https://github.com/apisandipas/imp imp-editor
-```
-
-From a checkout, with Nix installed, `make` does the same (run `make` alone to
-list every target):
+**Build from source.** You need [Rust](https://rustup.rs) (recent stable) and a
+C compiler (`build-essential` on Debian/Ubuntu, Xcode command line tools on
+macOS). No other libraries are needed to build.
 
 ```sh
 git clone https://github.com/apisandipas/imp && cd imp
-make install       # build imp and add it to your Nix profile
-make install-tui   # or: the terminal-only imp
-make upgrade       # later, after git pull: rebuild the installed imp
-make build         # or just build it: ./result/bin/imp
+make install       # builds and installs ~/.local/bin/imp (have it on PATH)
+make install-tui   # or a terminal-only imp, no window code
+make upgrade       # later: git pull, rebuild, reinstall
+make uninstall
 ```
 
-Prebuilt binaries for Linux (x86_64, aarch64) and macOS (Apple silicon) are
-attached to each [release](https://github.com/apisandipas/imp/releases). The
-binary is self-contained: the Scheme runtime is built into it. On Linux the
-window needs the usual desktop libraries (Vulkan or OpenGL, and Wayland or
-X11), which any desktop already has. For a server, `nix build .#tui` or
-`cargo install ... --no-default-features` builds a terminal-only imp.
+For every user, build as yourself and copy as root:
+`make build && sudo install -m 755 target/release/imp /usr/local/bin/`.
+
+Run `make` alone to list every target. Without make,
+`cargo install --git https://github.com/apisandipas/imp imp-editor` installs
+into `~/.cargo/bin` (add `--no-default-features` for terminal-only).
+
+**With Nix**, `nix profile install github:apisandipas/imp` (or
+`make nix-install` from a checkout). On NixOS use this rather than the binary
+or `make install`, since those look for the window libraries in the usual
+system places.
+
+On Linux the window uses the desktop libraries every desktop already has
+(Vulkan or OpenGL, and Wayland or X11). Without a display imp runs in the
+terminal, so the same binary works on a server.
 
 Linux and macOS only. The clipboard uses `wl-copy`, `xclip`, `xsel` or
 `pbcopy`; project search uses `rg`; language servers and debug adapters are
@@ -118,13 +127,13 @@ imp --connect --via 'ssh host imp --bridge'
 check`, `make install` ...). Underneath:
 
 ```sh
-nix develop          # or any recent stable Rust toolchain
-cargo run -- FILE
+cargo run -- FILE    # with Nix, inside `nix develop` for the pinned toolchain
 tools/check.sh       # tests, clippy and fmt, as CI runs them
 ```
 
-Inside `nix develop`, `IMP_RUNTIME` points at `runtime/`, so edits to the
-Scheme files take effect when imp restarts, with no rebuild.
+With `IMP_RUNTIME=$PWD/runtime` set (`nix develop` sets it), imp loads the
+Scheme files from `runtime/`, so edits to them take effect when imp restarts,
+with no rebuild.
 
 ```
 crates/

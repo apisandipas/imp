@@ -499,6 +499,12 @@ Conventions:
   tags with a `-`, like `v0.1.0-alpha.1`) with binaries for x86_64 and
   aarch64 Linux and Apple-silicon macOS. `ci.yml` runs `tools/check.sh` and
   `nix build` on pushes to main and on pull requests.
+- Building: the `Makefile` has every build, install and test target (`make`
+  lists them). It uses plain cargo, so users need no Nix: `make install`
+  puts imp in `~/.local/bin`. With Nix installed it runs cargo inside
+  `nix develop`, as `tools/check.sh` does; the `nix-*` targets build the flake.
+  The owner wants installs to work for people without Nix: keep the README
+  leading with the binaries and `make install`.
 - Current work and the detailed next steps are at the end of the latest
   `docs/design/phase-N.md` ("Progress").
 
