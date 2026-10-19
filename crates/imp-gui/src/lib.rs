@@ -409,6 +409,16 @@ impl App {
         let attrs = Window::default_attributes()
             .with_title("imp")
             .with_inner_size(winit::dpi::LogicalSize::new(1000.0, 650.0));
+        // The app id (Wayland) and class (X11) that match imp.desktop, so
+        // docks and window lists show its icon.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let attrs = {
+            use winit::platform::{
+                wayland::WindowAttributesExtWayland, x11::WindowAttributesExtX11,
+            };
+            let attrs = WindowAttributesExtWayland::with_name(attrs, "imp", "imp");
+            WindowAttributesExtX11::with_name(attrs, "imp", "imp")
+        };
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| e.to_string())?);
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(

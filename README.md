@@ -21,6 +21,13 @@ tar xzf imp-*.tar.gz
 install -m 755 imp-*/imp ~/.local/bin/    # or: sudo install -m 755 imp-*/imp /usr/local/bin/
 ```
 
+On Linux, the archive also has a desktop file and icon for app launchers:
+
+```sh
+sed "s|^Exec=imp |Exec=$HOME/.local/bin/imp |" imp-*/imp.desktop > ~/.local/share/applications/imp.desktop
+install -Dm644 imp-*/imp.svg ~/.local/share/icons/hicolor/scalable/apps/imp.svg
+```
+
 On macOS, a downloaded binary is quarantined; clear it with
 `xattr -d com.apple.quarantine ~/.local/bin/imp`.
 
@@ -30,11 +37,16 @@ macOS). No other libraries are needed to build.
 
 ```sh
 git clone https://github.com/apisandipas/imp && cd imp
-make install       # builds and installs ~/.local/bin/imp (have it on PATH)
+make install       # builds and installs ~/.local/bin/imp (have it on PATH),
+                   # plus a desktop file and icon under ~/.local/share
 make install-tui   # or a terminal-only imp, no window code
 make upgrade       # later: git pull, rebuild, reinstall
 make uninstall
 ```
+
+On NixOS, install with `make nix-install` (`nix profile install .#default`)
+instead: a cargo-built imp can't find the graphics libraries outside
+`nix develop`, so it can't open its window from a launcher.
 
 For every user, build as yourself and copy as root:
 `make build && sudo install -m 755 target/release/imp /usr/local/bin/`.

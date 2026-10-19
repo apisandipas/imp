@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=imp
+GenericName=Text Editor
+Comment=An extensible, Vim-first editor with a Scheme core
+Exec=imp %F
+Icon=imp
+Terminal=false
+StartupWMClass=imp
+Categories=Utility;TextEditor;
+Keywords=text;editor;vim;emacs;scheme;
+MimeType=text/plain;text/markdown;text/x-csrc;text/x-chdr;text/x-c++src;text/x-rust;text/x-python;text/x-scheme;text/x-shellscript;application/json;application/toml;application/x-yaml;

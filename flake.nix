@@ -24,6 +24,11 @@
             buildNoDefaultFeatures = !gui;
             # The git interface's tests make real repositories.
             nativeCheckInputs = [ pkgs.git ];
+            # The desktop file and icon, for launchers and docks.
+            postInstall = pkgs.lib.optionalString (gui && pkgs.stdenv.hostPlatform.isLinux) ''
+              install -Dm644 assets/imp.desktop $out/share/applications/imp.desktop
+              install -Dm644 assets/imp.svg $out/share/icons/hicolor/scalable/apps/imp.svg
+            '';
             # winit and wgpu load the windowing and graphics libraries at
             # run time; an rpath (not LD_LIBRARY_PATH, which programs imp
             # starts would inherit) lets them find these.

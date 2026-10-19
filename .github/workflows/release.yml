@@ -49,6 +49,9 @@ jobs:
           name="imp-$TAG-${{ matrix.target }}"
           mkdir "$name"
           cp target/release/imp README.md LICENSE "$name/"
+          case "${{ matrix.target }}" in
+            *linux*) cp assets/imp.desktop assets/imp.svg "$name/" ;;
+          esac
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
           gh release upload "$TAG" "$name.tar.gz" "$name.tar.gz.sha256"

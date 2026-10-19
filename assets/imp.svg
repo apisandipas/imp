@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- imp: a horned face whose grin is a block cursor. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a2347"/>
+      <stop offset="1" stop-color="#1c1226"/>
+    </linearGradient>
+    <linearGradient id="horn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff7a45"/>
+      <stop offset="1" stop-color="#e0352b"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <!-- horns -->
+  <path d="M34 54 C28 40 28 28 36 18 C38 32 44 40 52 44 Z" fill="url(#horn)"/>
+  <path d="M94 54 C100 40 100 28 92 18 C90 32 84 40 76 44 Z" fill="url(#horn)"/>
+  <!-- head -->
+  <ellipse cx="64" cy="70" rx="36" ry="32" fill="#e5484d"/>
+  <ellipse cx="64" cy="64" rx="31" ry="24" fill="#f05a5f" opacity="0.55"/>
+  <!-- eyes -->
+  <path d="M42 62 L56 66 L42 70 Z" fill="#1c1226"/>
+  <path d="M86 62 L72 66 L86 70 Z" fill="#1c1226"/>
+  <!-- grin with a block cursor -->
+  <path d="M44 80 Q64 94 84 80" fill="none" stroke="#1c1226" stroke-width="5" stroke-linecap="round"/>
+  <rect x="72" y="76" width="9" height="15" rx="1.5" fill="#ffd166"/>
+</svg>

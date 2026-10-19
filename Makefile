@@ -9,11 +9,12 @@
 ARGS ?=
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
+DATADIR ?= $(PREFIX)/share
 NIX := $(if $(IN_NIX_SHELL),,$(shell command -v nix 2>/dev/null))
 CARGO := $(if $(NIX),nix develop -c cargo,cargo)
 
 .DEFAULT_GOAL := help
-.PHONY: help build build-tui run run-tui install install-tui uninstall \
+.PHONY: help build build-tui run run-tui install install-tui install-desktop uninstall \
         upgrade dev dev-tui test test-features test-all lint fmt fmt-check \
         check nix-build nix-install nix-install-tui nix-check ci bump clean
 
@@ -35,16 +36,28 @@ run: build ## Build and run imp (window when there's a display)
 run-tui: build ## Build and run imp in this terminal
 	target/release/imp --tui $(ARGS)
 
-install: build ## Build and install imp (PREFIX=~/.local)
+install: build ## Build and install imp, its desktop file and icon (PREFIX=~/.local)
+	@if [ -e /etc/NIXOS ]; then echo "warning: on NixOS this imp can't open a window outside nix develop; use make nix-install" >&2; fi
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 target/release/imp $(DESTDIR)$(BINDIR)/imp
+	$(MAKE) install-desktop
 
 install-tui: build-tui ## Build and install the terminal-only imp
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 target/release/imp $(DESTDIR)$(BINDIR)/imp
 
-uninstall: ## Remove the installed imp
+# Exec= gets the full path: a desktop session's PATH may not have BINDIR.
+install-desktop: ## Install only the desktop file and icon
+	install -d $(DESTDIR)$(DATADIR)/applications $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps
+	sed 's|^Exec=imp |Exec=$(BINDIR)/imp |' assets/imp.desktop > $(DESTDIR)$(DATADIR)/applications/imp.desktop
+	install -m 644 assets/imp.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/imp.svg
+	@if command -v update-desktop-database >/dev/null; then update-desktop-database $(DESTDIR)$(DATADIR)/applications; fi
+	@if command -v gtk-update-icon-cache >/dev/null; then gtk-update-icon-cache -q -t $(DESTDIR)$(DATADIR)/icons/hicolor; fi
+
+uninstall: ## Remove the installed imp, its desktop file and icon
 	rm -f $(DESTDIR)$(BINDIR)/imp
+	rm -f $(DESTDIR)$(DATADIR)/applications/imp.desktop
+	rm -f $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/imp.svg
 
 upgrade: ## git pull, then build and install again
 	git pull --ff-only
