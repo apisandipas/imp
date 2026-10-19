@@ -13,7 +13,7 @@
 (set-option! 'which-key-delay 200)
 (set-option! 'mouse-scroll 5)
 
-;;; Look: one-dark (default), gruvbox-dark, one-light, or your own
+;;; Look: one-dark (default), gruvbox-dark, everforest-dark, one-light, or your own
 (load-theme! 'gruvbox-dark)
 
 ;; A theme of your own: start from one, change a few colors and faces.

@@ -108,7 +108,7 @@ runtime and can change anything in it. `c` on the start screen opens it.
 
 ```scheme
 (set-option! 'relativenumber #t)
-(load-theme! 'gruvbox-dark)                  ; one-dark, gruvbox-dark, one-light
+(load-theme! 'gruvbox-dark)                  ; one-dark, gruvbox-dark, everforest-dark, one-light
 
 (define-key! 'normal "C-s" 'save-buffer)
 

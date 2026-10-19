@@ -32,6 +32,32 @@ fn themes_set_the_background_and_switch_completely() {
 }
 
 #[test]
+fn everforest_has_its_own_syntax_colors_and_leaves_none_behind() {
+    let mut s = themed("");
+    let path = temp_path("everforest.rs");
+    std::fs::write(&path, "fn main() { let s = \"hi\"; }\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    let fg = |s: &mut imp_server::Server, text: &str| {
+        let row = &s.frame().rows[0];
+        row.iter()
+            .find(|sp| sp.text.contains(text))
+            .unwrap()
+            .style
+            .fg
+    };
+    type_keys(&mut s, ":theme everforest-dark<ret>");
+    assert_eq!(
+        s.frame().rows[0][0].style.bg,
+        Some(Color::Rgb(0x2d, 0x35, 0x3b))
+    );
+    assert_eq!(fg(&mut s, "fn"), Some(Color::Rgb(0xe6, 0x7e, 0x80)));
+    assert_eq!(fg(&mut s, "\"hi\""), Some(Color::Rgb(0x83, 0xc0, 0x92)));
+    // Switching away resets the faces Everforest changed.
+    type_keys(&mut s, ":theme one-dark<ret>");
+    assert_eq!(fg(&mut s, "fn"), Some(Color::Rgb(0xc6, 0x78, 0xdd)));
+}
+
+#[test]
 fn a_theme_can_build_on_another() {
     let mut s = themed("x\n");
     s.eval(

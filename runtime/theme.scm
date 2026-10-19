@@ -191,6 +191,32 @@
         'black "#383a42" 'white "#9d9d9f")
   '())
 
+;; Everforest dark, medium contrast (github.com/sainnhe/everforest), with
+;; its own syntax colors: red keywords, green functions, aqua strings,
+;; purple constants.
+(define-theme! 'everforest-dark #f
+  (hash 'bg "#2d353b" 'bg-alt "#232a2e" 'bg-hl "#343f44" 'selection "#543a48" 'border "#475258"
+        'fg "#d3c6aa" 'dim "#7a8478" 'comment "#859289" 'punct "#9da9a0"
+        'red "#e67e80" 'orange "#e69875" 'yellow "#dbbc7f" 'green "#a7c080"
+        'cyan "#83c092" 'blue "#7fbbb3" 'magenta "#d699b6" 'debug-bg "#4d4c43"
+        'black "#475258" 'white "#d3c6aa")
+  (list (list "syntax.keyword" "fg=#e67e80")
+        (list "syntax.function" "fg=#a7c080")
+        (list "syntax.function.macro" "fg=#a7c080")
+        (list "syntax.string" "fg=#83c092")
+        (list "syntax.constant" "fg=#d699b6")
+        (list "syntax.number" "fg=#d699b6")
+        (list "syntax.boolean" "fg=#d699b6")
+        (list "syntax.variable.builtin" "fg=#d699b6")
+        (list "syntax.variable.parameter" "fg=#d3c6aa")
+        (list "syntax.property" "fg=#7fbbb3")
+        (list "syntax.operator" "fg=#e69875")
+        (list "syntax.punctuation.special" "fg=#e69875")
+        ;; Its statusline's mode colors: normal green, insert blue, visual red.
+        (list "status.mode.normal" "fg=#2d353b bg=#a7c080 bold")
+        (list "status.mode.insert" "fg=#2d353b bg=#7fbbb3 bold")
+        (list "status.mode.visual" "fg=#2d353b bg=#e67e80 bold")))
+
 (define (theme-names) (sort (map symbol->string (hash-keys->list *themes*)) string<?))
 
 (define-command! 'load-theme
