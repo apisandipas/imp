@@ -80,9 +80,22 @@ impl Client {
 
 fn start_daemon(name: &str) -> std::path::PathBuf {
     let socket = common::temp_path(&format!("{name}.sock"));
+    // State (recent files, remembered projects) stays out of the real one.
+    let config = common::temp_path(&format!("{name}-init.scm"));
+    std::fs::write(
+        &config,
+        format!(
+            "(set-option! 'state-directory {:?})\n",
+            common::temp_path("state").display().to_string()
+        ),
+    )
+    .unwrap();
     let s = socket.clone();
     std::thread::spawn(move || {
-        imp_server::daemon::run(&s, imp_server::Options { user_config: None }).unwrap();
+        let options = imp_server::Options {
+            user_config: Some(config),
+        };
+        imp_server::daemon::run(&s, options).unwrap();
     });
     socket
 }
