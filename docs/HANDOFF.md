@@ -298,7 +298,13 @@ needed. Details, and what each one leaves out, are in
   - project search (`SPC s p`, `:grep` with rg) into a quickfix list
     (`:copen`, `:cn`, `]q`).
 - **Terminals** (`term.rs`, `term.scm`, `:terminal`, `SPC o t`): programs
-  on a pty with vt100, in a TERMINAL state. `C-\ C-n` leaves it.
+  on a pty with vt100, in a TERMINAL state. `C-\ C-n` leaves it. ANSI
+  colors 0-15 come from the theme (`set-terminal-palette!`).
+- **Start screen and recent files** (`start.scm`, from the second polish
+  pass): started without a file, imp shows recent files (digits),
+  projects (letters) and a few commands; `i` goes to the empty buffer.
+  `:start` shows it again, `(set-option! 'start-screen #f)` turns it off.
+  Visited files are kept in the state directory; `SPC f r` picks one.
 
 ### Phase 5 prototypes (off by default)
 
@@ -414,10 +420,23 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
 - The mouse: click to move (focusing the window), drag to select, wheel to
   scroll; `:set nomouse` turns it off (shift-drag still selects in most
   terminals while imp captures the mouse).
+- The second polish pass (after Phase 6, asked for by the owner):
+  - `<tab>` on the `:` line completes arguments too: files for `:e`, `:w`,
+    `:sp` and the like, buffers for `:b`, options for `:set`, themes,
+    help topics. It extends to what the candidates share, lists them in
+    the popup, and further `<tab>`/`<s-tab>` step through them. Packages
+    add more with `define-ex-completion!`.
+  - M-x shows each command's keys (normal mode's and the leader's).
+  - `K` without a language server gives Scheme help in Scheme files and
+    says what's missing elsewhere.
+  - `imp DIR` opens the file browser; Steel no longer prints over the
+    screen when `~/.local/share` is missing.
+  - `h`, `l`, `w`, `f` and the other horizontal motions open a closed fold,
+    as Vim's default 'foldopen' does.
 
 ### Verified
 
-- `cargo test`: 359 tests, plus the feature-gated ones (`tools/check.sh`
+- `cargo test`: 365 tests, plus the feature-gated ones (`tools/check.sh`
   runs them all). Clippy and fmt are clean. `nix build` (which runs the
   tests in its sandbox, git included) and `nix build .#gui` work.
 - The release binary in a pty: splits with borders, patched redraws through
@@ -541,8 +560,7 @@ Fix these when the roadmap item touching them comes up, not all at once.
 12. **Block visual mode** uses char columns (a tab counts as one), unlike the
     renderer, which now measures display width.
 13. **File times are whole seconds** for autosave comparisons.
-14. **Folds are manual only** (no 'foldmethod' syntax/indent/expr), and `h`
-    and `l` on a closed fold don't open it.
+14. **Folds are manual only** (no 'foldmethod' syntax/indent/expr).
 15. **Org** covers outlines, TODOs, checkboxes, links, tables, agenda and
     capture. It lacks timestamps with repeaters, priorities, properties,
     export and babel, and typing in a table doesn't keep it aligned.

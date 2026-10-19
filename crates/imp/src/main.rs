@@ -125,16 +125,33 @@ fn options() -> Options {
 /// The editor in this process: the server on a thread, talking over
 /// channels.
 fn standalone(paths: Vec<PathBuf>) -> Result<(), String> {
-    let buffers = paths
+    // Directories open in the file browser once the runtime is up.
+    let (dirs, files): (Vec<_>, Vec<_>) = paths.iter().partition(|p| p.is_dir());
+    let buffers = files
         .iter()
         .map(|path| Buffer::open(path).map_err(|e| format!("{}: {e}", path.display())))
         .collect::<Result<Vec<_>, _>>()?;
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let first = if dirs.is_empty() {
+        Vec::new()
+    } else {
+        vec![ClientMsg::Open(
+            dirs.iter()
+                .map(|p| {
+                    std::fs::canonicalize(p)
+                        .unwrap_or_else(|_| cwd.join(p))
+                        .display()
+                        .to_string()
+                })
+                .collect(),
+        )]
+    };
 
     let (to_server, from_client) = mpsc::channel();
     let (to_client, from_server) = mpsc::channel();
     let server = thread::spawn(move || imp_server::run(buffers, options(), from_client, to_client));
 
-    let result = terminal_session(to_server, from_server, Vec::new());
+    let result = terminal_session(to_server, from_server, first);
     result?;
     match server.join() {
         Ok(r) => r,

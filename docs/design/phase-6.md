@@ -258,3 +258,32 @@ change, so moving lines around never deletes a file. `g.` shows dotfiles.
     or `A` returns.
   - Not done: mouse reporting to the program, bracketed paste, and
     resizing for windows other than the current one.
+
+## Second polish pass (after Phase 6)
+
+The owner asked for a polish pass before merging. Found by driving the
+release binary in a pty and looking at screenshots of each screen:
+
+- **Blank screen on a fresh account.** Steel creates `$XDG_DATA_HOME/steel`
+  without its parents and prints the error to stderr, over the screen.
+  The server now creates the directory first (unless `STEEL_HOME` is set).
+- **`imp DIR` failed** with "Is a directory". Directories given on the
+  command line (terminal and GUI clients) are now sent as `Open` messages
+  once the runtime is up, so they reach the file browser.
+- **Starting without a file showed an empty buffer.** `start.scm` adds
+  recent files (state directory, `SPC f r`) and a start screen; `run()`
+  calls `imp-start-screen` when no file was given. A buffer's mode can now
+  bind digits (when no count is in progress) for its entries.
+- **`:e cr<tab>` did nothing.** Tab completion on the `:` line covered
+  only command names (and `:noh` stayed `:noh`). Now it completes
+  arguments through `define-ex-completion!`, extends to the common prefix,
+  shows the candidates in the popup (with `set-popup!`, since
+  `show-popup!` makes the next key only close it) and steps through them.
+  Only full command names are listed.
+- **M-x listed bare names.** It shows normal-mode and leader keys beside
+  each command (`completing-read` takes an optional annotate procedure).
+- **`K` said "no binding"** without a language server.
+- **Terminal colors** used the outer terminal's palette (and the GUI's
+  fixed one); themes now give ANSI 0-15, with optional `black` and `white`
+  palette entries.
+- **Folds**: horizontal motions open a closed fold ('foldopen' hor).

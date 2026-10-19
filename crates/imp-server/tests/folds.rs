@@ -31,8 +31,24 @@ fn zf_makes_a_closed_fold_that_j_and_k_step_over() {
     type_keys(&mut s, "2j");
     assert_eq!(s.eval("(current-line)").unwrap(), "3");
     // The cursor on a fold shows at its start.
-    type_keys(&mut s, "k$");
+    s.eval("(set-cursor! 6)").unwrap();
     assert_eq!(s.frame().cursor, (0, 1));
+}
+
+#[test]
+fn horizontal_motions_open_a_fold() {
+    // Vim's default 'foldopen' has hor: h, l, w, f and the like.
+    for keys in ["l", "e", "w", "$", "fo"] {
+        let mut s = server(TEXT);
+        type_keys(&mut s, "jzfjk");
+        type_keys(&mut s, "j");
+        type_keys(&mut s, keys);
+        assert_eq!(rows(&mut s)[2].trim_end(), "three", "{keys}");
+    }
+    // j and k don't.
+    let mut s = server(TEXT);
+    type_keys(&mut s, "jzfjjk");
+    assert_eq!(rows(&mut s)[1].trim_end(), "two ··· 2 lines");
 }
 
 #[test]

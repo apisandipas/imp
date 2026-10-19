@@ -12,7 +12,8 @@
 ;;;
 ;;; Palette names: bg (text background), bg-alt (status line, popups),
 ;;; bg-hl (cursor line), selection, border, fg, dim, comment, punct, red,
-;;; orange, yellow, green, cyan, blue, magenta, debug-bg.
+;;; orange, yellow, green, cyan, blue, magenta, debug-bg, and black and
+;;; white for terminal buffers (dim and fg if left out).
 
 (define *themes* (hash))  ; name -> (palette extra-faces)
 (define *theme* #f)       ; the theme loaded
@@ -106,6 +107,12 @@
      (list "git.hash" (fg 'dim))
      (list "git.status" (fg 'yellow))
      (list "git.count" (fg 'dim))
+     (list "start.title" (fg 'blue "bold"))
+     (list "start.heading" (fg 'magenta "bold"))
+     (list "start.key" (fg 'yellow "bold"))
+     (list "start.dim" (fg 'comment))
+     (list "start.file" "")
+     (list "start.project" (fg 'cyan))
      (list "diff.added" (fg 'green))
      (list "diff.removed" (fg 'red))
      (list "diff.hunk" (fg 'cyan))
@@ -141,6 +148,15 @@
      (list "syntax.text.emphasis" "italic")
      (list "syntax.text.strong" "bold"))))
 
+;; The 16 colors programs in a terminal buffer ask for by number: black,
+;; red, green, yellow, blue, magenta, cyan, white, then the bright ones.
+(define (terminal-palette p)
+  (let* ([get (lambda (k fallback) (or (hash-try-get p k) (hash-ref p fallback)))]
+         [colors (cons (get 'black 'dim)
+                       (append (map (lambda (k) (hash-ref p k)) '(red green yellow blue magenta cyan))
+                               (list (get 'white 'fg))))])
+    (append colors (cons (hash-ref p 'dim) (cdr colors)))))
+
 (define (load-theme! name)
   (let ([theme (hash-try-get *themes* name)])
     (if (not theme)
@@ -148,27 +164,31 @@
         (begin
           (for-each (lambda (f) (set-face! (car f) (cadr f)))
                     (append (theme-faces (car theme)) (cadr theme)))
+          (set-terminal-palette! (terminal-palette (car theme)))
           (set! *theme* name)))))
 
 (define-theme! 'one-dark #f
   (hash 'bg "#282c34" 'bg-alt "#21252b" 'bg-hl "#2c313a" 'selection "#3e4452" 'border "#3e4452"
         'fg "#abb2bf" 'dim "#5c6370" 'comment "#7f848e" 'punct "#848b98"
         'red "#e06c75" 'orange "#d19a66" 'yellow "#e5c07b" 'green "#98c379"
-        'cyan "#56b6c2" 'blue "#61afef" 'magenta "#c678dd" 'debug-bg "#3b3a26")
+        'cyan "#56b6c2" 'blue "#61afef" 'magenta "#c678dd" 'debug-bg "#3b3a26"
+        'black "#3f4451" 'white "#d7dae0")
   '())
 
 (define-theme! 'gruvbox-dark #f
   (hash 'bg "#282828" 'bg-alt "#1d2021" 'bg-hl "#32302f" 'selection "#504945" 'border "#504945"
         'fg "#ebdbb2" 'dim "#7c6f64" 'comment "#928374" 'punct "#a89984"
         'red "#fb4934" 'orange "#fe8019" 'yellow "#fabd2f" 'green "#b8bb26"
-        'cyan "#8ec07c" 'blue "#83a598" 'magenta "#d3869b" 'debug-bg "#3c3a24")
+        'cyan "#8ec07c" 'blue "#83a598" 'magenta "#d3869b" 'debug-bg "#3c3a24"
+        'black "#504945" 'white "#d5c4a1")
   '())
 
 (define-theme! 'one-light #f
   (hash 'bg "#fafafa" 'bg-alt "#eaeaeb" 'bg-hl "#f0f0f1" 'selection "#d4d6dc" 'border "#c8c9cc"
         'fg "#383a42" 'dim "#9d9d9f" 'comment "#a0a1a7" 'punct "#696c77"
         'red "#e45649" 'orange "#986801" 'yellow "#c18401" 'green "#50a14f"
-        'cyan "#0184bc" 'blue "#4078f2" 'magenta "#a626a4" 'debug-bg "#fbf1d0")
+        'cyan "#0184bc" 'blue "#4078f2" 'magenta "#a626a4" 'debug-bg "#fbf1d0"
+        'black "#383a42" 'white "#9d9d9f")
   '())
 
 (define (theme-names) (sort (map symbol->string (hash-keys->list *themes*)) string<?))
@@ -183,6 +203,9 @@
       (cond [(equal? arg "") (message (if *theme* (symbol->string *theme*) "no theme"))]
             [(hash-contains? *themes* (string->symbol arg)) (load-theme! (string->symbol arg))]
             [else (message (string-append "no theme " arg "; there are " (string-join (theme-names) ", ")))]))))
+
+(define-ex-completion! '("theme" "colo" "colorscheme")
+  (lambda (typed) (filter (lambda (n) (starts-with? n typed)) (theme-names))))
 
 (define-leader! "tT" 'load-theme "theme")
 

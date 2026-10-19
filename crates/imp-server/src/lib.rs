@@ -67,6 +67,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
     ("project.scm", include_str!("../../../runtime/project.scm")),
     ("term.scm", include_str!("../../../runtime/term.scm")),
+    ("start.scm", include_str!("../../../runtime/start.scm")),
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
@@ -103,6 +104,18 @@ impl Server {
         ed.background.sender = Some(sender.clone());
         editor::install(ed);
 
+        // Steel makes $XDG_DATA_HOME/steel (non-recursively) on first use and
+        // prints to stderr, over the screen, if the parent is missing.
+        if std::env::var_os("STEEL_HOME").is_none() {
+            let data = std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share"))
+                });
+            if let Some(data) = data {
+                let _ = std::fs::create_dir_all(data.join("steel"));
+            }
+        }
         let mut engine = Engine::new();
         api::register(&mut engine);
 
@@ -394,10 +407,14 @@ pub fn run(
     from_client: Receiver<ClientMsg>,
     to_client: Sender<ServerMsg>,
 ) -> Result<(), String> {
+    let empty = buffers.is_empty();
     let mut buffers = buffers.into_iter();
     let mut server = Server::new(buffers.next().unwrap_or_default(), options)?;
     for buffer in buffers {
         server.add_buffer(buffer);
+    }
+    if empty {
+        server.call("imp-start-screen", vec![]);
     }
     let mut last = server.frame();
     if to_client.send(ServerMsg::Frame(last.clone())).is_err() {

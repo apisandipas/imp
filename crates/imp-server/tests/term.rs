@@ -78,9 +78,10 @@ fn colors_become_faces() {
         .iter()
         .find(|sp| sp.text.contains("red"))
         .expect("a span with red");
+    // ANSI red is the theme's red (one-dark).
     assert_eq!(
         red.style.fg,
-        Some(imp_core::Color::Indexed(1)),
+        Some(imp_core::Color::Rgb(0xe0, 0x6c, 0x75)),
         "{:?}",
         frame.rows[0]
     );

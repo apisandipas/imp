@@ -35,6 +35,19 @@ struct Term {
 thread_local! {
     static TERMS: RefCell<HashMap<u64, Term>> = RefCell::new(HashMap::new());
     static NEXT: RefCell<u64> = const { RefCell::new(0) };
+    /// The theme's colors for ANSI colors 0-15 (set-terminal-palette!).
+    static PALETTE: RefCell<[Option<Color>; 16]> = const { RefCell::new([None; 16]) };
+}
+
+/// Sets the colors programs get when they ask for ANSI colors 0-15, so
+/// they match the theme rather than whatever the outer terminal uses.
+pub fn set_palette(colors: &[Color]) {
+    PALETTE.with(|p| {
+        let mut p = p.borrow_mut();
+        for (i, slot) in p.iter_mut().enumerate() {
+            *slot = colors.get(i).copied();
+        }
+    });
 }
 
 fn size(rows: u16, cols: u16) -> PtySize {
@@ -161,7 +174,11 @@ pub fn application_cursor(id: u64) -> bool {
 fn color(c: vt100::Color) -> Option<Color> {
     match c {
         vt100::Color::Default => None,
-        vt100::Color::Idx(i) => Some(Color::Indexed(i)),
+        vt100::Color::Idx(i) => Some(
+            PALETTE
+                .with(|p| p.borrow().get(i as usize).copied().flatten())
+                .unwrap_or(Color::Indexed(i)),
+        ),
         vt100::Color::Rgb(r, g, b) => Some(Color::Rgb(r, g, b)),
     }
 }

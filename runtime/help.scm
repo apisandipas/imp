@@ -248,6 +248,15 @@
     (let ([name (symbol-at-cursor)])
       (if name (find-definition name) (message "no symbol at the cursor")))))
 
+;; K: help for the Scheme symbol under the cursor. A language server's
+;; hover takes over where one is attached (lsp.scm binds K in lsp-mode).
+(define-key! 'normal "K"
+  (lambda (count)
+    (let ([name (and (equal? (buffer-language) "scheme") (symbol-at-cursor))])
+      (cond [name (run-ex! (string-append "help " name))]
+            [(equal? (buffer-language) "scheme") (message "no symbol at the cursor")]
+            [else (message "K needs a language server for this file (see :help define-language-server!)")]))))
+
 (define-command! 'find-definition
   (lambda (count) (open-cmdline! "Find definition: " "" find-definition #f #f)))
 
@@ -279,6 +288,18 @@
                (show-popup! (cons (string-append ":" topic) (site-description site)))
                (message (string-append "no help for :" topic))))]
         [else (describe-function topic)]))))
+
+(define-ex-completion! '("h" "help")
+  (lambda (typed)
+    (let loop ([names (sort (filter (lambda (n) (starts-with? n typed))
+                                    (append (map symbol->string (hash-keys->list *options*))
+                                            (map symbol->string (command-names))
+                                            (hash-keys->list *ex-commands*)))
+                            string<?)])
+      ;; Without repeats (a name can be a command and an ex command).
+      (cond [(or (null? names) (null? (cdr names))) names]
+            [(equal? (car names) (cadr names)) (loop (cdr names))]
+            [else (cons (car names) (loop (cdr names)))]))))
 
 (define-ex! '("describe-key") (lambda (ex) (run-command 'describe-key)))
 (define-ex! '("describe-function") (lambda (ex) (describe-function (ex-args ex))))

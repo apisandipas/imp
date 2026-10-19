@@ -171,11 +171,22 @@ fn connect(
             let _ = to_server.send(ClientMsg::Open(files.collect()));
         }
     } else {
-        let buffers = args
-            .files
+        // Directories open in the file browser once the runtime is up.
+        let (dirs, files): (Vec<_>, Vec<_>) = args.files.iter().partition(|p| p.is_dir());
+        let buffers = files
             .iter()
             .map(|path| Buffer::open(path).map_err(|e| format!("{}: {e}", path.display())))
             .collect::<Result<Vec<_>, _>>()?;
+        if !dirs.is_empty() {
+            let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+            let dirs = dirs.iter().map(|p| {
+                std::fs::canonicalize(p)
+                    .unwrap_or_else(|_| cwd.join(p))
+                    .display()
+                    .to_string()
+            });
+            let _ = to_server.send(ClientMsg::Open(dirs.collect()));
+        }
         let options = imp_server::Options {
             user_config: imp_server::user_config_path(),
         };

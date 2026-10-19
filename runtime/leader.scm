@@ -81,6 +81,15 @@
                              (range 0 columns)))))
          (range 0 rows))))
 
+;; M-x shows leader keys beside commands (completion.scm).
+(set! *more-command-keys*
+      (lambda ()
+        (map (lambda (keys)
+               (list (car (hash-ref *leader-bindings* keys))
+                     (string-append "SPC " (string-join (map key-label (split-keys keys)) " "))))
+             (filter (lambda (keys) (symbol? (car (hash-ref *leader-bindings* keys))))
+                     (hash-keys->list *leader-bindings*)))))
+
 (define (pad-left text width)
   (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
 

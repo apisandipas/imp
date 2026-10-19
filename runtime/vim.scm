@@ -1625,11 +1625,12 @@
 (define-char-motion! "`" 'exclusive (lambda (from n c) (mark-pos c)))
 
 ;; Motions that count as jumps: they set the ' mark and go in the jump list.
-;; Motions that open a closed fold they land in ('foldopen': mark,
+;; Motions that open a closed fold they land in ('foldopen': hor, mark,
 ;; percent, search, block).
 (define (fold-opening-motion? key)
-  (or (member key '("%" "{" "}" "n" "N" "*" "#" "g*" "g#" "(" ")"))
-      (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`")))))
+  (or (member key '("%" "{" "}" "n" "N" "*" "#" "g*" "g#" "(" ")"
+                    "h" "l" "<left>" "<right>" "<bs>" "0" "^" "$" "|" "w" "W" "b" "B" "e" "E" "ge" "gE" ";" ","))
+      (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`" "f" "F" "t" "T")))))
 
 (define (jump-motion? key)
   (or (member key '("G" "gg" "%" "{" "}" "n" "N" "*" "#" "g*" "g#" "H" "M" "L"))
@@ -1970,8 +1971,11 @@
     [(and (member key '("<esc>" "C-c")) (not (eq? *mode* 'visual)))
      (reset-pending!)]
 
-    ;; Counts. A leading 0 is the motion, not a count.
-    [(and (digit? key) (not *prefix*) (not (and (equal? key "0") (equal? *count* ""))))
+    ;; Counts. A leading 0 is the motion, not a count, and a buffer's mode
+    ;; can bind digits (the start screen's recent files).
+    [(and (digit? key) (not *prefix*) (not (and (equal? key "0") (equal? *count* "")))
+          (not (and (equal? *count* "") (not *operator*)
+                    (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
      (set! *count* (string-append *count* key))]
 
     ;; Search prompts. With an operator pending, the search is its motion.
@@ -2328,6 +2332,7 @@
                 (+ (string-length *cmdline-prompt*) *cmdline-pos*)))
 
 (define (close-cmdline!)
+  (wild-reset!)
   (set! *cmdline-key-handler* #f)
   (clear-cmdline!)
   (set-mode! *cmdline-return*)
@@ -2394,6 +2399,7 @@
         [else (loop (+ i dir))]))))
 
 (define (cmdline-key! key)
+  (unless (member key '("<tab>" "<s-tab>")) (wild-reset!))
   (cond
     ;; Completion menus and the like take the keys they want first.
     [(and *cmdline-key-handler* (*cmdline-key-handler* key)) #t]
@@ -2438,21 +2444,162 @@
     [(member key '("<end>" "C-e")) (cmdline-edit! *cmdline* (string-length *cmdline*))]
     [(member key '("<up>" "C-p")) (history-step! 1)]
     [(member key '("<down>" "C-n")) (history-step! -1)]
-    [(equal? key "<tab>") (cmdline-complete!)]
+    [(equal? key "<tab>") (cmdline-complete! 1)]
+    [(equal? key "<s-tab>") (cmdline-complete! -1)]
     [(= (string-length key) 1) (cmdline-insert! key)]
     [else #t]))
 
-;; <tab> on the command line: completion arrives with the completion
-;; framework (2.8). Until then it completes ex command names.
-(define (cmdline-complete!)
-  (when (equal? *cmdline-prompt* ":")
-    (let* ([text (cmdline-before)]
-           [names (filter (lambda (n) (and (starts-with? n text) (> (string-length n) (string-length text))))
-                          (hash-keys->list *ex-commands*))]
-           [names (sort names (lambda (a b) (< (string-length a) (string-length b))))])
-      (if (null? names)
-          (set-status! "no completions")
-          (cmdline-insert! (substring (car names) (string-length text) (string-length (car names))))))))
+;;; <tab> on the command line completes the command's name, or its
+;;; argument: a file for :e, a buffer for :b, an option for :set. More with
+;;; (define-ex-completion! '("name" ...) proc), proc taking the argument
+;;; typed so far and returning candidates. The first <tab> extends what is
+;;; typed as far as the candidates agree and lists them in the popup; more
+;;; <tab>s (and <s-tab>) step through them.
+
+(define *ex-completions* (hash))  ; ex command name -> proc
+
+(define (define-ex-completion! names proc)
+  (for-each (lambda (n) (set! *ex-completions* (hash-insert *ex-completions* n proc))) names))
+
+(define *wild* '())       ; the candidates being stepped through
+(define *wild-index* -1)  ; the one inserted, -1 for none yet
+(define *wild-start* 0)   ; where the completed word starts in the line
+
+(define (wild-reset!)
+  (when (pair? *wild*)
+    (set! *wild* '())
+    (set! *wild-index* -1)
+    (set-popup! '())))
+
+(define (common-prefix a b)
+  (let loop ([i 0])
+    (if (and (< i (string-length a)) (< i (string-length b)) (equal? (string-ref a i) (string-ref b i)))
+        (loop (+ i 1))
+        (substring a 0 i))))
+
+;; What <tab> completes in `text` (the line up to the cursor): (start
+;; candidates), or #f.
+(define (ex-completion-context text)
+  (let* ([i (with-handler (lambda (e) #f) (skip-spaces text (caddr (parse-range text 0))))]
+         [name-end (and i (let loop ([j i])
+                            (if (or (letter? (char-at text j))
+                                    (and (> j i) (equal? (char-at text j) #\-) (letter? (char-at text (+ j 1)))))
+                                (loop (+ j 1))
+                                j)))])
+    (cond
+      [(not i) #f]
+      [(= name-end (string-length text))
+       (let* ([typed (substring text i name-end)]
+              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))])
+         ;; Full names only, as Vim lists them: "noh" goes, "nohlsearch" stays.
+         (list i (sort (filter (lambda (n)
+                                 (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
+                                                                 (starts-with? m n)))
+                                                names)))
+                               names)
+                       string<?)))]
+      [else
+       (let* ([name (substring text i name-end)]
+              [proc (hash-try-get *ex-completions* name)]
+              [start (let loop ([j (string-length text)])
+                       (if (and (> j name-end) (not (char-whitespace? (string-ref text (- j 1))))) (loop (- j 1)) j))])
+         (and proc (> start name-end)
+              (list start (proc (substring text start (string-length text))))))])))
+
+;; Files and directories (with a /) whose path starts with `typed`.
+(define (complete-path typed)
+  (let* ([slash (let loop ([j (- (string-length typed) 1)])
+                  (cond [(< j 0) #f] [(equal? (string-ref typed j) #\/) j] [else (loop (- j 1))]))]
+         [dir (if slash (substring typed 0 (+ slash 1)) "")]
+         [prefix (substring typed (string-length dir) (string-length typed))]
+         [listing (directory-entries (if (equal? dir "") (current-dir) (expand-path dir)))])
+    (if (string? listing)
+        '()
+        (map (lambda (e) (string-append dir (car e) (if (cadr e) "/" "")))
+             (filter (lambda (e)
+                       (and (starts-with? (car e) prefix)
+                            (or (starts-with? prefix ".") (not (starts-with? (car e) ".")))))
+                     listing)))))
+
+(define-ex-completion! '("e" "edit" "w" "write" "sav" "saveas" "sp" "split" "vs" "vsplit" "r" "read"
+                         "so" "source" "wq" "x" "xit" "Ex" "Explore")
+  complete-path)
+(define-ex-completion! '("b" "bu" "buf" "buffer" "bd" "bdelete" "bw" "bwipeout")
+  (lambda (typed)
+    (filter (lambda (n) (string-contains? n typed))
+            (map (lambda (id) (car (buffer-info id))) (buffer-list)))))
+(define-ex-completion! '("se" "set" "setl" "setlocal")
+  (lambda (typed)
+    (let ([names (map symbol->string (hash-keys->list *options*))])
+      (sort (filter (lambda (n) (starts-with? n typed))
+                    (if (starts-with? typed "no")
+                        (append names (map (lambda (n) (string-append "no" n)) names))
+                        names))
+            string<?))))
+
+;; The last part of a path, as the popup lists it.
+(define (wild-label candidate)
+  (let* ([n (string-length candidate)]
+         [end (if (and (> n 1) (ends-with? candidate "/")) (- n 1) n)]
+         [slash (let loop ([j (- end 1)])
+                  (cond [(< j 0) #f] [(equal? (string-ref candidate j) #\/) j] [else (loop (- j 1))]))])
+    (if slash (substring candidate (+ slash 1) n) candidate)))
+
+(define (wild-show!)
+  (let* ([labels (map wild-label *wild*)]
+         [width (+ 2 (apply max (map string-length labels)))]
+         [columns (max 1 (quotient (- (window-width) 1) width))]
+         [rows (min 10 (quotient (+ (length labels) (- columns 1)) columns))]
+         [shown (* rows columns)]
+         ;; The page holding the selected one.
+         [first (* shown (quotient (max 0 *wild-index*) shown))]
+         [cell (lambda (i)
+                 (if (< i (length labels))
+                     (list (list (pad-right (list-ref labels i) width)
+                                 (if (= i *wild-index*) "popup-selected" "popup")))
+                     '()))])
+    ;; Not show-popup!: keys go on to the command line, not to closing it.
+    (set-popup!
+     (append
+      (map (lambda (r)
+             (cons " " (apply append (map (lambda (c) (cell (+ first (* r columns) c))) (range 0 columns)))))
+           (range 0 rows))
+      (if (> (length labels) shown)
+          (list (list (list (string-append " " (number->string (length labels)) " matches") "popup.detail")))
+          '())))))
+
+;; Puts candidate `i` in place of the word being completed.
+(define (wild-select! i)
+  (set! *wild-index* i)
+  (wild-replace! (list-ref *wild* i))
+  (wild-show!))
+
+(define (wild-replace! text)
+  (let ([after (substring *cmdline* *cmdline-pos* (string-length *cmdline*))])
+    (cmdline-edit! (string-append (substring *cmdline* 0 *wild-start*) text after)
+                   (+ *wild-start* (string-length text)))))
+
+(define (cmdline-complete! step)
+  (cond
+    [(not (equal? *cmdline-prompt* ":")) #f]
+    [(pair? *wild*) (wild-select! (modulo (+ *wild-index* step) (length *wild*)))]
+    [else
+     (let ([ctx (ex-completion-context (cmdline-before))])
+       (cond
+         [(or (not ctx) (null? (cadr ctx))) (set-status! "no completions")]
+         [else
+          (let* ([start (car ctx)] [candidates (cadr ctx)]
+                 [typed (substring *cmdline* start *cmdline-pos*)]
+                 [common (foldl (lambda (c acc) (common-prefix acc c)) (car candidates) (cdr candidates))])
+            (set! *wild-start* start)
+            (cond
+              [(null? (cdr candidates)) (wild-replace! (car candidates))]
+              [else
+               (set! *wild* candidates)
+               (set! *wild-index* -1)
+               (if (> (string-length common) (string-length typed))
+                   (begin (wild-replace! common) (wild-show!))
+                   (wild-select! (if (> step 0) 0 (- (length candidates) 1))))]))]))]))
 
 ;;; Search
 

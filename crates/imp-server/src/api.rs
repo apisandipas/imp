@@ -389,6 +389,7 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("getenv", |name: String| std::env::var(name).ok());
+    engine.register_fn("imp-version", || env!("CARGO_PKG_VERSION"));
     // imp's config directory (where init.scm and packages/ live).
     engine.register_fn("config-dir", || {
         crate::user_config_path()
@@ -800,6 +801,11 @@ pub fn register(engine: &mut Engine) {
         "term-kill!",
         |id: isize| crate::term::kill(clamp(id) as u64),
     );
+    // The theme's colors for ANSI 0-15 in terminals, as "#rrggbb" strings.
+    engine.register_fn("set-terminal-palette!", |colors: Vec<String>| {
+        let parsed: Result<Vec<_>, _> = colors.iter().map(|c| imp_core::Color::parse(c)).collect();
+        parsed.map(|p| crate::term::set_palette(&p))
+    });
     engine.register_fn("term-application-cursor?", |id: isize| {
         crate::term::application_cursor(clamp(id) as u64)
     });

@@ -14,6 +14,7 @@
 (define *completion-matches* '())
 (define *completion-index* 0)
 (define *completion-limit* 500)  ; matches kept per keystroke
+(define *completion-annotate* #f)  ; candidate -> text shown dimmed beside it, or #f
 
 ;; Menu height: up to ten rows, less in a small window.
 (define (completion-rows) (max 1 (min 10 (- (window-height) 2))))
@@ -30,9 +31,17 @@
          [top (max 0 (min (- *completion-index* (- rows 1)) (- n rows)))]
          [top (max 0 (min top *completion-index*))]
          [shown (take (list-tail *completion-matches* top) (min rows (- n top)))])
-    (set-popup! (if (null? shown)
-                    (list (list (list "  (no matches)" "popup.detail")))
-                    (map (lambda (c) (string-append " " c)) shown)))
+    (set-popup! (cond
+                  [(null? shown) (list (list (list "  (no matches)" "popup.detail")))]
+                  [*completion-annotate*
+                   (let ([width (+ 3 (apply max (map string-length shown)))])
+                     (map (lambda (c)
+                            (let ([note (*completion-annotate* c)])
+                              (if note
+                                  (list (string-append " " (pad-right c width)) (list note "popup.detail"))
+                                  (string-append " " c))))
+                          shown))]
+                  [else (map (lambda (c) (string-append " " c)) shown)]))
     ;; Titled with the prompt, without its colon.
     (set-popup-place! "bottom" 0 (trim (let ([p (trim *cmdline-prompt*)])
                                          (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))
@@ -63,8 +72,11 @@
   (set-popup-selected! -1))
 
 ;; `candidates` is a list of strings. `on-select` gets the chosen string.
-(define (completing-read prompt candidates on-select)
+;; An `annotate` procedure, if given, returns text to show beside each
+;; candidate (or #f).
+(define (completing-read prompt candidates on-select . annotate)
   (set! *completion-candidates* candidates)
+  (set! *completion-annotate* (if (null? annotate) #f (car annotate)))
   (open-cmdline!
    prompt ""
    (lambda (text)
@@ -80,11 +92,34 @@
 
 ;;; Commands built on it
 
-;; Run a command by name (Emacs's M-x).
+;; The keys bound to commands, for M-x to show: a hash of command name
+;; (a string) -> key labels. Normal mode's (or Emacs's) keys here; the
+;; leader adds its own through *more-command-keys* (leader.scm).
+(define *more-command-keys* (lambda () '()))  ; -> list of (name label)
+
+(define (command-keys-table)
+  (let* ([mode (if (eq? *mode* 'emacs) 'emacs 'normal)]
+         [m (keymap mode)]
+         [pairs (append (map (lambda (k) (list (hash-ref m k) (if (equal? k " ") "SPC" k)))
+                             (filter (lambda (k) (symbol? (hash-ref m k))) (hash-keys->list m)))
+                        (map (lambda (p) (list (car p) (cadr p))) (*more-command-keys*)))])
+    (foldl (lambda (p table)
+             (let ([name (symbol->string (car p))])
+               (hash-insert table name (append (or (hash-try-get table name) '()) (list (cadr p))))))
+           (hash) pairs)))
+
+;; Run a command by name (Emacs's M-x), its keys shown beside it.
 (define-command! 'execute-command
   (lambda (count)
-    (completing-read "M-x " (sort (map symbol->string (command-names)) string<?)
-                     (lambda (name) (run-command (string->symbol name))))))
+    (let ([keys (command-keys-table)])
+      (completing-read "M-x " (sort (map symbol->string (command-names)) string<?)
+                       (lambda (name) (run-command (string->symbol name)))
+                       (lambda (name)
+                         (let ([labels (hash-try-get keys name)])
+                           (and labels (string-join (take-at-most-keys labels 3) "  "))))))))
+
+(define (take-at-most-keys items n)
+  (if (or (null? items) (= n 0)) '() (cons (car items) (take-at-most-keys (cdr items) (- n 1)))))
 
 ;; Open a file under the current directory, skipping what .gitignore does.
 (define-command! 'find-file
