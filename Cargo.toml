@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["crates/imp-core", "crates/imp-server", "crates/imp", "crates/imp-gui"]
-# The GUI (Phase 5 prototype) builds only when asked: cargo build -p imp-gui.
-default-members = ["crates/imp-core", "crates/imp-server", "crates/imp"]
 # Built on its own, for wasm32-unknown-unknown.
 exclude = ["examples/wasm-plugin"]
 
@@ -15,6 +13,7 @@ repository = "https://github.com/apisandipas/imp"
 [workspace.dependencies]
 imp-core = { path = "crates/imp-core" }
 imp-server = { path = "crates/imp-server" }
+imp-gui = { path = "crates/imp-gui" }
 ropey = "1.6.1"
 crossterm = "0.29.0"
 steel = { package = "steel-core", version = "0.8.3" }

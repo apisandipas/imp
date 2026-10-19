@@ -1,9 +1,13 @@
-//! `imp`: the terminal client.
+//! `imp`: starts the editor, in a window (crates/imp-gui) when there is a
+//! display, otherwise in this terminal; and the terminal client itself.
 //!
-//! It turns terminal events into keys, sends them to the server and draws the
-//! frames that come back. It knows nothing about modes or keymaps.
+//! The terminal client turns terminal events into keys, sends them to the
+//! server and draws the frames that come back. It knows nothing about modes
+//! or keymaps.
 //!
-//!   imp [FILE...]                  the editor in this terminal (in-process)
+//!   imp [FILE...]                  the editor in a window, or in this
+//!                                  terminal when there's no display
+//!   imp --tui [FILE...]            the editor in this terminal
 //!   imp --daemon [--name N]        an editor with no terminal, on a socket
 //!   imp --connect [FILE...]        attach this terminal to the daemon
 //!   imp --connect --via CMD        ... through CMD's stdin/stdout, e.g.
@@ -43,6 +47,9 @@ struct Args {
     name: String,
     socket: Option<PathBuf>,
     via: Option<String>,
+    tui: bool,
+    /// Window options given (`--font` ...), which the terminal can't use.
+    gui_flags: Vec<String>,
     files: Vec<PathBuf>,
 }
 
@@ -66,6 +73,12 @@ fn parse_args() -> Result<Args, String> {
             Some("--name") => args.name = value("--name")?,
             Some("--socket") => args.socket = Some(PathBuf::from(value("--socket")?)),
             Some("--via") => args.via = Some(value("--via")?),
+            Some("--tui") => args.tui = true,
+            Some(flag) if GUI_FLAGS.contains(&flag) => {
+                let flag = flag.to_string();
+                value(&flag)?;
+                args.gui_flags.push(flag);
+            }
             Some("--help" | "-h") => {
                 println!("{}", USAGE);
                 std::process::exit(0);
@@ -83,12 +96,29 @@ fn parse_args() -> Result<Args, String> {
     Ok(args)
 }
 
-const USAGE: &str = "usage: imp [FILE...]
+/// The window's own options (crates/imp-gui), each followed by a value.
+const GUI_FLAGS: &[&str] = &[
+    "--screenshot",
+    "--grid",
+    "--keys",
+    "--font",
+    "--font-file",
+    "--font-size",
+    "--scale",
+];
+
+const USAGE: &str =
+    "usage: imp [--font FAMILY] [--font-file PATH] [--font-size PX] [--scale F] [FILE...]
+       imp --tui [FILE...]
+       imp --screenshot OUT.png [--grid COLSxROWS] [--keys KEYS] [FILE...]
        imp --daemon [--name NAME | --socket PATH]
-       imp --connect [--name NAME | --socket PATH | --via COMMAND] [FILE...]
+       imp --connect [--tui] [--name NAME | --socket PATH | --via COMMAND] [FILE...]
        imp --bridge [--name NAME | --socket PATH]
        imp --mcp [--socket PATH]
-       imp --version";
+       imp --version
+
+imp opens a window when there is a display ($WAYLAND_DISPLAY or $DISPLAY;
+on macOS, outside SSH) and uses this terminal otherwise or with --tui.";
 
 fn main() {
     let result = parse_args().and_then(|args| {
@@ -109,6 +139,18 @@ fn main() {
                 .unwrap_or_else(|| imp_server::daemon::socket_path("mcp"));
             bridge(&socket)
                 .map_err(|e| format!("{e}; is imp running with (mcp-enable!) in its init.scm?"))
+        } else if use_window(&args) && window(args.gui_flags.is_empty())? {
+            Ok(())
+        } else if !args.gui_flags.is_empty() {
+            Err(format!(
+                "{} {} for the window, and imp is running in this terminal",
+                args.gui_flags.join(", "),
+                if args.gui_flags.len() == 1 {
+                    "is"
+                } else {
+                    "are"
+                }
+            ))
         } else if args.connect {
             connect(&args, &socket())
         } else {
@@ -119,6 +161,38 @@ fn main() {
         eprintln!("imp: {e}");
         std::process::exit(1);
     }
+}
+
+/// Whether to open a window: not with --tui or --via, and only where one
+/// can open (a --screenshot needs no display).
+#[cfg(feature = "gui")]
+fn use_window(args: &Args) -> bool {
+    let screenshot = args.gui_flags.iter().any(|f| f == "--screenshot");
+    !args.tui && args.via.is_none() && (screenshot || imp_gui::display_available())
+}
+
+#[cfg(not(feature = "gui"))]
+fn use_window(_: &Args) -> bool {
+    false
+}
+
+/// Runs the window client with this command line. False when no window
+/// could open and `fall_back` lets the terminal client run instead (a
+/// stale $WAYLAND_DISPLAY in tmux, say).
+#[cfg(feature = "gui")]
+fn window(fall_back: bool) -> Result<bool, String> {
+    match imp_gui::run(std::env::args_os().skip(1).collect()) {
+        Ok(()) => Ok(true),
+        Err(imp_gui::Error::NoWindow(_)) if fall_back => Ok(false),
+        Err(imp_gui::Error::NoWindow(e) | imp_gui::Error::Other(e)) => {
+            Err(format!("{e} (imp --tui uses the terminal instead)"))
+        }
+    }
+}
+
+#[cfg(not(feature = "gui"))]
+fn window(_: bool) -> Result<bool, String> {
+    unreachable!("built without the window client")
 }
 
 fn options() -> Options {

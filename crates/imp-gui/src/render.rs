@@ -99,7 +99,7 @@ impl Renderer {
         let mut font_system = FontSystem::new();
         for file in &font.files {
             if let Err(e) = font_system.db_mut().load_font_file(file) {
-                eprintln!("imp-gui: {}: {e}", file.display());
+                eprintln!("imp: {}: {e}", file.display());
             }
         }
         let cache = Cache::new(&device);
@@ -221,7 +221,7 @@ impl Renderer {
         let (m, i) = (advance("M"), advance("i"));
         if (m - i).abs() > 0.5 {
             eprintln!(
-                "imp-gui: font {:?} is not monospace, so text won't line up; \
+                "imp: font {:?} is not monospace, so text won't line up; \
                  pick one with --font or --font-file",
                 self.family
             );
@@ -309,7 +309,7 @@ impl Renderer {
             areas,
             &mut self.swash,
         ) {
-            eprintln!("imp-gui: {e}");
+            eprintln!("imp: {e}");
         }
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -343,7 +343,7 @@ impl Renderer {
                 pass.draw(0..6, 0..quads.len() as u32);
             }
             if let Err(e) = self.text.render(&self.atlas, &self.viewport, &mut pass) {
-                eprintln!("imp-gui: {e}");
+                eprintln!("imp: {e}");
             }
         }
         self.queue.submit(Some(encoder.finish()));

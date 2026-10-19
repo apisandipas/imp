@@ -9,39 +9,37 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      packages = forAllSystems (pkgs: {
-        default = pkgs.rustPlatform.buildRustPackage {
-          pname = "imp";
-          version = "0.1.0-alpha.1";
-          src = self;
-          cargoLock.lockFile = ./Cargo.lock;
-          # The git interface's tests make real repositories.
-          nativeCheckInputs = [ pkgs.git ];
-          # The runtime Scheme files are embedded at build time.
-          meta.mainProgram = "imp";
-          meta.license = pkgs.lib.licenses.gpl3Plus;
-        };
-        # The GPU client (Phase 5 prototype): nix run .#gui -- FILE.
-        # winit and wgpu load the windowing and graphics libraries at run
-        # time, so they go on its library path.
-        gui = pkgs.rustPlatform.buildRustPackage {
-          pname = "imp-gui";
-          version = "0.1.0-alpha.1";
-          src = self;
-          cargoLock.lockFile = ./Cargo.lock;
-          cargoBuildFlags = [ "-p" "imp-gui" ];
-          doCheck = false;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          postFixup = ''
-            wrapProgram $out/bin/imp-gui --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (with pkgs; [
-              vulkan-loader libGL libxkbcommon wayland
-              xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr
-            ])}
-          '';
-          meta.mainProgram = "imp-gui";
-          meta.license = pkgs.lib.licenses.gpl3Plus;
-        };
-      });
+      packages = forAllSystems (pkgs:
+        let
+          imp = { gui ? true }: pkgs.rustPlatform.buildRustPackage {
+            pname = if gui then "imp" else "imp-tui";
+            version = "0.1.0-alpha.1";
+            src = self;
+            cargoLock.lockFile = ./Cargo.lock;
+            buildNoDefaultFeatures = !gui;
+            # The git interface's tests make real repositories.
+            nativeCheckInputs = [ pkgs.git ];
+            # winit and wgpu load the windowing and graphics libraries at
+            # run time; an rpath (not LD_LIBRARY_PATH, which programs imp
+            # starts would inherit) lets them find these.
+            postFixup = pkgs.lib.optionalString (gui && pkgs.stdenv.isLinux) ''
+              patchelf --add-rpath ${pkgs.lib.makeLibraryPath (with pkgs; [
+                vulkan-loader libGL libxkbcommon wayland
+                xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr
+              ])} $out/bin/imp
+            '';
+            # The runtime Scheme files are embedded at build time.
+            meta.mainProgram = "imp";
+            meta.license = pkgs.lib.licenses.gpl3Plus;
+          };
+        in
+        {
+          # imp opens a window when there is a display, else uses the
+          # terminal (imp --tui forces it).
+          default = imp { };
+          # Terminal only, without the graphics dependencies.
+          tui = imp { gui = false; };
+        });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {

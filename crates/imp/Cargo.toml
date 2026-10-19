@@ -13,8 +13,13 @@ path = "src/main.rs"
 imp-core.workspace = true
 imp-server.workspace = true
 crossterm.workspace = true
+imp-gui = { workspace = true, optional = true }
 
 [features]
+default = ["gui"]
+# The window client. Without it (--no-default-features) imp is terminal
+# only, with no graphics dependencies.
+gui = ["dep:imp-gui"]
 # Phase 5 prototypes (docs/design/phase-5.md).
 wasm = ["imp-server/wasm"]
 crdt = ["imp-server/crdt"]

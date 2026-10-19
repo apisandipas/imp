@@ -29,7 +29,7 @@ core design from day one.
 | Core language | **Rust** | Ecosystem (ropey, tree-sitter, crossterm, wgpu, tokio), memory safety around third-party code. |
 | Extension language | **Steel** (Scheme embedded in Rust, `steel-core` 0.8.3) | Live redefinition, macros, introspection; embeds natively in Rust. Lua and TypeScript were considered and rejected (no macros / not built for live redefinition). |
 | Build approach | **Written from scratch, using libraries**, not a fork | Owner explicitly did not want to fork Helix or Lem. Read them as reference only. |
-| UI | **Terminal first**, GUI later | Much cheaper to start; GUI becomes another client. |
+| UI | **Window first** (since 0.1.0-alpha.1), terminal with `--tui` | Built terminal first because it was cheaper; the owner then made the GUI the primary client. `imp` falls back to the terminal when no window can open (no display, SSH). |
 | Architecture | **Client/server** | Like `emacs --daemon` / Neovim UIs. Server owns all state; clients are dumb. |
 | Rust/Scheme boundary | **Rust owns data and speed; Scheme owns behavior** | Buffers, rendering, parsing in Rust. Every command, keymap and mode in Scheme, including the Vim engine. |
 | Editing model | **Vim by default** | Built into the keymap/command model, not bolted on. |
@@ -84,8 +84,11 @@ crates/
     tests/render.rs        frame/style tests
     tests/config.rs        init.scm tests
     examples/bench.rs      times commands on a 100k-line buffer
-  imp/                     terminal client (package imp-editor, bin imp)
-    src/main.rs            crossterm; draws styled spans
+  imp/                     the imp binary (package imp-editor): picks the
+                           window or the terminal client
+    src/main.rs            the terminal client: crossterm, styled spans
+  imp-gui/                 the window client, a library (feature "gui",
+                           on by default): winit, wgpu, glyphon
 runtime/                   loaded in this order
   core.scm                 evaluation (live redefinition), keymaps, commands,
                            hooks, advice, buffer-locals, options, faces
@@ -114,6 +117,12 @@ matching, regex). Every key's meaning is in Scheme.
 
 ### How it works
 
+- `imp` opens a window (`imp_gui::run`) when `imp_gui::display_available()`
+  (`$WAYLAND_DISPLAY`/`$DISPLAY`; on macOS, not over SSH) and the event loop
+  can be built; otherwise, or with `--tui` or `--via`, it runs the terminal
+  client. Window-only flags (`--font`, `--scale`, `--screenshot` ...) are
+  an error in the terminal. `cargo build --no-default-features` (and
+  `nix build .#tui`) makes a terminal-only imp.
 - Standalone (`imp FILE`), the client spawns `imp_server::run` on a thread,
   connected by two `mpsc` channels. With `imp --daemon` the server listens
   on a Unix socket and `imp --connect` clients talk JSON lines
@@ -306,10 +315,11 @@ needed. Details, and what each one leaves out, are in
   `:start` shows it again, `(set-option! 'start-screen #f)` turns it off.
   Visited files are kept in the state directory; `SPC f r` picks one.
 
-### Phase 5 prototypes (off by default)
+### Phase 5 prototypes
 
-Each is behind a cargo feature or in its own crate, so a default build is
-the same editor as at the end of Phase 4. Details, and what each one
+Each began behind a cargo feature or in its own crate. The GUI has since
+become the default client (see "How it works"); the others are still off
+by default. Details, and what each one
 can't do yet, are in `docs/design/phase-5.md`.
 
 - **WASM plugins** (`--features wasm`): `runtime/wasm.scm`,
@@ -317,7 +327,7 @@ can't do yet, are in `docs/design/phase-5.md`.
   limits. Plugins become Vim operators (`wasm-operator`), commands
   (`define-wasm-filter!`) and `:[range]wasm`. Example Rust plugin in
   `examples/wasm-plugin`.
-- **GPU GUI** (`crates/imp-gui`, `nix run .#gui -- FILE`): winit, wgpu and
+- **GPU GUI** (`crates/imp-gui`, now what `imp` opens): winit, wgpu and
   glyphon. Runs the server in-process or attaches with `--connect`.
   `--font`, `--font-size`, `--scale` (or `IMP_GUI_SCALE`), and `C-=` /
   `C--` / `C-0` to zoom. `--screenshot OUT.png` draws off-screen, which is
@@ -329,8 +339,8 @@ can't do yet, are in `docs/design/phase-5.md`.
 - **KDL config** (`--features kdl`): `~/.config/imp/config.kdl` loads before
   `init.scm` (`runtime/config.scm`, `src/kdl.rs`). Starter files:
   `examples/config.kdl` and `examples/init.scm`.
-- `tools/check.sh` also tests and lints with every feature on, and the GUI
-  crate.
+- `tools/check.sh` also tests and lints with every feature on, and lints
+  the terminal-only build.
 
 ### What works
 

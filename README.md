@@ -27,7 +27,10 @@ cargo install --git https://github.com/apisandipas/imp imp-editor
 
 Prebuilt binaries for Linux (x86_64, aarch64) and macOS (Apple silicon) are
 attached to each [release](https://github.com/apisandipas/imp/releases). The
-binary is self-contained: the Scheme runtime is built into it.
+binary is self-contained: the Scheme runtime is built into it. On Linux the
+window needs the usual desktop libraries (Vulkan or OpenGL, and Wayland or
+X11), which any desktop already has. For a server, `nix build .#tui` or
+`cargo install ... --no-default-features` builds a terminal-only imp.
 
 Linux and macOS only. The clipboard uses `wl-copy`, `xclip`, `xsel` or
 `pbcopy`; project search uses `rg`; language servers and debug adapters are
@@ -35,8 +38,14 @@ whatever you have installed.
 
 ## Using it
 
-`imp` with no file opens a start screen of recent files and projects. `imp
-FILE...` opens files, `imp DIR` a file browser.
+`imp` opens in a window. Over SSH, on a console, or anywhere without a
+display it runs in the terminal instead, and `imp --tui` always does (for
+`$EDITOR`, say: `export EDITOR="imp --tui"`).
+
+With no file it shows a start screen of recent files and projects; `imp
+FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
+`C--` zoom, `C-0` resets, and `--font FAMILY`, `--font-size PX` and
+`--scale F` (or `$IMP_GUI_SCALE`, for HiDPI screens) set the text.
 
 - **Vim.** Motions, operators, text objects, counts, `.`, registers, macros,
   marks, visual modes, search and `:s`, `:g`, folds, splits and buffers,
@@ -107,8 +116,8 @@ Scheme files take effect when imp restarts, with no rebuild.
 crates/
   imp-core/    the text buffer and the client/server messages
   imp-server/  the event loop, Steel embedding, the Rust functions Scheme calls
-  imp/         the terminal client (package imp-editor, binary imp)
-  imp-gui/     a GPU client, experimental (nix run .#gui)
+  imp/         the imp binary (package imp-editor) and the terminal client
+  imp-gui/     the window client: winit, wgpu and glyphon
 runtime/       the editor, in Scheme
 ```
 

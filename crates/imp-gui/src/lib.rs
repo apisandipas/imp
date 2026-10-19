@@ -1,18 +1,20 @@
-//! `imp-gui`: a GPU client for imp (Phase 5 prototype).
+//! The window client: imp's primary interface (`imp` opens it when there
+//! is a display; `imp --tui` uses the terminal client instead).
 //!
 //! Like the terminal client it only sends input and draws the frames the
-//! server sends; it is the same protocol drawn with wgpu and glyphon.
+//! server sends; it is the same protocol drawn with wgpu and glyphon. The
+//! `imp` binary calls [`run`] with its command line:
 //!
-//!   imp-gui [FILE...]                 the editor in a window (in-process)
-//!   imp-gui --connect [FILE...]       a window on the daemon (imp --daemon)
-//!   imp-gui --screenshot OUT.png [--grid 100x30] [--keys KEYS] [FILE...]
-//!                                     draw off-screen and save a PNG
+//!   imp [FILE...]                 the editor in a window (in-process)
+//!   imp --connect [FILE...]       a window on the daemon (imp --daemon)
+//!   imp --screenshot OUT.png [--grid 100x30] [--keys KEYS] [FILE...]
+//!                                 draw off-screen and save a PNG
 //!
 //! `--font FAMILY` (default monospace), `--font-file PATH` (repeatable),
 //! `--font-size PX` (default 15), `--scale F` (multiplies the size; default
 //! $IMP_GUI_SCALE or 1, on top of the display's own scale factor),
-//! `--name N` / `--socket PATH` as for imp. In the window, C-= and C--
-//! zoom and C-0 resets.
+//! `--name N` / `--socket PATH` as for the daemon. In the window, C-= and
+//! C-- zoom and C-0 resets.
 
 mod keys;
 mod render;
@@ -45,12 +47,7 @@ struct Args {
     files: Vec<PathBuf>,
 }
 
-const USAGE: &str =
-    "usage: imp-gui [--font FAMILY] [--font-file PATH] [--font-size PX] [--scale F] [FILE...]
-       imp-gui --connect [--name NAME | --socket PATH] [FILE...]
-       imp-gui --screenshot OUT.png [--grid COLSxROWS] [--keys KEYS] [FILE...]";
-
-fn parse_args() -> Result<Args, String> {
+fn parse_args(argv: Vec<std::ffi::OsString>) -> Result<Args, String> {
     let mut args = Args {
         grid: (100, 30),
         font_size: 15.0,
@@ -60,7 +57,7 @@ fn parse_args() -> Result<Args, String> {
             .unwrap_or(1.0),
         ..Args::default()
     };
-    let mut it = std::env::args_os().skip(1);
+    let mut it = argv.into_iter();
     while let Some(arg) = it.next() {
         let mut value = |what: &str| {
             it.next()
@@ -89,30 +86,53 @@ fn parse_args() -> Result<Args, String> {
                     h.parse().map_err(|_| "bad --grid")?,
                 );
             }
-            Some("--help" | "-h") => {
-                println!("{USAGE}");
-                std::process::exit(0);
-            }
-            Some(flag) if flag.starts_with("--") => {
-                return Err(format!("unknown option {flag}\n{USAGE}"))
-            }
+            Some(flag) if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
             _ => args.files.push(arg.into()),
         }
     }
     Ok(args)
 }
 
-fn main() {
-    let result = parse_args().and_then(|args| {
-        if args.screenshot.is_some() {
-            screenshot(&args)
-        } else {
-            window(&args)
-        }
-    });
-    if let Err(e) = result {
-        eprintln!("imp-gui: {e}");
-        std::process::exit(1);
+/// Why the window client stopped.
+#[derive(Debug)]
+pub enum Error {
+    /// No window could be made (no display server answered), before the
+    /// editor started: another client can still run.
+    NoWindow(String),
+    Other(String),
+}
+
+impl From<String> for Error {
+    fn from(e: String) -> Self {
+        Error::Other(e)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(e: &str) -> Self {
+        Error::Other(e.into())
+    }
+}
+
+/// Runs the window client with `argv` (the command line without the
+/// program name).
+pub fn run(argv: Vec<std::ffi::OsString>) -> Result<(), Error> {
+    let args = parse_args(argv)?;
+    if args.screenshot.is_some() {
+        Ok(screenshot(&args)?)
+    } else {
+        window(&args)
+    }
+}
+
+/// Whether a window can open here: a Wayland or X display on Linux and
+/// the BSDs; on macOS, anything but an SSH session.
+pub fn display_available() -> bool {
+    let set = |name| std::env::var_os(name).is_some_and(|v| !v.is_empty());
+    if cfg!(target_os = "macos") {
+        !set("SSH_CONNECTION") && !set("SSH_TTY")
+    } else {
+        set("WAYLAND_DISPLAY") || set("DISPLAY")
     }
 }
 
@@ -192,7 +212,7 @@ fn connect(
         };
         thread::spawn(move || {
             if let Err(e) = imp_server::run(buffers, options, from_client, to_client) {
-                eprintln!("imp-gui: {e}");
+                eprintln!("imp: {e}");
             }
         });
     }
@@ -331,10 +351,10 @@ fn screenshot(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-fn window(args: &Args) -> Result<(), String> {
+fn window(args: &Args) -> Result<(), Error> {
     let event_loop = EventLoop::<ServerMsg>::with_user_event()
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::NoWindow(e.to_string()))?;
     let proxy: EventLoopProxy<ServerMsg> = event_loop.create_proxy();
     let conn = connect(args, move |msg| {
         let _ = proxy.send_event(msg);
@@ -352,7 +372,7 @@ fn window(args: &Args) -> Result<(), String> {
         error: None,
     };
     event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
-    app.error.map_or(Ok(()), Err)
+    app.error.map_or(Ok(()), |e| Err(Error::Other(e)))
 }
 
 struct WindowState {

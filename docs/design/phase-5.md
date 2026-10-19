@@ -152,6 +152,10 @@ language-server "python-mode" "pylsp" markers=".git pyproject.toml" language="py
     made right after `u` or `C-r` was undone together with the change
     before it.
 - 5.2 GPU GUI: done as a prototype.
+  - Later (0.1.0-alpha.1): the GUI became imp's primary client. The
+    `imp-gui` binary is gone: `imp` opens the window when there is a
+    display, `imp --tui` uses the terminal, and the commands below are
+    `imp --screenshot ...`. See HANDOFF "How it works".
   - `crates/imp-gui`: `nix run .#gui -- FILE`, or
     `cargo run -p imp-gui -- FILE` in a shell that has the Vulkan, Wayland
     and X11 libraries.
