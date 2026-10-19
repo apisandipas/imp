@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 nix develop -c bash -c '
   out=$(cargo test -q 2>&1); t=$?
   echo "$out" | grep -E "test result|^error"
-  # A panic's message is on the lines after "panicked at".
+  # A panic message is on the lines after "panicked at".
   echo "$out" | grep -A2 -E "^---- |panicked"
   # The Phase 5 prototypes, behind features (docs/design/phase-5.md).
   out=$(cargo test -q -p imp-server --all-features 2>&1) || t=1

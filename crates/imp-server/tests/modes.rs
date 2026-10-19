@@ -20,6 +20,9 @@ fn open(s: &mut imp_server::Server, name: &str, text: &str) {
 #[test]
 fn mode_from_file_extension() {
     let mut s = server("");
+    // The status line shows the file's whole path, and $TMPDIR can be long
+    // (on CI, /home/runner/work/_temp/...).
+    s.set_size(200, 24);
     open(&mut s, "m.rs", "fn main() {}\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "rust-mode");
     let status = status_row(&mut s);
