@@ -57,6 +57,9 @@ fn buffer_list_and_navigation() {
     assert_eq!(s.text(), "a\n");
     type_keys(&mut s, ":b 0<ret>");
     assert_eq!(s.text(), "s\n");
+    // :ls lists whole paths, cut at the screen's edge; $TMPDIR can be long
+    // (on CI, /home/runner/work/_temp/...).
+    s.set_size(200, 24);
     type_keys(&mut s, ":ls<ret>");
     let rows = s.frame().text_rows();
     assert!(

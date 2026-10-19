@@ -922,7 +922,7 @@ fn status_line(
         (true, f, _) => f,
         (false, _, f) => f,
     };
-    let render = |drop_values: bool| {
+    let render = |drop_values: bool, trim_file: usize| {
         let mut status = Status {
             e,
             buffer_id,
@@ -936,15 +936,29 @@ fn status_line(
             right: Vec::new(),
             on_right: false,
             drop_values,
+            trim_file,
         };
         status.expand(format, 0);
         (status.left, status.right)
     };
     let row_width = |row: &Row| row.iter().map(|s| text_width(&s.text)).sum::<usize>();
-    let (mut left, mut right) = render(false);
-    if row_width(&left) + row_width(&right) > width {
-        (left, right) = render(true);
+    // Too long: first shorten the file name from its start (as Vim does),
+    // then also leave out values on the right.
+    let over =
+        |(left, right): &(Row, Row)| (row_width(left) + row_width(right)).saturating_sub(width);
+    let mut parts = render(false, 0);
+    for drop_values in [false, true] {
+        if drop_values {
+            parts = render(true, 0);
+        }
+        if over(&parts) > 0 {
+            parts = render(drop_values, over(&parts));
+        }
+        if over(&parts) == 0 {
+            break;
+        }
     }
+    let (left, right) = parts;
     let right = clip_row_end(&right, width);
     let room = width - row_width(&right);
     let mut row = clip_row(&left, room);
@@ -954,6 +968,34 @@ fn status_line(
         push(&mut row, &span.text, span.style);
     }
     row
+}
+
+/// `name` with `cells` taken off its start, marked with "<" as in Vim. The
+/// file name itself (after the last "/") is kept whole.
+fn trim_start(name: &str, cells: usize) -> String {
+    if cells == 0 {
+        return name.to_string();
+    }
+    let keep = text_width(name).saturating_sub(cells + 1);
+    let base = name.rsplit('/').next().unwrap_or(name);
+    if keep <= text_width(base) {
+        return if base.len() < name.len() {
+            format!("<{base}")
+        } else {
+            name.to_string()
+        };
+    }
+    let mut start = name.len();
+    let mut used = 0;
+    for (i, ch) in name.char_indices().rev() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > keep {
+            break;
+        }
+        used += w;
+        start = i;
+    }
+    format!("<{}", &name[start..])
 }
 
 /// The last `width` cells of a row.
@@ -993,6 +1035,8 @@ struct Status<'a> {
     on_right: bool,
     /// Leave out %{...} values on the right, to make room.
     drop_values: bool,
+    /// Cells to take off the start of %f and %F, to make room.
+    trim_file: usize,
 }
 
 impl Status<'_> {
@@ -1027,13 +1071,16 @@ impl Status<'_> {
                     self.add(&mode)
                 }
                 Some('m') => {}
-                Some('f') => self.add(&self.buffer.display_name()),
+                Some('f') => {
+                    let name = trim_start(&self.buffer.display_name(), self.trim_file);
+                    self.add(&name)
+                }
                 Some('F') => {
                     let path = self
                         .buffer
                         .path()
                         .map_or_else(|| self.buffer.display_name(), |p| p.display().to_string());
-                    self.add(&path)
+                    self.add(&trim_start(&path, self.trim_file))
                 }
                 Some('M') if self.buffer.is_modified() => self.add("●"),
                 Some('M') => {}

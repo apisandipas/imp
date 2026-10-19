@@ -106,7 +106,9 @@ fn hover_definition_and_references() {
     type_keys(&mut s, "<C-o>");
     assert_eq!(s.cursor(), 13);
 
-    // References: three, picked from a menu.
+    // References: three, picked from a menu. Its entries hold whole paths,
+    // cut at the screen's edge, and $TMPDIR can be long (on CI).
+    s.set_size(200, 24);
     type_keys(&mut s, "gr");
     settle(&mut s);
     let rows = s.frame().text_rows().join("\n");

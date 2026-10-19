@@ -20,9 +20,6 @@ fn open(s: &mut imp_server::Server, name: &str, text: &str) {
 #[test]
 fn mode_from_file_extension() {
     let mut s = server("");
-    // The status line shows the file's whole path, and $TMPDIR can be long
-    // (on CI, /home/runner/work/_temp/...).
-    s.set_size(200, 24);
     open(&mut s, "m.rs", "fn main() {}\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "rust-mode");
     let status = status_row(&mut s);
@@ -31,6 +28,23 @@ fn mode_from_file_extension() {
     assert_eq!(s.eval("(major-mode)").unwrap(), "scheme-mode");
     open(&mut s, "Makefile", "all:\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "makefile-mode");
+}
+
+#[test]
+fn a_long_path_is_shortened_from_its_start() {
+    let mut s = server("");
+    s.set_size(50, 10);
+    let dir = temp_path("a-directory-name-long-enough-to-crowd-the-status-line");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("m.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    let status = status_row(&mut s);
+    // The file name, the mode and the position all still show.
+    assert!(status.contains(" <"), "status line: {status:?}");
+    assert!(status.contains("/m.rs"), "status line: {status:?}");
+    assert!(status.contains("rust  1:1"), "status line: {status:?}");
+    assert_eq!(status.chars().count(), 50);
 }
 
 #[test]
