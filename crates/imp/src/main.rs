@@ -70,6 +70,10 @@ fn parse_args() -> Result<Args, String> {
                 println!("{}", USAGE);
                 std::process::exit(0);
             }
+            Some("--version" | "-V") => {
+                println!("imp {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
             Some(flag) if flag.starts_with("--") => {
                 return Err(format!("unknown option {flag}\n{USAGE}"))
             }
@@ -83,7 +87,8 @@ const USAGE: &str = "usage: imp [FILE...]
        imp --daemon [--name NAME | --socket PATH]
        imp --connect [--name NAME | --socket PATH | --via COMMAND] [FILE...]
        imp --bridge [--name NAME | --socket PATH]
-       imp --mcp [--socket PATH]";
+       imp --mcp [--socket PATH]
+       imp --version";
 
 fn main() {
     let result = parse_args().and_then(|args| {

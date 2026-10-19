@@ -2,6 +2,8 @@
 name = "imp-gui"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 # A GPU client (Phase 5 prototype, docs/design/phase-5.md). Not a default
 # workspace member: build it with cargo build -p imp-gui.

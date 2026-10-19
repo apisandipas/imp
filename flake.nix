@@ -12,20 +12,21 @@
       packages = forAllSystems (pkgs: {
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "imp";
-          version = "0.1.0";
+          version = "0.1.0-alpha.1";
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
           # The git interface's tests make real repositories.
           nativeCheckInputs = [ pkgs.git ];
           # The runtime Scheme files are embedded at build time.
           meta.mainProgram = "imp";
+          meta.license = pkgs.lib.licenses.gpl3Plus;
         };
         # The GPU client (Phase 5 prototype): nix run .#gui -- FILE.
         # winit and wgpu load the windowing and graphics libraries at run
         # time, so they go on its library path.
         gui = pkgs.rustPlatform.buildRustPackage {
           pname = "imp-gui";
-          version = "0.1.0";
+          version = "0.1.0-alpha.1";
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "imp-gui" ];
@@ -38,6 +39,7 @@
             ])}
           '';
           meta.mainProgram = "imp-gui";
+          meta.license = pkgs.lib.licenses.gpl3Plus;
         };
       });
 

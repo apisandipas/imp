@@ -483,6 +483,12 @@ Conventions:
   only what was drawn; tests/theme.rs covers the theme.
 - Git: all six phases are on `main` (pushed to origin); the phase branches
   are gone. Ask the owner how to branch new work.
+- Releases: GPL-3.0-or-later (`LICENSE`). The version is in `Cargo.toml`
+  (workspace) and `flake.nix`; `imp --version` prints it. Pushing a `v*` tag
+  runs `.github/workflows/release.yml`: a GitHub release (a prerelease for
+  tags with a `-`, like `v0.1.0-alpha.1`) with binaries for x86_64 and
+  aarch64 Linux and Apple-silicon macOS. `ci.yml` runs `tools/check.sh` and
+  `nix build` on pushes to main and on pull requests.
 - Current work and the detailed next steps are at the end of the latest
   `docs/design/phase-N.md` ("Progress").
 
