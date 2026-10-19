@@ -467,6 +467,11 @@ cargo run -- FILE
 cargo clippy --all-targets && cargo fmt --check
 ```
 
+On a new machine: install Rust (rustup) and a C compiler, or Nix; clone; run
+`make check` (about 10 minutes from cold). Without Nix, export
+`IMP_RUNTIME=$PWD/runtime` yourself so Scheme edits load without a rebuild,
+and install `rg` for project search. `make` lists every target.
+
 Conventions:
 - **Test Vim behavior by feeding keys** (`tests/vim.rs`: `type_keys(&mut s,
   "dw.")`) and asserting text/cursor. Every new Vim feature gets tests in this
@@ -505,6 +510,25 @@ Conventions:
   `nix develop`, as `tools/check.sh` does; the `nix-*` targets build the flake.
   The owner wants installs to work for people without Nix: keep the README
   leading with the binaries and `make install`.
+- Release state (2026-10-19): `v0.1.0-alpha.3` is the latest prerelease, CI
+  is green on `main`, and the owner is about to make the repo public. To
+  release: `make bump VERSION=x.y.z`, commit, `git tag -a vx.y.z -m 'imp
+  x.y.z'`, push `main` and the tag; confirm with the owner first. The
+  release workflow takes about 15 minutes; CI's check job about 55.
+- CI paths are long (`TMPDIR=/home/runner/work/_temp`), so a test that reads
+  a status line, `:ls` or a menu at 80 columns can pass locally and fail on
+  CI. Before pushing such a test, run `TMPDIR=/tmp/runner/work/_temp
+  tools/check.sh` (make the directory first). Don't use a much longer path:
+  Unix sockets fail past ~108 bytes and those failures aren't real. Widen
+  the screen (`s.set_size(200, 24)`) when a test needs the whole path.
+- Tests turn LSP off (`tests/common`), so installed language servers can't
+  change results; `tests/lsp.rs` turns it on where it uses its fake server.
+- Disk: `target/` once reached 160 GB. Dependencies build without debug
+  info and our crates with line tables only (`Cargo.toml` profiles); run
+  `make clean` when `target/` passes about 20 GB.
+- Checking the window without a display: `imp --screenshot OUT.png` with
+  Mesa's lavapipe (`VK_ICD_FILENAMES=<mesa>/share/vulkan/icd.d/lvp_icd.x86_64.json`)
+  and `--font-file` pointing at a monospace TTF.
 - Current work and the detailed next steps are at the end of the latest
   `docs/design/phase-N.md` ("Progress").
 
@@ -590,6 +614,10 @@ Fix these when the roadmap item touching them comes up, not all at once.
     events or bracketed paste to the program.
 17. **The file browser** can't swap two names in one save (a line that
     reads as an entry did is that entry).
+18. **`:ls` and menus cut long paths** at the screen edge; the status line
+    shortens them from the start, as Vim does, but these lists don't yet.
+19. **`tools/check.sh` without Nix** (plain cargo) hasn't been run on a
+    machine without Nix; only the Nix path (and CI) is proven.
 
 ## 6. Roadmap
 
