@@ -9,12 +9,17 @@
 ;;;
 ;;;   (define-language-server! 'rust-mode "rust-analyzer" '("Cargo.toml" ".git") "rust")
 ;;;
+;;; The command can be a list of commands, of which the first installed is
+;;; used.
+;;;
 ;;; A buffer whose major mode has one, and whose file is somewhere, starts
 ;;; it (once per project root, found by walking up to one of the markers)
 ;;; if the program is installed and the `lsp` option is on. The buffer then
 ;;; gets lsp-mode: K hover, gd definition, gr references, SPC c r rename,
 ;;; SPC c a code actions, SPC c f format. ]d and [d move between
-;;; diagnostics, :diagnostics lists them all. In insert mode C-x C-o (and
+;;; diagnostics, :diagnostics lists them all. Diagnostics are pushed by
+;;; the server, or pulled after each change from one that only answers
+;;; when asked (TypeScript 7's). In insert mode C-x C-o (and
 ;;; completion as you type) asks the server; C-n and C-p complete words
 ;;; from the buffer when there is no server.
 
@@ -24,7 +29,7 @@
 (define-option! 'lsp-change-delay 200 '())
 (define-option! 'lsp-complete-delay 150 '())
 
-(define *language-servers* (hash))  ; major mode -> (command markers language-id)
+(define *language-servers* (hash))  ; major mode -> (command(s) markers language-id)
 (define *lsp-servers* (hash))       ; "command<tab>root" -> state (a hash, see lsp-start!)
 (define *lsp-diagnostics* (hash))   ; uri -> list of diagnostics
 (define *lsp-change-timers* (hash)) ; buffer id -> timer of the pending didChange
@@ -36,10 +41,15 @@
   (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id))))
 
 (define-language-server! 'rust-mode "rust-analyzer" '("Cargo.toml" ".git") "rust")
-(define-language-server! 'typescript-mode "typescript-language-server --stdio"
-  '("tsconfig.json" "package.json" ".git") "typescript")
-(define-language-server! 'javascript-mode "typescript-language-server --stdio"
-  '("jsconfig.json" "package.json" ".git") "javascript")
+;; TypeScript 7's own server, tsgo (`tsc --lsp` once 7 is released), first.
+;; typescript-language-server comes before a bare tsc, which before 7 has
+;; no --lsp.
+(define *typescript-servers*
+  '("tsgo --lsp --stdio" "typescript-language-server --stdio" "tsc --lsp --stdio"))
+(define-language-server! 'typescript-mode *typescript-servers*
+  '("tsconfig.json" "jsconfig.json" "package.json" ".git") "typescript")
+(define-language-server! 'javascript-mode *typescript-servers*
+  '("jsconfig.json" "tsconfig.json" "package.json" ".git") "javascript")
 (define-language-server! 'nix-mode "nil" '("flake.nix" ".git") "nix")
 (define-language-server! 'markdown-mode "marksman server" '(".marksman.toml" ".git") "markdown")
 (define-language-server! 'python-mode "pyright-langserver --stdio"
@@ -124,7 +134,8 @@
           (lsp-put! key 'ready #t)
           (lsp-write! key (hash "jsonrpc" "2.0" "method" "initialized" "params" (hash)))
           (for-each (lambda (msg) (lsp-write! key msg)) (lsp-get key 'queue))
-          (lsp-put! key 'queue '()))))))
+          (lsp-put! key 'queue '())
+          (lsp-pull-all! key))))))
 
 (define (lsp-client-capabilities)
   (hash "general" (hash "positionEncodings" (list "utf-32" "utf-16"))
@@ -142,9 +153,11 @@
                                                               "source.organizeImports")))
                                  "resolveSupport" (hash "properties" (list "edit")))
               "completion" (hash "completionItem" (hash "snippetSupport" #t))
-              "publishDiagnostics" (hash))
+              "publishDiagnostics" (hash)
+              "diagnostic" (hash))
         "workspace" (hash "applyEdit" #t "workspaceEdit" (hash "documentChanges" #t)
-                          "configuration" #t "workspaceFolders" #t)
+                          "configuration" #t "workspaceFolders" #t
+                          "diagnostics" (hash "refreshSupport" #t))
         "window" (hash "workDoneProgress" #t)))
 
 (define (lsp-exited! key code)
@@ -232,6 +245,7 @@
     [(member method '("client/registerCapability" "client/unregisterCapability"
                       "window/workDoneProgress/create"))
      'null]
+    [(equal? method "workspace/diagnostic/refresh") (lsp-pull-all! key) 'null]
     [(equal? method "workspace/applyEdit")
      (lsp-apply-workspace-edit! (jget params "edit") (lsp-get key 'encoding))
      (hash "applied" #t)]
@@ -284,8 +298,8 @@
 (define (lsp-attach!)
   (let ([spec (hash-try-get *language-servers* (major-mode))] [path (buffer-path)])
     (when (and spec path (option 'lsp) (not (lsp-key)))
-      (let* ([command (car spec)] [words (split-whitespace command)])
-        (when (and (pair? words) (find-executable (car words)))
+      (let ([command (lsp-installed-command (car spec))])
+        (when command
           (let* ([file (absolute-path path)] [root (lsp-root file (cadr spec))]
                  [key (string-append command "\t" root)] [uri (path->uri file)])
             (when (or (lsp-state key) (lsp-start! key command root))
@@ -296,7 +310,17 @@
               (lsp-notify! key "textDocument/didOpen"
                            (hash "textDocument"
                                  (hash "uri" uri "languageId" (lsp-language-id (caddr spec) file)
-                                       "version" 0 "text" (buffer-substring 0 (buffer-length))))))))))))
+                                       "version" 0 "text" (buffer-substring 0 (buffer-length)))))
+              (lsp-pull-diagnostics!))))))))
+
+;; The first of `commands` (one command, or a list) whose program is installed.
+(define (lsp-installed-command commands)
+  (let loop ([commands (if (list? commands) commands (list commands))])
+    (cond [(null? commands) #f]
+          [(let ([words (split-whitespace (car commands))])
+             (and (pair? words) (find-executable (car words))))
+           (car commands)]
+          [else (loop (cdr commands))])))
 
 (define (lsp-text-document) (hash "uri" (lsp-uri)))
 
@@ -312,7 +336,26 @@
         (set-buffer-local! 'lsp-dirty #f)
         (lsp-notify! key "textDocument/didChange"
                      (hash "textDocument" (hash "uri" (lsp-uri) "version" version)
-                           "contentChanges" (list (hash "text" (buffer-substring 0 (buffer-length))))))))))
+                           "contentChanges" (list (hash "text" (buffer-substring 0 (buffer-length))))))
+        ;; A change can affect other files' diagnostics too.
+        (if (jget (lsp-get key 'capabilities) "diagnosticProvider" "interFileDependencies")
+            (lsp-pull-all! key)
+            (lsp-pull-diagnostics!))))))
+
+;; Asks for the current buffer's diagnostics, from a server that has them
+;; pulled rather than pushing them. An answer is dropped if the buffer
+;; changed since; the change asks again.
+(define (lsp-pull-diagnostics!)
+  (let ([key (lsp-key)] [uri (lsp-uri)] [id (current-buffer)] [version (buffer-local 'lsp-version)])
+    (when (and key uri (lsp-get key 'ready) (jget (lsp-get key 'capabilities) "diagnosticProvider"))
+      (lsp-request! key "textDocument/diagnostic" (hash "textDocument" (hash "uri" uri))
+                    (lambda (result)
+                      (when (and (equal? (jget result "kind") "full") (memv id (buffer-list))
+                                 (equal? version (with-buffer id (lambda () (buffer-local 'lsp-version)))))
+                        (lsp-set-diagnostics! uri (or (jget result "items") '()))))))))
+
+(define (lsp-pull-all! key)
+  (for-each (lambda (id) (with-buffer id lsp-pull-diagnostics!)) (buffers-of key)))
 
 ;; Notes a change to the current buffer; it is sent after a pause.
 (define (lsp-changed!)
@@ -414,7 +457,7 @@
   (let* ([path (uri->path uri)] [id (and path (buffer-for-path path))])
     (when id
       (with-buffer id lsp-show-signs!)
-      (when (= id (current-buffer)) (lsp-show-diagnostics!)))))
+      (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!)))))
 
 ;; The current buffer's diagnostics, sorted by where they start, each as
 ;; (start end diagnostic).
@@ -476,20 +519,21 @@
                        (car pick) (cdr pick))))))
 
 ;; In normal mode the status line shows the diagnostic at the cursor, when
-;; nothing else is there.
-(add-hook! 'post-command
-           (lambda ()
-             (when (and (eq? *mode* 'normal) (not *popup-shown*))
-               (let* ([d (and (lsp-uri) (diagnostic-at-cursor))]
-                      [status (status-text)]
-                      [free? (or (equal? status "") (equal? status *lsp-line-message*))])
-                 (cond [(and d free?)
-                        (set! *lsp-line-message* (diagnostic-text d))
-                        (set-status! *lsp-line-message*)]
-                       [(and (not d) *lsp-line-message* (equal? status *lsp-line-message*))
-                        (set-status! "")
-                        (set! *lsp-line-message* #f)]
-                       [else #f])))))
+;; nothing else is there: after each command, and when diagnostics arrive.
+(define (lsp-show-cursor-diagnostic!)
+  (when (and (eq? *mode* 'normal) (not *popup-shown*))
+    (let* ([d (and (lsp-uri) (diagnostic-at-cursor))]
+           [status (status-text)]
+           [free? (or (equal? status "") (equal? status *lsp-line-message*))])
+      (cond [(and d free?)
+             (set! *lsp-line-message* (diagnostic-text d))
+             (set-status! *lsp-line-message*)]
+            [(and (not d) *lsp-line-message* (equal? status *lsp-line-message*))
+             (set-status! "")
+             (set! *lsp-line-message* #f)]
+            [else #f]))))
+
+(add-hook! 'post-command lsp-show-cursor-diagnostic!)
 
 ;; ]d and [d: the next or previous diagnostic, wrapping around.
 (define (next-diagnostic! count forward?)

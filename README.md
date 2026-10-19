@@ -90,8 +90,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 - **IDE features.** Tree-sitter highlighting and text objects (Rust, Scheme,
   TypeScript/JavaScript, Nix, Markdown); language servers (diagnostics,
   `K`, `gd`, `gr`, rename, code actions, formatting, completion), set up for
-  rust-analyzer, typescript-language-server, nil, marksman and pyright when
-  they're on your `PATH`, and more with `define-language-server!`; debugging
+  rust-analyzer, TypeScript 7's tsgo (or typescript-language-server), nil,
+  marksman and pyright when they're on your `PATH`, and more with `define-language-server!`; debugging
   over DAP.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, agenda and capture, an editable file browser

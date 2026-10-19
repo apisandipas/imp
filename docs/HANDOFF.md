@@ -256,7 +256,8 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Tree-sitter: `(define-mode-language! 'mode "lang")`,
   `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`.
 - Language servers: `(define-language-server! 'mode "command args"
-  '("root-marker" ...) "languageId")`; option `lsp` turns them off.
+  '("root-marker" ...) "languageId")`, or a list of commands to use the
+  first installed; option `lsp` turns them off.
 - Debug adapters: `(define-debug-adapter! 'mode "command" "adapter-id"
   (lambda (done) (done launch-arguments-hash)))`.
 - Sockets: `(listen-socket! path on-open on-line on-close)`.
@@ -413,6 +414,10 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
   :diagnostics`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
   (`C-x C-o`, `C-n C-p`, and as you type). Defaults for rust-analyzer,
   typescript-language-server, nil, marksman, pyright, used when installed.
+  Pull diagnostics (`textDocument/diagnostic`, `workspace/diagnostic/refresh`)
+  as well as pushed ones. TypeScript tries tsgo (`tsgo --lsp`), then
+  typescript-language-server, then `tsc --lsp` (TypeScript 7's `tsc`; older
+  ones have no `--lsp`).
 - Debugging (DAP): `SPC d` (`d` start/continue, `b` breakpoint, `n i o`
   step, `s` stack, `v` variables, `e` evaluate, `q` stop), `<f5> <f9>
   <f10> <f11>`; lldb-dap and debugpy by default.

@@ -8,6 +8,10 @@ references (every occurrence), rename (every occurrence), formatting
 (strips trailing spaces), code actions ("bad" -> "good", and a command
 that makes the server send workspace/applyEdit) and completion.
 
+With $FAKE_LSP_PULL set it doesn't push diagnostics but answers
+textDocument/diagnostic, as TypeScript 7's server does; after a save it
+also reports "meh" and asks the client to pull again.
+
 Positions are UTF-32 when the client offers it (Python indexes code
 points), as imp does. Every message received is appended to the file named
 by $FAKE_LSP_LOG, if set, one JSON object per line.
@@ -20,6 +24,8 @@ import sys
 
 docs = {}
 log_path = os.environ.get("FAKE_LSP_LOG")
+pull = bool(os.environ.get("FAKE_LSP_PULL"))
+flagged = ["bad"]
 
 
 def read_message():
@@ -66,13 +72,17 @@ def word_at(uri, pos):
     return None
 
 
-def publish(uri):
-    diagnostics = [
-        {"range": rng(l, s, e), "severity": 1, "source": "fake", "message": "bad word"}
-        for l, s, e, _ in words(docs[uri], "bad")
+def diagnostics(uri):
+    return [
+        {"range": rng(l, s, e), "severity": 1, "source": "fake", "message": "%s word" % w}
+        for w in flagged for l, s, e, _ in words(docs[uri], w)
     ]
-    send({"method": "textDocument/publishDiagnostics",
-          "params": {"uri": uri, "diagnostics": diagnostics}})
+
+
+def publish(uri):
+    if not pull:
+        send({"method": "textDocument/publishDiagnostics",
+              "params": {"uri": uri, "diagnostics": diagnostics(uri)}})
 
 
 def handle(msg):
@@ -94,6 +104,8 @@ def handle(msg):
             "codeActionProvider": True,
             "completionProvider": {"triggerCharacters": ["."]},
             "executeCommandProvider": {"commands": ["fake.insertHi"]},
+            **({"diagnosticProvider": {"interFileDependencies": False,
+                                       "workspaceDiagnostics": False}} if pull else {}),
         }})
     elif method == "textDocument/didOpen":
         doc = params["textDocument"]
@@ -103,6 +115,11 @@ def handle(msg):
         uri = params["textDocument"]["uri"]
         docs[uri] = params["contentChanges"][-1]["text"]
         publish(uri)
+    elif method == "textDocument/diagnostic":
+        reply({"kind": "full", "items": diagnostics(params["textDocument"]["uri"])})
+    elif method == "textDocument/didSave" and pull:
+        flagged.append("meh")
+        send({"id": 2000, "method": "workspace/diagnostic/refresh"})
     elif method == "textDocument/hover":
         word = word_at(params["textDocument"]["uri"], params["position"])
         reply({"contents": {"kind": "markdown",

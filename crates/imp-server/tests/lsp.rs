@@ -34,6 +34,11 @@ fn settle(s: &mut imp_server::Server) {
 /// attached to the fake language server. The log file records every
 /// message the server got.
 fn attached(name: &str, text: &str) -> (imp_server::Server, PathBuf, PathBuf) {
+    attached_with(name, text, "")
+}
+
+/// `attached`, with `env` (NAME=value ...) set for the fake server.
+fn attached_with(name: &str, text: &str, env: &str) -> (imp_server::Server, PathBuf, PathBuf) {
     let path = temp_path(name);
     std::fs::write(&path, text).unwrap();
     let log = temp_path(&format!("{name}.log"));
@@ -42,7 +47,8 @@ fn attached(name: &str, text: &str) -> (imp_server::Server, PathBuf, PathBuf) {
     let mut s = server("");
     s.eval("(set-option! 'lsp #t)").unwrap();
     s.eval(&format!(
-        r#"(define-language-server! 'rust-mode "env FAKE_LSP_LOG={} python3 {fake}" '() "rust")"#,
+        r#"(define-language-server! 'rust-mode
+             '("imp-no-such-server --stdio" "env FAKE_LSP_LOG={} {env} python3 {fake}") '() "rust")"#,
         log.display()
     ))
     .unwrap();
@@ -84,6 +90,32 @@ fn diagnostics_are_shown_and_follow_edits() {
     assert_eq!(s.cursor(), 4);
     type_keys(&mut s, "[d");
     assert_eq!(s.eval("(current-line)").unwrap(), "2");
+}
+
+#[test]
+fn diagnostics_are_pulled_from_a_server_that_does_not_push() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached_with("pull.rs", "let bad = 1;\nmeh\n", "FAKE_LSP_PULL=1");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    type_keys(&mut s, "0");
+    assert_eq!(s.status(), "E: bad word (fake)");
+    // Asked again after a change; the status line follows without a key.
+    type_keys(&mut s, "obad<esc>");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 2)");
+    assert_eq!(s.status(), "E: bad word (fake)");
+    type_keys(&mut s, "0cwgood<esc>");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    assert_eq!(s.status(), "");
+    type_keys(&mut s, "obad<esc>");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 2)");
+    // After a save the server also flags "meh" and asks imp to pull again.
+    type_keys(&mut s, ":w<ret>");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 3)");
+    type_keys(&mut s, "G");
+    assert_eq!(s.eval("(current-line)").unwrap(), "3");
+    assert_eq!(s.status(), "E: meh word (fake)");
 }
 
 #[test]
