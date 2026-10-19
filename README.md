@@ -25,6 +25,17 @@ grammars):
 cargo install --git https://github.com/apisandipas/imp imp-editor
 ```
 
+From a checkout, with Nix installed, `make` does the same (run `make` alone to
+list every target):
+
+```sh
+git clone https://github.com/apisandipas/imp && cd imp
+make install       # build imp and add it to your Nix profile
+make install-tui   # or: the terminal-only imp
+make upgrade       # later, after git pull: rebuild the installed imp
+make build         # or just build it: ./result/bin/imp
+```
+
 Prebuilt binaries for Linux (x86_64, aarch64) and macOS (Apple silicon) are
 attached to each [release](https://github.com/apisandipas/imp/releases). The
 binary is self-contained: the Scheme runtime is built into it. On Linux the
