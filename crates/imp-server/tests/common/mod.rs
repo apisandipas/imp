@@ -17,6 +17,10 @@ pub fn server(text: &str) -> Server {
         temp_path("state").display().to_string()
     ))
     .unwrap();
+    // No real language servers (rust-analyzer is in the dev shell): their
+    // diagnostics would change what tests see. tests/lsp.rs turns this
+    // back on for its fake server.
+    s.eval("(set-option! 'lsp #f)").unwrap();
     s
 }
 

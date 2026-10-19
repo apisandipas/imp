@@ -40,6 +40,7 @@ fn attached(name: &str, text: &str) -> (imp_server::Server, PathBuf, PathBuf) {
     let _ = std::fs::remove_file(&log);
     let fake = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake_lsp.py");
     let mut s = server("");
+    s.eval("(set-option! 'lsp #t)").unwrap();
     s.eval(&format!(
         r#"(define-language-server! 'rust-mode "env FAKE_LSP_LOG={} python3 {fake}" '() "rust")"#,
         log.display()
