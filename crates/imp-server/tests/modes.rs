@@ -22,7 +22,8 @@ fn mode_from_file_extension() {
     let mut s = server("");
     open(&mut s, "m.rs", "fn main() {}\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "rust-mode");
-    assert!(status_row(&mut s).contains("rust  1:1"));
+    let status = status_row(&mut s);
+    assert!(status.contains("rust  1:1"), "status line: {status:?}");
     open(&mut s, "m.scm", "(+ 1 2)\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "scheme-mode");
     open(&mut s, "Makefile", "all:\n");

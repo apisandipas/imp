@@ -41,3 +41,10 @@ portable-pty = "0.9"
 # leaving our code quick to rebuild and easy to debug.
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
+
+# Each test file is its own binary linking the whole editor, so debug info
+# multiplies fast (a full set with it took 160 GB over two days of builds).
+# Line tables are enough for backtraces.
+[profile.dev]
+debug = "line-tables-only"
