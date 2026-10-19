@@ -64,6 +64,48 @@
             (let ([doc (doc-comment lines n)])
               (if (null? doc) (list "Not documented.") doc)))))
 
+;;; One-line docs, shown beside commands in M-x (completion.scm)
+
+;; Docs for commands defined without a line of their own, such as
+;; emacs.scm's tables: name (a string) -> one line. These come before doc
+;; comments.
+(define *command-docs* (hash))
+
+(define (document-command! name text)
+  (set! *command-docs* (hash-insert *command-docs* (symbol->string name) text)))
+
+;; What a command does, in a line, or #f.
+(define (command-doc name docs)
+  (or (hash-try-get *command-docs* name) (hash-try-get docs name)))
+
+(define *doc-lines* (hash))
+(define *doc-lines-key* #f)  ; the sources (name . length) they were read from
+
+;; A hash of name -> the first line of the comment above its definition,
+;; from every loaded source, later sources winning (as describe-function
+;; finds init.scm's redefinition first). Read again when a source changes.
+(define (doc-lines)
+  (let ([key (map (lambda (n) (cons n (string-length (or (source-text n) "")))) (source-names))])
+    (unless (equal? key *doc-lines-key*)
+      (set! *doc-lines* (foldl (lambda (name table) (source-doc-lines (source-lines name) table))
+                               (hash) (source-names)))
+      (set! *doc-lines-key* key))
+    *doc-lines*))
+
+;; Adds each definition in `lines` that has a comment right above it.
+(define (source-doc-lines lines table)
+  (let loop ([ls lines] [first #f] [in-comment? #f] [table table])
+    (if (null? ls)
+        table
+        (let ([line (car ls)])
+          (cond
+            [(starts-with? line ";")
+             (let ([text (trim (strip-comment line))])
+               (loop (cdr ls) (if (and in-comment? first) first (if (equal? text "") #f text)) #t table))]
+            [else
+             (let ([name (and first (defined-name line))])
+               (loop (cdr ls) #f #f (if name (hash-insert table name first) table)))])))))
+
 ;;; describe-function, describe-option, apropos
 
 (define (describe-function name)
@@ -71,7 +113,8 @@
     (cond
       [site (show-popup! (cons (string-append name ":") (site-description site)))]
       [(command-proc (string->symbol name))
-       (show-popup! (list (string-append name " is a command, defined without a source line.")))]
+       (show-popup! (cons (string-append name " is a command, defined without a source line.")
+                          (let ([doc (hash-try-get *command-docs* name)]) (if doc (list "" doc) '()))))]
       [(bound? (string->symbol name))
        (show-popup! (list (string-append name " is built into Steel or Rust; see crates/imp-server/src/api.rs.")))]
       [else (message (string-append "no definition of " name))])))

@@ -105,3 +105,57 @@ fn m_x_works_in_normal_mode() {
     type_keys(&mut s, "eval buf<ret>");
     assert_eq!(s.status(), "2");
 }
+
+#[test]
+fn m_x_describes_each_command() {
+    let mut s = server("");
+    s.set_size(200, 24);
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "find-file");
+    let menu = rows(&mut s).join("\n");
+    // The first line of its doc comment, after its keys.
+    let row = menu
+        .lines()
+        .find(|r| r.starts_with("find-file "))
+        .expect(&menu);
+    assert!(row.contains("SPC f f"), "{row}");
+    assert!(
+        row.contains("Open a file under the current directory, skipping what .gitignore does."),
+        "{row}"
+    );
+    // With no doc comment, its which-key label.
+    type_keys(&mut s, "<esc>");
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "describe-face");
+    let menu = rows(&mut s).join("\n");
+    let row = menu
+        .lines()
+        .find(|r| r.starts_with("describe-face "))
+        .expect(&menu);
+    assert!(
+        row.contains("SPC h F") && row.contains("Describe face"),
+        "{row}"
+    );
+    // A command from a table, documented with document-command!.
+    type_keys(&mut s, "<esc>");
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "kill-line");
+    let menu = rows(&mut s).join("\n");
+    assert!(
+        menu.contains("Kill to the end of the line; at the end, kill the line break."),
+        "{menu}"
+    );
+}
+
+#[test]
+fn every_command_has_a_description() {
+    let mut s = server("");
+    let missing = s
+        .eval(
+            "(filter (lambda (c) (not (or (command-doc (symbol->string c) (doc-lines))
+                                          (assoc c (*command-labels*)))))
+                     (command-names))",
+        )
+        .unwrap();
+    assert_eq!(missing, "()", "commands M-x can't describe");
+}

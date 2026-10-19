@@ -325,6 +325,51 @@
           (let ([r (form-at (max 0 (- (cursor) 1)))])
             (if r (eval-and-show! (buffer-substring (car r) (cadr r))) (message "no form before point")))))))
 
+;; What the commands above do, for M-x and describe-function: they have no
+;; definition line of their own for a comment to sit above.
+(for-each
+ (lambda (d) (document-command! (car d) (cadr d)))
+ '((forward-char "Move forward a char.")
+   (backward-char "Move back a char.")
+   (next-line "Move down a line, keeping the column.")
+   (previous-line "Move up a line, keeping the column.")
+   (move-beginning-of-line "Move to the start of the line.")
+   (move-end-of-line "Move to the end of the line.")
+   (back-to-indentation "Move to the line's first non-blank char.")
+   (forward-word "Move to the end of the next word.")
+   (backward-word "Move to the start of the previous word.")
+   (beginning-of-buffer "Move to the start of the buffer, leaving the mark behind.")
+   (end-of-buffer "Move to the end of the buffer, leaving the mark behind.")
+   (scroll-up-command "Scroll down a page (the text moves up).")
+   (scroll-down-command "Scroll up a page (the text moves down).")
+   (recenter "Scroll so the cursor's line is in the middle.")
+   (goto-line "Ask for a line number and go there.")
+   (delete-char "Delete the char after the cursor.")
+   (delete-backward-char "Delete the char before the cursor, or kill the region if there is one.")
+   (newline "Break the line at the cursor.")
+   (open-line "Break the line at the cursor, staying before the break.")
+   (transpose-chars "Swap the chars around the cursor.")
+   (upcase-word "Upper-case to the end of the word.")
+   (downcase-word "Lower-case to the end of the word.")
+   (capitalize-word "Capitalize to the end of the word.")
+   (kill-line "Kill to the end of the line; at the end, kill the line break.")
+   (kill-word "Kill to the end of the word.")
+   (backward-kill-word "Kill to the start of the word.")
+   (kill-region "Kill the text between the mark and the cursor.")
+   (kill-ring-save "Copy the text between the mark and the cursor to the kill ring.")
+   (yank "Paste the most recent kill.")
+   (yank-pop "Replace the text just yanked with the kill before it.")
+   (set-mark-command "Set the mark at the cursor, starting a region.")
+   (mark-whole-buffer "Select the whole buffer.")
+   (exchange-point-and-mark "Swap the cursor and the mark.")
+   (emacs-undo "Undo the last change.")
+   (emacs-redo "Redo the last undone change.")
+   (comment-dwim "Comment or uncomment the region's lines, or the current line.")
+   (write-file "Save the buffer under another name.")
+   (save-some-buffers "Save every modified buffer.")
+   (save-buffers-kill-emacs "Quit imp, as :qa does.")
+   (emacs-eval-last-sexp "Evaluate the Scheme form before the cursor and show the result.")))
+
 ;;; Incremental search: C-s and C-r, again to go to the next match.
 
 (define (isearch! forward?)
@@ -354,11 +399,14 @@
               [(equal? key "C-g") (cmdline-key! "<esc>") #t]
               [else #f])))))
 
+;; Search forward as you type; C-s again for the next match.
 (define-command! 'isearch-forward (lambda (n) (isearch! #t)))
+;; Search backward as you type; C-r again for the previous match.
 (define-command! 'isearch-backward (lambda (n) (isearch! #f)))
 
 ;;; Switching between Vim and Emacs
 
+;; Switch to Emacs keys (C-z switches back).
 (define-command! 'emacs-state
   (lambda (n)
     (when (eq? *mode* 'visual) (leave-visual!))
@@ -366,6 +414,7 @@
     (set-mode! 'emacs)
     (message "Emacs state (C-z for Vim)")))
 
+;; Switch to Vim keys (C-z switches back).
 (define-command! 'vim-state
   (lambda (n)
     (deactivate-mark!)

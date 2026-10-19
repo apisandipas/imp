@@ -81,6 +81,14 @@
                              (range 0 columns)))))
          (range 0 rows))))
 
+;; M-x describes a command with no doc comment by its which-key label
+;; (completion.scm).
+(set! *command-labels*
+      (lambda ()
+        (map (lambda (keys) (hash-ref *leader-bindings* keys))
+             (filter (lambda (keys) (symbol? (car (hash-ref *leader-bindings* keys))))
+                     (hash-keys->list *leader-bindings*)))))
+
 ;; M-x shows leader keys beside commands (completion.scm).
 (set! *more-command-keys*
       (lambda ()

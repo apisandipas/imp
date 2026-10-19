@@ -547,7 +547,9 @@
               (let ([next (filter (lambda (s) (if forward? (> s p) (< s p))) starts)])
                 (loop (if (pair? next) (car next) (car starts)) (- n 1))))))))
 
+;; Go to the next diagnostic (]d), wrapping around.
 (define-command! 'next-diagnostic (lambda (count) (next-diagnostic! count #t)))
+;; Go to the previous diagnostic ([d), wrapping around.
 (define-command! 'previous-diagnostic (lambda (count) (next-diagnostic! count #f)))
 (define-key! 'normal "]d" 'next-diagnostic)
 (define-key! 'normal "[d" 'previous-diagnostic)

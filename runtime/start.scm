@@ -158,6 +158,7 @@
   (start-draw!))
 
 (define-ex! '("start") (lambda (ex) (show-start-screen!)))
+;; Show the start screen: recent files, projects and a few commands.
 (define-command! 'start-screen (lambda (count) (show-start-screen!)))
 
 ;; Called by the editor when it starts with no file.

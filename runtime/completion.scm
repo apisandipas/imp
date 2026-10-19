@@ -96,6 +96,9 @@
 ;; (a string) -> key labels. Normal mode's (or Emacs's) keys here; the
 ;; leader adds its own through *more-command-keys* (leader.scm).
 (define *more-command-keys* (lambda () '()))  ; -> list of (name label)
+;; Short descriptions of commands, for those without a doc comment: the
+;; leader's which-key labels (leader.scm).
+(define *command-labels* (lambda () '()))  ; -> list of (name description)
 
 (define (command-keys-table)
   (let* ([mode (if (eq? *mode* 'emacs) 'emacs 'normal)]
@@ -108,15 +111,32 @@
                (hash-insert table name (append (or (hash-try-get table name) '()) (list (cadr p))))))
            (hash) pairs)))
 
-;; Run a command by name (Emacs's M-x), its keys shown beside it.
+;; Run a command by name (Emacs's M-x), its keys and what it does shown
+;; beside it: the first line of its doc comment, else its which-key label.
 (define-command! 'execute-command
   (lambda (count)
-    (let ([keys (command-keys-table)])
+    (let ([keys (command-keys-table)]
+          [docs (doc-lines)]
+          [labels (foldl (lambda (p h) (hash-insert h (symbol->string (car p)) (sentence-case (cadr p))))
+                         (hash) (*command-labels*))])
       (completing-read "M-x " (sort (map symbol->string (command-names)) string<?)
                        (lambda (name) (run-command (string->symbol name)))
                        (lambda (name)
-                         (let ([labels (hash-try-get keys name)])
-                           (and labels (string-join (take-at-most-keys labels 3) "  "))))))))
+                         (command-annotation (hash-try-get keys name)
+                                             (or (command-doc name docs) (hash-try-get labels name))))))))
+
+;; "last buffer" -> "Last buffer", to sit among doc comments' first lines.
+(define (sentence-case text)
+  (if (equal? text "")
+      text
+      (string-append (string-upcase (substring text 0 1)) (substring text 1 (string-length text)))))
+
+;; "KEYS  description", the description in a column of its own.
+(define (command-annotation key-labels doc)
+  (let ([keys (if key-labels (string-join (take-at-most-keys key-labels 3) "  ") "")])
+    (cond [(not doc) (and key-labels keys)]
+          [(equal? keys "") (string-append (make-string 14 #\space) doc)]
+          [else (string-append (pad-right (string-append keys "  ") 14) doc)])))
 
 (define (take-at-most-keys items n)
   (if (or (null? items) (= n 0)) '() (cons (car items) (take-at-most-keys (cdr items) (- n 1)))))

@@ -52,7 +52,9 @@
     (set! *mcp-listener* #f)
     (message "MCP is off")))
 
+;; Let AI agents use the editor over the Model Context Protocol.
 (define-command! 'mcp-enable (lambda (count) (mcp-enable!) (when *mcp-listener* (message "MCP is on"))))
+;; Stop listening for MCP agents.
 (define-command! 'mcp-disable (lambda (count) (mcp-disable!)))
 (define-ex! '("mcp-log")
   (lambda (ex) (show-popup! (if (null? *mcp-log*) (list "nothing yet") (reverse *mcp-log*)))))

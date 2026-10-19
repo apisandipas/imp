@@ -255,6 +255,10 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Options backed by something else: `define-computed-option!`.
 - Tree-sitter: `(define-mode-language! 'mode "lang")`,
   `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`.
+- M-x describes each command beside it: the first line of the comment
+  above its definition (`doc-lines`, help.scm), else
+  `(document-command! 'name "text")` for commands defined from a table,
+  else its which-key label. tests/completion.rs fails if one has none.
 - Language servers: `(define-language-server! 'mode "command args"
   '("root-marker" ...) "languageId")`, or a list of commands to use the
   first installed; option `lsp` turns them off.
