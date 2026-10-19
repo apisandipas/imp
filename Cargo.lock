@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "imp-core"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "ropey",
  "serde",
@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "imp-editor"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "crossterm",
  "imp-core",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "imp-gui"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "glyphon",
  "imp-core",
@@ -1581,7 +1581,7 @@ dependencies = [
 
 [[package]]
 name = "imp-server"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "base64",
  "ignore",
