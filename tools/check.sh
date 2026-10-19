@@ -3,10 +3,12 @@
 cd "$(dirname "$0")/.."
 nix develop -c bash -c '
   out=$(cargo test -q 2>&1); t=$?
-  echo "$out" | grep -E "test result|FAILED|panicked|^error"
+  echo "$out" | grep -E "test result|^error"
+  # A panic's message is on the lines after "panicked at".
+  echo "$out" | grep -A2 -E "^---- |panicked"
   # The Phase 5 prototypes, behind features (docs/design/phase-5.md).
   out=$(cargo test -q -p imp-server --all-features 2>&1) || t=1
-  echo "$out" | grep -E "FAILED|panicked|^error"
+  echo "$out" | grep -A2 -E "FAILED|panicked|^error"
   # And imp built terminal-only, without the window client.
   c=$(cargo clippy -q --all-targets 2>&1; cargo clippy -q --all-targets --all-features 2>&1; cargo clippy -q -p imp-editor --no-default-features 2>&1)
   echo "$c" | tail -30
