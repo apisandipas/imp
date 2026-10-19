@@ -98,7 +98,9 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   (`:Ex`), projects with search into a quickfix list, and terminals
   (`:terminal`).
 - **Help.** `:help`, `SPC h k` (describe key), `SPC h f` (describe
-  function), `SPC h o` (describe option).
+  function), `SPC h o` (describe option), `SPC h F` (the faces under the
+  cursor, to change with `set-face!`), `M-x list-faces` (every face, drawn
+  in itself).
 
 ## Configuration
 

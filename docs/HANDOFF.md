@@ -427,7 +427,9 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
   commands, diagnostics and Scheme; agent changes show on the status line
   and in `:mcp-log`.
 - The look (the polish pass the owner asked for): themes `one-dark`
-  (default), `gruvbox-dark`, `everforest-dark`, `one-light` via `:theme` / `SPC t T`; a status
+  (default), `gruvbox-dark`, `everforest-dark`, `one-light` via `:theme` / `SPC t T`;
+  `describe-face` (`SPC h F`) and `list-faces` in theme.scm, on the
+  `face-names`, `face-spec` and `faces-at` primitives; a status
   line with a colored mode badge, file, modified dot, diagnostics counts,
   major mode, position and percent; which-key and menus under a titled
   rule with colored keys; LSP completion and hover in a bordered box at

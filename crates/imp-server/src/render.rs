@@ -837,6 +837,51 @@ fn char_styles(
     styles
 }
 
+/// The faces drawn at char `offset` of the current buffer, bottom first:
+/// the syntax face, then each highlight over it, as `char_styles` paints
+/// them. For describe-face.
+pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
+    let buffer = e.buffer_by_id(e.current).unwrap_or(&e.buffer);
+    let rope = buffer.rope();
+    let offset = offset.min(rope.len_chars());
+    let line = rope.char_to_line(offset);
+    let start = rope.line_to_char(line);
+    let text = rope.line(line).to_string();
+    let text = text.trim_end_matches(['\n', '\r']);
+    let mut faces = Vec::new();
+    if let Some(syntax) = e.syntax.get(&e.current) {
+        let bytes = rope.char_to_byte(start)..rope.char_to_byte(start + text.chars().count() + 1);
+        let face = syntax
+            .highlights(rope, bytes)
+            .into_iter()
+            .filter(|(s, t, _)| *s <= offset && offset < *t)
+            .find_map(|(_, _, names)| names.iter().find(|f| e.faces.contains_key(*f)));
+        faces.extend(face.cloned());
+    }
+    let buffer_layers = e
+        .buffer_layers
+        .get(&e.current)
+        .map_or(&[][..], Vec::as_slice);
+    let col = offset - start;
+    for layer in e.layers.iter().chain(buffer_layers) {
+        for h in &layer.ranges {
+            if h.start <= offset && offset < h.end {
+                faces.push(h.face.clone());
+            }
+        }
+        if let Some((re, face)) = &layer.pattern {
+            let hit = re.find_iter(text).any(|m| {
+                let from = text[..m.start()].chars().count();
+                from <= col && col < from + m.as_str().chars().count()
+            });
+            if hit {
+                faces.push(face.clone());
+            }
+        }
+    }
+    faces
+}
+
 /// Appends text to a row, merging it into the last span if the style matches.
 fn push(row: &mut Row, text: &str, style: Style) {
     match row.last_mut() {

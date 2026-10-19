@@ -693,6 +693,25 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.faces.insert(name, style));
         Ok::<(), String>(())
     });
+    // Every face's name, sorted; a face's spec ("fg=#rrggbb bold"), or #f
+    // if there's no such face; and the faces drawn at an offset of the
+    // current buffer, bottom first. For describe-face and list-faces.
+    engine.register_fn("face-names", || {
+        editor::with(|e| {
+            let mut names: Vec<String> = e.faces.keys().cloned().collect();
+            names.sort();
+            names
+        })
+    });
+    engine.register_fn("face-spec", |name: String| {
+        editor::with(|e| e.faces.get(&name).map(|s| s.spec()))
+    });
+    engine.register_fn("faces-at", |at: isize| {
+        editor::with(|e| {
+            e.update_syntax(e.current);
+            crate::render::faces_at(e, clamp(at))
+        })
+    });
     engine.register_fn("highlight-clear!", |layer: String| {
         editor::with(|e| {
             let layer = e.layer_mut(&layer);

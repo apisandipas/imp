@@ -217,6 +217,50 @@
         (list "status.mode.insert" "fg=#2d353b bg=#7fbbb3 bold")
         (list "status.mode.visual" "fg=#2d353b bg=#e67e80 bold")))
 
+;;; describe-face, list-faces
+;;;
+;;; Every color is a named face (theme.scm). describe-face (SPC h F) names
+;;; the faces drawn under the cursor, bottom first; list-faces shows every
+;;; face in its own colors. Either way, change one in init.scm with
+;;; (set-face! "name" "fg=#rrggbb bg=#rrggbb bold italic underline").
+
+(define (face-line name)
+  (string-append (pad-right name 28) (or (face-spec name) "(not defined)")))
+
+(define (face-change-hint name)
+  (string-append "Change it: (set-face! \"" name "\" \"" (or (face-spec name) "fg=#rrggbb") "\")"))
+
+;; "normal" is under everything: the text color and background.
+(define (describe-face-at! at)
+  (let ([faces (cons "normal" (faces-at at))])
+    (show-popup! (append (list "Faces at the cursor, bottom first:")
+                         (map (lambda (f) (string-append "  " (face-line f))) faces)
+                         (list "" (face-change-hint (last faces)))))))
+
+(define-command! 'describe-face (lambda (count) (describe-face-at! (cursor))))
+
+(define-major-mode! 'faces-mode 'special-mode '() #f)
+
+;; Each face's name, a sample drawn in it, and its spec; <ret> on one shows
+;; how to change it.
+(define-command! 'list-faces
+  (lambda (count)
+    (go-to-buffer! (special-buffer "*faces*" 'faces-mode))
+    (draw-begin!)
+    (for-each (lambda (name)
+                (draw-line! (list (list (pad-right name 28) #f)
+                                  (list "Sample text 0123" name)
+                                  (list (string-append "  " (or (face-spec name) "")) "status.dim"))
+                            (list 'face name)))
+              (face-names))
+    (draw-finish!)))
+
+(define-mode-key! 'faces-mode 'normal "<ret>"
+  (lambda (n)
+    (let ([item (line-item)])
+      (when (and item (eq? (car item) 'face))
+        (show-popup! (list (face-line (cadr item)) "" (face-change-hint (cadr item))))))))
+
 (define (theme-names) (sort (map symbol->string (hash-keys->list *themes*)) string<?))
 
 (define-command! 'load-theme

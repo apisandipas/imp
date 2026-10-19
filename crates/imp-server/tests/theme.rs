@@ -112,3 +112,47 @@ fn a_popup_at_the_cursor_is_a_box_beside_it() {
     assert!(rows[7].starts_with("───"), "{rows:?}");
     assert!(rows[8].starts_with("bottom"), "{rows:?}");
 }
+
+#[test]
+fn describe_face_names_the_faces_under_the_cursor() {
+    let mut s = themed("");
+    let path = temp_path("faces.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    s.eval(r#"(buffer-highlight-add! "test" 0 2 "diff.added")"#)
+        .unwrap();
+    s.eval("(run-command 'describe-face)").unwrap();
+    let text = s.frame().text_rows().join("\n");
+    // Bottom first: the text's own face, the syntax face, the highlight.
+    let normal = text.find("normal").expect(&text);
+    let keyword = text.find("syntax.keyword").expect(&text);
+    let added = text.find("diff.added").expect(&text);
+    assert!(normal < keyword && keyword < added, "{text}");
+    assert!(text.contains("fg=#c678dd"), "{text}");
+    assert!(
+        text.contains(r#"(set-face! "diff.added" "fg=#98c379")"#),
+        "{text}"
+    );
+}
+
+#[test]
+fn list_faces_draws_each_face_in_itself() {
+    let mut s = themed("");
+    s.eval("(run-command 'list-faces)").unwrap();
+    assert_eq!(s.eval("(buffer-name)").unwrap(), "\"*faces*\"");
+    type_keys(&mut s, "/^syntax.keyword <ret>");
+    let f = s.frame();
+    let row = f
+        .rows
+        .iter()
+        .find(|r| r.iter().any(|sp| sp.text.starts_with("syntax.keyword ")))
+        .unwrap();
+    let sample = row.iter().find(|sp| sp.text.contains("Sample")).unwrap();
+    assert_eq!(sample.style.fg, Some(Color::Rgb(0xc6, 0x78, 0xdd)));
+    type_keys(&mut s, "<ret>");
+    let text = s.frame().text_rows().join("\n");
+    assert!(
+        text.contains(r#"(set-face! "syntax.keyword" "fg=#c678dd")"#),
+        "{text}"
+    );
+}

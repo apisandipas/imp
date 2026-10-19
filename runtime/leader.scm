@@ -213,6 +213,7 @@
 (define-leader! "hk" 'describe-key "describe key")
 (define-leader! "hf" 'describe-function "describe function")
 (define-leader! "ho" 'describe-option "describe option")
+(define-leader! "hF" 'describe-face "describe face")
 (define-leader! "hc" 'describe-command "describe command")
 (define-leader! "ha" 'apropos "apropos")
 (define-leader! "hd" 'find-definition "find definition")

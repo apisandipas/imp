@@ -154,6 +154,23 @@ impl Style {
         }
         Ok(style)
     }
+
+    /// The spec `parse` reads back as this style, e.g. `"fg=#ff8800 bold"`.
+    pub fn spec(&self) -> String {
+        let colors = [("fg", self.fg), ("bg", self.bg)]
+            .into_iter()
+            .filter_map(|(key, c)| c.map(|c| format!("{key}={}", c.spec())));
+        let attrs = [
+            ("bold", self.bold),
+            ("italic", self.italic),
+            ("underline", self.underline),
+            ("reverse", self.reverse),
+        ]
+        .into_iter()
+        .filter(|(_, on)| *on)
+        .map(|(name, _)| name.to_string());
+        colors.chain(attrs).collect::<Vec<_>>().join(" ")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,6 +205,14 @@ impl Color {
             .position(|n| *n == name)
             .map(|i| Color::Indexed(i as u8 + bright))
             .ok_or_else(|| format!("bad color {s:?}"))
+    }
+
+    /// How `parse` spells this color: `#rrggbb`, or an index.
+    pub fn spec(&self) -> String {
+        match self {
+            Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+            Color::Indexed(n) => n.to_string(),
+        }
     }
 }
 
@@ -275,6 +300,14 @@ mod tests {
         );
         assert!(Style::parse("fg=nope").is_err());
         assert!(Style::parse("sparkly").is_err());
+    }
+
+    #[test]
+    fn face_specs_round_trip() {
+        let s = Style::parse("bold fg=#ff8000 italic bg=bright-blue").unwrap();
+        assert_eq!(s.spec(), "fg=#ff8000 bg=12 bold italic");
+        assert_eq!(Style::parse(&s.spec()).unwrap(), s);
+        assert_eq!(Style::default().spec(), "");
     }
 }
 
