@@ -42,10 +42,6 @@
 
 ;;; Launch configurations that come with imp
 
-;; Asks for a value on the command line, starting from `default`.
-(define (ask prompt default done)
-  (open-cmdline! prompt default (lambda (text) (unless (equal? text "") (done text))) #f #f))
-
 ;; The package name in a Cargo.toml, or #f.
 (define (cargo-package-name toml)
   (let loop ([lines (split-lines (read-file toml))] [in-package? #f])

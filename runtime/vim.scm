@@ -3175,6 +3175,20 @@
     [(starts-with? path "~/") (string-append (home-dir) (substring path 1 (string-length path)))]
     [else path]))
 
+;; ~ for the home directory, for showing a path.
+(define (abbreviate-path path)
+  (let ([home (home-dir)])
+    (if (and (> (string-length home) 1) (starts-with? path (string-append home "/")))
+        (string-append "~" (substring path (string-length home) (string-length path)))
+        path)))
+
+;; The buffer visiting `path`, or #f.
+(define (buffer-for-path path)
+  (let loop ([ids (buffer-list)])
+    (cond [(null? ids) #f]
+          [(let ([p (cadr (buffer-info (car ids)))]) (and p (equal? (absolute-path p) path))) (car ids)]
+          [else (loop (cdr ids))])))
+
 (define (buffer-modified-by-id? id)
   (let ([info (buffer-info id)]) (and info (caddr info))))
 
@@ -3256,18 +3270,21 @@
         [(not id) #f]
         [(and (buffer-modified-by-id? id) (not (ex-bang? ex)))
          (set-status! "unsaved changes (add ! to discard them)")]
-        [else
-         (let ([alt *alternate-buffer*])
-           ;; Prefer going back to the alternate buffer, as Vim does.
-           (when (and (= id (current-buffer)) alt (not (= alt id)) (memv alt (buffer-list)))
-             (go-to-buffer! alt))
-           (run-hooks 'buffer-kill id)
-           (buffer-kill! id)
-           (kill-buffer-locals! id)
-           (when (equal? *alternate-buffer* id) (set! *alternate-buffer* #f))
-           (set! *jumps* (filter (lambda (j) (not (= (jump-buffer j) id))) *jumps*))
-           (set! *jump-index* (length *jumps*))
-           (normal-clamp!))]))))
+        [else (kill-buffer! id)]))))
+
+;; Closes buffer `id`, unsaved changes and all. If it is current, the
+;; alternate buffer takes its place, as in Vim.
+(define (kill-buffer! id)
+  (let ([alt *alternate-buffer*])
+    (when (and (= id (current-buffer)) alt (not (= alt id)) (memv alt (buffer-list)))
+      (go-to-buffer! alt))
+    (run-hooks 'buffer-kill id)
+    (buffer-kill! id)
+    (kill-buffer-locals! id)
+    (when (equal? *alternate-buffer* id) (set! *alternate-buffer* #f))
+    (set! *jumps* (filter (lambda (j) (not (= (jump-buffer j) id))) *jumps*))
+    (set! *jump-index* (length *jumps*))
+    (normal-clamp!)))
 
 (define-key! 'normal "C-^"
   (lambda (count)

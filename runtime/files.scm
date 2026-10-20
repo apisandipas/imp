@@ -112,3 +112,86 @@
             (replace-range! 0 (buffer-length) text)
             (set-cursor! 0)
             (message (string-append "recovered " (buffer-name) "; :w to keep it")))))))
+
+;;; Deleting, renaming and copying files (M-x delete-file, rename-file,
+;;; copy-file). Each asks for the file, offering the current buffer's, and
+;;; a buffer visiting it follows: deleted with the file, or renamed.
+
+;; What the file prompts start from: the current buffer's file, or the
+;; current directory.
+(define (file-prompt-default)
+  (abbreviate-path (if (buffer-path)
+                       (absolute-path (buffer-path))
+                       (string-append (current-dir) "/"))))
+
+;; Asks for an existing file (not a directory), then calls `done` with
+;; its absolute path.
+(define (ask-existing-file prompt done)
+  (ask prompt (file-prompt-default)
+       (lambda (name)
+         (let ([path (absolute-path (expand-path name))])
+           (cond [(not (file-exists? path)) (message (string-append name ": no such file"))]
+                 [(file-directory? path) (message (string-append name " is a directory; use the file browser (:Ex)"))]
+                 [else (done path)])))))
+
+;; Where `from` goes when the answer is `name`: into `name` if that is a
+;; directory, as mv and cp do.
+(define (destination-path from name)
+  (let ([to (absolute-path (expand-path name))])
+    (if (file-directory? to)
+        (string-append (if (ends-with? to "/") to (string-append to "/")) (file-name-of from))
+        to)))
+
+;; Delete a file, the current buffer's unless you name another, after asking.
+(define-command! 'delete-file
+  (lambda (count)
+    (ask-existing-file "Delete file: "
+      (lambda (path)
+        (confirm! (string-append "Delete " (abbreviate-path path) "?")
+          (lambda ()
+            (let ([r (delete-path! path)] [id (buffer-for-path path)])
+              (cond [(string? r) (message r)]
+                    [(and id (buffer-modified-by-id? id))
+                     (message (string-append "deleted " (abbreviate-path path) "; its buffer has unsaved changes, so it stays"))]
+                    [else (when id (kill-buffer! id))
+                          (message (string-append "deleted " (abbreviate-path path)))]))))))))
+
+;; Rename or move a file, the current buffer's unless you name another.
+(define-command! 'rename-file
+  (lambda (count)
+    (ask-existing-file "Rename file: "
+      (lambda (from)
+        (ask (string-append "Rename " (abbreviate-path from) " to: ") (abbreviate-path from)
+          (lambda (name)
+            (let ([to (destination-path from name)])
+              (if (equal? to from)
+                  (message "same name; nothing to do")
+                  (let ([r (rename-file! from to)])
+                    (if (string? r)
+                        (message r)
+                        (let ([id (buffer-for-path from)])
+                          (when id (with-buffer id (lambda () (buffer-renamed! from to))))
+                          (message (string-append "renamed " (abbreviate-path from) " to " (abbreviate-path to))))))))))))))
+
+;; Points the current buffer at its file's new path `to`: its name, its
+;; major mode (the extension may have changed) and its language server.
+(define (buffer-renamed! from to)
+  (set-buffer-path! to)
+  (run-hooks 'buffer-renamed from)
+  (pick-major-mode!))
+
+;; Copy a file, the current buffer's unless you name another.
+(define-command! 'copy-file
+  (lambda (count)
+    (ask-existing-file "Copy file: "
+      (lambda (from)
+        (ask (string-append "Copy " (abbreviate-path from) " to: ") (abbreviate-path from)
+          (lambda (name)
+            (let* ([to (destination-path from name)] [r (copy-file! from to)])
+              (message (if (string? r)
+                           r
+                           (string-append "copied " (abbreviate-path from) " to " (abbreviate-path to)))))))))))
+
+(define-leader! "fD" 'delete-file "delete file")
+(define-leader! "fR" 'rename-file "rename file")
+(define-leader! "fC" 'copy-file "copy file")

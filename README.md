@@ -93,6 +93,9 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   rust-analyzer, TypeScript 7's tsgo (or typescript-language-server), nil,
   marksman and pyright when they're on your `PATH`, and more with `define-language-server!`; debugging
   over DAP.
+- **Files.** `SPC f D`, `SPC f R` and `SPC f C` (or `M-x delete-file`,
+  `rename-file`, `copy-file`) act on the current buffer's file unless you
+  name another; deleting asks first, and the buffer follows a rename.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, agenda and capture, an editable file browser
   (`:Ex`), projects with search into a quickfix list, and terminals

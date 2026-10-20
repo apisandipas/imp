@@ -323,6 +323,13 @@ pub fn register(engine: &mut Engine) {
         }
         outcome(std::fs::rename(&from, &to), &from)
     });
+    // Copies a file, its permissions too; refuses to overwrite one.
+    engine.register_fn("copy-file!", move |from: String, to: String| {
+        if Path::new(&to).exists() {
+            return SteelVal::StringV(format!("{to} already exists").into());
+        }
+        outcome(std::fs::copy(&from, &to).map(|_| ()), &from)
+    });
     engine.register_fn("make-directory!", move |path: String| {
         outcome(std::fs::create_dir_all(&path), &path)
     });

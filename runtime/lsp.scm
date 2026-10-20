@@ -386,6 +386,18 @@
                    (when key
                      (lsp-notify! key "textDocument/didClose" (hash "textDocument" (lsp-text-document)))))))))
 
+;; A renamed file is a new document to its server: close the old one;
+;; the major mode, picked again, attaches the new.
+(add-hook! 'buffer-renamed
+           (lambda (old-path)
+             (let ([key (lsp-key)])
+               (when key
+                 (lsp-notify! key "textDocument/didClose" (hash "textDocument" (lsp-text-document)))
+                 (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri)))
+                 (set-buffer-local! 'lsp-server #f)
+                 (set-buffer-local! 'lsp-uri #f)
+                 (minor-mode-off! 'lsp-mode)))))
+
 ;;; Positions
 ;;;
 ;;; imp's offsets count chars, which is LSP's "utf-32". Servers that only
@@ -444,13 +456,6 @@
 
 (define (severity-letter d)
   (let ([s (severity d)]) (cond [(= s 1) "E"] [(= s 2) "W"] [(= s 3) "I"] [else "H"])))
-
-;; The buffer visiting `path`, or #f.
-(define (buffer-for-path path)
-  (let loop ([ids (buffer-list)])
-    (cond [(null? ids) #f]
-          [(let ([p (cadr (buffer-info (car ids)))]) (and p (equal? (absolute-path p) path))) (car ids)]
-          [else (loop (cdr ids))])))
 
 (define (lsp-set-diagnostics! uri diagnostics)
   (set! *lsp-diagnostics* (hash-insert *lsp-diagnostics* uri diagnostics))

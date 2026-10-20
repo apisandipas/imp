@@ -291,6 +291,13 @@ needed. Details, and what each one leaves out, are in
   - `write-handler` and `revert-handler` for buffers that aren't files.
   - A buffer's mode keys now come before Vim's operators, motions and
     prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+  - File commands (`files.scm`): `delete-file`, `rename-file`,
+    `copy-file` (`SPC f D/R/C`). A rename re-points the buffer
+    (`buffer-renamed!`: path, major mode, and the `buffer-renamed` hook,
+    on which lsp.scm closes the old document so the mode reattaches the
+    new one). `copy-file!` is a Rust primitive so binary files and
+    permissions copy. `ask`, `abbreviate-path`, `buffer-for-path` and
+    `kill-buffer!` moved earlier in the load order for these.
   - Popup rules (`define-popup-rule!`): a generated buffer whose name
     matches opens in a window along an edge of the frame (`split-frame!`,
     a Rust primitive, since a split of the current window can't span

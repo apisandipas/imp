@@ -17,13 +17,6 @@
   (with-handler (lambda (e) '())
                 (if (file-exists? (recent-files-file)) (text-lines (read-file (recent-files-file))) '())))
 
-;; ~ for the home directory, for showing a path.
-(define (abbreviate-path path)
-  (let ([home (home-dir)])
-    (if (and (> (string-length home) 1) (starts-with? path (string-append home "/")))
-        (string-append "~" (substring path (string-length home) (string-length path)))
-        path)))
-
 (define (take-at-most items n)
   (if (or (null? items) (<= n 0)) '() (cons (car items) (take-at-most (cdr items) (- n 1)))))
 

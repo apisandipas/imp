@@ -265,6 +265,29 @@ fn closing_a_buffer_tells_the_server() {
 }
 
 #[test]
+fn renaming_the_file_reopens_it_under_the_new_name() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, path, log) = attached("rename-old.rs", "x\n");
+    let new = temp_path("rename-new.rs");
+    let _ = std::fs::remove_file(&new);
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "rename-file<ret><ret>");
+    type_keys(&mut s, &format!("<C-u>{}<ret>", new.display()));
+    settle(&mut s);
+    let log = std::fs::read_to_string(log).unwrap();
+    let close = log.find("textDocument/didClose").expect(&log);
+    // The new name opens after the old one closes.
+    assert!(log[close..].contains("rename-new.rs"), "{log}");
+    assert!(!path.exists());
+    assert_eq!(
+        s.eval("(and (memq 'lsp-mode (minor-modes)) #t)").unwrap(),
+        "#true"
+    );
+}
+
+#[test]
 fn utf16_positions_count_astral_chars_twice() {
     let mut s = server("a😀b\n");
     assert_eq!(s.eval("(lsp-character 0 2 \"utf-16\")").unwrap(), "3");

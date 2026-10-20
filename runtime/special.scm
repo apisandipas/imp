@@ -208,6 +208,10 @@
   (show-which-key-popup! (which-key-table (map (lambda (e) (cons (key-label (car e)) (cadr e))) entries))
                          title))
 
+;; Asks for a value on the command line, starting from `default`.
+(define (ask prompt default done)
+  (open-cmdline! prompt default (lambda (text) (unless (equal? text "") (done text))) #f #f))
+
 ;; Asks a yes-or-no question on the message line; `thunk` runs on y.
 (define (confirm! question thunk)
   (message (string-append question " (y or n)"))
