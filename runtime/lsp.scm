@@ -19,15 +19,15 @@
 ;;; SPC c a code actions, SPC c f format. ]d and [d move between
 ;;; diagnostics, :diagnostics lists them all. Diagnostics are pushed by
 ;;; the server, or pulled after each change from one that only answers
-;;; when asked (TypeScript 7's). In insert mode C-x C-o (and
-;;; completion as you type) asks the server; C-n and C-p complete words
-;;; from the buffer when there is no server.
+;;; when asked (TypeScript 7's). The server is complete.scm's first
+;;; completion source after file paths, so C-n, C-x C-o and completion as
+;;; you type (lsp-auto-complete) ask it.
 
 (define-option! 'lsp #t '())
 (define-option! 'lsp-auto-complete #t '())
-;; Milliseconds of quiet before changes are sent, and before completing.
+;; Milliseconds of quiet before changes are sent (completion-delay is
+;; complete.scm's, before completing).
 (define-option! 'lsp-change-delay 200 '())
-(define-option! 'lsp-complete-delay 150 '())
 
 (define *language-servers* (hash))  ; major mode -> (command(s) markers language-id)
 (define *lsp-servers* (hash))       ; "command<tab>root" -> state (a hash, see lsp-start!)
@@ -1015,32 +1015,7 @@
 (define-leader! "cx" 'list-diagnostics "diagnostics")
 (define-leader! "cR" 'lsp-restart "restart server")
 
-;;; Completion in insert mode
-;;;
-;;; A menu of candidates in the popup. It opens on C-x C-o (the server's
-;;; completions), C-n or C-p (the server's, or words from the buffer
-;;; without one), and by itself after typing part of a word when a server
-;;; is attached (lsp-auto-complete). While it is open: C-n C-p <tab>
-;;; <s-tab> <down> <up> move, C-y or <ret> accepts (<ret> only once
-;;; something is selected in a menu that opened by itself), C-e closes it;
-;;; other keys type as usual and narrow the menu.
-
-;; Each candidate: (label detail text start item), `text` being what to
-;; insert from offset `start` to the cursor.
-(define *menu-candidates* '())
-(define *menu-matches* '())
-(define *menu-index* -1)
-(define *menu-start* 0)       ; where the typed part of the word starts
-(define *menu-open* #f)
-(define *menu-key* #f)        ; the server the candidates came from
-(define *menu-incomplete* #f) ; the server has more: ask again as you type
-(define *complete-timer* #f)
-(define *complete-request* 0) ; replies to older requests are dropped
-
-(define (word-start-before p)
-  "Where the word ending at `p` starts, on `p`'s line; `p` if none does."
-  (let ([lo (line-start (offset->line p))])
-    (let loop ([q p]) (if (and (> q lo) (char-word? (buffer-char-at (- q 1)))) (loop (- q 1)) q))))
+;;; Completion: the language server as a source for complete.scm's menu
 
 (define (strip-snippet text)
   "Snippet `text` as plain text, without its tab stops.
@@ -1064,12 +1039,6 @@
       [(and (equal? (car cs) #\}) (> depth 0)) (loop (cdr cs) out (- depth 1))]
       [else (loop (cdr cs) (cons (car cs) out) depth)])))
 
-(define (drop-while pred cs)
-  "List `cs` without its leading items that satisfy `pred`."
-  (if (and (pair? cs) (pred (car cs))) (drop-while pred (cdr cs)) cs))
-(define (take-while pred cs)
-  "The leading items of list `cs` that satisfy `pred`."
-  (if (and (pair? cs) (pred (car cs))) (cons (car cs) (take-while pred (cdr cs))) '()))
 
 (define (completion-candidates result start encoding)
   "Menu candidates from completion reply `result`, in the server's order.
@@ -1093,212 +1062,39 @@
                    item)))
          items)))
 
-(define (buffer-word-candidates start)
-  "Candidates for completing the word from `start` to the cursor.
-   They are the words that start with it in the 500 lines around the
-   cursor, in order from the top."
-  (let* ([prefix (buffer-substring start (cursor))]
-         [line (current-line)]
-         [lo (line-start (max 0 (- line 500)))]
-         [hi (line-end (min (last-line) (+ line 500)))]
-         [seen (hash prefix #t)])
-    (let loop ([p lo] [words '()] [seen seen])
-      (if (>= p hi)
-          (map (lambda (w) (list w "" w start #f)) (reverse words))
-          (if (char-word? (buffer-char-at p))
-              (let* ([e (let run ([q p]) (if (and (< q hi) (char-word? (buffer-char-at q))) (run (+ q 1)) q))]
-                     [w (buffer-substring p e)])
-                (if (and (starts-with? w prefix) (not (hash-contains? seen w)) (not (= p start)))
-                    (loop e (cons w words) (hash-insert seen w #t))
-                    (loop e words seen)))
-              (loop (+ p 1) words seen))))))
 
-(define (menu-rows)
-  "How many rows the completion menu shows: up to 10, to fit the window."
-  (max 1 (min 10 (- (window-height) 2))))
-
-(define (menu-line c width)
-  "A menu row for candidate `c`: the label, then its detail dimmed."
-  (let ([detail (cadr c)])
-    (list (list (pad-right (car c) width) "")
-          (list (if (equal? detail "") "" (string-append "  " (clip detail 40))) "popup.detail"))))
-
-(define (draw-menu!)
-  "Draws the completion menu at the cursor, scrolled to the selection."
-  (let* ([n (length *menu-matches*)] [rows (menu-rows)]
-         [i (max *menu-index* 0)]
-         [top (max 0 (min (- i (- rows 1)) (- n rows)))]
-         [top (max 0 (min top i))]
-         [shown (take (list-tail *menu-matches* top) (min rows (- n top)))])
-    (let ([width (min 30 (apply max (cons 1 (map (lambda (c) (string-length (car c))) shown))))])
-      (set-popup! (map (lambda (c) (menu-line c width)) shown)))
-    ;; In a box at the cursor, its labels lined up with the word typed.
-    (set-popup-place! "cursor" (- -1 (- (cursor) *menu-start*)) "")
-    (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
-
-(define (refilter-menu!)
-  "Narrows the menu to what has been typed since it opened.
-   Closes it when nothing matches or the cursor left the word."
-  (if (or (< (cursor) *menu-start*)
-          (not (= (offset->line (cursor)) (offset->line *menu-start*)))
-          (and (> (cursor) *menu-start*) (not (char-word? (buffer-char-at (- (cursor) 1))))))
-      (close-menu!)
-      (let* ([typed (buffer-substring *menu-start* (cursor))]
-             [labels (map car *menu-candidates*)]
-             [by-label (foldl (lambda (c h) (if (hash-contains? h (car c)) h (hash-insert h (car c) c)))
-                              (hash) *menu-candidates*)]
-             [hits (fuzzy-filter typed labels 200)])
-        (set! *menu-matches* (map (lambda (l) (hash-ref by-label l)) hits))
-        (cond [(null? *menu-matches*) (close-menu!)]
-              ;; Only the word already typed: nothing left to offer.
-              [(and (null? (cdr *menu-matches*)) (equal? (caddr (car *menu-matches*)) typed)
-                    (= (cadddr (car *menu-matches*)) *menu-start*))
-               (close-menu!)]
-              [else
-               (set! *menu-index* (if (< *menu-index* 0) -1 (min *menu-index* (- (length *menu-matches*) 1))))
-               (draw-menu!)]))))
-
-(define (open-menu! candidates start select?)
-  "Opens the completion menu on `candidates` for the word at `start`.
-   It takes the keys while open. `select?` selects the first candidate
-   and says so when there are none."
-  (set! *menu-candidates* candidates)
-  (set! *menu-start* start)
-  (set! *menu-index* (if select? 0 -1))
-  (set! *menu-open* #t)
-  (set! *key-interceptor* menu-key!)
-  (refilter-menu!)
-  (when (and select? (not *menu-open*)) (message "no completions")))
-
-(define (close-menu!)
-  "Closes the completion menu, if it is open, and gives the keys back."
-  (when *menu-open*
-    (set! *menu-open* #f)
-    (set! *menu-matches* '())
-    (set-popup! '())
-    (set-popup-selected! -1)
-    (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f))))
-
-(define (move-menu! step)
-  "Moves the menu's selection by `step`, wrapping around.
-   With nothing selected, a step forward selects the first and one back
-   the last."
-  (let ([n (length *menu-matches*)])
-    (when (> n 0)
-      (set! *menu-index* (if (< *menu-index* 0)
-                             (if (> step 0) 0 (- n 1))
-                             (modulo (+ *menu-index* step) n)))
-      (draw-menu!))))
-
-(define (accept-candidate! c)
-  "Replaces the typed word with candidate `c`, as if typed.
-   So . repeats it. Then applies the server's extra edits (imports)."
-  (let* ([start (min (cadddr c) (cursor))] [old (buffer-substring start (cursor))] [text (caddr c)]
-         [item (car (cddddr c))])
-    (close-menu!)
-    (buffer-delete! start (cursor))
-    (set-cursor! start)
-    (insert-text! text)
-    (set! *insert-keys* (append (reverse (map string (string->list text)))
-                                (map (lambda (ch) "<bs>") (string->list old))
-                                *insert-keys*))
-    (let ([extra (and item (jget item "additionalTextEdits"))] [key *menu-key*])
-      (when (and extra (pair? extra) key)
-        (lsp-apply-text-edits! extra (lsp-get key 'encoding))))
-    (lsp-changed!)))
-
-(define (menu-key! key)
-  "Handles `key` while the completion menu is open.
-   Moves, accepts or closes it; other keys type as usual and narrow the
-   menu (asking the server again if its list was incomplete). Leaving
-   insert state closes it."
-  (cond
-    [(not (memq *mode* '(insert replace))) (close-menu!) (handle-key! key)]
-    [(member key '("C-n" "<down>" "<tab>")) (move-menu! 1)]
-    [(member key '("C-p" "<up>" "<s-tab>")) (move-menu! -1)]
-    [(equal? key "C-y") (accept-candidate! (list-ref *menu-matches* (max 0 *menu-index*)))]
-    [(and (member key '("<ret>" "C-m")) (>= *menu-index* 0))
-     (accept-candidate! (list-ref *menu-matches* *menu-index*))]
-    [(equal? key "C-e") (close-menu!)]
-    [(member key '("<esc>" "C-c" "<ret>" "C-m")) (close-menu!) (handle-key! key)]
-    [else
-     (handle-key! key)
-     (when *menu-open* (refilter-menu!))
-     (when (and *menu-open* *menu-incomplete*) (schedule-completion! #t))]))
-
-(define (lsp-complete! manual?)
-  "Asks the server for completions at the cursor, and opens the menu.
-   `manual?` selects the first one and says so when there are none."
-  (let ([key (lsp-key)] [start (word-start-before (cursor))] [id (current-buffer)])
-    (when key
-      (lsp-sync!)
-      (set! *complete-request* (+ *complete-request* 1))
-      (let ([request *complete-request*] [encoding (lsp-encoding)])
-        (lsp-request! key "textDocument/completion"
-                      (hash-insert (lsp-here) "context" (hash "triggerKind" 1))
-                      (lambda (result)
-                        (when (and (= request *complete-request*) (= id (current-buffer))
-                                   (memq *mode* '(insert replace)) (>= (cursor) start))
-                          (set! *menu-key* key)
-                          (set! *menu-incomplete* (and (hash? result) (jget result "isIncomplete")))
-                          (open-menu! (completion-candidates result start encoding) start
-                                      (or manual? (and *menu-open* (>= *menu-index* 0)))))))))))
-
-(define (complete-words! step)
-  "Opens the menu on words from the buffer that complete the one typed.
-   A negative `step` selects the last of them instead of the first."
-  (let ([start (word-start-before (cursor))])
-    (set! *menu-key* #f)
-    (set! *menu-incomplete* #f)
-    (open-menu! (buffer-word-candidates start) start #t)
-    (when (and *menu-open* (< step 0)) (set! *menu-index* (- (length *menu-matches*) 1)) (draw-menu!))))
-
-(define (complete-command step)
-  "The insert key C-n (`step` 1) or C-p (-1): completes the word.
-   With the server's completions, or without one words from the buffer."
-  (lambda ()
-    (if (lsp-key) (lsp-complete! #t) (complete-words! step))))
-
-(define-key! 'insert "C-n" (complete-command 1))
-(define-key! 'insert "C-p" (complete-command -1))
-
-;; C-x starts Vim's completion keys: C-x C-o asks the server, C-x C-n
-;; and C-x C-p complete words. The key after C-x isn't typed.
-(define-key! 'insert "C-x"
-  (lambda ()
-    (set! *key-interceptor*
-          (lambda (key)
-            (set! *key-interceptor* #f)
-            (cond [(equal? key "C-o") (if (lsp-key) (lsp-complete! #t) (message "no language server for this buffer"))]
-                  [(equal? key "C-n") (complete-words! 1)]
-                  [(equal? key "C-p") (complete-words! -1)]
-                  [else (handle-key! key)])))))
-
-;; Completing as you type: after a pause following a word character or
-;; one of the server's trigger characters.
 (define (trigger-char? key c)
   "Whether `c` is one of server `key`'s completion trigger characters."
   (member (string c) (or (jget (lsp-get key 'capabilities) "completionProvider" "triggerCharacters") '())))
 
-(define (schedule-completion! refresh?)
-  "Asks the server for completions after lsp-complete-delay of quiet.
-   Only if the cursor hasn't moved and no menu is open; `refresh?` asks
-   again for an open menu whose list was incomplete."
-  (when *complete-timer* (cancel-timer! *complete-timer*))
-  (let ([id (current-buffer)] [at (cursor)])
-    (set! *complete-timer*
-          (run-after! (option 'lsp-complete-delay)
-                      (lambda ()
-                        (set! *complete-timer* #f)
-                        (when (and (= id (current-buffer)) (= at (cursor)) (eq? *mode* 'insert)
-                                   (if refresh? *menu-open* (not (or *menu-open* *key-interceptor*))))
-                          (lsp-complete! #f)))))))
 
-(add-hook! 'after-change
-           (lambda ()
-             (when (and (eq? *mode* 'insert) (option 'lsp-auto-complete) (not *menu-open*) (> (cursor) 0))
-               (let ([key (lsp-key)] [c (buffer-char-at (- (cursor) 1))])
-                 (when (and key (or (char-word? c) (trigger-char? key c)))
-                   (schedule-completion! #f))))))
+(define (lsp-completion-source manual? done)
+  "The completion source for buffers with a language server: asks it
+   (textDocument/completion) and answers with its items. Accepting one
+   applies the server's extra edits (imports, say)."
+  (let ([key (lsp-key)] [start (word-start-before (cursor))])
+    (and key
+         (let ([encoding (lsp-encoding)])
+           (lsp-sync!)
+           (lsp-request! key "textDocument/completion"
+                         (hash-insert (lsp-here) "context" (hash "triggerKind" 1))
+                         (lambda (result)
+                           (done start (completion-candidates result start encoding)
+                                 'incomplete (and (hash? result) (jget result "isIncomplete"))
+                                 'on-accept (lambda (item)
+                                              (let ([extra (and item (jget item "additionalTextEdits"))])
+                                                (when (and extra (pair? extra))
+                                                  (lsp-apply-text-edits! extra (lsp-get key 'encoding))))
+                                              (lsp-changed!)))))
+           #t))))
 
-(add-hook! 'insert-leave (lambda () (close-menu!)))
+(define-completion-source! 'lsp lsp-completion-source 'before 'scheme)
+
+;; As you type, with a server: after a word character or one of its
+;; trigger characters, unless lsp-auto-complete is off.
+(set! *auto-complete-here?*
+      (lambda (c)
+        (let ([key (lsp-key)])
+          (cond [(not key) #f]
+                [(not (option 'lsp-auto-complete)) 'never]
+                [else (or (char-word? c) (trigger-char? key c))]))))

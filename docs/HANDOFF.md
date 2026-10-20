@@ -101,6 +101,8 @@ runtime/                   loaded in this order
   packages.scm             use-package!, :packages
   files.scm                autoread, autosave/:recover, fileformat options
   syntax.scm               tree-sitter faces, languages, af/if ac/ic aa/ia
+  complete.scm             completion at point: the insert-mode menu and its
+                           sources (file, lsp, scheme, words)
   lsp.scm                  language servers: diagnostics, K gd gr, rename,
                            code actions, format, insert-mode completion
   dap.scm                  debugging: breakpoints, stepping, stack, variables
@@ -459,6 +461,12 @@ Phase 2 adds:
 - Help from the source: `describe-key` (press keys, see the binding form and
   its documentation), `describe-function/option/command`, `apropos`,
   `find-definition`, `:help`; Scheme buffers have `K` and `gd`.
+- Completion at point (`complete.scm`): sources tried in order until one
+  applies, `(define-completion-source! name (lambda (manual? done) ...))`,
+  as Emacs's completion-at-point-functions; built in: file paths, the
+  language server (lsp.scm), Scheme names with their docs, buffer words
+  (other buffers on C-n). Opens as you type in prog modes
+  (`completion-auto`, `completion-auto-min`) and with a server.
 - Docstrings, as in Emacs: a string first in a function's body, or in a
   command's lambda, is its documentation (help.scm's header; help.scm reads
   them from the source). Variables and options keep a comment above.
