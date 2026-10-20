@@ -16,6 +16,41 @@ fn without_the_feature_it_says_so() {
     assert!(status_row_or_message(&mut s).contains("without the crdt feature"));
 }
 
+// Messages a peer sends, handled by collab-receive! (no socket needed).
+
+#[test]
+fn the_name_message_names_the_joined_buffer_even_when_not_current() {
+    let mut s = server("text\n");
+    let here = s.eval("(current-buffer)").unwrap();
+    let joined = s.eval("(buffer-new! \"[shared] imp\")").unwrap();
+    assert_eq!(s.eval("(current-buffer)").unwrap(), here);
+    s.eval(&format!("(collab-receive! {joined} #f \"name main.rs\")"))
+        .unwrap();
+    assert_eq!(s.eval("(current-buffer)").unwrap(), here);
+    assert_eq!(
+        s.eval(&format!("(car (buffer-info {joined}))")).unwrap(),
+        "\"[shared] main.rs\""
+    );
+    assert_eq!(
+        s.eval(&format!("(with-buffer {joined} major-mode)"))
+            .unwrap(),
+        "rust-mode"
+    );
+}
+
+#[test]
+fn a_malformed_update_is_reported_not_an_error() {
+    let mut s = server("text\n");
+    s.eval("(collab-receive! (current-buffer) #f \"update\")")
+        .unwrap();
+    assert!(s.status().contains("bad update"), "{}", s.status());
+    s.eval("(set-status! \"\")").unwrap();
+    s.eval("(collab-receive! (current-buffer) #f \"update !!!not-an-update\")")
+        .unwrap();
+    assert!(s.status().contains("bad update"), "{}", s.status());
+    assert_eq!(s.text(), "text\n");
+}
+
 #[cfg(not(feature = "crdt"))]
 fn status_row_or_message(s: &mut imp_server::Server) -> String {
     s.frame().text_rows().join("\n")

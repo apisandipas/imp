@@ -5,6 +5,8 @@ It "runs" the program named in launch's `source`: execution starts at
 line 1 and stops at each breakpoint in turn (lines are 1-based, as the
 client asks). `next` and `stepIn` go one line on, `stepOut` returns to the
 caller frame's line. Past the last breakpoint, continue ends the program.
+Launched with `wait`, it runs until paused instead. Its one thread's id is
+7, so a client can't get by guessing 1.
 Every request is appended to $FAKE_DAP_LOG, if set, one JSON object a line.
 """
 
@@ -17,6 +19,8 @@ seq = 0
 source = None      # the file being "debugged"
 breakpoints = []   # lines in it
 line = 0           # where it is stopped, 0 before it starts
+wait = False       # launch's `wait`: run nothing until paused
+THREAD = 7         # the program's one thread
 
 
 def read_message():
@@ -50,7 +54,7 @@ def event(name, body=None):
 def stop_at(new_line, reason):
     global line
     line = new_line
-    event("stopped", {"reason": reason, "threadId": 1, "allThreadsStopped": True})
+    event("stopped", {"reason": reason, "threadId": THREAD, "allThreadsStopped": True})
 
 
 def run_on():
@@ -65,7 +69,7 @@ def run_on():
 
 
 def handle(msg):
-    global source, breakpoints
+    global source, breakpoints, wait
     command = msg.get("command")
     args = msg.get("arguments") or {}
 
@@ -81,6 +85,7 @@ def handle(msg):
         event("initialized")
     elif command == "launch":
         source = args["source"]
+        wait = bool(args.get("wait"))
         respond()
     elif command == "setBreakpoints":
         breakpoints = [b["line"] for b in args.get("breakpoints", [])]
@@ -89,9 +94,16 @@ def handle(msg):
         respond()
     elif command == "configurationDone":
         respond()
-        run_on()
+        if not wait:
+            run_on()
     elif command == "threads":
-        respond({"threads": [{"id": 1, "name": "main"}]})
+        respond({"threads": [{"id": THREAD, "name": "main"}]})
+    elif command == "pause":
+        if args.get("threadId") == THREAD:
+            respond()
+            stop_at(max(line, 1), "pause")
+        else:
+            respond(success=False, message="no thread " + str(args.get("threadId")))
     elif command == "stackTrace":
         respond({"stackFrames": [
             {"id": 1, "name": "inner", "source": {"path": source}, "line": line, "column": 1},

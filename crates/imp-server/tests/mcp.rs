@@ -230,3 +230,40 @@ fn bad_requests_get_errors() {
     let reply = agent.request(&mut s, "ping", json!({}));
     assert_eq!(reply["result"], json!({}));
 }
+
+#[test]
+fn null_ids_are_invalid_and_notifications_get_no_reply() {
+    let (mut s, mut agent) = session("ids", "alpha\n");
+    // MCP forbids a null id: an invalid request, and not run.
+    let msg = json!({"jsonrpc": "2.0", "id": null, "method": "tools/call",
+                     "params": {"name": "edit_buffer",
+                                "arguments": {"old_text": "alpha", "new_text": "no"}}});
+    writeln!(agent.stream, "{msg}").unwrap();
+    let mut line = String::new();
+    for _ in 0..200 {
+        s.pump(Duration::from_millis(5));
+        if agent.reader.read_line(&mut line).is_ok() && line.ends_with('\n') {
+            break;
+        }
+    }
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["id"], Value::Null, "{reply}");
+    assert_eq!(reply["error"]["code"], -32600, "{reply}");
+    assert_eq!(s.text(), "alpha\n");
+    // Without an id it is a notification, and a response is no request:
+    // neither gets a reply, so the next reply is the ping's.
+    writeln!(
+        agent.stream,
+        "{}",
+        json!({"jsonrpc": "2.0", "method": "ping"})
+    )
+    .unwrap();
+    writeln!(
+        agent.stream,
+        "{}",
+        json!({"jsonrpc": "2.0", "id": 99, "result": {}})
+    )
+    .unwrap();
+    let reply = agent.request(&mut s, "ping", json!({}));
+    assert_eq!(reply["result"], json!({}));
+}

@@ -196,7 +196,7 @@
          (set! *dap-pending* (hash-remove *dap-pending* seq))
          (if (jget msg "success")
              (when callback (callback (or (jget msg "body") (hash))))
-             (message (string-append "debug: " (jget msg "command") " failed: "
+             (message (string-append "debug: " (or (jget msg "command") "request") " failed: "
                                      (or (jget msg "body" "error" "format") (jget msg "message") "")))))]
       [(equal? type "event") (dap-event! (jget msg "event") (or (jget msg "body") (hash)))]
       ;; Requests from the adapter (runInTerminal, startDebugging): not
@@ -354,9 +354,17 @@
 
 (define-command! 'debug-pause
   (lambda (count)
-    "Pause the program being debugged."
+    "Pause the program being debugged.
+     The adapter is asked for its threads, and the one that last stopped
+     (else the first) is paused."
     (if *dap-job*
-        (dap-request! "pause" (hash "threadId" (or *dap-thread* 1)) #f)
+        (dap-request! "threads" (hash)
+                      (lambda (body)
+                        (let ([ids (filter (lambda (id) id)
+                                           (map (lambda (t) (jget t "id")) (or (jget body "threads") '())))])
+                          (cond [(null? ids) (message "the program has no threads to pause")]
+                                [(memv *dap-thread* ids) (dap-request! "pause" (hash "threadId" *dap-thread*) #f)]
+                                [else (dap-request! "pause" (hash "threadId" (car ids)) #f)]))))
         (message "no debug session"))))
 
 (define-command! 'debug-stop

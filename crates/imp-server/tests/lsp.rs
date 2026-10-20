@@ -298,3 +298,74 @@ fn utf16_positions_count_astral_chars_twice() {
         "2"
     );
 }
+
+#[test]
+fn request_now_returns_the_request_id() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached("now.rs", "x\n");
+    let id = s
+        .eval("(lsp-request-now! (lsp-key) \"fake/nothing\" (hash) (lambda (r) #f))")
+        .unwrap();
+    assert!(id.parse::<i64>().is_ok(), "{id}");
+    assert_eq!(
+        s.eval(&format!(
+            "(and (hash-try-get (lsp-get (lsp-key) 'pending) {id}) #t)"
+        ))
+        .unwrap(),
+        "#true"
+    );
+}
+
+#[test]
+fn a_server_that_exits_leaves_its_buffers_detached_until_restarted() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached("exit.rs", "let bad = 1;\n");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    // The server goes away (here asked to; a crash looks the same).
+    s.eval("(lsp-stop! (lsp-key))").unwrap();
+    wait_for(&mut s, "(not (lsp-state (buffer-local 'lsp-server)))");
+    // Not restarted by itself (a crashing server would only crash again),
+    // but the buffer no longer acts as if it had one, and says how.
+    assert_eq!(
+        s.eval("(and (memq 'lsp-mode (minor-modes)) #t)").unwrap(),
+        "#false"
+    );
+    assert_eq!(s.eval("(length (buffer-diagnostics))").unwrap(), "0");
+    assert!(s.status().contains(":lsp-restart"), "{}", s.status());
+    type_keys(&mut s, "obad<esc>");
+    settle(&mut s);
+    assert_eq!(s.eval("(lsp-key)").unwrap(), "#false");
+    // :lsp-restart starts it again.
+    type_keys(&mut s, ":lsp-restart<ret>");
+    wait_for(&mut s, "(and (lsp-key) (lsp-get (lsp-key) 'ready) #t)");
+    assert_eq!(
+        s.eval("(and (memq 'lsp-mode (minor-modes)) #t)").unwrap(),
+        "#true"
+    );
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 2)");
+}
+
+#[test]
+fn restarting_keeps_the_new_server_when_the_old_one_exits() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached("restart.rs", "x\n");
+    type_keys(&mut s, ":lsp-restart<ret>");
+    wait_for(&mut s, "(and (lsp-key) (lsp-get (lsp-key) 'ready) #t)");
+    // The old server's exit (within a second) must not forget the new one.
+    s.pump(Duration::from_millis(1500));
+    assert_eq!(
+        s.eval("(and (lsp-key) (lsp-get (lsp-key) 'ready) #t)")
+            .unwrap(),
+        "#true"
+    );
+    assert_eq!(
+        s.eval("(and (memq 'lsp-mode (minor-modes)) #t)").unwrap(),
+        "#true"
+    );
+}

@@ -132,3 +132,63 @@ fn without_an_adapter_it_says_so() {
     type_keys(&mut s, " dn");
     assert_eq!(s.status(), "not stopped in a debug session");
 }
+
+#[test]
+fn a_failed_response_without_a_command_shows_its_message() {
+    let mut s = server("text\n");
+    s.eval(
+        r#"(dap-dispatch! (hash "type" "response" "request_seq" 5 "success" #f "message" "boom"))"#,
+    )
+    .unwrap();
+    assert_eq!(s.status(), "debug: request failed: boom");
+    s.eval(
+        r#"(dap-dispatch! (hash "type" "response" "request_seq" 6 "success" #f "command" "launch"
+                                "body" (hash "error" (hash "format" "no program"))))"#,
+    )
+    .unwrap();
+    assert_eq!(s.status(), "debug: launch failed: no program");
+}
+
+#[test]
+fn pause_asks_the_adapter_for_a_thread() {
+    if !have_python() {
+        return;
+    }
+    let path = temp_path("paused.rs");
+    std::fs::write(&path, PROGRAM).unwrap();
+    let log = temp_path("paused.log");
+    let _ = std::fs::remove_file(&log);
+    let fake = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake_dap.py");
+    let mut s = server("");
+    s.eval(&format!(
+        r#"(define-debug-adapter! 'rust-mode "env FAKE_DAP_LOG={} python3 {fake}" "fake"
+             (lambda (done) (done (hash "source" {:?} "wait" #t))))"#,
+        log.display(),
+        path.display().to_string()
+    ))
+    .unwrap();
+    s.eval(&format!("(open-file! {:?})", path.display().to_string()))
+        .unwrap();
+    type_keys(&mut s, " dd");
+    // Running, and nothing has stopped yet, so no thread is known.
+    let logged = || std::fs::read_to_string(&log).unwrap_or_default();
+    for _ in 0..100 {
+        if logged().contains("configurationDone") {
+            break;
+        }
+        s.pump(Duration::from_millis(30));
+    }
+    assert_eq!(s.eval("*dap-thread*").unwrap(), "#false");
+    type_keys(&mut s, " dp");
+    wait_for(&mut s, "(and *dap-stopped-at* #t)");
+    assert!(s.status().starts_with("stopped (pause)"), "{}", s.status());
+    assert_eq!(s.eval("*dap-thread*").unwrap(), "7");
+    let requests: Vec<serde_json::Value> = logged()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(requests.iter().any(|r| r["command"] == "threads"));
+    let pause = requests.iter().find(|r| r["command"] == "pause").unwrap();
+    assert_eq!(pause["arguments"]["threadId"], 7, "{pause}");
+    type_keys(&mut s, " dq");
+}

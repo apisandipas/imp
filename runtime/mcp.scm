@@ -91,19 +91,27 @@
            (when reply (mcp-send! conn reply)))]))))
 
 (define (mcp-handle msg)
-  "The reply to one message, or #f for a notification."
+  "The reply to one message, or #f for a notification (no id) or a response.
+   An id must be a string or a number: MCP forbids null, so a request with
+   one, like anything else that isn't a message, gets a -32600 error whose
+   id is null (as JSON-RPC says) and isn't run."
   (let ([id (and (hash? msg) (hash-try-get msg "id"))] [method (jget msg "method")] [params (or (jget msg "params") (hash))])
-    (if (not id)
-        #f
-        (let ([outcome (with-handler (lambda (e) (list 'failed (error-message e)))
-                                     (list 'ok (mcp-method method params)))])
-          (cond
-            [(eq? (car outcome) 'failed)
-             (hash "jsonrpc" "2.0" "id" id "error" (hash "code" -32603 "message" (cadr outcome)))]
-            [(and (pair? (cadr outcome)) (eq? (car (cadr outcome)) 'rpc-error))
-             (hash "jsonrpc" "2.0" "id" id
-                   "error" (hash "code" (cadr (cadr outcome)) "message" (caddr (cadr outcome))))]
-            [else (hash "jsonrpc" "2.0" "id" id "result" (cadr outcome))])))))
+    (cond
+      [(and (hash? msg) (not (hash-contains? msg "id"))) #f]
+      [(and (hash? msg) (not method) (or (hash-contains? msg "result") (hash-contains? msg "error"))) #f]
+      [(not (or (string? id) (number? id)))
+       (hash "jsonrpc" "2.0" "id" 'null
+             "error" (hash "code" -32600 "message" "invalid request: the id must be a string or a number"))]
+      [else
+       (let ([outcome (with-handler (lambda (e) (list 'failed (error-message e)))
+                                    (list 'ok (mcp-method method params)))])
+         (cond
+           [(eq? (car outcome) 'failed)
+            (hash "jsonrpc" "2.0" "id" id "error" (hash "code" -32603 "message" (cadr outcome)))]
+           [(and (pair? (cadr outcome)) (eq? (car (cadr outcome)) 'rpc-error))
+            (hash "jsonrpc" "2.0" "id" id
+                  "error" (hash "code" (cadr (cadr outcome)) "message" (caddr (cadr outcome))))]
+           [else (hash "jsonrpc" "2.0" "id" id "result" (cadr outcome))]))])))
 
 (define (mcp-method method params)
   "The result of MCP request `method` with `params`.

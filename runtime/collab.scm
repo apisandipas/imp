@@ -81,21 +81,27 @@
 (define (collab-receive! buf conn line)
   "Handles `line`, a message from `conn`, a peer of shared buffer `buf`.
    hello gets the buffer's name and what the joiner lacks; update is
-   applied and relayed to the other peers; name names the joined
-   buffer and picks its major mode."
+   applied and relayed to the other peers (a malformed one is reported
+   and dropped); name names the joined buffer and picks its major mode,
+   whichever buffer is current."
   (let ([words (split-whitespace line)])
     (cond [(null? words) #f]
           [(equal? (car words) "hello")
            (collab-send! conn "name" (car (buffer-info buf)))
            (collab-send! conn "update" (crdt-diff buf (if (null? (cdr words)) "" (cadr words))))]
           [(equal? (car words) "update")
-           (crdt-apply! buf (cadr words))
-           (collab-broadcast! buf (cadr words) conn)]
+           ;; One that is missing or can't be applied is reported, not relayed.
+           (if (and (pair? (cdr words))
+                    (with-handler (lambda (e) #f) (begin (crdt-apply! buf (cadr words)) #t)))
+               (collab-broadcast! buf (cadr words) conn)
+               (message "shared buffer: ignored a bad update from a peer"))]
           [(equal? (car words) "name")
-           (when (= buf (current-buffer))
-             (set-buffer-name! (string-append "[shared] " (string-join (cdr words) " ")))
-             (let ([mode (mode-for-path (string-join (cdr words) " "))])
-               (when mode (set-major-mode! mode))))])))
+           (when (memv buf (buffer-list))
+             (with-buffer buf
+               (lambda ()
+                 (set-buffer-name! (string-append "[shared] " (string-join (cdr words) " ")))
+                 (let ([mode (mode-for-path (string-join (cdr words) " "))])
+                   (when mode (set-major-mode! mode))))))])))
 
 (define (collab-socket-path name)
   "The socket for share `name`: `name` itself when it is a path (has a

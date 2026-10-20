@@ -36,6 +36,7 @@
 (define *lsp-log* '())              ; newest first: stderr and logMessage lines
 (define *lsp-line-message* #f)      ; the diagnostic shown on the status line
 (define *lsp-progress-message* #f)  ; the progress shown on the status line
+(define *lsp-runs* 0)               ; servers started so far: each one's 'run
 
 (define (define-language-server! mode command markers language-id)
   "Sets the language server for major mode `mode`.
@@ -125,14 +126,20 @@
 (define (lsp-start! key command root)
   "Starts `command` in `root` as the server under `key`.
    Sends initialize once it runs. Returns #t, or #f if the job couldn't
-   start."
+   start.
+   Its output and exit are only heeded while it is the server under `key`:
+   after :lsp-restart the old one's last words don't reach the new one."
+  (set! *lsp-runs* (+ *lsp-runs* 1))
   (set! *lsp-servers*
         (hash-insert *lsp-servers* key
                      (hash 'command command 'root root 'input "" 'next-id 1 'pending (hash)
-                           'ready #f 'queue '() 'capabilities (hash) 'encoding "utf-16")))
-  (let ([job (start-job! (string-append "cd " (shell-quote root) " && exec " command) #f
-                         (lambda (text stream) (lsp-output! key text stream))
-                         (lambda (code) (lsp-exited! key code)))])
+                           'ready #f 'queue '() 'capabilities (hash) 'encoding "utf-16"
+                           'run *lsp-runs*)))
+  (let* ([run *lsp-runs*]
+         [current? (lambda () (equal? (lsp-get key 'run) run))]
+         [job (start-job! (string-append "cd " (shell-quote root) " && exec " command) #f
+                          (lambda (text stream) (when (current?) (lsp-output! key text stream)))
+                          (lambda (code) (when (current?) (lsp-exited! key code))))])
     (if job
         (begin (lsp-put! key 'job job) (lsp-initialize! key) #t)
         (begin (set! *lsp-servers* (hash-remove *lsp-servers* key)) #f))))
@@ -184,10 +191,25 @@
         "window" (hash "workDoneProgress" #t)))
 
 (define (lsp-exited! key code)
-  "Forgets server `key` after it exited with `code`, and says so."
-  (let ([command (lsp-get key 'command)])
+  "Forgets server `key` after it exited with `code`, and says so.
+   Its buffers lose lsp-mode and its diagnostics but remember the server,
+   so :lsp-restart starts it again. It isn't restarted by itself: a server
+   that crashes would only crash again."
+  (let ([command (lsp-get key 'command)] [ids (buffers-of key)])
     (set! *lsp-servers* (hash-remove *lsp-servers* key))
-    (message (string-append "language server " (or command key) " exited (" (to-string code) ")"))))
+    (for-each (lambda (id)
+                (let ([timer (hash-try-get *lsp-change-timers* id)])
+                  (when timer (cancel-timer! timer))
+                  (set! *lsp-change-timers* (hash-remove *lsp-change-timers* id)))
+                (with-buffer id
+                  (lambda ()
+                    (when (lsp-uri) (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri))))
+                    (lsp-show-signs!)
+                    (minor-mode-off! 'lsp-mode))))
+              ids)
+    (when (memv (current-buffer) ids) (lsp-show-diagnostics!))
+    (message (string-append "language server " (or command key) " exited (" (to-string code)
+                            "); :lsp-restart starts it again"))))
 
 ;;; Sending
 
@@ -220,9 +242,11 @@
 
 (define (lsp-request-now! key method params on-result)
   "Sends request `method` to server `key` without waiting for it to be
-   initialized, for initialize and shutdown. `on-result` gets the result."
+   initialized, for initialize and shutdown. `on-result` gets the result.
+   Returns the request's id, as lsp-request! does."
   (let ([id (lsp-add-request! key on-result)])
-    (lsp-write! key (hash "jsonrpc" "2.0" "id" id "method" method "params" params))))
+    (lsp-write! key (hash "jsonrpc" "2.0" "id" id "method" method "params" params))
+    id))
 
 (define (lsp-notify! key method params)
   "Sends notification `method` with `params` to server `key`.
@@ -510,9 +534,9 @@
   "Runs (proc key) with the current buffer's server, its text sent first.
    Says so if the buffer has no server."
   (let ([key (lsp-key)])
-    (if (not key)
-        (message "no language server for this buffer")
-        (begin (lsp-sync!) (proc key)))))
+    (cond [key (lsp-sync!) (proc key)]
+          [(buffer-local 'lsp-server) (message "the language server exited; :lsp-restart starts it again")]
+          [else (message "no language server for this buffer")])))
 
 ;;; Diagnostics
 
