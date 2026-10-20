@@ -15,7 +15,7 @@
 (define *extra-states* (hash))
 (define *visual* #f)           ; char | line | block while in visual mode
 (define *block-eol* #f)        ; $ in block mode: every line to its end
-(define *block-insert* #f)     ; (first last col) while typing I/A/c in a block
+(define *block-insert* #f)     ; (first last col append?) while typing I/A/c in a block
 (define *visual-anchor* 0)     ; the end of the selection the cursor isn't on
 (define *last-visual* #f)      ; (kind anchor cursor) for gv
 (define *count* "")            ; digits typed so far
@@ -31,7 +31,7 @@
 (define *recording* #f)        ; the register q is recording into
 (define *recorded-keys* '())   ; reversed
 (define *last-macro* #f)       ; for @@
-(define *command-failed* #f)
+(define *command-failed* #f)   ; set when a key fails; stops a running macro
 (define *u-line* #f)           ; the line U restores, and its old text
 (define *u-text* "")
 (define *jumps* '())           ; mark names of jump list entries, oldest first
@@ -39,7 +39,7 @@
 (define *jump-counter* 0)      ; for naming jump marks
 (define *popup-shown* #f)      ; a popup is up until the next key
 (define *undo-group* #f)       ; while true, changes join one undo step
-(define *alternate-buffer* #f) ; for C-^ and :e #   ; set when a key fails; stops a running macro
+(define *alternate-buffer* #f) ; for C-^ and :e #
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
@@ -1333,17 +1333,18 @@
       [(equal? op-key "c")
        (register-set! (current-register) (block-text segments) 'block 'delete)
        (delete-segments! segments)
-       (start-block-insert! (car b) (cadr b) (caddr b) top-left)]
+       (start-block-insert! (car b) (cadr b) (caddr b) #f top-left)]
       [else
        (for-each (lambda (seg) ((hash-ref *operators* op-key) (car seg) (cadr seg) #f))
                  (reverse segments))
        (set-cursor! top-left)])
     (set! *block-eol* #f)))
 
-(define (start-block-insert! first last col at)
+(define (start-block-insert! first last col append? at)
   "I, A and c on a block: type on the first line; on <esc> the same text
-   goes into every other line of the block."
-  (set! *block-insert* (list first last col))
+   goes into every other line of the block. `col` is a column or 'eol;
+   `append?` (A) pads lines too short to reach it."
+  (set! *block-insert* (list first last col append?))
   (set-cursor! at)
   (set-mode! 'insert)
   (set! *insert-start* at))
@@ -1353,7 +1354,7 @@
    Runs on <esc> after I, A or c on a block. Nothing is copied if the
    cursor left the first line or the text has a line break. Short lines
    are skipped, except by A, which pads them."
-  (let* ([b *block-insert*] [first (car b)] [last (cadr b)] [col (caddr b)])
+  (let* ([b *block-insert*] [first (car b)] [last (cadr b)] [col (caddr b)] [append? (cadddr b)])
     (set! *block-insert* #f)
     (when (and (= (current-line) first) (>= (current-col) (if (eq? col 'eol) 0 col)))
       (let* ([start (if (eq? col 'eol) *insert-start* (line-col->offset first col))]
@@ -1366,7 +1367,7 @@
                   [(eq? col 'eol) (buffer-insert! (line-end l) text)]
                   [(>= len col) (buffer-insert! (line-col->offset l col) text)]
                   ;; A short line gets text only when appending (A pads).
-                  [(caddr (cdr b))
+                  [append?
                    (buffer-insert! (line-end l) (string-append (make-string (- col len) #\space) text))]
                   [else #t]))
               (loop (+ l 1)))))))))
@@ -1390,9 +1391,8 @@
           (leave-visual!)
           (begin-change!)
           (set! *block-eol* #f)
-          (start-block-insert! first last col
+          (start-block-insert! first last col append?
                                (if (eq? col 'eol) (line-end first) (min (line-col->offset first col) (line-end first))))
-          (set! *block-insert* (list first last col append?))
           ;; Appending past a short first line pads it, as Vim does.
           (when (and (not (eq? col 'eol)) (< (buffer-line-length first) col))
             (buffer-insert! (line-end first) (make-string (- col (buffer-line-length first)) #\space))
@@ -1591,7 +1591,7 @@
   (let* ([start (line-start line)] [indent-end (line-first-nonblank line)]
          [cols (display-col indent-end)]
          [sw (option 'shiftwidth)]
-         [new (max 0 (if (> dir 0) (+ cols (* sw dir)) (+ cols (* sw dir))))])
+         [new (max 0 (+ cols (* sw dir)))])
     (unless (= (buffer-line-length line) 0)
       (replace-range! start indent-end (indent-string new)))))
 
@@ -1791,20 +1791,35 @@
 ;;; ' (before the latest jump), . (last change), ^ (last insert), [ and ]
 ;;; (last changed or yanked text), < and > (last visual selection).
 
+(define (settable-mark? c)
+  "Whether m and :mark can set mark `c` (:help m): a-z A-Z ' ` [ ] < >."
+  (or (letter? c) (memv c (string->list "'`[]<>"))))
+
 (define (mark-char? c)
-  "Whether `c` can name a mark: a letter or one of ' ` [ ] < > . ^ \"."
-  (or (letter? c) (memv c (string->list "'`[]<>.^\""))))
+  "Whether ' and ` can go to mark `c`: a settable mark, one the editor
+   sets (. ^), or one Vim keeps in its viminfo (\" 0-9), which imp never
+   sets."
+  (or (settable-mark? c) (and c (char-digit? c)) (memv c (string->list ".^\""))))
+
+(define (mark-name c)
+  "The name mark `c` is kept under: ` and ' are the same mark."
+  (if (equal? c #\`) "'" (string c)))
+
+(define (set-mark-char! c pos)
+  "Sets mark `c` at `pos`, or says it isn't a mark m can set."
+  (if (settable-mark? c)
+      (mark-set! (mark-name c) pos)
+      (set-status! (string-append "invalid mark " (if c (string c) "")))))
 
 (define (mark-pos c)
-  "The position of mark `c` (` meaning '), or #f after saying it isn't set."
-  (let ([m (mark-get (if (equal? c #\`) "'" (string c)))])
-    (or m (begin (set-status! (string-append "mark not set: " (string c))) #f))))
+  "The position of mark `c` (` meaning '), or #f after saying it is
+   unknown or not set."
+  (cond
+    [(not (mark-char? c)) (set-status! (string-append "unknown mark " (if c (string c) ""))) #f]
+    [(mark-get (mark-name c)) => (lambda (m) m)]
+    [else (set-status! (string-append "mark not set: " (string c))) #f]))
 
-(define-char-command! "m"
-  (lambda (count c)
-    (if (or (letter? c) (memv c (string->list "'`[]<>")))
-        (mark-set! (if (equal? c #\`) "'" (string c)) (cursor))
-        (set-status! (string-append "invalid mark " (string c))))))
+(define-char-command! "m" (lambda (count c) (set-mark-char! c (cursor))))
 
 (define-char-motion! "'" 'linewise
   (lambda (from n c) (let ([m (mark-pos c)]) (and m (line-first-nonblank (offset->line m))))))
@@ -2411,7 +2426,7 @@
     (if (and smart? (closes-indent? (char-after-cursor-on-line)))
         ;; Between brackets: open a line for the inside, and put the
         ;; closing bracket on the line after it.
-        (let ([p (cursor)])
+        (begin
           (insert-text! (string-append "\n" deeper))
           (let ([inside (cursor)])
             (buffer-insert! inside (string-append "\n" indent))
@@ -2486,7 +2501,7 @@
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
   (cond
     ;; A mode's own insert keys come first (the REPL's <ret>).
-    [(local-key-proc 'insert key) => (lambda (proc) (proc))]
+    [(local-key-binding 'insert key) => run-insert-binding!]
     [(member key '("<ret>" "C-j" "C-m")) (insert-newline!)]
     [(equal? key "<tab>") (insert-tab!)]
     [(and (member key '("<bs>" "C-h")) (eq? *mode* 'replace)) (replace-backspace!)]
@@ -2511,8 +2526,13 @@
      (maybe-dedent-for! (string-ref key 0))
      (insert-text! key)]
     [(= (string-length key) 1) (insert-text! key)]
-    [(lookup-key 'insert key) ((lookup-key 'insert key))]
+    [(key-binding 'insert key) => run-insert-binding!]
     [else #t]))
+
+(define (run-insert-binding! binding)
+  "Runs an insert-state binding: a command name as a command (count 1),
+   a procedure with no arguments."
+  (if (symbol? binding) (run-command binding) (binding)))
 
 (define (insert-text! text)
   "Inserts `text` at the cursor and moves the cursor past it."
@@ -3834,7 +3854,7 @@
     (let ([arg (ex-args ex)])
       (if (equal? arg "")
           (set-status! "mark needs a name")
-          (mark-set! (string (string-ref arg 0)) (line-start (cadr (ex-range ex))))))))
+          (set-mark-char! (string-ref arg 0) (line-start (cadr (ex-range ex))))))))
 
 ;; :p and :nu show lines in a popup; :g with no command collects them.
 (define *print-lines* #f)

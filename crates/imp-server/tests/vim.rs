@@ -1168,6 +1168,25 @@ fn marks_as_motions() {
     assert!(s.status().contains("mark not set"));
 }
 
+/// m takes a-z, A-Z and ' ` [ ] < > (:help m); other characters are not
+/// marks, and jumping to one says so (Vim's E78) instead of "not set".
+#[test]
+fn which_marks_m_and_jumps_accept() {
+    let mut s = server("ab\ncd\n");
+    type_keys(&mut s, "jlm[gg`[");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "m.");
+    assert!(s.status().contains("invalid mark"));
+    type_keys(&mut s, "m1");
+    assert!(s.status().contains("invalid mark"));
+    type_keys(&mut s, ":mark !<ret>");
+    assert!(s.status().contains("invalid mark"));
+    type_keys(&mut s, "'!");
+    assert!(s.status().contains("unknown mark"));
+    type_keys(&mut s, "'1");
+    assert!(s.status().contains("mark not set"));
+}
+
 #[test]
 fn backtick_backtick_returns_from_jump() {
     let mut s = server("1\n2\n3\n4\n");
@@ -1455,6 +1474,31 @@ fn block_change_and_replace() {
     let mut s = server("abc\ndef\n");
     s.keys(&["l", "C-v", "j", "U"]);
     assert_eq!(s.text(), "aBc\ndEf\n");
+}
+
+/// c on a block leaves lines that end before the block alone; a line
+/// that reaches the block's left column still gets the text, as in Vim.
+#[test]
+fn block_change_skips_short_lines() {
+    let mut s = server("abcd\nx\nab\nefgh\n");
+    s.keys(&["l", "l", "C-v", "j", "j", "j", "l"]);
+    type_keys(&mut s, "cZ<esc>");
+    assert_eq!(s.text(), "abZ\nx\nabZ\nefZ\n");
+}
+
+/// A command name bound in insert state runs as a command, with a count of
+/// 1; a procedure bound there is still called with no arguments.
+#[test]
+fn insert_state_runs_command_names() {
+    let mut s = server("\n");
+    s.eval(
+        r#"(define-command! 'insert-count (lambda (count) (insert-text! (number->string count))))
+           (define-key! 'insert "C-s" 'insert-count)
+           (define-key! 'insert "C-g" (lambda () (insert-text! "!")))"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "ia<C-s>b<C-g><esc>");
+    assert_eq!(s.text(), "a1b!\n");
 }
 
 #[test]

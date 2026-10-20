@@ -212,4 +212,4 @@
 ;; M-x runs a command by name from Vim's states too, not just Emacs's.
 (define-key! 'normal "M-x" 'execute-command)
 (define-key! 'visual "M-x" 'execute-command)
-(define-key! 'insert "M-x" (lambda () (run-command 'execute-command)))
+(define-key! 'insert "M-x" 'execute-command)

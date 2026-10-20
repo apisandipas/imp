@@ -33,14 +33,20 @@
   (let ([binding (key-binding mode key)])
     (if (symbol? binding) (command-proc binding) binding)))
 
-(define (local-key-proc mode key)
-  "The procedure `key` runs in the buffer's mode keymaps for `mode` only,
-   or #f. Insert mode checks these before its own keys (<ret>, <tab>)."
+(define (local-key-binding mode key)
+  "What `key` is bound to as written in the buffer's mode keymaps for
+   `mode` only, or #f. Insert mode checks these before its own keys (<ret>,
+   <tab>)."
   (let loop ([maps (*local-keymaps* mode)])
     (cond [(null? maps) #f]
-          [(hash-try-get (keymap (car maps)) key)
-           => (lambda (b) (if (symbol? b) (command-proc b) b))]
+          [(hash-try-get (keymap (car maps)) key) => (lambda (b) b)]
           [else (loop (cdr maps))])))
+
+(define (local-key-proc mode key)
+  "The procedure `key` runs in the buffer's mode keymaps for `mode` only,
+   or #f."
+  (let ([b (local-key-binding mode key)])
+    (if (symbol? b) (command-proc b) b)))
 
 (define (key-binding mode key)
   "What `key` is bound to as written: a command name or a procedure,

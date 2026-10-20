@@ -472,7 +472,7 @@
 
 (define-key! 'normal "C-z" 'emacs-state)
 (define-key! 'visual "C-z" 'emacs-state)
-(define-key! 'insert "C-z" (lambda () (run-command 'emacs-state)))
+(define-key! 'insert "C-z" 'emacs-state)
 
 (add-hook! 'startup
            (lambda ()
