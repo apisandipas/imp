@@ -59,11 +59,34 @@
         [else "changed"]))
 
 (define (git-unquote path)
-  "`path` without the double quotes git puts around unusual names.
-   Only the quotes go; backslash escapes inside are left as they are."
-  (if (and (> (string-length path) 1) (starts-with? path "\""))
-      (substring path 1 (- (string-length path) 1))
+  "`path` as git means it, without the quoting git puts on unusual names.
+   A quoted name loses its double quotes and has its C-style escapes
+   decoded (see `git-unescape`). A name git didn't quote is returned as
+   it is."
+  (if (and (> (string-length path) 1) (starts-with? path "\"") (ends-with? path "\""))
+      (let ([inner (substring path 1 (- (string-length path) 1))])
+        (with-handler (lambda (e) inner) (git-unescape inner)))
       path))
+
+(define (git-unescape text)
+  "`text` with git's C-style backslash escapes decoded.
+   These are \\t, \\n, \\\", \\\\ and the like, and octal escapes such as
+   \\303\\251, which are bytes: a run of them spells a UTF-8 character.
+   Raises an error when the bytes aren't valid UTF-8."
+  (let* ([bytes (string->bytes text)]
+         [n (bytes-length bytes)]
+         [octal? (lambda (i) (and (< i n) (<= 48 (bytes-ref bytes i) 55)))]
+         [digit (lambda (i) (- (bytes-ref bytes i) 48))]
+         [named (lambda (b) (cond [(= b 110) 10] [(= b 116) 9] [(= b 114) 13] [(= b 97) 7]
+                                  [(= b 98) 8] [(= b 102) 12] [(= b 118) 11] [else b]))])
+    (let loop ([i 0] [acc '()])
+      (cond
+        [(>= i n) (bytes->string/utf8 (list->bytes (reverse acc)))]
+        [(and (= (bytes-ref bytes i) 92) (octal? (+ i 1)) (octal? (+ i 2)) (octal? (+ i 3)))
+         (loop (+ i 4) (cons (+ (* 64 (digit (+ i 1))) (* 8 (digit (+ i 2))) (digit (+ i 3))) acc))]
+        [(and (= (bytes-ref bytes i) 92) (< (+ i 1) n))
+         (loop (+ i 2) (cons (named (bytes-ref bytes (+ i 1))) acc))]
+        [else (loop (+ i 1) (cons (bytes-ref bytes i) acc))]))))
 
 (define (git-fields line n)
   "The first `n` space-separated fields of `line`, then the rest as one."
@@ -337,7 +360,8 @@
 (define (git-discard!)
   "Throws away what the cursor is on, after asking.
    Deletes an untracked file, restores a changed file (a staged one
-   from HEAD, both index and working tree), reverses an unstaged hunk,
+   from HEAD, both index and working tree, which deletes a staged new
+   file), reverses an unstaged hunk,
    or drops a stash. A staged hunk can't be discarded; unstage it
    first."
   (let ([item (line-item)] [root (git-root)])
@@ -349,6 +373,8 @@
       [(and (eq? (car item) 'file) (eq? (cadr item) 'unstaged))
        (confirm! (string-append "Discard changes to " (caddr item) "?")
                  (lambda () (git-do! root (string-append "restore -- " (shell-quote (caddr item)))) (git-refresh!)))]
+      ;; A new file isn't in HEAD, so restoring it removes it from the
+      ;; index and the disk, as Magit's discard does.
       [(and (eq? (car item) 'file) (eq? (cadr item) 'staged))
        (confirm! (string-append "Discard staged and unstaged changes to " (caddr item) "?")
                  (lambda () (git-do! root (string-append "restore --staged --worktree -- " (shell-quote (caddr item))))
@@ -514,16 +540,25 @@
 
 ;;; Branches, stashes, remotes
 
+(define (git-branch-names root)
+  "The branches of repository `root` to check out: local ones like main,
+   then remote ones like origin/main. A remote's HEAD (which git
+   shortens to a bare \"origin\") isn't a branch and is left out."
+  (map (lambda (ref) (substring ref (if (starts-with? ref "refs/heads/") 11 13) (string-length ref)))
+       (filter (lambda (ref) (or (starts-with? ref "refs/heads/")
+                                 (and (starts-with? ref "refs/remotes/") (not (ends-with? ref "/HEAD")))))
+               (text-lines (git-output root "for-each-ref '--format=%(refname)' refs/heads refs/remotes")))))
+
 (define (git-checkout!)
   "Asks for a branch, local or remote, and checks it out.
    A remote branch like origin/x checks out x, which git sets up to
    track it."
   (let* ([root (git-root)]
-         [branches (text-lines (git-output root "branch -a --format=%(refname:short)"))])
+         [branches (git-branch-names root)])
     (completing-read "Checkout: " branches
                      (lambda (name)
                        ;; origin/x checks out a local x tracking it.
-                       (let ([local (if (member name (text-lines (git-output root "branch --format=%(refname:short)")))
+                       (let ([local (if (member name (text-lines (git-output root "branch '--format=%(refname:short)'")))
                                         name
                                         (let ([p (split-once name "/")]) (if (and (pair? p) (pair? (cdr p))) (cadr p) name)))])
                          (when (git-do! root (string-append "checkout " (shell-quote local)))

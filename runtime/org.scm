@@ -22,6 +22,9 @@
 (define-option! 'org-agenda-files '() '())
 ;; Empty means inbox.org in org-directory.
 (define-option! 'org-default-notes-file "" '())
+;; The TODO keywords a heading cycles through. As in Org, a "|" splits
+;; them into not done and done, as in '("TODO" "NEXT" "|" "DONE"
+;; "CANCELLED"); with no "|" only the last is done.
 (define-option! 'org-todo-keywords '("TODO" "DONE") '())
 
 ;;; Headings and subtrees
@@ -140,17 +143,77 @@
   "Replaces the text of `line`, leaving its line break."
   (replace-range! (line-start line) (line-end line) text))
 
+(define (org-keywords)
+  "The TODO keywords in `org-todo-keywords`, in order, without the \"|\"
+   that separates the not-done ones from the done ones."
+  (filter (lambda (k) (not (equal? k "|"))) (option 'org-todo-keywords)))
+
+(define (org-done-keywords)
+  "The keywords that mean done: those after \"|\" in
+   `org-todo-keywords`, or with no \"|\" the last one, as in Org."
+  (let* ([kws (option 'org-todo-keywords)] [after (member "|" kws)])
+    (cond [after (filter (lambda (k) (not (equal? k "|"))) (cdr after))]
+          [(null? kws) '()]
+          [else (list (last kws))])))
+
 (define (org-keyword-in rest)
   "The keyword the heading text after its stars starts with, or #f."
   (list-find (lambda (k) (or (equal? rest k) (starts-with? rest (string-append k " "))))
-             (option 'org-todo-keywords)))
+             (org-keywords)))
+
+(define (org-remove-cookies text)
+  "`text` without statistics cookies like [1/3], [50%] or []."
+  (let ([n (string-length text)])
+    (let loop ([i 0] [from 0] [acc '()])
+      (if (>= i n)
+          (apply string-append (reverse (cons (substring text from n) acc)))
+          (let* ([digits-end (lambda (j) (let d ([j j]) (if (and (< j n) (char-numeric-ascii? (string-ref text j))) (d (+ j 1)) j)))]
+                 [end (and (equal? (string-ref text i) #\[)
+                           (let* ([j (digits-end (+ i 1))]
+                                  [j (cond [(>= j n) #f]
+                                           [(equal? (string-ref text j) #\%) (+ j 1)]
+                                           [(equal? (string-ref text j) #\/) (digits-end (+ j 1))]
+                                           [else j])])
+                             (and j (< j n) (equal? (string-ref text j) #\]) (+ j 1))))])
+            (if end
+                (loop end end (cons (substring text from i) acc))
+                (loop (+ i 1) from acc)))))))
+
+(define (org-normalize-title text)
+  "`text` as Org compares heading titles: statistics cookies removed and
+   runs of whitespace made single spaces."
+  (string-join (split-whitespace (org-remove-cookies text)) " "))
+
+(define (org-tag-char? c)
+  "Whether `c` may appear in an Org tag."
+  (or (char-numeric-ascii? c) (not (equal? (char-upcase c) (char-downcase c))) (member c '(#\_ #\@ #\# #\% #\:))))
+
+(define (org-heading-title text)
+  "The title of heading text `text`: without its stars, TODO keyword,
+   priority like [#A] or tags like :work:urgent:, normalized as
+   `org-normalize-title` does."
+  (let* ([level (or (org-level-of text) 0)]
+         [rest (trim-start (substring text (min (+ level 1) (string-length text)) (string-length text)))]
+         [kw (org-keyword-in rest)]
+         [rest (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)]
+         [rest (if (and (>= (string-length rest) 4) (starts-with? rest "[#") (equal? (string-ref rest 3) #\]))
+                   (trim-start (substring rest 4 (string-length rest)))
+                   rest)]
+         [rest (trim-end rest)]
+         [words (split-whitespace rest)]
+         [tags (and (pair? words) (last words))]
+         [rest (if (and tags (> (string-length tags) 1) (starts-with? tags ":") (ends-with? tags ":")
+                        (andmap org-tag-char? (string->list tags)))
+                   (substring rest 0 (- (string-length rest) (string-length tags)))
+                   rest)])
+    (org-normalize-title rest)))
 
 (define (org-todo-cycle! line)
   "Moves the heading on `line` to the next TODO keyword (none after the last)."
   (let* ([text (line-text line)]
          [level (org-level line)]
          [rest (substring text (+ level 1) (string-length text))]
-         [kws (option 'org-todo-keywords)]
+         [kws (org-keywords)]
          [current (org-keyword-in rest)]
          [title (if current (trim-start (substring rest (string-length current) (string-length rest))) rest)]
          [next (cond [(not current) (car kws)]
@@ -335,7 +398,7 @@
 (define (org-follow! target)
   "Follows link `target`, like Org's C-c C-o.
    A URL or mailto: opens with xdg-open; *Title jumps to the heading
-   ending in Title; anything else is a file (file: optional, relative
+   titled Title (its keyword, priority and tags aside); anything else is a file (file: optional, relative
    to this buffer's directory) with an optional ::LINE or ::TEXT to
    go to."
   (cond
@@ -343,8 +406,11 @@
      (start-job! (string-append "xdg-open " (shell-quote target)) "" #f #f)
      (message (string-append "opening " target))]
     [(starts-with? target "*")
+     ;; As in Org, the title must match exactly, keyword, priority and
+     ;; tags aside.
      (let* ([title (substring target 1 (string-length target))]
-            [h (list-find (lambda (l) (let ([t (line-text l)]) (ends-with? t title))) (org-headings))])
+            [want (org-normalize-title title)]
+            [h (list-find (lambda (l) (equal? (org-heading-title (line-text l)) want)) (org-headings))])
        (if h (begin (record-jump!) (set-cursor! (line-start h))) (message (string-append "no heading " title))))]
     [else
      (let* ([target (if (starts-with? target "file:") (substring target 5 (string-length target)) target)]
@@ -512,8 +578,8 @@
   (trim (cadr (run-shell "date +%F" ""))))
 
 (define (org-entry-done? e)
-  "Whether agenda entry `e` has the last TODO keyword, the done one."
-  (equal? (caddr e) (last (option 'org-todo-keywords))))
+  "Whether agenda entry `e` has a done keyword (see `org-done-keywords`)."
+  (and (caddr e) (member (caddr e) (org-done-keywords)) #t))
 
 (define (org-agenda-line! e date what)
   "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...).
@@ -928,6 +994,15 @@
 
 ;;; Modes and keys
 
+(define (org-keyword-pattern keywords)
+  "A pattern matching any of `keywords` right after a heading's stars.
+   Characters special in a pattern are escaped."
+  (let ([escape (lambda (k)
+                  (apply string-append
+                         (map (lambda (c) (if (member c '(#\\ #\. #\* #\[ #\] #\~ #\^ #\$ #\/)) (string #\\ c) (string c)))
+                              (string->list k))))])
+    (string-append "^\\*\\+ \\(" (string-join (map escape keywords) "\\|") "\\)\\>")))
+
 (define-major-mode! 'org-mode 'text-mode '("org")
   (lambda ()
     (set-local-option! 'shiftwidth 2)
@@ -936,8 +1011,10 @@
                     (list "org-2" "^\\*\\* .*" "org.level2")
                     (list "org-3" "^\\*\\*\\* .*" "org.level3")
                     (list "org-4" "^\\*\\*\\*\\*\\+ .*" "org.level4")
-                    (list "org-todo" "^\\*\\+ TODO\\>" "org.todo")
-                    (list "org-done" "^\\*\\+ DONE\\>" "org.done")
+                    (list "org-todo" (org-keyword-pattern (filter (lambda (k) (not (member k (org-done-keywords))))
+                                                                  (org-keywords)))
+                          "org.todo")
+                    (list "org-done" (org-keyword-pattern (org-done-keywords)) "org.done")
                     (list "org-tags" "\\s:[a-zA-Z0-9_@#%:]\\+:\\s*$" "org.tag")
                     (list "org-meta" "^\\s*#.*" "org.meta")
                     (list "org-table" "^\\s*|.*" "org.table")

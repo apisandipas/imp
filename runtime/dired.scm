@@ -276,17 +276,20 @@
          [path (lambda (name) (dired-join dir (dired-strip-slash name)))]
          [renames (filter (lambda (c) (eq? (car c) 'rename)) changes)])
     ;; Renames go through temporary names, so swapping two names works.
-    (let ([temp (lambda (i) (path (string-append ".imp-rename-" (number->string i))))])
-      (let loop ([rs renames] [i 0])
-        (unless (null? rs)
-          (try (rename-file! (path (cadr (car rs))) (temp i)))
-          (loop (cdr rs) (+ i 1))))
-      (let loop ([rs renames] [i 0])
-        (unless (null? rs)
-          (let ([r (rename-file! (temp i) (path (caddr (car rs))))])
-            ;; If the new name is taken, the file keeps its old one.
-            (when (string? r) (try r) (rename-file! (temp i) (path (cadr (car rs))))))
-          (loop (cdr rs) (+ i 1)))))
+    ;; An entry whose first step fails is left alone after that: its one
+    ;; problem is the one reported.
+    (let* ([temp (lambda (i) (path (string-append ".imp-rename-" (number->string i))))]
+           [moved (let loop ([rs renames] [i 0] [acc '()])
+                    (if (null? rs)
+                        (reverse acc)
+                        (let ([r (rename-file! (path (cadr (car rs))) (temp i))])
+                          (try r)
+                          (loop (cdr rs) (+ i 1) (if (string? r) acc (cons (list i (car rs)) acc))))))])
+      (for-each (lambda (m)
+                  (let* ([i (car m)] [c (cadr m)] [r (rename-file! (temp i) (path (caddr c)))])
+                    ;; If the new name is taken, the file keeps its old one.
+                    (when (string? r) (try r) (rename-file! (temp i) (path (cadr c))))))
+                moved))
     (for-each (lambda (c)
                 (cond
                   [(eq? (car c) 'delete) (try (delete-path! (path (cadr c))))]

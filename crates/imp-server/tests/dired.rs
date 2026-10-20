@@ -168,6 +168,19 @@ fn a_rename_onto_an_existing_file_fails() {
     assert!(s.status().contains("already exists"), "{}", s.status());
 }
 
+#[test]
+fn a_failed_rename_reports_one_problem() {
+    let dir = tree("dired-gone");
+    let mut s = browse(&dir);
+    // a.txt goes behind the browser's back, so renaming it fails at once.
+    std::fs::remove_file(dir.join("a.txt")).unwrap();
+    type_keys(&mut s, "jccc.txt<esc>:w<ret>y");
+    let status = s.status();
+    assert!(!status.contains(';'), "one problem, not three: {status}");
+    assert!(!status.contains(".imp-rename"), "{status}");
+    assert!(!dir.join("c.txt").exists());
+}
+
 /// The screen row showing `name`, trimmed.
 fn row_with(s: &mut imp_server::Server, name: &str) -> String {
     let rows = s.frame().text_rows();

@@ -265,3 +265,89 @@ fn git_root_exists(dir: &Path) -> bool {
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
+
+#[test]
+fn unusual_file_names_are_unquoted() {
+    // git quotes these names in its status and escapes what's inside.
+    let mut s = server("");
+    let mut unquote = |quoted: &str, want: &str| {
+        let r = s
+            .eval(&format!("(equal? (git-unquote {quoted:?}) {want:?})"))
+            .unwrap();
+        assert_eq!(r, "#true", "{quoted} should be {want:?}");
+    };
+    unquote(r#""a\tb""#, "a\tb");
+    unquote(r#""say \"hi\"""#, "say \"hi\"");
+    unquote(r#""back\\slash""#, "back\\slash");
+    unquote(r#""caf\303\251""#, "café");
+    unquote("plain name", "plain name");
+    // In a real repository the status shows them, and staging one works.
+    let dir = repo("git-names");
+    std::fs::write(dir.join("café.txt"), "x\n").unwrap();
+    std::fs::write(dir.join("say \"hi\".txt"), "x\n").unwrap();
+    let mut s = status(&dir);
+    let text = s.text();
+    assert!(text.contains("untracked  café.txt"), "{text}");
+    assert!(text.contains("untracked  say \"hi\".txt"), "{text}");
+    go_to(&mut s, "untracked  café.txt");
+    type_keys(&mut s, "s");
+    assert!(
+        git(
+            &dir,
+            &[
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--cached",
+                "--name-only"
+            ]
+        )
+        .contains("café.txt"),
+        "{}",
+        s.status()
+    );
+}
+
+#[test]
+fn discarding_a_staged_new_file_deletes_it() {
+    let dir = repo("git-discard-new");
+    let mut s = status(&dir);
+    go_to(&mut s, "new file   c.txt");
+    type_keys(&mut s, "xn");
+    assert!(dir.join("c.txt").exists());
+    type_keys(&mut s, "xy");
+    assert!(!dir.join("c.txt").exists(), "{}", s.status());
+    assert!(!git(&dir, &["status", "--porcelain"]).contains("c.txt"));
+    assert!(!s.text().contains("c.txt"), "{}", s.text());
+}
+
+#[test]
+fn a_remote_head_is_not_a_branch() {
+    let dir = repo("git-remote-head");
+    git(&dir, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    git(
+        &dir,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    );
+    // branch -a lists a bare "origin" for the remote's HEAD.
+    assert!(git(&dir, &["branch", "-a", "--format=%(refname:short)"])
+        .lines()
+        .any(|l| l == "origin"));
+    let mut s = server("");
+    let names = s
+        .eval(&format!(
+            "(git-branch-names {:?})",
+            dir.display().to_string()
+        ))
+        .unwrap();
+    assert_eq!(names, r#"("main" "origin/main")"#);
+    // And the branch menu checks one out.
+    git(&dir, &["branch", "other"]);
+    let mut s = status(&dir);
+    type_keys(&mut s, "bbother<ret>");
+    assert_eq!(git(&dir, &["branch", "--show-current"]), "other\n");
+}

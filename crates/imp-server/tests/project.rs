@@ -110,6 +110,30 @@ fn grep_fills_the_quickfix_list() {
 }
 
 #[test]
+fn only_digits_are_a_line_number() {
+    let mut s = server("");
+    for (text, want) in [
+        ("12", "#true"),
+        ("0", "#true"),
+        ("1e5", "#false"),
+        ("1.5", "#false"),
+        ("", "#false"),
+        ("+1", "#false"),
+    ] {
+        assert_eq!(
+            s.eval(&format!("(digits? {text:?})")).unwrap(),
+            want,
+            "{text:?}"
+        );
+    }
+    // So "name:1e5:text" isn't a match on line 100000.
+    assert_eq!(
+        s.eval("(parse-grep-line \"/r\" \"a:1e5:text\")").unwrap(),
+        "#false"
+    );
+}
+
+#[test]
 fn grep_without_rg() {
     let dir = project("proj-plain-grep");
     let mut s = open(&dir, "README");

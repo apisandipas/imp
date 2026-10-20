@@ -275,3 +275,79 @@ fn headings_have_faces() {
     };
     assert!(styled(0) && styled(1));
 }
+
+#[test]
+fn a_heading_link_matches_the_whole_title() {
+    // Not "Big Foo", which only ends in Foo: Org matches the title
+    // exactly, its keyword, priority, cookie and tags aside.
+    let mut s = org(
+        "exact.org",
+        "[[*Foo]] and [[*Nope]]\n* Big Foo\n* TODO [#A] Foo [1/2] :work:\n",
+    );
+    type_keys(&mut s, "l<ret>");
+    assert_eq!(s.eval("(current-line)").unwrap(), "2");
+    type_keys(&mut s, "gg$h<ret>");
+    assert_eq!(s.eval("(current-line)").unwrap(), "0");
+    assert!(s.status().contains("no heading Nope"), "{}", s.status());
+}
+
+const KEYWORDS: &str =
+    r#"(set-option! 'org-todo-keywords '("TODO" "NEXT" "|" "DONE" "CANCELLED"))"#;
+
+#[test]
+fn keywords_after_the_bar_are_done() {
+    let mut s = server("");
+    s.eval(KEYWORDS).unwrap();
+    let path = temp_path("bar.org");
+    std::fs::write(&path, "** Write it\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    // Cycling skips the bar.
+    for want in ["TODO ", "NEXT ", "DONE ", "CANCELLED ", ""] {
+        type_keys(&mut s, "<ret>");
+        assert_eq!(s.text(), format!("** {want}Write it\n"));
+    }
+    // CANCELLED and DONE look done, NEXT and TODO not.
+    type_keys(
+        &mut s,
+        "ggdGi* TODO a<ret>* NEXT b<ret>* DONE c<ret>* CANCELLED d<esc>",
+    );
+    let frame = s.frame();
+    let style = |word: &str| {
+        frame
+            .rows
+            .iter()
+            .flatten()
+            .find(|sp| sp.text.contains(word))
+            .unwrap_or_else(|| panic!("no {word}"))
+            .style
+    };
+    assert_eq!(style("NEXT"), style("TODO"));
+    assert_eq!(style("CANCELLED"), style("DONE"));
+    assert_ne!(style("DONE"), style("TODO"));
+}
+
+#[test]
+fn the_agenda_leaves_out_every_done_keyword() {
+    let dir = temp_path("org-agenda-bar");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("work.org"),
+        "* TODO Write\n* NEXT Plan\n* DONE Old\n* CANCELLED Dropped\n",
+    )
+    .unwrap();
+    let mut s = server("");
+    s.eval(KEYWORDS).unwrap();
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    let text = s.text();
+    assert!(
+        text.contains("TODO Write") && text.contains("NEXT Plan"),
+        "{text}"
+    );
+    assert!(!text.contains("Old") && !text.contains("Dropped"), "{text}");
+}

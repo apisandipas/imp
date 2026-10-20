@@ -121,8 +121,9 @@
         [else (string-append "grep -rnI --exclude-dir=.git -- " (shell-quote pattern) " .")]))
 
 (define (digits? s)
-  "Whether `s` is a number that starts with a digit, like a line number."
-  (and (> (string-length s) 0) (char-numeric-ascii? (string-ref s 0)) (string->number s) #t))
+  "Whether `s` is one or more ASCII digits and nothing else, like a line
+   number. \"1e5\", \"1.5\" and \"\" aren't."
+  (and (> (string-length s) 0) (andmap char-numeric-ascii? (string->list s))))
 
 (define (parse-grep-line root line)
   "One output line, \"path:line:col:text\" or \"path:line:text\", as a quickfix
