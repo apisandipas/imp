@@ -180,6 +180,14 @@ fn commit_from_a_message_buffer() {
     type_keys(&mut s, "ZQ");
     assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Add c\n");
     assert_eq!(s.eval("(major-mode)").unwrap(), "git-status-mode");
+    // Magit's C-c C-c, straight from insert state; C-c C-k cancels.
+    type_keys(&mut s, "cc");
+    s.keys(&["C-c", "C-k"]);
+    assert_eq!(s.eval("(major-mode)").unwrap(), "git-status-mode");
+    type_keys(&mut s, "ccOAdd b");
+    s.keys(&["C-c", "C-c"]);
+    assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "Add b\n");
+    assert_eq!(s.eval("(major-mode)").unwrap(), "git-status-mode");
 }
 
 #[test]

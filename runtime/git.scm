@@ -13,7 +13,8 @@
 ;;;   f F P   fetch, pull, push (run in the background; $ shows output)
 ;;;   gr      refresh   q  leave   ?  these keys
 ;;;
-;;; A commit message is edited in its own buffer: ZZ commits, ZQ cancels.
+;;; A commit message is edited in its own buffer: ZZ or C-c C-c commits,
+;;; ZQ or C-c C-k cancels.
 ;;; :Git ARGS runs any git command and shows what it printed.
 
 (define-option! 'git-recent-commits 10 '())
@@ -462,7 +463,7 @@
                [comment (lambda (line) (string-append "# " line))])
           (write-text-file! path
                             (string-append previous "\n\n"
-                                           "# Write the message above. ZZ commits, ZQ cancels.\n"
+                                           "# Write the message above. ZZ or C-c C-c commits, ZQ or C-c C-k cancels.\n"
                                            "# Lines starting with # are left out.\n#\n"
                                            (string-join (map comment (text-lines (if amend? (git-output root "show --stat --format= HEAD") stat))) "\n")
                                            "\n"))
@@ -656,6 +657,11 @@
 (git-keys! 'git-commit-mode
   (list (list "ZZ" (lambda (n) (git-commit-finish!)))
         (list "ZQ" (lambda (n) (git-commit-cancel!)))))
+;; And Magit's keys, in insert state too.
+(for-each (lambda (state)
+            (define-mode-key! 'git-commit-mode state "C-cC-c" (lambda args (git-commit-finish!)))
+            (define-mode-key! 'git-commit-mode state "C-cC-k" (lambda args (git-commit-cancel!))))
+          '(normal insert))
 (define-mode-leader! 'git-commit-mode "c" (lambda (n) (git-commit-finish!)) "commit")
 (define-mode-leader! 'git-commit-mode "k" (lambda (n) (git-commit-cancel!)) "cancel")
 
