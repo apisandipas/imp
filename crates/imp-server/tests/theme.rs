@@ -70,6 +70,18 @@ fn a_theme_can_build_on_another() {
 }
 
 #[test]
+fn a_theme_built_on_an_unknown_one_says_so() {
+    let mut s = themed("x\n");
+    let err = s
+        .eval("(define-theme! 'mine 'no-such-theme (hash) '())")
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("no theme no-such-theme"),
+        "{err:?}"
+    );
+}
+
+#[test]
 fn the_status_line_follows_its_format() {
     let mut s = server("one\ntwo\nthree\nfour\n");
     s.eval(r#"(set-option! 'statusline "[%m] %f%M %{answer}%=%l/%L %p")"#)

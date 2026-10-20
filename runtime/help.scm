@@ -267,6 +267,10 @@
                         (if proc (cons (cons key proc) aliases) aliases)))))))))
 
 ;;; describe-function, describe-option, apropos
+;;;
+;;; The describe-function, describe-option, describe-command and
+;;; find-definition commands pick a name with completion, so they are in
+;;; completion.scm, which loads after this.
 
 (define (describe-function name)
   "Shows in a popup where `name` (a string) is defined and its docs.
@@ -399,16 +403,6 @@
     (set! *key-interceptor* describe-key-input!)
     (message "Describe key: ")))
 
-(define-command! 'describe-function
-  (lambda (count)
-    "Describe a function: where it is defined and its documentation (C-h f)."
-    (open-cmdline! "Describe function: " "" describe-function #f #f)))
-
-(define-command! 'describe-option
-  (lambda (count)
-    "Describe an option, typed at a prompt: its value and documentation."
-    (open-cmdline! "Describe option: " "" describe-option #f #f)))
-
 (define-command! 'apropos
   (lambda (count)
     "List definitions whose name contains a string."
@@ -473,11 +467,6 @@
       (cond [name (run-ex! (string-append "help " name))]
             [(equal? (buffer-language) "scheme") (message "no symbol at the cursor")]
             [else (message "K needs a language server for this file (see :help define-language-server!)")]))))
-
-(define-command! 'find-definition
-  (lambda (count)
-    "Open the source of a definition, its name typed at a prompt."
-    (open-cmdline! "Find definition: " "" find-definition #f #f)))
 
 ;;; Ex commands: :help and friends
 

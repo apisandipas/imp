@@ -522,6 +522,12 @@
         [(hash-try-get *option-aliases* name) => (lambda (n) n)]
         [else #f]))
 
+(define (known-option-name name)
+  "The option `name` refers to, as option-name gives it; an unknown
+   name is an error saying so."
+  (or (option-name name)
+      (error (string-append "unknown option: " (if (symbol? name) (symbol->string name) (to-string name))))))
+
 ;; Options whose value lives elsewhere (the buffer's file format, in Rust):
 ;; name -> (getter setter).
 (define *computed-options* (hash))
@@ -535,9 +541,10 @@
 
 (define (option name)
   "The value of option `name` for the current buffer.
-   A value set with set-local-option! wins over the global one. Takes
-   the full name, not an alias: (option 'shiftwidth)."
-  (let ([computed (hash-try-get *computed-options* name)])
+   A value set with set-local-option! wins over the global one. `name`
+   may be an alias, (option 'sw); an unknown one is an error."
+  (let* ([name (known-option-name name)]
+         [computed (hash-try-get *computed-options* name)])
     (if computed
         ((car computed))
         (let ([local (buffer-locals)] [key (list 'option name)])
@@ -549,7 +556,7 @@
    option's watcher and the option-change hook.
 
      (set-local-option! 'shiftwidth 2)"
-  (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+  (let ([name (known-option-name name)])
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
     (set-buffer-local! (list 'option name) value)
@@ -570,7 +577,7 @@
    option-change hook.
 
      (set-option! 'relativenumber #t)"
-  (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
+  (let ([name (known-option-name name)])
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
     (set! *options* (hash-insert *options* name value))
@@ -583,7 +590,7 @@
    It gets the new value each time the option changes and whenever
    the current buffer changes. One watcher per option: a second
    replaces the first."
-  (set! *option-watchers* (hash-insert *option-watchers* name proc))
+  (set! *option-watchers* (hash-insert *option-watchers* (known-option-name name) proc))
   (proc (option name)))
 
 (define-option! 'tabstop 4 '(ts))

@@ -26,8 +26,10 @@
      (define-theme! 'mine 'one-dark (hash 'bg \"#1a1b26\")
        (list (list \"syntax.comment\" \"fg=#565f89\")))
 
-   Load it with (load-theme! 'mine)."
-  (let* ([base (if parent (hash-ref *themes* parent) (list (hash) '()))]
+   Load it with (load-theme! 'mine). An unknown `parent` is an error."
+  (let* ([base (cond [(not parent) (list (hash) '())]
+                     [(hash-try-get *themes* parent) => (lambda (t) t)]
+                     [else (error (string-append "no theme " (symbol->string parent)))])]
          [merged (foldl (lambda (k h) (hash-insert h k (hash-ref palette k))) (car base) (hash-keys->list palette))])
     (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces))))))
 
@@ -317,8 +319,9 @@
   '(stl))
 (define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
 
-(define (update-statusline! value)
-  "Hands the statusline options to the renderer; `value` is unused."
+(define (update-statusline! _value)
+  "Hands the statusline options to the renderer. The watcher of both
+   options, so it reads them itself and ignores the value it is passed."
   (set-statusline! (option 'statusline) (option 'statusline-inactive)))
 (watch-option! 'statusline update-statusline!)
 (watch-option! 'statusline-inactive update-statusline!)

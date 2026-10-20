@@ -209,3 +209,32 @@ fn the_runtime_is_documented() {
         .unwrap();
     assert_eq!(missing, "()", "definitions without a docstring");
 }
+
+#[test]
+fn each_help_command_is_defined_once_and_documented() {
+    let mut s = server("");
+    for name in [
+        "describe-function",
+        "describe-option",
+        "describe-command",
+        "find-definition",
+        "apropos",
+    ] {
+        let count = s
+            .eval(&format!(
+                "(length (filter (lambda (line) (and (starts-with? line \"(define-command! \")
+                                                    (equal? (defined-name line) \"{name}\")))
+                         (apply append (map source-lines (source-names)))))"
+            ))
+            .unwrap();
+        assert_eq!(count, "1", "{name} is defined {count} times");
+        type_keys(&mut s, &format!("<esc>:help {name}<ret>"));
+        let text = popup_text(&mut s);
+        assert!(!text.contains("Not documented."), "{name}: {text}");
+    }
+    // The leader's describe-option is the completing one.
+    type_keys(&mut s, "<esc>");
+    s.eval("(run-command 'describe-option)").unwrap();
+    type_keys(&mut s, "shiftw");
+    assert!(popup_text(&mut s).contains("shiftwidth"));
+}

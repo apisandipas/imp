@@ -266,10 +266,11 @@
 
 (define (indent-with spaces? width)
   "Sets the current buffer to indent by `width`, with spaces if
-   `spaces?`, else with tabs (shown 4 wide)."
+   `spaces?`, else with tabs shown `width` wide (Vim's ts=sw), so a
+   level is one tab."
   (set-local-option! 'expandtab spaces?)
   (set-local-option! 'shiftwidth width)
-  (set-local-option! 'tabstop (if spaces? width 4)))
+  (set-local-option! 'tabstop width))
 
 ;; (name extensions comment indent-spaces? indent-width)
 (for-each

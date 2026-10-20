@@ -169,3 +169,29 @@ fn mode_command_switches() {
     type_keys(&mut s, ":mode rust<ret>");
     assert_eq!(s.eval("(major-mode)").unwrap(), "rust-mode");
 }
+
+#[test]
+fn indenting_with_tabs_shows_tabs_as_wide_as_the_indent() {
+    let mut s = server("");
+    open(&mut s, "Makefile", "all:\n");
+    assert_eq!(s.eval("(option 'tabstop)").unwrap(), "8");
+    assert_eq!(s.eval("(option 'shiftwidth)").unwrap(), "8");
+    // One level of indent is one tab, not two.
+    type_keys(&mut s, ">>");
+    assert_eq!(s.text(), "\tall:\n");
+}
+
+#[test]
+fn options_are_read_and_set_by_their_short_names_too() {
+    let mut s = server("");
+    open(&mut s, "a1.txt", "a\n");
+    assert_eq!(s.eval("(option 'sw)").unwrap(), "4");
+    s.eval("(set-local-option! 'sw 3)").unwrap();
+    assert_eq!(s.eval("(option 'sw)").unwrap(), "3");
+    assert_eq!(s.eval("(option 'shiftwidth)").unwrap(), "3");
+    let err = s.eval("(option 'no-such-option)").unwrap_err();
+    assert!(
+        format!("{err:?}").contains("unknown option: no-such-option"),
+        "{err:?}"
+    );
+}
