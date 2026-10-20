@@ -199,3 +199,14 @@ fn templates_expand() {
         r#"("<2026-10-19 Mon> <2026-10-19 Mon 14:02> [2026-10-19 Mon] 100%  []" 64)"#
     );
 }
+
+#[test]
+fn a_heading_with_tags_or_a_keyword_still_matches() {
+    let (mut s, dir) = setup("capture-tagged");
+    std::fs::write(dir.join("inbox.org"), "* Tasks :inbox:\n** TODO Older\n").unwrap();
+    type_keys(&mut s, " octNew<esc><C-c><C-c>");
+    assert_eq!(
+        read(&dir, "inbox.org"),
+        "* Tasks :inbox:\n** TODO Older\n** TODO New\n/Entered on/ [2026-10-19 Mon 14:02]\n"
+    );
+}

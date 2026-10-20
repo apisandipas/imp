@@ -787,12 +787,13 @@
                                 [(let ([l (level-at i)]) (and l (<= l level))) i]
                                 [else (loop (+ i 1))])))]
          ;; The heading titled `title` among the children of the region
-         ;; [from, to) at `level`, or #f.
+         ;; [from, to) at `level`, or #f. Its keyword, priority and tags
+         ;; don't count, as in Org.
          [find-child (lambda (from to level title)
                        (let loop ([i from])
                          (cond [(>= i to) #f]
                                [(and (eqv? (level-at i) level)
-                                     (equal? (trim (substring (vector-ref lines i) (+ level 1) (string-length (vector-ref lines i)))) title))
+                                     (equal? (org-heading-title (vector-ref lines i)) (org-normalize-title title)))
                                 i]
                                [else (loop (+ i 1))])))]
          ;; Where a new child titled `title` goes in [from, to): before the
