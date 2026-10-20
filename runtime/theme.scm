@@ -245,7 +245,7 @@
 ;; how to change it.
 (define-command! 'list-faces
   (lambda (count)
-    (go-to-buffer! (special-buffer "*faces*" 'faces-mode))
+    (display-buffer! (special-buffer "*faces*" 'faces-mode))
     (draw-begin!)
     (for-each (lambda (name)
                 (draw-line! (list (list (pad-right name 28) #f)

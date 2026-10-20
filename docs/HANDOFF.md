@@ -178,7 +178,7 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Sources and environment: `record-source! source-names source-text
   source-path parse-error getenv current-dir config-dir`
 - Completion: `fuzzy-filter list-files`
-- Windows: `window-list current-window split-window! close-window!
+- Windows: `window-list current-window split-window! split-frame! close-window!
   focus-window! only-window! window-buffer window-in-direction
   resize-window! equalize-windows! window-text-width set-wrap!
   line-display-col line-col-at-display`
@@ -291,6 +291,15 @@ needed. Details, and what each one leaves out, are in
   - `write-handler` and `revert-handler` for buffers that aren't files.
   - A buffer's mode keys now come before Vim's operators, motions and
     prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+  - Popup rules (`define-popup-rule!`): a generated buffer whose name
+    matches opens in a window along an edge of the frame (`split-frame!`,
+    a Rust primitive, since a split of the current window can't span
+    others). `q` closes that window, a file opened from it opens in the
+    window it came from, and a popup opened from a popup reuses its
+    window. Packages show their buffers with `display-buffer!`, not
+    `go-to-buffer!`. Defaults: `*grep*` along the bottom, `*git…*` and
+    `*faces*` down the right. Help and `:diagnostics` aren't buffers
+    (a floating popup and a menu), so no rule applies to them.
 - **Folding** (`fold.scm`, the renderer, `z` keys in vim.scm): Vim's
   manual folds as mark pairs; `j`, `k` and linewise operators treat a
   closed fold as one line.

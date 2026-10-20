@@ -159,7 +159,7 @@
 
 (define (quickfix-open!)
   (let ([root (project-root)])
-    (go-to-buffer! (special-buffer "*grep*" 'grep-mode))
+    (display-buffer! (special-buffer "*grep*" 'grep-mode))
     (draw-begin!)
     (draw-line! (list (list (string-append *quickfix-title* " (" (number->string (length *quickfix*)) " matches)")
                             "git.section"))

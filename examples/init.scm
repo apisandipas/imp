@@ -22,6 +22,11 @@
   (list (list "syntax.comment" "fg=#565f89 italic")))
 ;; (load-theme! 'midnight)
 
+;;; Where generated buffers open: a name prefix, then 'side ('bottom, 'top,
+;;; 'left, 'right), 'size (part of the frame), 'select and 'quit (q closes).
+(define-popup-rule! "*grep*" 'side 'right 'size 0.3)
+;; (remove-popup-rule! "*git")  ; git status takes over the window again
+
 ;;; Keys
 (define-key! 'normal "C-s" 'save-buffer)
 ;; Tab cycles buffers (it replaces C-i, which is the same key in a terminal).

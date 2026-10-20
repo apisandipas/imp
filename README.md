@@ -96,7 +96,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, agenda and capture, an editable file browser
   (`:Ex`), projects with search into a quickfix list, and terminals
-  (`:terminal`).
+  (`:terminal`). Search results open along the bottom and git down the
+  right, closing with `q`; `define-popup-rule!` changes where.
 - **Help.** `:help`, `SPC h k` (describe key), `SPC h f` (describe
   function), `SPC h o` (describe option), `SPC h F` (the faces under the
   cursor, to change with `set-face!`), `M-x list-faces` (every face, drawn

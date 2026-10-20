@@ -130,6 +130,27 @@ impl Layout {
         }
     }
 
+    /// Puts window `new` along an edge of the whole layout, taking
+    /// `fraction` of the space in direction `dir`: before everything (the
+    /// top or left edge) or after it.
+    pub fn split_edge(&mut self, new: usize, dir: Dir, before: bool, fraction: f64) {
+        let fraction = fraction.clamp(0.05, 0.95);
+        let old = std::mem::take(self);
+        let mut children = match old {
+            Layout::Split(d, children) if d == dir => children,
+            other => vec![(other, 1.0)],
+        };
+        let sum: f64 = children.iter().map(|(_, w)| w).sum();
+        let weight = sum * fraction / (1.0 - fraction);
+        let edge = (Layout::Window(new), weight);
+        if before {
+            children.insert(0, edge);
+        } else {
+            children.push(edge);
+        }
+        *self = Layout::Split(dir, children);
+    }
+
     /// Removes window `target`. A split left with one child becomes that
     /// child. Returns false if `target` is the only window.
     pub fn remove(&mut self, target: usize) -> bool {
@@ -343,5 +364,24 @@ mod tests {
         assert_eq!((r[0].1.h, r[1].1.h), (14, 6));
         l.equalize();
         assert_eq!(l.rects(area())[0].1.h, 10);
+    }
+
+    #[test]
+    fn an_edge_split_spans_the_layout() {
+        let mut l = Layout::default();
+        l.split(1, 2, Dir::Column, false);
+        l.split_edge(3, Dir::Row, false, 0.25);
+        let rects = l.rects(area());
+        let edge = rects.iter().find(|(id, _)| *id == 3).unwrap().1;
+        // 80 columns after the border: a quarter of them, the full height.
+        assert_eq!((edge.x, edge.w, edge.h), (61, 20, 20));
+        l.split_edge(4, Dir::Row, true, 0.25);
+        let left = l
+            .rects(area())
+            .into_iter()
+            .find(|(id, _)| *id == 4)
+            .unwrap()
+            .1;
+        assert_eq!((left.x, left.h), (0, 20));
     }
 }

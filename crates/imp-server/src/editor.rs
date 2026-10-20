@@ -371,6 +371,25 @@ impl Editor {
         id
     }
 
+    /// Opens a window along an edge of the frame, `fraction` of its width
+    /// or height, showing the current buffer and focused.
+    pub fn split_frame(&mut self, dir: Dir, before: bool, fraction: f64) -> usize {
+        self.next_window_id += 1;
+        let id = self.next_window_id;
+        self.windows.insert(
+            id,
+            Window {
+                buffer: self.current,
+                scroll: self.scroll,
+                hscroll: self.hscroll,
+            },
+        );
+        self.layout.split_edge(id, dir, before, fraction);
+        self.buffer.set_mark(&window_mark(id), self.cursor);
+        self.focus_window(id);
+        id
+    }
+
     /// Closes window `id`, focusing a neighbor if it was current. The last
     /// window can't be closed.
     pub fn close_window(&mut self, id: usize) -> bool {

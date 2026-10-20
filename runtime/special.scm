@@ -5,7 +5,7 @@
 ;;; (read-only, q to leave), and text the package replaces whole:
 ;;;
 ;;;   (define-major-mode! 'thing-mode 'special-mode '() #f)
-;;;   (go-to-buffer! (special-buffer "*thing*" 'thing-mode))
+;;;   (display-buffer! (special-buffer "*thing*" 'thing-mode))
 ;;;   (set-buffer-contents! "line one\nline two\n")
 ;;;
 ;;; Faces go on with buffer-highlight-add! (ranges, redrawn with the text)
@@ -70,18 +70,115 @@
     (when (and (special-buffer?) (not *quitting-window*) *alternate-buffer*)
       (set-buffer-local! 'return-to *alternate-buffer*))))
 
-;; Leaves a special buffer for the one it was opened from, keeping it.
+;;; Popup rules: where a generated buffer opens. Without a rule it takes
+;;; over the current window; with one it opens in a window along an edge
+;;; of the frame, and q closes that window:
+;;;
+;;;   (define-popup-rule! "*grep*" 'side 'right 'size 0.3)
+;;;
+;;; The first argument is a buffer name prefix, or a procedure given the
+;;; name. Properties, all optional:
+;;;   'side    'bottom (the default), 'top, 'left or 'right
+;;;   'size    the part of the frame it takes, 0.3 by default
+;;;   'select  #t (the default) to move to it, #f to stay where you were
+;;;   'quit    #t (the default) for q to close the window; #f for q to go
+;;;            back to the previous buffer in it, as without a rule
+;;; A later rule for the same name replaces the earlier; (remove-popup-rule!
+;;; "*grep*") makes it take over the window again. Opening a file from a
+;;; popup (<ret> on a match) opens it in the window the popup came from.
+
+(define *popup-rules* '())    ; (match props), newest first
+(define *popup-windows* '())  ; (window origin-window rule)
+
+(define (popup-props args)
+  (if (or (null? args) (null? (cdr args)))
+      '()
+      (cons (cons (car args) (cadr args)) (popup-props (cddr args)))))
+
+(define (define-popup-rule! match . props)
+  (remove-popup-rule! match)
+  (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*)))
+
+(define (remove-popup-rule! match)
+  (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*)))
+
+(define (popup-prop rule key default)
+  (let ([p (assq key (cadr rule))]) (if p (cdr p) default)))
+
+;; The rule for buffer name `name`, or #f.
+(define (popup-rule name)
+  (list-find (lambda (r) (if (string? (car r)) (starts-with? name (car r)) ((car r) name)))
+             *popup-rules*))
+
+(define (buffer-name-of id) (car (buffer-info id)))
+
+;; The popup windows still open, as (window origin rule).
+(define (live-popup-windows)
+  (set! *popup-windows* (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
+  *popup-windows*)
+
+(define (popup-window-entry window) (assv window (live-popup-windows)))
+
+;; Shows buffer `id` where its popup rule says, or in the current window.
+(define (display-buffer! id)
+  (let ([rule (popup-rule (buffer-name-of id))]
+        [shown (list-find (lambda (w) (eqv? (window-buffer w) id)) (window-list))])
+    (cond
+      [(not rule) (go-to-buffer! id)]
+      [shown (go-to-window! shown)]
+      [(popup-window-entry (current-window)) (go-to-buffer! id)]
+      [else
+       (let* ([origin (current-window)]
+              [side (popup-prop rule 'side 'bottom)]
+              [reuse (list-find (lambda (p) (eq? (popup-prop (caddr p) 'side 'bottom) side)) (live-popup-windows))])
+         (if reuse
+             (go-to-window! (car reuse))
+             (begin
+               (leave-pending-states!)
+               (split-frame! (case side [(top) "above"] [(left) "left"] [(right) "right"] [else "below"])
+                             (exact->inexact (popup-prop rule 'size 0.3)))
+               (set! *popup-windows* (cons (list (current-window) origin rule) *popup-windows*))
+               (after-window-change!)))
+         (go-to-buffer! id)
+         (unless (popup-prop rule 'select #t) (go-to-window! origin)))])))
+
+;; The defaults: search results along the bottom, git and the face list
+;; down the right.
+(define-popup-rule! "*grep*" 'side 'bottom 'size 0.35)
+(define-popup-rule! "*git" 'side 'right 'size 0.5)
+(define-popup-rule! "*faces*" 'side 'right 'size 0.4)
+
+;; Before a file opens from a popup window: back to the window it came from.
+(set! *leave-popup-window!*
+      (lambda ()
+        (let ([entry (popup-window-entry (current-window))])
+          (when entry
+            (go-to-window! (if (memv (cadr entry) (window-list))
+                               (cadr entry)
+                               (list-find (lambda (w) (not (popup-window-entry w))) (window-list))))))))
+
+;; Leaves a special buffer for the one it was opened from, keeping it. In
+;; a popup window, leaving for a buffer that isn't a popup closes the
+;; window instead.
 (define-command! 'quit-window
   (lambda (count)
     (let* ([live? (lambda (id) (and id (memv id (buffer-list)) (not (= id (current-buffer)))))]
            [target (cond [(live? (buffer-local 'return-to)) (buffer-local 'return-to)]
                          [(live? *alternate-buffer*) *alternate-buffer*]
-                         [else #f])])
-      (if target
-          (begin (set! *quitting-window* #t)
-                 (go-to-buffer! target)
-                 (set! *quitting-window* #f))
-          (set-status! "no other buffer")))))
+                         [else #f])]
+           [popup (popup-window-entry (current-window))])
+      (cond
+        [(and popup (popup-prop (caddr popup) 'quit #t)
+              (not (and target (popup-rule (buffer-name-of target)))))
+         (let ([origin (cadr popup)])
+           (close-window! (current-window))
+           (go-to-window! (if (memv origin (window-list)) origin (current-window)))
+           (after-window-change!))]
+        [target
+         (set! *quitting-window* #t)
+         (go-to-buffer! target)
+         (set! *quitting-window* #f)]
+        [else (set-status! "no other buffer")]))))
 
 (define-major-mode! 'special-mode #f '()
   (lambda () (set-buffer-read-only! #t)))

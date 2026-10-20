@@ -219,12 +219,12 @@
     (if (not root)
         (message "not in a git repository")
         (let ([id (git-buffer (git-status-buffer-name root) 'git-status-mode root)])
-          (if (= id (current-buffer)) (git-refresh!) (go-to-buffer! id))))))
+          (if (= id (current-buffer)) (git-refresh!) (display-buffer! id))))))
 
 ;; Back to the status buffer of `root`, refreshed, if there is one.
 (define (git-back-to-status! root)
   (let ([id (list-find (lambda (id) (equal? (car (buffer-info id)) (git-status-buffer-name root))) (buffer-list))])
-    (if id (if (= id (current-buffer)) (git-refresh!) (go-to-buffer! id)) (git-status!))))
+    (if id (if (= id (current-buffer)) (git-refresh!) (display-buffer! id)) (git-status!))))
 
 ;;; Acting on the item at the cursor
 
@@ -412,13 +412,13 @@
   (draw-finish!))
 
 (define (git-log! root)
-  (go-to-buffer! (git-buffer (string-append "*git log " (file-name-of root) "*") 'git-log-mode root))
+  (display-buffer! (git-buffer (string-append "*git log " (file-name-of root) "*") 'git-log-mode root))
   (git-render-log! root)
   (set-cursor! 0))
 
 ;; Shows `text` (a diff or a commit) in buffer `name`.
 (define (git-show-text! root name text)
-  (go-to-buffer! (git-buffer name 'git-diff-mode root))
+  (display-buffer! (git-buffer name 'git-diff-mode root))
   (set-buffer-contents! (if (equal? text "") "no changes\n" text))
   (set-cursor! 0))
 

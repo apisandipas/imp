@@ -87,9 +87,9 @@ fn status_shows_the_repository() {
         assert!(text.contains(want), "{want:?} in\n{text}");
     }
     assert_eq!(s.eval("(major-mode)").unwrap(), "git-status-mode");
-    // The section titles are drawn in their face.
+    // The section titles are drawn, in the window down the right.
     let rows = s.frame().text_rows();
-    assert!(rows.iter().any(|r| r.starts_with("Untracked files")));
+    assert!(rows.iter().any(|r| r.contains("│Untracked files")));
     // It can't be edited by accident.
     feed(&mut s, "ihello<esc>");
     assert_eq!(s.text(), text);

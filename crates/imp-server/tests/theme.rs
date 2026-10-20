@@ -138,6 +138,8 @@ fn describe_face_names_the_faces_under_the_cursor() {
 #[test]
 fn list_faces_draws_each_face_in_itself() {
     let mut s = themed("");
+    // Wide enough for the samples in the window down the right.
+    s.set_size(220, 30);
     s.eval("(run-command 'list-faces)").unwrap();
     assert_eq!(s.eval("(buffer-name)").unwrap(), "\"*faces*\"");
     type_keys(&mut s, "/^syntax.keyword <ret>");

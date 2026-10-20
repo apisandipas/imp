@@ -482,6 +482,18 @@ pub fn register(engine: &mut Engine) {
         };
         editor::with(|e| e.split_window(dir, before) as isize)
     });
+    // A window along an edge of the whole frame ("above", "below", "left"
+    // or "right"), `fraction` of its height or width.
+    engine.register_fn("split-frame!", |place: String, fraction: f64| {
+        use crate::layout::Dir;
+        let (dir, before) = match place.as_str() {
+            "above" => (Dir::Column, true),
+            "left" => (Dir::Row, true),
+            "right" => (Dir::Row, false),
+            _ => (Dir::Column, false),
+        };
+        editor::with(|e| e.split_frame(dir, before, fraction) as isize)
+    });
     engine.register_fn("close-window!", |id: isize| {
         editor::with(|e| e.close_window(clamp(id)))
     });

@@ -3146,7 +3146,11 @@
       (*open-directory* (expand-path path))
       (open-file-buffer! path)))
 
+;; Moves out of a popup window before a file opens; special.scm sets it.
+(define *leave-popup-window!* (lambda () #f))
+
 (define (open-file-buffer! path)
+  (*leave-popup-window!*)
   (let ([r (buffer-open! (expand-path path))])
     (if (string? r)
         (begin (set-status! r) #f)
