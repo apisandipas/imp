@@ -96,6 +96,16 @@ fn completion_opens_as_you_type_in_code_but_not_prose() {
         menu(&mut s)
     );
     type_keys(&mut s, "<C-y><esc>");
+    // As you type, only the words starting with what's typed stay.
+    type_keys(&mut s, "o// frotz fro");
+    assert!(
+        pump_until(&mut s, |s| menu(s).len() == 2),
+        "{:?}",
+        menu(&mut s)
+    );
+    type_keys(&mut s, "b");
+    assert_eq!(menu(&mut s), ["frobnicate"]);
+    type_keys(&mut s, "<C-e><esc>");
     // Typing a comment's // doesn't list the root directory.
     type_keys(&mut s, "o// ");
     assert!(!pump_until(&mut s, |s| s.eval("*menu-open*").unwrap() == "#true"));

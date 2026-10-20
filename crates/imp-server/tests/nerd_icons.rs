@@ -74,3 +74,26 @@ fn pickers_and_the_completion_menu_get_icons() {
     let rows = s.frame().text_rows().join("\n");
     assert!(rows.contains(&format!("{FOLDER} src/")), "{rows}");
 }
+
+#[test]
+fn dired_shows_an_icon_before_each_name() {
+    let dir = repo("nerd-dired");
+    let mut s = server("");
+    s.set_size(100, 10);
+    s.eval("(use-package! 'nerd-icons)").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", dir.display()));
+    let rows = s.frame().text_rows();
+    assert!(rows[0].contains(&format!("{FOLDER} src/")), "{rows:?}");
+    assert!(rows[1].contains(&format!("{RUST} main.rs")), "{rows:?}");
+    // A line typed in gets its icon, lined up with the others'.
+    type_keys(&mut s, "Golib.rs<esc>");
+    let rows = s.frame().text_rows();
+    let at = |row: &str| row.find(RUST).map(|i| row[..i].chars().count());
+    assert!(at(&rows[2]).is_some(), "{rows:?}");
+    assert_eq!(at(&rows[2]), at(&rows[1]), "{rows:?}");
+    // Without the details, just the icons.
+    type_keys(&mut s, "(");
+    let rows = s.frame().text_rows();
+    assert!(rows[1].contains(&format!("{RUST} main.rs")), "{rows:?}");
+    assert!(!rows[1].contains("rw"), "{rows:?}");
+}

@@ -8,7 +8,8 @@
 ;;; switch-buffer and the other pickers get an icon before each candidate
 ;;; (a file's by its type, a buffer's by its mode, a command's...); the
 ;;; insert-mode completion menu gets the language server's kind of each
-;;; candidate (function, variable, class...) and file and folder icons.
+;;; candidate (function, variable, class...) and file and folder icons;
+;;; dired gets each entry's icon before its name.
 ;;;
 ;;; The icons are in Nerd Fonts' private-use characters, so the font
 ;;; needs them: a "Nerd Font Mono" (set-option! 'font "VictorMono Nerd
@@ -124,6 +125,10 @@
                        (nerd-icon 'lsp-kind 1)))]
           [(scheme) (nerd-icon 'category 'symbol)]
           [else (nerd-icon 'lsp-kind 1)])))
+
+(set! *dired-icon* nerd-file-icon)
+(for-each (lambda (id) (with-buffer id (lambda () (when (eq? (major-mode) 'dired-mode) (dired-show-details!)))))
+          (buffer-list))
 
 ;;; The status line
 

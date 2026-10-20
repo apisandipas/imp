@@ -1081,6 +1081,7 @@
                          (lambda (result)
                            (done start (completion-candidates result start encoding)
                                  'incomplete (and (hash? result) (jget result "isIncomplete"))
+                                 'fuzzy #t
                                  'on-accept (lambda (item)
                                               (let ([extra (and item (jget item "additionalTextEdits"))])
                                                 (when (and extra (pair? extra))

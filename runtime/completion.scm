@@ -203,9 +203,21 @@
                                (message (string-append "no buffer " name))
                                (go-to-buffer! (car hit)))))))))
 
+(define *all-definitions* '())
+(define *all-definitions-key* #f)  ; the sources they were read from
+
 (define (all-definitions)
-  "Every name defined in the loaded sources, for the describe commands."
-  (apropos ""))
+  "Every name defined in the loaded sources, for the describe commands
+   and completion in Scheme buffers. Read again when a source changes."
+  (let ([key (sources-key)])
+    (unless (equal? key *all-definitions-key*)
+      (set! *all-definitions* (apropos ""))
+      (set! *all-definitions-key* key))
+    *all-definitions*))
+
+;; Built shortly after startup, with the docstrings (help.scm), so the
+;; first describe or Scheme completion doesn't wait for it.
+(run-after! 1500 (lambda () (all-definitions)))
 
 (define-command! 'describe-function
   (lambda (count)

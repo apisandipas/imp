@@ -18,7 +18,8 @@
 ;;; path. While it is open: C-n C-p <tab> <s-tab> <down> <up> move, C-y or
 ;;; <ret> accepts (<ret> only once something is selected in a menu that
 ;;; opened by itself), C-e closes it; other keys type as usual and narrow
-;;; it.
+;;; it: to the candidates that start with what's typed in a menu that
+;;; opened by itself, to fuzzy matches in one you asked for.
 ;;;
 ;;; A source of your own:
 ;;;
@@ -42,6 +43,8 @@
 (define *menu-incomplete* #f)  ; the source has more: ask again as you type
 (define *menu-word-char?* char-word?) ; what the typed part is made of
 (define *menu-on-accept* #f)   ; (lambda (item)) after a candidate goes in
+(define *menu-auto* #f)        ; it opened by itself, as you typed
+(define *menu-fuzzy* #f)       ; the source wants fuzzy matching even then
 (define *complete-timer* #f)
 (define *complete-request* 0)  ; answers to older requests are dropped
 (define *completion-sources* '())  ; (name procedure), tried in order
@@ -59,7 +62,9 @@
    takes optional keywords after that: 'incomplete #t (ask again as more
    is typed), 'word-char? PRED (what the typed part is made of; the menu
    closes on anything else), 'on-accept PROC (called with the chosen
-   candidate's item). `manual?` is #t when asked by a key rather than as
+   candidate's item), 'fuzzy #t (fuzzy matches as you type, even in a
+   menu that opened by itself, where otherwise only the candidates
+   starting with the typed text stay). `manual?` is #t when asked by a key rather than as
    you type. It goes last, or (define-completion-source! name proc
    'before 'words) before another."
   (let* ([others (filter (lambda (s) (not (eq? (car s) name))) *completion-sources*)]
@@ -253,7 +258,11 @@
           (and (> (cursor) *menu-start*) (not (*menu-word-char?* (buffer-char-at (- (cursor) 1))))))
       (close-menu!)
       (let* ([typed (buffer-substring *menu-start* (cursor))]
-             [labels (map car *menu-candidates*)]
+             [prefix (string-downcase typed)]
+             [labels (if (and *menu-auto* (not *menu-fuzzy*))
+                         (filter (lambda (l) (starts-with? (string-downcase l) prefix))
+                                 (map car *menu-candidates*))
+                         (map car *menu-candidates*))]
              [by-label (foldl (lambda (c h) (if (hash-contains? h (car c)) h (hash-insert h (car c) c)))
                               (hash) *menu-candidates*)]
              [hits (fuzzy-filter typed labels 200)])
@@ -364,6 +373,8 @@
                       (set! *menu-incomplete* (done-option options 'incomplete #f))
                       (set! *menu-word-char?* (done-option options 'word-char? char-word?))
                       (set! *menu-on-accept* (done-option options 'on-accept #f))
+                      (set! *menu-fuzzy* (done-option options 'fuzzy #f))
+                      (set! *menu-auto* (if was-open *menu-auto* (not manual?)))
                       (open-menu! candidates start (or manual? selected))
                       (when (and *menu-open* select-last?)
                         (set! *menu-index* (- (length *menu-matches*) 1))

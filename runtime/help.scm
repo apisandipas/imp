@@ -222,11 +222,16 @@
 (define *doc-lines* (hash))
 (define *doc-lines-key* #f)  ; the sources (name . length) they were read from
 
+(define (sources-key)
+  "What the loaded sources are, to tell when one changes: (name . length)
+   for each."
+  (map (lambda (n) (cons n (string-length (or (source-text n) "")))) (source-names)))
+
 (define (doc-lines)
   "A hash of name -> the first line of its documentation, from every
    loaded source, later sources winning (as describe-function finds
    init.scm's redefinition first). Read again when a source changes."
-  (let ([key (map (lambda (n) (cons n (string-length (or (source-text n) "")))) (source-names))])
+  (let ([key (sources-key)])
     (unless (equal? key *doc-lines-key*)
       (set! *doc-lines* (foldl (lambda (name table) (source-doc-lines (source-lines name) table))
                                (hash) (source-names)))
@@ -301,13 +306,14 @@
 
 (define (apropos text)
   "The names defined in the loaded sources that contain `text`, sorted."
-  (let ([hits '()])
+  (let ([hits '()] [seen (hash)])
     (for-each
      (lambda (src)
        (for-each
         (lambda (line)
           (let ([name (defined-name line)])
-            (when (and name (string-contains? name text) (not (member name hits)))
+            (when (and name (not (hash-contains? seen name)) (string-contains? name text))
+              (set! seen (hash-insert seen name #t))
               (set! hits (cons name hits)))))
         (source-lines src)))
      (source-names))

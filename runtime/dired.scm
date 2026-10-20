@@ -146,20 +146,42 @@
              (hash) (buffer-local 'dired-entries)))))
 
 (define (dired-show-details!)
-  "Puts each entry's details beside the line it is on now."
-  (let ([details (buffer-local 'dired-details)])
+  "Puts each entry's details beside the line it is on now, and an icon
+   before each name if *dired-icon* gives one."
+  (let* ([details (buffer-local 'dired-details)]
+         [show? (and details (option 'dired-details))]
+         [by-line (if show?
+                      (foldl (lambda (pair h)
+                               (let ([parts (hash-try-get details (car (cdr pair)))])
+                                 (if parts (hash-insert h (car pair) parts) h)))
+                             (hash)
+                             (if (buffer-modified?)
+                                 (hash->list (dired-survivors))
+                                 (map (lambda (e) (cons (car e) e)) (buffer-local 'dired-entries))))
+                      (hash))]
+         ;; New lines have no details: a blank as wide keeps icons lined up.
+         [blank (let ([some (hash-values->list by-line)])
+                  (if (null? some)
+                      '()
+                      (list (list (make-string (apply + (map (lambda (p) (string-length (car p))) (car some))) #\space) ""))))])
     (set-buffer-local! 'dired-details-version (buffer-version))
     (set-margin!
-     (if (and details (option 'dired-details))
-         (let ([lines (if (buffer-modified?)
-                          (hash->list (dired-survivors))
-                          (map (lambda (e) (cons (car e) e)) (buffer-local 'dired-entries)))])
-           (filter (lambda (x) x)
-                   (map (lambda (pair)
-                          (let ([parts (hash-try-get details (car (cdr pair)))])
-                            (and parts (list (car pair) parts))))
-                        lines)))
-         '()))))
+     (filter (lambda (x) x)
+             (map (lambda (line)
+                    (let* ([parts (or (hash-try-get by-line line) blank)]
+                           [name (trim (line-text line))]
+                           [icon (and (not (equal? name "")) (*dired-icon* name))]
+                           [parts (if icon
+                                      (append parts (list (list (string-append (if (null? parts) "" " ") icon)
+                                                                (if (ends-with? name "/") "dired.directory" ""))))
+                                      (if (eq? parts blank) '() parts))])
+                      (and (pair? parts) (list line parts))))
+                  (range 0 (buffer-line-count)))))))
+
+;; (lambda (name) ...) -> an icon (a short string) drawn before entry
+;; `name` (ending in / for a directory), or #f. The nerd-icons package
+;; sets it.
+(define *dired-icon* (lambda (name) #f))
 
 ;; After an edit, in normal mode (not on every key typed in insert mode).
 (add-hook! 'post-command
