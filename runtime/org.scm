@@ -15,7 +15,8 @@
 ;;;
 ;;; SPC o a shows the agenda: TODOs and SCHEDULED/DEADLINE dates from
 ;;; org-agenda-files (empty means every .org file under org-directory).
-;;; SPC o c captures a TODO into org-default-notes-file.
+;;; SPC o c captures: a TODO, a note or a journal entry, from templates
+;;; (see Capture below).
 
 (define-option! 'org-directory "~/org" '())
 (define-option! 'org-agenda-files '() '())
@@ -436,7 +437,7 @@
 (define (org-agenda-file-list)
   (let ([files (option 'org-agenda-files)])
     (if (pair? files)
-        (map expand-path files)
+        (map org-path files)
         (let ([dir (expand-path (option 'org-directory))])
           (if (file-exists? dir)
               (map (lambda (f) (string-append dir "/" f))
@@ -525,13 +526,344 @@
       (when (open-file! (cadr item))
         (set-cursor! (line-start (min (caddr item) (last-line))))))))
 
+;;; Capture
+;;;
+;;; SPC o c asks which template (one template skips the question), then
+;;; opens a *capture* buffer, down the right, with the template filled in
+;;; and the cursor where its %? was, in insert state. C-c C-c (or :w) files
+;;; the entry and closes the window; C-c C-k throws it away; C-c C-w files
+;;; it under a heading you pick instead. An entry left as the template
+;;; made it, with nothing typed, isn't filed.
+;;;
+;;;   (define-capture-template! "t" "Todo" '(file+headline "inbox.org" "Tasks")
+;;;     "* TODO %?\n/Entered on/ %U")
+;;;
+;;; Targets, with paths relative to org-directory ("" for
+;;; org-default-notes-file, which is inbox.org unless set):
+;;;   (file F)                at the end of F
+;;;   (file+headline F H)     at the end of heading H's subtree (made if
+;;;                           missing); the entry's headings go one level
+;;;                           under H
+;;;   (file+datetree F)       under year, month and day headings
+;;; In the template: %? the cursor; %U and %u an inactive timestamp with
+;;; and without the time, %T and %t active ones; %a a link to the line you
+;;; were on; %i the text you had selected; %f that file's name; %^{Prompt}
+;;; asks for a value first; %% a %.
+
+(define *capture-templates* '())  ; (key description target template), in order
+
+(define (define-capture-template! key description target template)
+  (remove-capture-template! key)
+  (set! *capture-templates* (append *capture-templates* (list (list key description target template)))))
+
+(define (remove-capture-template! key)
+  (set! *capture-templates* (filter (lambda (t) (not (equal? (car t) key))) *capture-templates*)))
+
+(define-capture-template! "t" "Todo" '(file+headline "" "Tasks") "* TODO %?\n/Entered on/ %U")
+(define-capture-template! "n" "Note" '(file+headline "" "Notes") "* %? %a\n/Entered on/ %U")
+(define-capture-template! "j" "Journal" '(file+datetree "journal.org") "* %<%H:%M> %?")
+
+;; `path` under org-directory unless it is absolute (or starts with ~);
+;; "" is the default notes file.
+(define (org-path path)
+  (cond [(equal? path "") (org-notes-file)]
+        [(or (starts-with? path "/") (starts-with? path "~")) (expand-path path)]
+        [else (string-append (expand-path (option 'org-directory)) "/" path)]))
+
+;; The time, as (date day time weekday month-name): ("2026-10-19" "Mon"
+;; "14:02" "Monday" "October").
+(define (capture-clock)
+  (let ([parts (split-many (trim (cadr (run-shell "date '+%Y-%m-%d|%a|%H:%M|%A|%B'" ""))) "|")])
+    (if (= (length parts) 5) parts (list "1970-01-01" "Thu" "00:00" "Thursday" "January"))))
+
+;; What a template can refer to, gathered where capture starts.
+(define (capture-context)
+  (list (cons 'clock (capture-clock))
+        (cons 'path (and (buffer-path) (absolute-path (buffer-path))))
+        (cons 'line (+ (current-line) 1))
+        (cons 'region (if (eq? *mode* 'visual)
+                          (let ([r (visual-range)]) (buffer-substring (car r) (cadr r)))
+                          ""))))
+
+(define (context-ref ctx key) (cdr (assq key ctx)))
+
+;; The %^{Prompt} prompts in `template`, in order.
+(define (capture-prompts template)
+  (let loop ([i 0] [acc '()])
+    (let ([at (string-index-from template "%^{" i)])
+      (if (not at)
+          (reverse acc)
+          (let ([close (string-index-from template "}" (+ at 3))])
+            (if close
+                (loop (+ close 1) (cons (substring template (+ at 3) close) acc))
+                (reverse acc)))))))
+
+;; The first index of `needle` in `text` at or after `from`, or #f.
+(define (string-index-from text needle from)
+  (let ([n (string-length text)] [m (string-length needle)])
+    (let loop ([i from])
+      (cond [(> (+ i m) n) #f]
+            [(equal? (substring text i (+ i m)) needle) i]
+            [else (loop (+ i 1))]))))
+
+;; `template` filled in from `ctx`, with `answers` for its prompts in
+;; order: (text cursor), the cursor where %? was (else the end).
+(define (capture-expand template ctx answers)
+  (let* ([clock (context-ref ctx 'clock)]
+         [date (car clock)] [day (cadr clock)] [time (caddr clock)]
+         [path (context-ref ctx 'path)]
+         [n (string-length template)])
+    (let loop ([i 0] [out ""] [cursor #f] [answers answers])
+      (cond
+        [(>= i n) (list out (or cursor (string-length out)))]
+        [(and (equal? (string-ref template i) #\%) (< (+ i 1) n))
+         (let* ([c (string-ref template (+ i 1))]
+                [put (lambda (text) (loop (+ i 2) (string-append out text) cursor answers))])
+           (cond
+             [(equal? c #\?) (loop (+ i 2) out (string-length out) answers)]
+             [(equal? c #\U) (put (string-append "[" date " " day " " time "]"))]
+             [(equal? c #\u) (put (string-append "[" date " " day "]"))]
+             [(equal? c #\T) (put (string-append "<" date " " day " " time ">"))]
+             [(equal? c #\t) (put (string-append "<" date " " day ">"))]
+             [(equal? c #\a) (put (if path
+                                      (string-append "[[file:" (abbreviate-path path) "::"
+                                                     (number->string (context-ref ctx 'line)) "]]")
+                                      ""))]
+             [(equal? c #\i) (put (context-ref ctx 'region))]
+             [(equal? c #\f) (put (if path (file-name-of path) ""))]
+             [(equal? c #\%) (put "%")]
+             [(and (equal? c #\<) (string-index-from template ">" i))
+              ;; %<%H:%M>: the time, in date's format.
+              => (lambda (close)
+                   (loop (+ close 1)
+                         (string-append out (trim (cadr (run-shell (string-append "date " (shell-quote (string-append "+" (substring template (+ i 2) close)))) ""))))
+                         cursor answers))]
+             [(and (equal? c #\^) (string-index-from template "}" i))
+              => (lambda (close)
+                   (loop (+ close 1) (string-append out (if (pair? answers) (car answers) "")) cursor
+                         (if (pair? answers) (cdr answers) '())))]
+             [else (loop (+ i 1) (string-append out "%") cursor answers)]))]
+        [else (loop (+ i 1) (string-append out (string (string-ref template i))) cursor answers)]))))
+
+;; Asks each prompt in turn, then calls `done` with the answers.
+(define (ask-all prompts done)
+  (let loop ([prompts prompts] [acc '()])
+    (if (null? prompts)
+        (done (reverse acc))
+        (ask (string-append (car prompts) ": ") ""
+             (lambda (answer) (loop (cdr prompts) (cons answer acc)))))))
+
+;; Where an entry goes in a file's `lines`: (index text), the text going
+;; before line `index` (the line count for the end). It holds any
+;; headings the target needs that aren't there yet, then `entry` with its
+;; headings moved under the target's.
+(define (capture-placement lines target entry clock)
+  (let* ([lines (list->vector lines)] [count (vector-length lines)]
+         [level-at (lambda (i) (org-level-of (vector-ref lines i)))]
+         ;; The end of the subtree under the heading at `h` (level `level`).
+         [subtree-end (lambda (h level)
+                        (let loop ([i (+ h 1)])
+                          (cond [(>= i count) count]
+                                [(let ([l (level-at i)]) (and l (<= l level))) i]
+                                [else (loop (+ i 1))])))]
+         ;; The heading titled `title` among the children of the region
+         ;; [from, to) at `level`, or #f.
+         [find-child (lambda (from to level title)
+                       (let loop ([i from])
+                         (cond [(>= i to) #f]
+                               [(and (eqv? (level-at i) level)
+                                     (equal? (trim (substring (vector-ref lines i) (+ level 1) (string-length (vector-ref lines i)))) title))
+                                i]
+                               [else (loop (+ i 1))])))]
+         ;; Where a new child titled `title` goes in [from, to): before the
+         ;; first sibling that sorts after it.
+         [sorted-slot (lambda (from to level title)
+                        (let loop ([i from])
+                          (cond [(>= i to) to]
+                                [(and (eqv? (level-at i) level)
+                                      (string<? title (trim (substring (vector-ref lines i) (+ level 1) (string-length (vector-ref lines i))))))
+                                 i]
+                                [else (loop (+ i 1))])))]
+         [stars (lambda (n) (make-string n #\*))]
+         [heading (lambda (level title) (string-append (stars level) " " title "\n"))])
+    (cond
+      [(eq? (car target) 'file+headline)
+       (let ([h (find-child 0 count 1 (caddr target))])
+         (if h
+             (list (subtree-end h 1) (org-demote-entry entry 1))
+             (list count (string-append (heading 1 (caddr target)) (org-demote-entry entry 1)))))]
+      [(eq? (car target) 'heading)
+       ;; Under the heading on line (caddr target), as refiling picks.
+       (let* ([h (min (caddr target) (max 0 (- count 1)))] [level (or (and (< h count) (level-at h)) 0)])
+         (list (if (> level 0) (subtree-end h level) count) (org-demote-entry entry level)))]
+      [(eq? (car target) 'file+datetree)
+       (let* ([date (car clock)]
+              [titles (list (substring date 0 4)
+                            (string-append (substring date 0 7) " " (list-ref clock 4))
+                            (string-append date " " (list-ref clock 3)))])
+         ;; Down the tree as far as it exists; the rest is made in place.
+         (let loop ([level 1] [from 0] [to count] [titles titles])
+           (if (null? titles)
+               (list to (org-demote-entry entry 3))
+               (let ([h (find-child from to level (car titles))])
+                 (if h
+                     (loop (+ level 1) (+ h 1) (subtree-end h level) (cdr titles))
+                     (list (sorted-slot from to level (car titles))
+                           (string-append
+                            (apply string-append
+                                   (let make ([level level] [titles titles])
+                                     (if (null? titles) '()
+                                         (cons (heading level (car titles)) (make (+ level 1) (cdr titles))))))
+                            (org-demote-entry entry 3))))))))]
+      [else (list count (org-demote-entry entry 0))])))
+
+;; `entry` with each heading `by` levels deeper, ending in a line break.
+(define (org-demote-entry entry by)
+  (apply string-append
+         (map (lambda (line)
+                (string-append (if (org-level-of line) (string-append (make-string by #\*) line) line) "\n"))
+              (text-lines entry))))
+
+;; Files `entry` (text ending in a line break) at `target`. A buffer that
+;; has the file gets it (and is saved, if it had no other changes);
+;; otherwise the file is written. Returns the path.
+(define (capture-file! target entry clock)
+  (let* ([path (org-path (cadr target))] [id (buffer-for-path path)])
+    (if id
+        (with-buffer id
+          (lambda ()
+            (let* ([clean? (not (buffer-modified?))]
+                   [lines (text-lines (buffer-substring 0 (buffer-length)))]
+                   [place (capture-placement lines target entry clock)]
+                   [at (car place)])
+              (begin-change!)
+              (if (< at (buffer-line-count))
+                  (if (and (= at (last-line)) (= (line-start at) (buffer-length)))
+                      (buffer-insert! (buffer-length) (cadr place))
+                      (buffer-insert! (line-start at) (cadr place)))
+                  (let ([end (buffer-length)])
+                    (buffer-insert! end (string-append (if (or (= end 0) (ends-with? (buffer-substring 0 end) "\n")) "" "\n")
+                                                       (cadr place)))))
+              (when clean? (save-buffer!)))))
+        (let* ([old (if (file-exists? path) (read-file path) "")]
+               [lines (text-lines old)]
+               [place (capture-placement lines target entry clock)]
+               [before (take lines (car place))]
+               [after (list-tail lines (car place))]
+               [join (lambda (ls) (apply string-append (map (lambda (l) (string-append l "\n")) ls)))])
+          (write-text-file! path (string-append (join before) (cadr place) (join after)))))
+    path))
+
+;; Starts capturing with template `t`.
+(define (capture-with! t)
+  (let ([ctx (capture-context)])
+    (when (eq? *mode* 'visual) (leave-visual!))
+    (ask-all (capture-prompts (cadddr t))
+      (lambda (answers)
+        (let* ([expanded (capture-expand (cadddr t) ctx answers)]
+               [id (buffer-new! "*capture*")])
+          (display-buffer! id)
+          (set-buffer-local! 'mode-line-label "capture")
+          (set-major-mode! 'org-mode)
+          (minor-mode-on! 'org-capture-mode)
+          (set-buffer-local! 'capture (list t ctx (car expanded)))
+          (set-buffer-local! 'write-handler capture-finish!)
+          (buffer-insert! 0 (car expanded))
+          (set-cursor! (cadr expanded))
+          ((enter-insert! 'here) 1)
+          (capture-hint!))))))
+
+;; Where the capture goes and its keys, on the message line.
+(define (capture-hint!)
+  (let ([t (car (buffer-local 'capture))])
+    (message (string-append (cadr t) " → " (capture-target-label (caddr t))
+                            ": C-c C-c to file, C-c C-k to cancel, C-c C-w to refile"))))
+
+(add-hook! 'buffer-enter (lambda () (when (buffer-local 'capture) (capture-hint!))))
+
+(define (capture-target-label target)
+  (string-append (file-name-of (org-path (cadr target)))
+                 (if (eq? (car target) 'file+headline) (string-append " › " (caddr target)) "")))
+
 (define (org-capture!)
-  (ask "Capture TODO: " ""
-       (lambda (text)
-         (let* ([file (org-notes-file)] [old (if (file-exists? file) (read-file file) "")])
-           (write-text-file! file (string-append old (if (or (equal? old "") (ends-with? old "\n")) "" "\n")
-                                                 "* TODO " text "\n"))
-           (message (string-append "captured to " file))))))
+  (cond
+    [(list-find (lambda (id) (equal? (car (buffer-info id)) "*capture*")) (buffer-list))
+     => (lambda (id) (display-buffer! id) (message "a capture is in progress: C-c C-c files it, C-c C-k cancels"))]
+    [(null? *capture-templates*) (message "no capture templates (define-capture-template!)")]
+    [(null? (cdr *capture-templates*)) (capture-with! (car *capture-templates*))]
+    [else (menu! "Capture"
+                 (map (lambda (t) (list (car t) (cadr t) (lambda () (capture-with! t))))
+                      *capture-templates*))]))
+
+;; Closes the capture buffer and its window.
+(define (capture-close!)
+  (let ([id (current-buffer)])
+    (when (memq *mode* '(insert replace)) (leave-insert!))
+    (set-buffer-unmodified!)
+    (run-command 'quit-window)
+    (when (memv id (buffer-list)) (kill-buffer! id))))
+
+;; The entry as typed, or #f when nothing was added to the template.
+(define (capture-entry)
+  (let ([text (buffer-substring 0 (buffer-length))] [made (caddr (buffer-local 'capture))])
+    (and (not (equal? (trim text) (trim made)))
+         (not (equal? (trim text) ""))
+         (trim-end text))))
+
+;; Files the capture at `target` (its template's, unless refiling).
+(define (capture-finish-at! target)
+  (let ([entry (capture-entry)] [clock (context-ref (cadr (buffer-local 'capture)) 'clock)])
+    (capture-close!)
+    (if entry
+        (let ([path (capture-file! target entry clock)])
+          (message (string-append "captured to " (abbreviate-path path)
+                                  (cond [(eq? (car target) 'file+headline) (string-append " › " (caddr target))]
+                                        [(eq? (car target) 'heading) (string-append " › " (cadddr target))]
+                                        [else ""]))))
+        (message "nothing captured"))))
+
+(define (capture-finish!)
+  (when (buffer-local 'capture) (capture-finish-at! (caddr (car (buffer-local 'capture))))))
+
+(define (capture-abort!)
+  (when (buffer-local 'capture) (capture-close!) (message "capture cancelled")))
+
+;; Every heading in the agenda files, as ("file › outline path" path line).
+(define (org-refile-targets)
+  (apply append
+         (map (lambda (path)
+                (let loop ([lines (if (file-exists? path) (text-lines (read-file path)) '())] [n 0] [stack '()] [acc '()])
+                  (if (null? lines)
+                      (reverse acc)
+                      (let ([level (org-level-of (car lines))])
+                        (if level
+                            (let* ([title (trim (substring (car lines) (+ level 1) (string-length (car lines))))]
+                                   [stack (cons (cons level title) (filter (lambda (s) (< (car s) level)) stack))])
+                              (loop (cdr lines) (+ n 1) stack
+                                    (cons (list (string-append (file-name-of path) " › "
+                                                               (string-join (reverse (map cdr stack)) " › "))
+                                                path n)
+                                          acc)))
+                            (loop (cdr lines) (+ n 1) stack acc))))))
+              (org-agenda-file-list))))
+
+(define (capture-refile!)
+  (let ([targets (org-refile-targets)])
+    (if (null? targets)
+        (message "no headings in the agenda files to refile under")
+        (completing-read "Refile under: " (map car targets)
+                         (lambda (choice)
+                           (let ([hit (assoc choice targets)])
+                             (when hit
+                               (capture-finish-at! (list 'heading (cadr hit) (caddr hit) (last (split-many (car hit) " › ")))))))))))
+
+(define-minor-mode! 'org-capture-mode #f #f)
+(for-each (lambda (state)
+            (define-mode-key! 'org-capture-mode state "C-cC-c" (lambda args (capture-finish!)))
+            (define-mode-key! 'org-capture-mode state "C-cC-k" (lambda args (capture-abort!)))
+            (define-mode-key! 'org-capture-mode state "C-cC-w" (lambda args (capture-refile!))))
+          '(normal insert))
+(define-popup-rule! "*capture" 'side 'right 'size 0.33)
 
 ;;; Modes and keys
 

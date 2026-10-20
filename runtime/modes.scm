@@ -82,9 +82,12 @@
   (show-major-mode!)
   (run-hooks 'major-mode mode))
 
+;; The status line shows the major mode's name, or the buffer's
+;; mode-line-label when it has one (org capture's keys).
 (define (show-major-mode!)
   (let* ([name (symbol->string (major-mode))]
-         [short (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name)])
+         [short (or (buffer-local 'mode-line-label)
+                    (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name))])
     (set-mode-line-extra! short)
     ;; %{major} in the status line, per buffer.
     (set-status-value! "major" short #f)))

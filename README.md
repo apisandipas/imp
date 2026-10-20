@@ -100,7 +100,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   `rename-file`, `copy-file`) act on the current buffer's file unless you
   name another; deleting asks first, and the buffer follows a rename.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
-  Org outlines, TODOs, tables, agenda and capture, an editable file browser
+  Org outlines, TODOs, tables, agenda and capture (templates, a capture
+  window, `C-c C-c` to file, refiling), an editable file browser
   (`:Ex`, with permissions, size and time beside each name; `(` hides
   them), projects with search into a quickfix list, and terminals
   (`:terminal`). Search results open along the bottom and git down the

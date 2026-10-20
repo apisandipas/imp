@@ -3807,8 +3807,44 @@
     (set! *insert-return* #f))
   (update-visual-highlight!))
 
+;; A mode's key sequence that starts with a control or meta key, as
+;; Emacs's C-c C-c, in normal, visual or insert state: the keys so far.
+(define *local-prefix* #f)
+
+(define (local-prefix-state)
+  (cond [(typing-mode?) 'insert] [(eq? *mode* 'visual) 'visual] [else 'normal]))
+
+;; Whether `keys` begin a longer binding in the buffer's modes.
+(define (local-prefix? state keys)
+  (and (or (starts-with? keys "C-") (starts-with? keys "M-"))
+       (let ([longer? (lambda (k) (and (> (string-length k) (string-length keys)) (starts-with? k keys)))])
+         (let loop ([maps (*local-keymaps* state)])
+           (cond [(null? maps) #f]
+                 [(pair? (filter longer? (hash-keys->list (keymap (car maps))))) #t]
+                 [else (loop (cdr maps))])))))
+
+;; Runs a mode's binding for a whole sequence: insert state's take no
+;; count, as in insert-key!.
+(define (run-local-binding! state proc)
+  (if (eq? state 'insert) (proc) (proc 1)))
+
+(define (local-prefix-key! key)
+  (let* ([state (local-prefix-state)] [keys (string-append *local-prefix* key)])
+    (set! *local-prefix* #f)
+    (cond [(member key '("<esc>" "C-g")) (message "")]
+          [(local-key-proc state keys) => (lambda (proc) (message "") (run-local-binding! state proc))]
+          [(local-prefix? state keys) (set! *local-prefix* keys) (message (string-append keys "-"))]
+          [else (message (string-append keys " is undefined"))])))
+
 (define (handle-key! key)
   (cond
+    [*local-prefix* (local-prefix-key! key)]
+    [(and (memq *mode* '(normal visual insert replace))
+          (not *operator*) (not *prefix*) (equal? *count* "")
+          (not (local-key-proc (local-prefix-state) key))
+          (local-prefix? (local-prefix-state) key))
+     (set! *local-prefix* key)
+     (message (string-append key "-"))]
     [(hash-try-get *extra-states* *mode*) => (lambda (s) ((caddr s) key))]
     [(typing-mode?) (insert-mode-key! key)]
     [(eq? *mode* 'cmdline) (cmdline-key! key)]

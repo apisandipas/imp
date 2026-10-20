@@ -258,12 +258,10 @@ fn agenda_and_capture() {
     type_keys(&mut s, "<ret>");
     assert!(s.eval("(buffer-name)").unwrap().contains("work.org"));
     assert_eq!(s.eval("(current-line)").unwrap(), "4");
-    // Capture appends to the notes file.
-    type_keys(&mut s, ":OrgCapture<ret>Buy milk<ret>");
-    assert_eq!(
-        std::fs::read_to_string(dir.join("inbox.org")).unwrap(),
-        "* TODO Buy milk\n"
-    );
+    // Capture files into the notes file (tests/capture.rs has the rest).
+    type_keys(&mut s, ":OrgCapture<ret>tBuy milk<C-c><C-c>");
+    let inbox = std::fs::read_to_string(dir.join("inbox.org")).unwrap();
+    assert!(inbox.starts_with("* Tasks\n** TODO Buy milk\n"), "{inbox}");
 }
 
 #[test]

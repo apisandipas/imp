@@ -341,7 +341,20 @@ needed. Details, and what each one leaves out, are in
   - outline cycling on folds, TODO keywords, checkboxes with cookies;
   - links, aligned tables, new headings with `M-<ret>`, and promote,
     demote and move subtrees;
-  - an agenda (`SPC o a`) and capture (`SPC o c`).
+  - an agenda (`SPC o a`) and capture (`SPC o c`): templates
+    (`define-capture-template!`, Org's targets `file`, `file+headline`,
+    `file+datetree` and its `%` escapes), a `*capture*` buffer in
+    org-mode down the right (popup rule), `C-c C-c`/`:w` to file,
+    `C-c C-k` to cancel, `C-c C-w` to refile under any agenda-file
+    heading. An entry still as the template made it isn't filed. Filing
+    goes through the file's buffer when it is open (saved if it had no
+    other changes), else straight to the file. Relative
+    `org-agenda-files` are under `org-directory`, as in Emacs.
+  - Mode key sequences that start with a control or meta key (`C-c C-c`)
+    work in normal, visual and insert state (`*local-prefix*` in
+    vim.scm): when a key begins a longer binding in the buffer's mode
+    keymaps, imp waits for the rest. Only such keys, so Vim's `g`/`z`
+    prefixes and insert typing are untouched.
 - **File browser** (`dired.scm`, `:Ex`, `SPC f d`, `:e DIR`): an oil-style
   editable listing; `:w` shows the renames, deletions and creations and
   asks first.
