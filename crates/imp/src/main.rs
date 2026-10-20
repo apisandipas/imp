@@ -485,7 +485,14 @@ fn draw(out: &mut impl Write, frame: &Frame, rows: Option<&[u16]>) -> io::Result
         }
         queue!(out, MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?;
         for span in spans {
-            set_style(out, span.style)?;
+            let mut style = span.style;
+            // With terminal-background off, the theme's background is left
+            // to the terminal.
+            if frame.appearance.clear_terminal_background && style.bg == frame.appearance.background
+            {
+                style.bg = None;
+            }
+            set_style(out, style)?;
             queue!(out, Print(&span.text))?;
         }
         queue!(out, SetAttribute(Attribute::Reset), ResetColor)?;

@@ -57,6 +57,12 @@ pub struct Renderer {
     /// Cell width and height in pixels.
     pub cell: (f32, f32),
     rows: Vec<Option<RowCache>>,
+    /// The theme's background: cells in it aren't drawn, so the clear
+    /// color (with `opacity`) shows, padding included.
+    background: (u8, u8, u8),
+    opacity: f32,
+    /// Empty pixels around the grid.
+    pub padding: f32,
 }
 
 const SHADER: &str = r#"
@@ -193,6 +199,9 @@ impl Renderer {
             metrics,
             cell: (0.0, metrics.line_height),
             rows: Vec::new(),
+            background: DEFAULT_BG,
+            opacity: 1.0,
+            padding: 0.0,
         };
         renderer.cell.0 = renderer.measure_cell();
         renderer
@@ -238,11 +247,50 @@ impl Renderer {
         self.rows.clear();
     }
 
-    /// How many cells fit in `width` x `height` pixels.
-    pub fn grid(&self, width: u32, height: u32) -> (u16, u16) {
+    /// Changes the font family ("monospace" for the system's).
+    pub fn set_font_family(&mut self, family: &str) {
+        if self.family != family {
+            self.family = family.to_string();
+            self.cell = (self.measure_cell(), self.metrics.line_height);
+            self.rows.clear();
+        }
+    }
+
+    /// Sets the theme's background (`None` for the default), how opaque
+    /// it is (0 to 1), and the padding in pixels.
+    pub fn set_background(&mut self, background: Option<Color>, opacity: f32, padding: f32) {
+        let background = background.map_or(DEFAULT_BG, rgb);
+        if background != self.background {
+            self.background = background;
+            self.rows.clear();
+        }
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self.padding = padding.max(0.0);
+    }
+
+    /// The window size in pixels for a grid of `cols` x `rows`.
+    pub fn size_for(&self, (cols, rows): (u16, u16)) -> (u32, u32) {
         (
-            ((width as f32 / self.cell.0) as u16).max(1),
-            ((height as f32 / self.cell.1) as u16).max(1),
+            (cols as f32 * self.cell.0 + 2.0 * self.padding).ceil() as u32,
+            (rows as f32 * self.cell.1 + 2.0 * self.padding).ceil() as u32,
+        )
+    }
+
+    /// How many cells fit in `width` x `height` pixels, inside the padding.
+    pub fn grid(&self, width: u32, height: u32) -> (u16, u16) {
+        let inner = |px: u32| (px as f32 - 2.0 * self.padding).max(0.0);
+        (
+            ((inner(width) / self.cell.0) as u16).max(1),
+            ((inner(height) / self.cell.1) as u16).max(1),
+        )
+    }
+
+    /// The cell under pixel (`x`, `y`).
+    pub fn cell_at(&self, x: f64, y: f64) -> (u16, u16) {
+        let pad = self.padding as f64;
+        (
+            ((x - pad) / self.cell.0 as f64).max(0.0) as u16,
+            ((y - pad) / self.cell.1 as f64).max(0.0) as u16,
         )
     }
 
@@ -261,11 +309,17 @@ impl Renderer {
             }
         }
 
+        let pad = self.padding;
         let quads: Vec<Quad> = self
             .rows
             .iter()
             .flatten()
             .flat_map(|r| r.quads.iter().copied())
+            .map(|mut q| {
+                q.rect[0] += pad;
+                q.rect[1] += pad;
+                q
+            })
             .collect();
         if quads.len() as u64 * 32 > self.quads.size() {
             self.quads = quad_buffer(&self.device, quads.len() * 2);
@@ -284,11 +338,11 @@ impl Renderer {
         self.viewport
             .update(&self.queue, Resolution { width, height });
         let areas = self.rows.iter().enumerate().flat_map(|(i, row)| {
-            let top = i as f32 * self.cell.1;
+            let top = i as f32 * self.cell.1 + pad;
             row.iter().flat_map(move |r| {
                 r.texts.iter().map(move |(left, buffer)| TextArea {
                     buffer,
-                    left: *left,
+                    left: *left + pad,
                     top,
                     scale: 1.0,
                     bounds: TextBounds {
@@ -316,7 +370,8 @@ impl Renderer {
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
-            let bg = linear(DEFAULT_BG);
+            // Premultiplied: the surface is, when it can be see-through.
+            let (bg, a) = (linear(self.background), self.opacity);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -325,10 +380,10 @@ impl Renderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
-                            a: 1.0,
+                            r: (bg[0] * a) as f64,
+                            g: (bg[1] * a) as f64,
+                            b: (bg[2] * a) as f64,
+                            a: a as f64,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -363,7 +418,7 @@ impl Renderer {
             let width = text.width();
             let (fg, bg) = colors(style);
             let left = col as f32 * cw;
-            if bg != DEFAULT_BG || style.reverse {
+            if bg != self.background || style.reverse {
                 quads.push(Quad {
                     rect: [left, top, width as f32 * cw, ch],
                     color: rgba(bg),

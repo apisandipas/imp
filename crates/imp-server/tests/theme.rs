@@ -158,3 +158,29 @@ fn list_faces_draws_each_face_in_itself() {
         "{text}"
     );
 }
+
+#[test]
+fn window_options_reach_the_frame() {
+    let mut s = themed("hello\n");
+    let a = s.frame().appearance;
+    assert_eq!(a.background, Some(Color::Rgb(0x28, 0x2c, 0x34)));
+    assert_eq!((a.padding, a.transparency, a.font_size), (0, 0, 0));
+    s.eval(
+        r#"(set-option! 'font "Victor Mono")
+           (set-option! 'font-size 16)
+           (set-option! 'window-padding 40)
+           (set-option! 'background-opacity 0.9)
+           (set-option! 'terminal-background #f)"#,
+    )
+    .unwrap();
+    let a = s.frame().appearance;
+    assert_eq!(a.font, "Victor Mono");
+    assert_eq!((a.font_size, a.padding, a.transparency), (16, 40, 10));
+    assert!(a.clear_terminal_background);
+    assert_eq!(s.eval("(option 'window-padding)").unwrap(), "40");
+    // :set works too, and bad values are refused.
+    type_keys(&mut s, ":set window-padding=8<ret>");
+    assert_eq!(s.frame().appearance.padding, 8);
+    assert!(s.eval("(set-option! 'background-opacity 2)").is_err());
+    assert_eq!(s.frame().appearance.transparency, 10);
+}

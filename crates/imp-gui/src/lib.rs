@@ -10,8 +10,9 @@
 //!   imp --screenshot OUT.png [--grid 100x30] [--keys KEYS] [FILE...]
 //!                                 draw off-screen and save a PNG
 //!
-//! `--font FAMILY` (default monospace), `--font-file PATH` (repeatable),
-//! `--font-size PX` (default 15), `--scale F` (multiplies the size; default
+//! `--font FAMILY` (default the font option, else monospace),
+//! `--font-file PATH` (repeatable), `--font-size PX` (default the font-size
+//! option, else 15), `--scale F` (multiplies the size; default
 //! $IMP_GUI_SCALE or 1, on top of the display's own scale factor),
 //! `--name N` / `--socket PATH` as for the daemon. In the window, C-= and
 //! C-- zoom and C-0 resets.
@@ -25,7 +26,7 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
-use imp_core::{protocol, Buffer, ClientMsg, Frame, ServerMsg};
+use imp_core::{protocol, Appearance, Buffer, ClientMsg, Frame, ServerMsg};
 use render::{Font, Renderer};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
@@ -42,7 +43,7 @@ struct Args {
     keys: String,
     font: Option<String>,
     font_files: Vec<PathBuf>,
-    font_size: f32,
+    font_size: Option<f32>,
     scale: f32,
     files: Vec<PathBuf>,
 }
@@ -50,7 +51,6 @@ struct Args {
 fn parse_args(argv: Vec<std::ffi::OsString>) -> Result<Args, String> {
     let mut args = Args {
         grid: (100, 30),
-        font_size: 15.0,
         scale: std::env::var("IMP_GUI_SCALE")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -73,9 +73,11 @@ fn parse_args(argv: Vec<std::ffi::OsString>) -> Result<Args, String> {
             Some("--font") => args.font = Some(value("--font")?),
             Some("--font-file") => args.font_files.push(value("--font-file")?.into()),
             Some("--font-size") => {
-                args.font_size = value("--font-size")?
-                    .parse()
-                    .map_err(|_| "bad --font-size")?
+                args.font_size = Some(
+                    value("--font-size")?
+                        .parse()
+                        .map_err(|_| "bad --font-size")?,
+                )
             }
             Some("--scale") => args.scale = value("--scale")?.parse().map_err(|_| "bad --scale")?,
             Some("--grid") => {
@@ -136,12 +138,30 @@ pub fn display_available() -> bool {
     }
 }
 
-fn font(args: &Args) -> Font {
+/// The font: --font and --font-size, else the font and font-size
+/// options, else the system's monospace at 15 pixels.
+fn font(args: &Args, appearance: &Appearance) -> Font {
+    let family = args.font.clone().unwrap_or_else(|| {
+        if appearance.font.is_empty() {
+            "monospace".into()
+        } else {
+            appearance.font.clone()
+        }
+    });
+    let size = args.font_size.unwrap_or(match appearance.font_size {
+        0 => 15.0,
+        n => n as f32,
+    });
     Font {
-        family: args.font.clone().unwrap_or_else(|| "monospace".into()),
+        family,
         files: args.font_files.clone(),
-        size: args.font_size * args.scale,
+        size: size * args.scale,
     }
+}
+
+/// How opaque the theme's background is, 0 to 1.
+fn opacity(appearance: &Appearance) -> f32 {
+    1.0 - appearance.transparency as f32 / 100.0
 }
 
 /// A connection to an editor: messages to it, and a callback-driven
@@ -283,11 +303,14 @@ fn screenshot(args: &Args) -> Result<(), String> {
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let (_, device, queue) = pollster::block_on(device(&instance, None))?;
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-    let mut renderer = Renderer::new(device, queue, format, &font(args));
-    let (width, height) = (
-        (cols as f32 * renderer.cell.0).ceil() as u32,
-        (rows as f32 * renderer.cell.1).ceil() as u32,
+    let appearance = &screen.appearance;
+    let mut renderer = Renderer::new(device, queue, format, &font(args, appearance));
+    renderer.set_background(
+        appearance.background,
+        opacity(appearance),
+        appearance.padding as f32 * args.scale,
     );
+    let (width, height) = renderer.size_for((cols, rows));
     let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("screenshot"),
         size: wgpu::Extent3d {
@@ -361,7 +384,15 @@ fn window(args: &Args) -> Result<(), Error> {
     })?;
     let mut app = App {
         conn,
-        font: font(args),
+        args: Args {
+            font: args.font.clone(),
+            font_files: args.font_files.clone(),
+            font_size: args.font_size,
+            scale: args.scale,
+            ..Args::default()
+        },
+        font: font(args, &Appearance::default()),
+        appearance: Appearance::default(),
         screen: Frame::default(),
         state: None,
         zoom: 1.0,
@@ -378,6 +409,8 @@ fn window(args: &Args) -> Result<(), Error> {
 struct WindowState {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    /// What the surface can do with alpha, to pick from as opacity changes.
+    alpha_modes: Vec<wgpu::CompositeAlphaMode>,
     renderer: Renderer,
     grid: (u16, u16),
     // Dropped last: the surface refers to it.
@@ -386,7 +419,11 @@ struct WindowState {
 
 struct App {
     conn: Connection,
+    /// The command line's font settings, which win over the options.
+    args: Args,
     font: Font,
+    /// The appearance last applied.
+    appearance: Appearance,
     screen: Frame,
     state: Option<WindowState>,
     /// C-= and C-- change this; the font size is multiplied by it.
@@ -408,7 +445,9 @@ impl App {
     fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
         let attrs = Window::default_attributes()
             .with_title("imp")
-            .with_inner_size(winit::dpi::LogicalSize::new(1000.0, 650.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(1000.0, 650.0))
+            // For background-opacity; opaque until it is below 1.
+            .with_transparent(true);
         // The app id (Wayland) and class (X11) that match imp.desktop, so
         // docks and window lists show its icon.
         #[cfg(all(unix, not(target_os = "macos")))]
@@ -442,7 +481,7 @@ impl App {
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode: alpha_mode(&caps.alpha_modes, 1.0),
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -462,11 +501,34 @@ impl App {
         self.state = Some(WindowState {
             surface,
             config,
+            alpha_modes: caps.alpha_modes,
             renderer,
             grid,
             window,
         });
         Ok(())
+    }
+
+    /// Applies the screen's appearance if it changed: font, padding,
+    /// background opacity.
+    fn apply_appearance(&mut self) {
+        if self.screen.appearance == self.appearance {
+            return;
+        }
+        self.appearance = self.screen.appearance.clone();
+        self.font = font(&self.args, &self.appearance);
+        let Some(state) = &mut self.state else { return };
+        let scale = state.window.scale_factor() as f32;
+        let opacity = opacity(&self.appearance);
+        state.renderer.set_font_family(&self.font.family);
+        state.renderer.set_background(
+            self.appearance.background,
+            opacity,
+            self.appearance.padding as f32 * scale * self.args.scale,
+        );
+        // set_zoom reconfigures the surface with it.
+        state.config.alpha_mode = alpha_mode(&state.alpha_modes, opacity);
+        self.set_zoom(self.zoom);
     }
 
     /// Sets the zoom (1 is the starting size) and redraws at the new size.
@@ -477,6 +539,11 @@ impl App {
         state
             .renderer
             .set_font_size(self.font.size * self.zoom * scale);
+        state.renderer.set_background(
+            self.appearance.background,
+            opacity(&self.appearance),
+            self.appearance.padding as f32 * scale * self.args.scale,
+        );
         // A new cell size: the grid changes even though the window doesn't.
         state.grid = (0, 0);
         let (w, h) = (state.config.width, state.config.height);
@@ -551,6 +618,7 @@ impl ApplicationHandler<ServerMsg> for App {
             event_loop.exit();
             return;
         }
+        self.apply_appearance();
         if let Some(state) = &self.state {
             state.window.request_redraw();
         }
@@ -583,11 +651,7 @@ impl ApplicationHandler<ServerMsg> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let Some(state) = &self.state else { return };
-                let (cw, ch) = state.renderer.cell;
-                let cell = (
-                    (position.x as f32 / cw).max(0.0) as u16,
-                    (position.y as f32 / ch).max(0.0) as u16,
-                );
+                let cell = state.renderer.cell_at(position.x, position.y);
                 if cell != self.mouse {
                     self.mouse = cell;
                     if let Some(button) = self.pressed {
@@ -633,5 +697,49 @@ impl ApplicationHandler<ServerMsg> for App {
             _ => {}
         }
         let _ = event_loop;
+    }
+}
+
+/// The surface's alpha mode: see-through (premultiplied, as the renderer
+/// draws) when `opacity` is below 1 and the surface can be, else opaque.
+fn alpha_mode(modes: &[wgpu::CompositeAlphaMode], opacity: f32) -> wgpu::CompositeAlphaMode {
+    use wgpu::CompositeAlphaMode::{Opaque, PreMultiplied};
+    let want = if opacity < 1.0 { PreMultiplied } else { Opaque };
+    if modes.contains(&want) {
+        want
+    } else {
+        modes[0]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wgpu::CompositeAlphaMode::{Inherit, Opaque, PreMultiplied};
+
+    #[test]
+    fn see_through_only_below_full_opacity_and_where_it_can_be() {
+        assert_eq!(alpha_mode(&[Opaque, PreMultiplied], 1.0), Opaque);
+        assert_eq!(alpha_mode(&[Opaque, PreMultiplied], 0.9), PreMultiplied);
+        assert_eq!(alpha_mode(&[Opaque], 0.9), Opaque);
+        assert_eq!(alpha_mode(&[Inherit], 1.0), Inherit);
+    }
+
+    #[test]
+    fn the_command_line_font_wins_over_the_options() {
+        let options = Appearance {
+            font: "Victor Mono".into(),
+            font_size: 18,
+            ..Appearance::default()
+        };
+        let mut args = parse_args(vec![]).unwrap();
+        args.scale = 1.0;
+        let f = font(&args, &options);
+        assert_eq!((f.family.as_str(), f.size), ("Victor Mono", 18.0));
+        assert_eq!(font(&args, &Appearance::default()).family, "monospace");
+        args.font = Some("Iosevka".into());
+        args.font_size = Some(12.0);
+        let f = font(&args, &options);
+        assert_eq!((f.family.as_str(), f.size), ("Iosevka", 12.0));
     }
 }

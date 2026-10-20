@@ -83,6 +83,30 @@ pub struct Frame {
     /// Screen position (column, row) of the cursor.
     pub cursor: (u16, u16),
     pub cursor_shape: CursorShape,
+    /// How clients should present it; a change sends a whole frame.
+    #[serde(default)]
+    pub appearance: Appearance,
+}
+
+/// Settings for the client rather than the grid, set from Scheme (the
+/// font, padding and background-opacity options).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Appearance {
+    /// The background of the theme's "normal" face, which opacity and
+    /// padding apply to; `None` without one.
+    pub background: Option<Color>,
+    /// For window clients: a font family ("" for theirs) and size in
+    /// logical pixels (0 for theirs).
+    pub font: String,
+    pub font_size: u16,
+    /// For window clients: empty space around the grid, logical pixels.
+    pub padding: u16,
+    /// For window clients: how transparent `background` is, in percent
+    /// (0 is opaque).
+    pub transparency: u8,
+    /// For terminals: leave cells in `background` unpainted, so the
+    /// terminal's own background shows.
+    pub clear_terminal_background: bool,
 }
 
 /// One screen row, as runs of text that share a style.
@@ -220,7 +244,7 @@ impl Frame {
     /// What changed from `self` to `next`, or `None` if the screen size
     /// changed and the whole frame should be sent.
     pub fn diff(&self, next: &Frame) -> Option<Patch> {
-        if self.rows.len() != next.rows.len() {
+        if self.rows.len() != next.rows.len() || self.appearance != next.appearance {
             return None;
         }
         let rows = self
@@ -263,6 +287,10 @@ mod tests {
             )]],
             cursor: (1, 2),
             cursor_shape: CursorShape::Bar,
+            appearance: Appearance {
+                padding: 40,
+                ..Appearance::default()
+            },
         });
         let line = to_line(&msg);
         assert!(!line.contains('\n'));
@@ -286,6 +314,10 @@ mod tests {
         patch.apply(&mut c);
         assert_eq!(c, b);
         assert!(a.diff(&Frame::default()).is_none());
+        // A new appearance needs the whole frame.
+        let mut d = a.clone();
+        d.appearance.padding = 10;
+        assert!(a.diff(&d).is_none());
     }
 
     #[test]

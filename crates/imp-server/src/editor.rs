@@ -96,6 +96,8 @@ pub struct Editor {
     pub layers: Vec<Layer>,
     /// Each buffer's own highlight layers, drawn wherever it is shown.
     pub buffer_layers: HashMap<usize, Vec<Layer>>,
+    /// Font, padding and opacity for clients; frame() adds the background.
+    pub appearance: imp_core::Appearance,
 }
 
 /// One popup row: runs of (text, face); an empty face means the popup's.

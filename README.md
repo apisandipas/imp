@@ -77,7 +77,10 @@ display it runs in the terminal instead, and `imp --tui` always does (for
 With no file it shows a start screen of recent files and projects; `imp
 FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 `C--` zoom, `C-0` resets, and `--font FAMILY`, `--font-size PX` and
-`--scale F` (or `$IMP_GUI_SCALE`, for HiDPI screens) set the text.
+`--scale F` (or `$IMP_GUI_SCALE`, for HiDPI screens) set the text. In
+`init.scm` the options `font`, `font-size`, `window-padding` (pixels) and
+`background-opacity` (0 to 1) set the window; in a terminal,
+`terminal-background` off lets the terminal's own background show.
 
 - **Vim.** Motions, operators, text objects, counts, `.`, registers, macros,
   marks, visual modes, search and `:s`, `:g`, folds, splits and buffers,

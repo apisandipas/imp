@@ -296,3 +296,45 @@
 (define (update-statusline! value) (set-statusline! (option 'statusline) (option 'statusline-inactive)))
 (watch-option! 'statusline update-statusline!)
 (watch-option! 'statusline-inactive update-statusline!)
+
+;;; The window: its font, space around the text, and how see-through the
+;;; theme's background is (the compositor shows what is behind it).
+;;;
+;;;   (set-option! 'font "VictorMono Nerd Font Mono")
+;;;   (set-option! 'font-size 16)
+;;;   (set-option! 'window-padding 40)        ; pixels, in the background color
+;;;   (set-option! 'background-opacity 0.9)   ; 1 is opaque
+;;;
+;;; --font and --font-size on the command line win over these. In a
+;;; terminal, (set-option! 'terminal-background #f) leaves the theme's
+;;; background unpainted, so the terminal's own (and its opacity) shows.
+
+(define *appearance* (hash))
+
+;; Option `name`, starting at `default`; `apply` gets each new value, and
+;; raises an error for a bad one.
+(define (define-appearance-option! name default apply)
+  (set! *appearance* (hash-insert *appearance* name default))
+  (define-computed-option! name '()
+    (lambda () (hash-ref *appearance* name))
+    (lambda (value)
+      (apply value)
+      (set! *appearance* (hash-insert *appearance* name value)))))
+
+(define (check-number name value low high)
+  (unless (and (number? value) (<= low value high))
+    (error (string-append (symbol->string name) " is a number from "
+                          (number->string low) " to " (number->string high)))))
+
+(define-appearance-option! 'font ""
+  (lambda (v) (unless (string? v) (error "font is a family name, \"\" for the default"))
+              (set-appearance! "font" v)))
+(define-appearance-option! 'font-size 0
+  (lambda (v) (check-number 'font-size v 0 400) (set-appearance! "font-size" v)))
+(define-appearance-option! 'window-padding 0
+  (lambda (v) (check-number 'window-padding v 0 1000) (set-appearance! "padding" v)))
+(define-appearance-option! 'background-opacity 1
+  (lambda (v) (check-number 'background-opacity v 0 1)
+              (set-appearance! "transparency" (* 100 (- 1 v)))))
+(define-appearance-option! 'terminal-background #t
+  (lambda (v) (set-appearance! "clear-terminal-background" (not v))))

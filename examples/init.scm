@@ -22,6 +22,14 @@
   (list (list "syntax.comment" "fg=#565f89 italic")))
 ;; (load-theme! 'midnight)
 
+;; The window: font, space around the text, and a see-through background.
+;; (set-option! 'font "JetBrains Mono")
+;; (set-option! 'font-size 16)
+(set-option! 'window-padding 40)
+;; (set-option! 'background-opacity 0.9)
+;; In a terminal, leave the background to the terminal (and its opacity).
+;; (set-option! 'terminal-background #f)
+
 ;;; Where generated buffers open: a name prefix, then 'side ('bottom, 'top,
 ;;; 'left, 'right), 'size (part of the frame), 'select and 'quit (q closes).
 (define-popup-rule! "*grep*" 'side 'right 'size 0.3)

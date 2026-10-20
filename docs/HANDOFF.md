@@ -291,6 +291,17 @@ needed. Details, and what each one leaves out, are in
   - `write-handler` and `revert-handler` for buffers that aren't files.
   - A buffer's mode keys now come before Vim's operators, motions and
     prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+  - Window appearance (theme.scm options `font`, `font-size`,
+    `window-padding`, `background-opacity`, `terminal-background`):
+    `set-appearance!` stores them on the editor and every `Frame`
+    carries them as `appearance`, with the "normal" face's background; a
+    change makes the next update a whole frame, so the in-process loop
+    and the daemon need nothing else. The window client leaves cells in
+    that background undrawn and clears to it (premultiplied, with the
+    opacity) inside the padding; the surface is see-through only below
+    opacity 1. Command-line `--font`/`--font-size` win over the options.
+    The terminal client, with `terminal-background` off, sends no
+    background for those cells.
   - File commands (`files.scm`): `delete-file`, `rename-file`,
     `copy-file` (`SPC f D/R/C`). A rename re-points the buffer
     (`buffer-renamed!`: path, major mode, and the `buffer-renamed` hook,

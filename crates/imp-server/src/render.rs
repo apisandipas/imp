@@ -130,6 +130,10 @@ pub fn frame(e: &mut Editor) -> Frame {
         rows,
         cursor: (cursor.0 as u16, cursor.1 as u16),
         cursor_shape: e.cursor_shape,
+        appearance: imp_core::Appearance {
+            background: normal.bg,
+            ..e.appearance.clone()
+        },
     }
 }
 

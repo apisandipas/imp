@@ -544,6 +544,33 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("equalize-windows!", || {
         editor::with(|e| e.layout.equalize())
     });
+    // What clients do beyond the grid: "font" (a family, "" for the
+    // client's), "font-size" and "padding" (logical pixels),
+    // "transparency" (percent) and "clear-terminal-background".
+    engine.register_fn("set-appearance!", |what: String, value: SteelVal| {
+        let int = |v: &SteelVal| match v {
+            SteelVal::IntV(n) => Ok(*n),
+            SteelVal::NumV(f) => Ok(f.round() as isize),
+            _ => Err(format!("{what}: expected a number")),
+        };
+        editor::with(|e| {
+            let a = &mut e.appearance;
+            match what.as_str() {
+                "font" => match &value {
+                    SteelVal::StringV(s) => a.font = s.to_string(),
+                    _ => return Err("font: expected a string".to_string()),
+                },
+                "font-size" => a.font_size = int(&value)?.clamp(0, 400) as u16,
+                "padding" => a.padding = int(&value)?.clamp(0, 1000) as u16,
+                "transparency" => a.transparency = int(&value)?.clamp(0, 100) as u8,
+                "clear-terminal-background" => {
+                    a.clear_terminal_background = matches!(value, SteelVal::BoolV(true))
+                }
+                _ => return Err(format!("no appearance setting {what}")),
+            }
+            Ok(())
+        })
+    });
     engine.register_fn("set-wrap!", |on: bool| editor::with(|e| e.wrap = on));
     // Display columns, for motions over screen rows (gj, gk).
     engine.register_fn("line-display-col", |line: isize, col: isize| {

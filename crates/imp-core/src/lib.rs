@@ -6,4 +6,6 @@ pub mod fileio;
 pub mod protocol;
 
 pub use buffer::Buffer;
-pub use protocol::{ClientMsg, Color, CursorShape, Frame, Patch, Row, ServerMsg, Span, Style};
+pub use protocol::{
+    Appearance, ClientMsg, Color, CursorShape, Frame, Patch, Row, ServerMsg, Span, Style,
+};
