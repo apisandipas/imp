@@ -6,6 +6,7 @@
 //! fallback font's glyphs are wider. Rows are shaped again only when they
 //! change.
 
+use glyphon::cosmic_text::fontdb;
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
@@ -102,6 +103,7 @@ impl Renderer {
                 eprintln!("imp: {}: {e}", file.display());
             }
         }
+        pick_monospace_family(font_system.db_mut());
         let cache = Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
         let mut atlas = TextAtlas::new(&device, &queue, &cache, format);
@@ -559,6 +561,46 @@ fn rgba(c: (u8, u8, u8)) -> [f32; 4] {
     [r, g, b, 1.0]
 }
 
+/// fontdb assumes the monospace family by name (Noto Sans Mono on Linux).
+/// When that isn't installed, cosmic-text falls back to the first
+/// monospaced face it meets, which may well be an italic one. So point
+/// "monospace" at an installed family: fontconfig's choice, else the first
+/// monospaced family, by name, with a regular upright face.
+fn pick_monospace_family(db: &mut fontdb::Database) {
+    let installed = |db: &fontdb::Database, name: &str| {
+        db.faces()
+            .any(|f| f.families.iter().any(|(n, _)| n == name))
+    };
+    if installed(db, db.family_name(&fontdb::Family::Monospace)) {
+        return;
+    }
+    let choice = fontconfig_monospace()
+        .filter(|name| installed(db, name))
+        .or_else(|| {
+            db.faces()
+                .filter(|f| {
+                    f.monospaced
+                        && f.style == fontdb::Style::Normal
+                        && f.weight == fontdb::Weight::NORMAL
+                })
+                .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+                .min()
+        });
+    if let Some(name) = choice {
+        db.set_monospace_family(name);
+    }
+}
+
+/// The family fontconfig gives for "monospace", if fc-match is there.
+fn fontconfig_monospace() -> Option<String> {
+    let out = std::process::Command::new("fc-match")
+        .args(["-f", "%{family[0]}", "monospace"])
+        .output()
+        .ok()?;
+    let name = String::from_utf8(out.stdout).ok()?;
+    (out.status.success() && !name.trim().is_empty()).then(|| name.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,5 +644,29 @@ mod tests {
             ..Style::default()
         };
         assert_eq!(colors(s), (DEFAULT_BG, (1, 2, 3)));
+    }
+
+    #[test]
+    fn monospace_is_an_installed_upright_family() {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let Some(upright) = db
+            .faces()
+            .find(|f| f.monospaced && f.style == fontdb::Style::Normal)
+            .map(|f| f.families[0].0.clone())
+        else {
+            return; // no monospaced fonts on this machine
+        };
+        db.set_monospace_family("No Such Font");
+        pick_monospace_family(&mut db);
+        let name = db.family_name(&fontdb::Family::Monospace).to_string();
+        assert_ne!(name, "No Such Font");
+        let id = db
+            .query(&fontdb::Query {
+                families: &[fontdb::Family::Name(&name)],
+                ..Default::default()
+            })
+            .unwrap_or_else(|| panic!("{name} (vs {upright})"));
+        assert_eq!(db.face(id).unwrap().style, fontdb::Style::Normal);
     }
 }
