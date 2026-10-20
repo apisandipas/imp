@@ -45,11 +45,20 @@
       [(equal? key "M-<ret>") (string-append esc (string (integer->char 13)))]
       [else ""])))
 
+;; Keys the terminal state keeps for the editor instead of sending them to
+;; the program: key -> procedure of no arguments.
+;;
+;;   (define-terminal-key! "M-a" claude-toggle!)
+(define *terminal-keys* (hash))
+(define (define-terminal-key! key proc) (set! *terminal-keys* (hash-insert *terminal-keys* key proc)))
+(define (remove-terminal-key! key) (set! *terminal-keys* (hash-remove *terminal-keys* key)))
+
 ;; Keys in the terminal state.
 (define (terminal-key! key)
   (let ([id (term-id)])
     (cond
       [(not id) (set-mode! 'normal)]
+      [(and (not *term-prefix*) (hash-try-get *terminal-keys* key)) ((hash-ref *terminal-keys* key))]
       [*term-prefix*
        (set! *term-prefix* #f)
        (cond [(equal? key "C-n") (set-mode! 'normal) (normal-clamp!)]
@@ -99,6 +108,20 @@
 
 (define *term-count* 0)
 
+;; Runs `command` (your shell if "") in `cwd`, in buffer `buf`, which must
+;; be the current buffer, sized to its window. Returns the terminal's id,
+;; or #f after saying why it couldn't start (and killing `buf`).
+(define (start-terminal! buf command cwd)
+  (set-major-mode! 'term-mode)
+  (let ([id (term-start! command cwd (window-height) (window-text-width))])
+    (if (string? id)
+        (begin (message id) (buffer-kill! buf) #f)
+        (begin
+          (set-buffer-local! 'term-id id)
+          (set! *terminals* (hash-insert *terminals* id buf))
+          (set-mode! 'terminal)
+          id))))
+
 (define (terminal! command)
   (set! *term-count* (+ *term-count* 1))
   (let* ([cwd (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
@@ -108,14 +131,7 @@
                               (if (equal? command "") "" (string-append ": " command)) "*")]
          [buf (buffer-new! name)])
     (go-to-buffer! buf)
-    (set-major-mode! 'term-mode)
-    (let ([id (term-start! command cwd (window-height) (window-text-width))])
-      (if (string? id)
-          (begin (message id) (buffer-kill! buf))
-          (begin
-            (set-buffer-local! 'term-id id)
-            (set! *terminals* (hash-insert *terminals* id buf))
-            (set-mode! 'terminal))))))
+    (start-terminal! buf command cwd)))
 
 (define-major-mode! 'term-mode #f '()
   (lambda ()

@@ -171,6 +171,12 @@ pub fn application_cursor(id: u64) -> bool {
     with(id, |t| t.parser.screen().application_cursor()).unwrap_or(false)
 }
 
+/// Whether the program asked for pasted text to be bracketed (ESC [ 200 ~
+/// before it, ESC [ 201 ~ after), so it can tell a paste from typing.
+pub fn bracketed_paste(id: u64) -> bool {
+    with(id, |t| t.parser.screen().bracketed_paste()).unwrap_or(false)
+}
+
 fn color(c: vt100::Color) -> Option<Color> {
     match c {
         vt100::Color::Default => None,

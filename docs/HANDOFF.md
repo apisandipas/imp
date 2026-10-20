@@ -106,6 +106,7 @@ runtime/                   loaded in this order
   dap.scm                  debugging: breakpoints, stepping, stack, variables
   mouse.scm                clicks, drag to select, the scroll wheel
   mcp.scm                  MCP: AI agents use the editor (opt-in)
+  claude.scm               Claude Code per project, in a window on the right
   theme.scm                themes (palettes -> every face), the status line
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
@@ -365,6 +366,14 @@ needed. Details, and what each one leaves out, are in
 - **Terminals** (`term.rs`, `term.scm`, `:terminal`, `SPC o t`): programs
   on a pty with vt100, in a TERMINAL state. `C-\ C-n` leaves it. ANSI
   colors 0-15 come from the theme (`set-terminal-palette!`).
+  `define-terminal-key!` keeps a key for the editor in that state.
+- **Claude Code** (`claude.scm`, `SPC a`, `M-a`): one `claude-command`
+  terminal per project root, shown by a popup rule (right, 40%). `M-a`
+  shows it, or hides it from inside (the program keeps running). `SPC a
+  s/b/f` paste the selection or line, the buffer, or `@path` into its
+  prompt as a bracketed paste, labelled `path:lines`. A new instance only
+  gets text `claude-settle-ms` after it turns bracketed paste on: Claude
+  Code drops input sent before then.
 - **Start screen and recent files** (`start.scm`, from the second polish
   pass): started without a file, imp shows recent files (digits),
   projects (letters) and a few commands; `i` goes to the empty buffer.

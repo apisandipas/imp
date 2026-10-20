@@ -35,6 +35,10 @@
 (define-popup-rule! "*grep*" 'side 'right 'size 0.3)
 ;; (remove-popup-rule! "*git")  ; git status takes over the window again
 
+;;; Claude Code (M-a, SPC a): the program it runs, and where its window goes.
+;; (set-option! 'claude-command "claude --model opus")
+;; (define-popup-rule! "*claude" 'side 'right 'size 0.4)
+
 ;;; Keys
 (define-key! 'normal "C-s" 'save-buffer)
 ;; Tab cycles buffers (it replaces C-i, which is the same key in a terminal).

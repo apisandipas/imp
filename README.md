@@ -106,6 +106,11 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   them), projects with search into a quickfix list, and terminals
   (`:terminal`). Search results open along the bottom and git down the
   right, closing with `q`; `define-popup-rule!` changes where.
+- **Claude Code.** `M-a` (or `SPC a a`) opens Claude Code for the current
+  project in a window down the right, and hides it again from inside;
+  hidden, it keeps running. `SPC a s` sends the selection (or the line),
+  `SPC a b` the buffer and `SPC a f` a reference to the file into its
+  prompt, labelled with the file and lines, for you to say what to do.
 - **Help.** `:help`, `SPC h k` (describe key), `SPC h f` (describe
   function), `SPC h o` (describe option), `SPC h F` (the faces under the
   cursor, to change with `set-face!`), `M-x list-faces` (every face, drawn

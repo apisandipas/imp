@@ -930,6 +930,9 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("term-application-cursor?", |id: isize| {
         crate::term::application_cursor(clamp(id) as u64)
     });
+    engine.register_fn("term-bracketed-paste?", |id: isize| {
+        crate::term::bracketed_paste(clamp(id) as u64)
+    });
     // Draws terminal `id` into buffer `buf`; returns its cursor's offset.
     engine.register_fn("term-render!", |id: isize, buf: isize| {
         editor::with(|e| {
