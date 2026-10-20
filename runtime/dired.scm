@@ -20,21 +20,31 @@
 (define-option! 'dired-show-hidden #f '())
 (define-option! 'dired-details #t '())
 
+;; Each listed entry has a sticky mark at the start of its line: text
+;; typed at the start of the line (cw, cc, I) goes after it, so a renamed
+;; line keeps its mark. Deleting a line moves its mark onto the next line,
+;; or (for the last lines) to the end of the line before.
+
 (define (dired-mark i)
-  "Each listed entry has a sticky mark at the start of its line: text
-   typed at the start of the line (cw, cc, I) goes after it, so a renamed
-   line keeps its mark. Deleting a line moves its mark onto the next line,
-   or (for the last lines) to the end of the line before."
+  "The name of the sticky mark that follows entry `i` of the listing."
   (string-append "dired:" (number->string i)))
 
-(define (dired-dir) (buffer-local 'dired-dir))
+(define (dired-dir)
+  "The directory the current browser buffer lists."
+  (buffer-local 'dired-dir))
 
-(define (dired-join dir name) (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
+(define (dired-join dir name)
+  "The path of `name` in directory `dir`."
+  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
 
 (define (dired-strip-slash name)
+  "`name` without the trailing slash that marks a directory.
+   A lone \"/\" stays as it is."
   (if (and (> (string-length name) 1) (ends-with? name "/")) (substring name 0 (- (string-length name) 1)) name))
 
-(define (dired-hidden? name) (starts-with? name "."))
+(define (dired-hidden? name)
+  "Whether entry `name` is a dotfile, hidden unless dired-show-hidden."
+  (starts-with? name "."))
 
 (define (dired-listing dir)
   "The entries to show: (name directory?), directories first."
@@ -77,7 +87,9 @@
 
 (define *month-names* (vector "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
 
-(define (two-digits n) (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
+(define (two-digits n)
+  "`n` as at least two digits, with a leading zero."
+  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
 
 (define (format-file-time seconds now offset)
   "`seconds` (since the epoch, UTC) as ls shows it, 12 columns: \"Oct 19 14:02\"
@@ -156,7 +168,9 @@
                (not (equal? (buffer-local 'dired-details-version) (buffer-version))))
       (dired-show-details!))))
 
-(define (dired-buffer-name dir) (if (equal? dir "/") "/" (string-append dir "/")))
+(define (dired-buffer-name dir)
+  "The name of the browser buffer for `dir`: the path ending in /."
+  (if (equal? dir "/") "/" (string-append dir "/")))
 
 (define (dired-open! dir . focus)
   "Opens `dir` (an absolute path) in a browser buffer, the cursor on
@@ -179,10 +193,13 @@
     id))
 
 (define (dired-entry-path line)
+  "The full path that `line` of the listing names, or #f for a blank one."
   (let ([name (trim (line-text line))])
     (and (not (equal? name "")) (dired-join (dired-dir) (dired-strip-slash name)))))
 
 (define (dired-visit!)
+  "<ret>: opens the entry at the cursor, a directory in the browser.
+   An entry typed but not saved yet only gets a message."
   (let ([path (dired-entry-path (current-line))])
     (cond [(not path) #f]
           [(file-directory? path) (dired-open! path)]
@@ -190,6 +207,7 @@
           [else (message (string-append (trim (line-text (current-line))) " doesn't exist yet (:w makes it)"))])))
 
 (define (dired-up!)
+  "-: lists the parent directory, the cursor on the one just left."
   (let ([dir (dired-dir)])
     (unless (equal? dir "/") (dired-open! (directory-of dir) (file-name-of dir)))))
 
@@ -246,6 +264,7 @@
             (map (lambda (l) (list 'create (trim (line-text l)))) created))))
 
 (define (dired-describe c)
+  "Change `c` as one line for the list :w shows before asking."
   (cond [(eq? (car c) 'rename) (string-append "rename  " (cadr c) " → " (caddr c))]
         [(eq? (car c) 'delete) (string-append "delete  " (cadr c) (if (caddr c) "/ and everything in it" ""))]
         [else (string-append "create  " (cadr c))]))
@@ -283,6 +302,9 @@
     (reverse problems)))
 
 (define (dired-save!)
+  ":w: shows what the edits would change, and makes the changes if
+   confirmed. Then lists the directory afresh and reports any
+   problems."
   (let ([changes (dired-changes)] [dir (dired-dir)])
     (if (null? changes)
         (begin (dired-refresh!) (message "no changes"))
@@ -317,6 +339,9 @@
 (define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
 
 (define (dired-explore! arg)
+  "Lists directory `arg`, or for \"\" the current buffer's directory.
+   That is the listed one in a browser, else the file's directory or
+   the working directory. The cursor starts on the current file."
   (let ([dir (cond [(not (equal? arg "")) (expand-path arg)]
                    [(dired-dir) (dired-dir)]
                    [(buffer-path) (directory-of (expand-path (buffer-path)))]
@@ -326,6 +351,9 @@
         (message (string-append dir " is not a directory")))))
 
 (define-ex! '("Ex" "Explore") (lambda (ex) (dired-explore! (trim (ex-args ex)))))
-(define-command! 'file-browser (lambda (count) (dired-explore! "")))
+(define-command! 'file-browser
+  (lambda (count)
+    "Browse the current file's directory, editing it like text."
+    (dired-explore! "")))
 (define-leader! "fd" 'file-browser "browse directory")
 (set! *open-directory* (lambda (dir) (dired-open! dir)))

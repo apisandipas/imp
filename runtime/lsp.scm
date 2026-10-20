@@ -38,6 +38,11 @@
 (define *lsp-progress-message* #f)  ; the progress shown on the status line
 
 (define (define-language-server! mode command markers language-id)
+  "Sets the language server for major mode `mode`.
+   `command` is a shell command, or a list of them of which the first
+   installed is used. The project root is the nearest directory up
+   holding one of `markers`; `language-id` is the languageId sent in
+   didOpen."
   (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id))))
 
 (define-language-server! 'rust-mode "rust-analyzer" '("Cargo.toml" ".git") "rust")
@@ -58,13 +63,15 @@
 ;;; JSON helpers. Objects are hashes with string keys; null is 'null.
 
 (define (jget obj . path)
-  "(jget obj \"a\" \"b\") is obj.a.b, or #f when any part is missing or null."
+  "The value at keys `path` in JSON `obj`, or #f if missing or null.
+   (jget obj \"a\" \"b\") is obj.a.b."
   (let loop ([v obj] [path path])
     (cond [(null? path) (if (equal? v 'null) #f v)]
           [(hash? v) (loop (hash-try-get v (car path)) (cdr path))]
           [else #f])))
 
 (define (lsp-log! text)
+  "Adds `text` to the :lsp-log, which keeps the newest 500 entries."
   (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*))))
 
 ;;; Server state
@@ -74,39 +81,51 @@
 ;;; queue (messages held until then), capabilities, encoding ("utf-32" or
 ;;; "utf-16", what positions count).
 
-(define (lsp-state key) (hash-try-get *lsp-servers* key))
+(define (lsp-state key)
+  "The state hash of the server under `key`, or #f if none is running."
+  (hash-try-get *lsp-servers* key))
 
 (define (lsp-get key field)
+  "Field `field` of the state of server `key`, or #f."
   (let ([s (lsp-state key)]) (and s (hash-try-get s field))))
 
 (define (lsp-put! key field value)
+  "Sets field `field` of the state of server `key` to `value`.
+   Does nothing if that server isn't running."
   (let ([s (lsp-state key)])
     (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value))))))
 
 (define (shell-quote text)
+  "`text` in single quotes, safe to put in a shell command."
   (string-append "'" (apply string-append (map (lambda (c) (if (equal? c #\') "'\\''" (string c)))
                                                (string->list text)))
                  "'"))
 
 (define (lsp-dirname path)
-  "The directory part of a path."
+  "The directory part of `path`, without a trailing slash (\"/\" at the top)."
   (let loop ([i (- (string-length path) 1)])
     (cond [(<= i 0) "/"]
           [(equal? (string-ref path i) #\/) (substring path 0 i)]
           [else (loop (- i 1))])))
 
 (define (lsp-root file markers)
-  "The nearest directory above `file` holding one of `markers`, else the
-   file's own directory."
+  "The project root of `file`: the nearest directory up with a marker.
+   That is one holding one of `markers`; with none, the file's own
+   directory."
   (let ([start (lsp-dirname file)])
     (let loop ([dir start])
       (cond [(ormap (lambda (m) (file-exists? (string-append dir "/" m))) markers) dir]
             [(equal? dir "/") start]
             [else (loop (lsp-dirname dir))]))))
 
-(define (ormap pred lst) (and (pair? lst) (or (pred (car lst)) (ormap pred (cdr lst)))))
+(define (ormap pred lst)
+  "The first true value of (pred x) for the items of `lst`, or #f."
+  (and (pair? lst) (or (pred (car lst)) (ormap pred (cdr lst)))))
 
 (define (lsp-start! key command root)
+  "Starts `command` in `root` as the server under `key`.
+   Sends initialize once it runs. Returns #t, or #f if the job couldn't
+   start."
   (set! *lsp-servers*
         (hash-insert *lsp-servers* key
                      (hash 'command command 'root root 'input "" 'next-id 1 'pending (hash)
@@ -119,6 +138,9 @@
         (begin (set! *lsp-servers* (hash-remove *lsp-servers* key)) #f))))
 
 (define (lsp-initialize! key)
+  "Sends initialize to server `key`, and finishes starting on the reply.
+   The reply's capabilities and position encoding are kept, initialized
+   is sent, and the messages queued meanwhile go out."
   (let ([root (lsp-get key 'root)])
     (lsp-request-now! key "initialize"
       (hash "processId" 'null
@@ -138,6 +160,7 @@
           (lsp-pull-all! key))))))
 
 (define (lsp-client-capabilities)
+  "The capabilities imp tells a server it has, in initialize."
   (hash "general" (hash "positionEncodings" (list "utf-32" "utf-16"))
         "textDocument"
         (hash "synchronization" (hash "didSave" #t)
@@ -161,6 +184,7 @@
         "window" (hash "workDoneProgress" #t)))
 
 (define (lsp-exited! key code)
+  "Forgets server `key` after it exited with `code`, and says so."
   (let ([command (lsp-get key 'command)])
     (set! *lsp-servers* (hash-remove *lsp-servers* key))
     (message (string-append "language server " (or command key) " exited (" (to-string code) ")"))))
@@ -168,37 +192,49 @@
 ;;; Sending
 
 (define (lsp-write! key msg)
+  "Sends `msg` (a hash) to server `key` at once, framed.
+   Unlike lsp-send!, it doesn't wait for the server to be initialized."
   (let ([job (lsp-get key 'job)])
     (when job (job-send! job (lsp-frame (json-encode msg))))))
 
 (define (lsp-send! key msg)
-  "Sends `msg`, or holds it until the server is initialized."
+  "Sends `msg` to server `key`, or holds it until it is initialized."
   (if (lsp-get key 'ready)
       (lsp-write! key msg)
       (lsp-put! key 'queue (append (or (lsp-get key 'queue) '()) (list msg)))))
 
 (define (lsp-add-request! key on-result)
+  "Registers `on-result` for the next request to server `key`.
+   Returns the request's id."
   (let ([id (lsp-get key 'next-id)])
     (lsp-put! key 'next-id (+ id 1))
     (lsp-put! key 'pending (hash-insert (lsp-get key 'pending) id on-result))
     id))
 
 (define (lsp-request! key method params on-result)
-  "Asks the server; `on-result` gets the result (#f for null) on success."
+  "Sends request `method` with `params` to server `key`; returns its id.
+   `on-result` gets the result (#f for null) when it succeeds."
   (let ([id (lsp-add-request! key on-result)])
     (lsp-send! key (hash "jsonrpc" "2.0" "id" id "method" method "params" params))
     id))
 
 (define (lsp-request-now! key method params on-result)
+  "Sends request `method` to server `key` without waiting for it to be
+   initialized, for initialize and shutdown. `on-result` gets the result."
   (let ([id (lsp-add-request! key on-result)])
     (lsp-write! key (hash "jsonrpc" "2.0" "id" id "method" method "params" params))))
 
 (define (lsp-notify! key method params)
+  "Sends notification `method` with `params` to server `key`.
+   Held until the server is initialized."
   (lsp-send! key (hash "jsonrpc" "2.0" "method" method "params" params)))
 
 ;;; Receiving
 
 (define (lsp-output! key text stream)
+  "Handles output from server `key`'s job on `stream`.
+   stdout carries LSP messages, dispatched as each completes; anything
+   else (stderr) goes to the :lsp-log."
   (if (not (equal? stream "stdout"))
       (lsp-log! text)
       (begin
@@ -213,6 +249,9 @@
               (loop)))))))
 
 (define (lsp-dispatch! key msg)
+  "Handles one message `msg` from server `key`.
+   It is a request from the server (answered), a notification, or a
+   response to one of ours."
   (let ([id (hash-try-get msg "id")] [method (hash-try-get msg "method")])
     (cond
       [(and method id) (lsp-reply! key id (lsp-server-request key method (jget msg "params")))]
@@ -221,6 +260,9 @@
       [else #f])))
 
 (define (lsp-response! key id msg)
+  "Hands the result in response `msg` to the callback of request `id`.
+   An error is shown, except for cancelled requests (-32800) and content
+   modified (-32801), which are routine while typing."
   (let ([callback (hash-try-get (or (lsp-get key 'pending) (hash)) id)])
     (lsp-put! key 'pending (hash-remove (lsp-get key 'pending) id))
     (cond
@@ -233,12 +275,15 @@
       [else #f])))
 
 (define (lsp-reply! key id result)
+  "Answers request `id` from server `key` with `result`.
+   A result of (error text) is sent as a -32601 error."
   (lsp-write! key (if (and (pair? result) (eq? (car result) 'error))
                       (hash "jsonrpc" "2.0" "id" id "error" (hash "code" -32601 "message" (cadr result)))
                       (hash "jsonrpc" "2.0" "id" id "result" result))))
 
 (define (lsp-server-request key method params)
-  "The answer to a request from the server."
+  "The answer to request `method` from server `key`, with `params`.
+   Returns (error text) for a method imp doesn't handle."
   (cond
     [(equal? method "workspace/configuration")
      (map (lambda (item) 'null) (or (jget params "items") '()))]
@@ -257,6 +302,10 @@
     [else (list 'error (string-append "imp doesn't handle " method))]))
 
 (define (lsp-notification! key method params)
+  "Handles notification `method` from server `key` with `params`.
+   Handles textDocument/publishDiagnostics, window/showMessage (errors
+   and warnings are shown, all are logged), window/logMessage and
+   $/progress; others are ignored."
   (cond
     [(equal? method "textDocument/publishDiagnostics")
      (lsp-set-diagnostics! (jget params "uri") (or (jget params "diagnostics") '()))]
@@ -268,7 +317,8 @@
     [else #f]))
 
 (define (lsp-progress! value)
-  "$/progress: shown on the status line unless something else is there."
+  "Shows $/progress `value` on the status line, unless something else is.
+   An end clears what it showed."
   (let* ([kind (jget value "kind")]
          [pct (jget value "percentage")]
          [text (string-append (or (jget value "title") "") " " (or (jget value "message") "")
@@ -284,12 +334,16 @@
 ;;; Documents
 
 (define (lsp-key)
-  "The server the current buffer talks to, if it is running."
+  "The key of the current buffer's server if it is running, else #f."
   (let ([key (buffer-local 'lsp-server)]) (and key (lsp-state key) key)))
 
-(define (lsp-uri) (buffer-local 'lsp-uri))
+(define (lsp-uri)
+  "The URI the current buffer has with its language server, or #f."
+  (buffer-local 'lsp-uri))
 
 (define (lsp-language-id id path)
+  "The languageId for a file at `path` whose server's is `id`.
+   .tsx and .jsx files get typescriptreact and javascriptreact."
   (cond [(and (equal? id "typescript") (ends-with? path ".tsx")) "typescriptreact"]
         [(and (equal? id "javascript") (ends-with? path ".jsx")) "javascriptreact"]
         [else id]))
@@ -322,7 +376,9 @@
            (car commands)]
           [else (loop (cdr commands))])))
 
-(define (lsp-text-document) (hash "uri" (lsp-uri)))
+(define (lsp-text-document)
+  "The current buffer's TextDocumentIdentifier, for requests."
+  (hash "uri" (lsp-uri)))
 
 (define (lsp-sync!)
   "Sends the current buffer's text now, if it changed since last sent."
@@ -343,9 +399,10 @@
             (lsp-pull-diagnostics!))))))
 
 (define (lsp-pull-diagnostics!)
-  "Asks for the current buffer's diagnostics, from a server that has them
-   pulled rather than pushing them. An answer is dropped if the buffer
-   changed since; the change asks again."
+  "Asks the server for the current buffer's diagnostics, if it is asked.
+   That is a server that has diagnostics pulled (textDocument/diagnostic)
+   rather than pushing them. An answer is dropped if the buffer changed
+   since; the change asks again."
   (let ([key (lsp-key)] [uri (lsp-uri)] [id (current-buffer)] [version (buffer-local 'lsp-version)])
     (when (and key uri (lsp-get key 'ready) (jget (lsp-get key 'capabilities) "diagnosticProvider"))
       (lsp-request! key "textDocument/diagnostic" (hash "textDocument" (hash "uri" uri))
@@ -355,6 +412,8 @@
                         (lsp-set-diagnostics! uri (or (jget result "items") '()))))))))
 
 (define (lsp-pull-all! key)
+  "Asks server `key` for the diagnostics of each buffer it serves.
+   Only a server that has diagnostics pulled answers."
   (for-each (lambda (id) (with-buffer id lsp-pull-diagnostics!)) (buffers-of key)))
 
 (define (lsp-changed!)
@@ -403,7 +462,9 @@
 ;;; imp's offsets count chars, which is LSP's "utf-32". Servers that only
 ;;; do UTF-16 count chars past U+FFFF twice.
 
-(define (astral? c) (> (char->integer c) #xFFFF))
+(define (astral? c)
+  "Whether `c` is past U+FFFF, so two units in UTF-16."
+  (> (char->integer c) #xFFFF))
 
 (define (lsp-character line col encoding)
   "LSP's character for column `col` of `line` (the current buffer)."
@@ -413,11 +474,14 @@
         (+ col (length (filter astral? (string->list text)))))))
 
 (define (lsp-position offset encoding)
+  "The LSP position of `offset` in the current buffer, a hash.
+   Its character counts in `encoding` (\"utf-16\" or \"utf-32\")."
   (let ([line (offset->line offset)])
     (hash "line" line "character" (lsp-character line (offset->col offset) encoding))))
 
 (define (lsp-offset pos encoding)
-  "The offset of an LSP position in the current buffer, clamped to it."
+  "The offset of LSP position `pos` in the current buffer, clamped to it.
+   `pos` counts in `encoding`."
   (let ([line (or (jget pos "line") 0)] [character (or (jget pos "character") 0)])
     (if (> line (last-line))
         (buffer-length)
@@ -430,16 +494,21 @@
                     (loop (+ col 1) (+ units (if (astral? (buffer-char-at (+ start col))) 2 1))))))))))
 
 (define (lsp-range-offsets r encoding)
+  "The (start end) offsets of LSP range `r` in the current buffer."
   (list (lsp-offset (jget r "start") encoding) (lsp-offset (jget r "end") encoding)))
 
-(define (lsp-encoding) (or (lsp-get (lsp-key) 'encoding) "utf-16"))
+(define (lsp-encoding)
+  "What the current buffer's server counts positions in.
+   \"utf-32\" or \"utf-16\"; \"utf-16\" without a server."
+  (or (lsp-get (lsp-key) 'encoding) "utf-16"))
 
 (define (lsp-here)
-  "textDocument and position at the cursor, the params most requests take."
+  "The textDocument and position at the cursor, as most requests take."
   (hash "textDocument" (lsp-text-document) "position" (lsp-position (cursor) (lsp-encoding))))
 
 (define (with-lsp proc)
-  "Runs (proc key) with the current buffer's server, its text sent first."
+  "Runs (proc key) with the current buffer's server, its text sent first.
+   Says so if the buffer has no server."
   (let ([key (lsp-key)])
     (if (not key)
         (message "no language server for this buffer")
@@ -449,15 +518,23 @@
 
 ;; Faces diagnostic.error/warning/info/hint and sign.* come from theme.scm.
 
-(define (severity d) (or (jget d "severity") 1))
+(define (severity d)
+  "The severity of diagnostic `d`, from 1 (error) to 4 (hint).
+   One without a severity counts as an error."
+  (or (jget d "severity") 1))
 
 (define (severity-name d)
+  "The severity of diagnostic `d` as a word, like \"error\" or \"hint\"."
   (let ([s (severity d)]) (cond [(= s 1) "error"] [(= s 2) "warning"] [(= s 3) "info"] [else "hint"])))
 
 (define (severity-letter d)
+  "The severity of diagnostic `d` as a letter: E, W, I or H."
   (let ([s (severity d)]) (cond [(= s 1) "E"] [(= s 2) "W"] [(= s 3) "I"] [else "H"])))
 
 (define (lsp-set-diagnostics! uri diagnostics)
+  "Records `diagnostics` for the file at `uri` and shows them.
+   If the file is open its signs update, and in the current buffer its
+   highlights and the status line too."
   (set! *lsp-diagnostics* (hash-insert *lsp-diagnostics* uri diagnostics))
   (let* ([path (uri->path uri)] [id (and path (buffer-for-path path))])
     (when id
@@ -465,8 +542,8 @@
       (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!)))))
 
 (define (buffer-diagnostics)
-  "The current buffer's diagnostics, sorted by where they start, each as
-   (start end diagnostic)."
+  "The current buffer's diagnostics as (start end diagnostic) lists.
+   They are sorted by where they start."
   (let ([uri (lsp-uri)] [encoding (lsp-encoding)])
     (if (not uri)
         '()
@@ -475,6 +552,8 @@
               (lambda (a b) (< (car a) (car b)))))))
 
 (define (lsp-show-signs!)
+  "Puts a sign for the current buffer's diagnostics on their lines.
+   Also updates the error and warning counts on the status line."
   ;; The most severe diagnostic on each line wins its sign.
   (let ([signs (foldl (lambda (d acc)
                         (let* ([line (offset->line (car d))] [old (hash-try-get acc line)])
@@ -489,7 +568,8 @@
   (show-diagnostic-counts!))
 
 (define (show-diagnostic-counts!)
-  "%{diagnostics} in the status line: errors and warnings in the buffer."
+  "Sets %{diagnostics} in the status line to the buffer's counts.
+   It shows the errors and warnings, when there are any."
   (let* ([ds (map caddr (buffer-diagnostics))]
          [count (lambda (s) (length (filter (lambda (d) (= (severity d) s)) ds)))]
          [errors (count 1)] [warnings (count 2)])
@@ -499,6 +579,7 @@
                        #f)))
 
 (define (lsp-show-diagnostics!)
+  "Highlights the current buffer's diagnostics by severity."
   (highlight-clear! "diagnostics")
   (for-each (lambda (d)
               (let* ([s (car d)] [e (min (buffer-length) (max (cadr d) (+ s 1)))])
@@ -509,12 +590,14 @@
 (add-hook! 'buffer-enter lsp-show-diagnostics!)
 
 (define (diagnostic-text d)
+  "Diagnostic `d` as one line: \"E: message (source)\"."
   (string-append (severity-letter d) ": " (or (jget d "message") "")
                  (let ([source (jget d "source")]) (if source (string-append " (" source ")") ""))))
 
 (define (diagnostic-at-cursor)
-  "The diagnostic to show for the cursor: one under it, else the most
-   severe on its line."
+  "The diagnostic to show for the cursor, or #f.
+   The most severe one under the cursor, else the most severe on its
+   line."
   (let* ([p (cursor)] [line (current-line)]
          [on-line (filter (lambda (d) (= (offset->line (car d)) line)) (buffer-diagnostics))]
          [under (filter (lambda (d) (and (<= (car d) p) (< p (max (cadr d) (+ (car d) 1))))) on-line)]
@@ -524,8 +607,9 @@
                        (car pick) (cdr pick))))))
 
 (define (lsp-show-cursor-diagnostic!)
-  "In normal mode the status line shows the diagnostic at the cursor, when
-   nothing else is there: after each command, and when diagnostics arrive."
+  "Shows the diagnostic at the cursor on the status line, in normal mode.
+   Only when nothing else is there; it runs after each command and when
+   diagnostics arrive."
   (when (and (eq? *mode* 'normal) (not *popup-shown*))
     (let* ([d (and (lsp-uri) (diagnostic-at-cursor))]
            [status (status-text)]
@@ -541,7 +625,8 @@
 (add-hook! 'post-command lsp-show-cursor-diagnostic!)
 
 (define (next-diagnostic! count forward?)
-  "]d and [d: the next or previous diagnostic, wrapping around."
+  "Moves to the `count`th next diagnostic, or previous, wrapping around.
+   For ]d and [d."
   (let* ([starts (map car (buffer-diagnostics))]
          [starts (if forward? starts (reverse starts))])
     (if (null? starts)
@@ -562,6 +647,7 @@
 (define-key! 'normal "[d" 'previous-diagnostic)
 
 (define (relative-path path)
+  "`path` relative to the current directory, if it is under it."
   (let ([dir (string-append (current-dir) "/")])
     (if (starts-with? path dir) (substring path (string-length dir) (string-length path)) path)))
 
@@ -575,7 +661,7 @@
 
 (define-command! 'list-diagnostics
   (lambda (count)
-    ":diagnostics picks one from every file's to jump to."
+    "Pick a diagnostic from any file's and jump to it (:diagnostics)."
     (let ([entries
            (apply append
                   (map (lambda (uri)
@@ -599,9 +685,8 @@
 ;;; Going places
 
 (define (lsp-jump! uri r encoding)
-  "Opens `uri` (if it isn't the current buffer) and puts the cursor at the
-   start of range `r`, as a jump. Positions count in `encoding`, or the
-   buffer's server's."
+  "Goes to the start of range `r` in `uri`, opening it, as a jump.
+   Positions count in `encoding`, or the buffer's server's if #f."
   (let ([path (uri->path uri)] [encoding (or encoding (lsp-encoding))])
     (cond
       [(not path) (message (string-append "can't open " uri))]
@@ -630,7 +715,9 @@
     (string-append (relative-path path) ":" (number->string (+ line 1)) ": " (trim (file-line path line)))))
 
 (define (choose-location! locations what encoding)
-  "Goes to the only location, or lets you pick one."
+  "Goes to the only one of `locations`, or lets you pick one.
+   `what` names them in the prompt (\"definition\") and when there are
+   none."
   (cond
     [(null? locations) (message (string-append "no " what " found"))]
     [(null? (cdr locations)) (lsp-jump! (car (car locations)) (cadr (car locations)) encoding)]
@@ -645,6 +732,8 @@
 
 (define-command! 'lsp-definition
   (lambda (count)
+    "Go to the definition of the symbol at the cursor (gd).
+     With more than one, pick one."
     (with-lsp (lambda (key)
                 (lsp-request! key "textDocument/definition" (lsp-here)
                               (lambda (result)
@@ -652,6 +741,7 @@
 
 (define-command! 'lsp-references
   (lambda (count)
+    "Pick a reference to the symbol at the cursor and go to it (gr)."
     (with-lsp (lambda (key)
                 (lsp-request! key "textDocument/references"
                               (hash-insert (lsp-here) "context" (hash "includeDeclaration" #t))
@@ -674,6 +764,8 @@
 
 (define-command! 'lsp-hover
   (lambda (count)
+    "Show what the language server says about the symbol at the cursor.
+     The first 20 lines appear in a popup at the cursor (K)."
     (with-lsp (lambda (key)
                 (lsp-request! key "textDocument/hover" (lsp-here)
                               (lambda (result)
@@ -687,9 +779,9 @@
 ;;; Changing text from the server
 
 (define (lsp-apply-text-edits! edits encoding)
-  "Applies TextEdits to the current buffer as one undo step: last first,
-   so earlier positions stay valid; edits at the same place keep their
-   order."
+  "Applies TextEdits `edits` to the current buffer as one undo step.
+   They are applied last first, so earlier positions stay valid; edits
+   at the same place keep their order."
   (let* ([indexed (let loop ([es edits] [i 0] [acc '()])
                     (if (null? es) acc
                         (loop (cdr es) (+ i 1)
@@ -745,6 +837,7 @@
 
 (define-command! 'lsp-rename
   (lambda (count)
+    "Rename the symbol at the cursor everywhere the server knows of it."
     (with-lsp
      (lambda (key)
        (let* ([w (word-at (cursor))] [old (if w (buffer-substring (car w) (cadr w)) "")] [here (lsp-here)])
@@ -761,8 +854,9 @@
                         #f #f))))))
 
 (define (run-code-action! key action)
-  "Runs a chosen code action: its edit, then its command; one with
-   neither is resolved first."
+  "Runs code action `action` from server `key`.
+   Applies its edit, then runs its command; one with neither is resolved
+   (codeAction/resolve) first."
   (let ([encoding (lsp-get key 'encoding)])
     (cond
       ;; A bare Command.
@@ -777,12 +871,16 @@
       [else (message "this action does nothing")])))
 
 (define (execute-lsp-command! key command)
+  "Asks server `key` to run LSP Command `command`; ignores the result.
+   The request is workspace/executeCommand."
   (lsp-request! key "workspace/executeCommand"
                 (hash "command" (jget command "command") "arguments" (or (jget command "arguments") '()))
                 (lambda (result) #f)))
 
 (define-command! 'lsp-code-action
   (lambda (count)
+    "Pick one of the server's code actions for the cursor or selection.
+     The diagnostics on those lines are sent with the request."
     (with-lsp
      (lambda (key)
        (let* ([encoding (lsp-encoding)]
@@ -809,6 +907,8 @@
 
 (define-command! 'lsp-format
   (lambda (count)
+    "Format the buffer with its language server.
+     Indents by the shiftwidth and expandtab options."
     (with-lsp
      (lambda (key)
        (let ([id (current-buffer)])
@@ -822,6 +922,9 @@
 ;;; Servers: information and control
 
 (define (lsp-server-lines)
+  "A line for each running server, for :lsp-info.
+   Each says its command, root, whether it is still starting, and what
+   its positions count in."
   (map (lambda (key)
          (string-append (lsp-get key 'command) "  " (lsp-get key 'root)
                         (if (lsp-get key 'ready) "" "  (starting)")
@@ -847,12 +950,13 @@
     (run-after! 1000 (lambda () (when job (job-kill! job))))))
 
 (define (buffers-of key)
+  "The buffers that talk to server `key`."
   (filter (lambda (id) (with-buffer id (lambda () (equal? (buffer-local 'lsp-server) key)))) (buffer-list)))
 
 (define-command! 'lsp-restart
   (lambda (count)
-    ":lsp-restart stops the current buffer's server and starts it again for
-     every buffer that used it."
+    "Restart the current buffer's language server (:lsp-restart).
+     It starts again for every buffer that used it."
     (let ([key (buffer-local 'lsp-server)])
       (if (not key)
           (message "no language server for this buffer")
@@ -910,11 +1014,13 @@
 (define *complete-request* 0) ; replies to older requests are dropped
 
 (define (word-start-before p)
+  "Where the word ending at `p` starts, on `p`'s line; `p` if none does."
   (let ([lo (line-start (offset->line p))])
     (let loop ([q p]) (if (and (> q lo) (char-word? (buffer-char-at (- q 1)))) (loop (- q 1)) q))))
 
 (define (strip-snippet text)
-  "${1:text} -> text, $1 ${1} $0 -> nothing, ${1|a,b|} -> a, \\$ -> $."
+  "Snippet `text` as plain text, without its tab stops.
+   ${1:text} -> text, $1 ${1} $0 -> nothing, ${1|a,b|} -> a, \\$ -> $."
   (let loop ([cs (string->list text)] [out '()] [depth 0])
     (cond
       [(null? cs) (list->string (reverse out))]
@@ -934,11 +1040,17 @@
       [(and (equal? (car cs) #\}) (> depth 0)) (loop (cdr cs) out (- depth 1))]
       [else (loop (cdr cs) (cons (car cs) out) depth)])))
 
-(define (drop-while pred cs) (if (and (pair? cs) (pred (car cs))) (drop-while pred (cdr cs)) cs))
-(define (take-while pred cs) (if (and (pair? cs) (pred (car cs))) (cons (car cs) (take-while pred (cdr cs))) '()))
+(define (drop-while pred cs)
+  "List `cs` without its leading items that satisfy `pred`."
+  (if (and (pair? cs) (pred (car cs))) (drop-while pred (cdr cs)) cs))
+(define (take-while pred cs)
+  "The leading items of list `cs` that satisfy `pred`."
+  (if (and (pair? cs) (pred (car cs))) (cons (car cs) (take-while pred (cdr cs))) '()))
 
 (define (completion-candidates result start encoding)
-  "Candidates from a completion reply."
+  "Menu candidates from completion reply `result`, in the server's order.
+   `start` is where the typed word starts, for items without a textEdit;
+   snippets are reduced to plain text."
   (let* ([items (cond [(not result) '()] [(hash? result) (or (jget result "items") '())] [else result])]
          ;; The server's order (sortText), which matching keeps for ties.
          [sort-key (lambda (item) (or (jget item "sortText") (jget item "label") ""))]
@@ -958,8 +1070,9 @@
          items)))
 
 (define (buffer-word-candidates start)
-  "Words in the lines around the cursor that start with the word before
-   it, nearest first."
+  "Candidates for completing the word from `start` to the cursor.
+   They are the words that start with it in the 500 lines around the
+   cursor, in order from the top."
   (let* ([prefix (buffer-substring start (cursor))]
          [line (current-line)]
          [lo (line-start (max 0 (- line 500)))]
@@ -976,15 +1089,18 @@
                     (loop e words seen)))
               (loop (+ p 1) words seen))))))
 
-(define (menu-rows) (max 1 (min 10 (- (window-height) 2))))
+(define (menu-rows)
+  "How many rows the completion menu shows: up to 10, to fit the window."
+  (max 1 (min 10 (- (window-height) 2))))
 
 (define (menu-line c width)
-  "A menu row: the label, then its detail dimmed."
+  "A menu row for candidate `c`: the label, then its detail dimmed."
   (let ([detail (cadr c)])
     (list (list (pad-right (car c) width) "")
           (list (if (equal? detail "") "" (string-append "  " (clip detail 40))) "popup.detail"))))
 
 (define (draw-menu!)
+  "Draws the completion menu at the cursor, scrolled to the selection."
   (let* ([n (length *menu-matches*)] [rows (menu-rows)]
          [i (max *menu-index* 0)]
          [top (max 0 (min (- i (- rows 1)) (- n rows)))]
@@ -997,8 +1113,8 @@
     (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
 
 (define (refilter-menu!)
-  "Narrows the menu to what has been typed since it opened; closes it
-   when nothing matches or the cursor left the word."
+  "Narrows the menu to what has been typed since it opened.
+   Closes it when nothing matches or the cursor left the word."
   (if (or (< (cursor) *menu-start*)
           (not (= (offset->line (cursor)) (offset->line *menu-start*)))
           (and (> (cursor) *menu-start*) (not (char-word? (buffer-char-at (- (cursor) 1))))))
@@ -1019,6 +1135,9 @@
                (draw-menu!)]))))
 
 (define (open-menu! candidates start select?)
+  "Opens the completion menu on `candidates` for the word at `start`.
+   It takes the keys while open. `select?` selects the first candidate
+   and says so when there are none."
   (set! *menu-candidates* candidates)
   (set! *menu-start* start)
   (set! *menu-index* (if select? 0 -1))
@@ -1028,6 +1147,7 @@
   (when (and select? (not *menu-open*)) (message "no completions")))
 
 (define (close-menu!)
+  "Closes the completion menu, if it is open, and gives the keys back."
   (when *menu-open*
     (set! *menu-open* #f)
     (set! *menu-matches* '())
@@ -1036,6 +1156,9 @@
     (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f))))
 
 (define (move-menu! step)
+  "Moves the menu's selection by `step`, wrapping around.
+   With nothing selected, a step forward selects the first and one back
+   the last."
   (let ([n (length *menu-matches*)])
     (when (> n 0)
       (set! *menu-index* (if (< *menu-index* 0)
@@ -1044,8 +1167,8 @@
       (draw-menu!))))
 
 (define (accept-candidate! c)
-  "Replaces the typed word with the candidate, as if typed (so . repeats
-   it), then applies the server's extra edits (imports)."
+  "Replaces the typed word with candidate `c`, as if typed.
+   So . repeats it. Then applies the server's extra edits (imports)."
   (let* ([start (min (cadddr c) (cursor))] [old (buffer-substring start (cursor))] [text (caddr c)]
          [item (car (cddddr c))])
     (close-menu!)
@@ -1061,6 +1184,10 @@
     (lsp-changed!)))
 
 (define (menu-key! key)
+  "Handles `key` while the completion menu is open.
+   Moves, accepts or closes it; other keys type as usual and narrow the
+   menu (asking the server again if its list was incomplete). Leaving
+   insert state closes it."
   (cond
     [(not (memq *mode* '(insert replace))) (close-menu!) (handle-key! key)]
     [(member key '("C-n" "<down>" "<tab>")) (move-menu! 1)]
@@ -1076,8 +1203,8 @@
      (when (and *menu-open* *menu-incomplete*) (schedule-completion! #t))]))
 
 (define (lsp-complete! manual?)
-  "Asks the server for completions at the cursor; `manual?` selects the
-   first one and says so when there are none."
+  "Asks the server for completions at the cursor, and opens the menu.
+   `manual?` selects the first one and says so when there are none."
   (let ([key (lsp-key)] [start (word-start-before (cursor))] [id (current-buffer)])
     (when key
       (lsp-sync!)
@@ -1094,6 +1221,8 @@
                                       (or manual? (and *menu-open* (>= *menu-index* 0)))))))))))
 
 (define (complete-words! step)
+  "Opens the menu on words from the buffer that complete the one typed.
+   A negative `step` selects the last of them instead of the first."
   (let ([start (word-start-before (cursor))])
     (set! *menu-key* #f)
     (set! *menu-incomplete* #f)
@@ -1101,7 +1230,8 @@
     (when (and *menu-open* (< step 0)) (set! *menu-index* (- (length *menu-matches*) 1)) (draw-menu!))))
 
 (define (complete-command step)
-  "C-n and C-p: the server's completions, or words from the buffer."
+  "The insert key C-n (`step` 1) or C-p (-1): completes the word.
+   With the server's completions, or without one words from the buffer."
   (lambda ()
     (if (lsp-key) (lsp-complete! #t) (complete-words! step))))
 
@@ -1120,13 +1250,16 @@
                   [(equal? key "C-p") (complete-words! -1)]
                   [else (handle-key! key)])))))
 
+;; Completing as you type: after a pause following a word character or
+;; one of the server's trigger characters.
 (define (trigger-char? key c)
-  "Completing as you type: after a pause following a word character or
-   one of the server's trigger characters."
+  "Whether `c` is one of server `key`'s completion trigger characters."
   (member (string c) (or (jget (lsp-get key 'capabilities) "completionProvider" "triggerCharacters") '())))
 
 (define (schedule-completion! refresh?)
-  "`refresh?` asks again for an open menu whose list was incomplete."
+  "Asks the server for completions after lsp-complete-delay of quiet.
+   Only if the cursor hasn't moved and no menu is open; `refresh?` asks
+   again for an open menu whose list was incomplete."
   (when *complete-timer* (cancel-timer! *complete-timer*))
   (let ([id (current-buffer)] [at (cursor)])
     (set! *complete-timer*

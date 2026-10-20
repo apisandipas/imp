@@ -17,13 +17,28 @@
 (define *file-names* (hash))   ; exact file names ("Makefile") -> mode
 
 (define (define-major-mode! name parent extensions setup)
+  "Defines major mode `name`, for files ending in one of `extensions`.
+   `parent` is the mode it builds on, or #f: the parent's keys apply
+   in its buffers and the parent's `setup` runs before its own.
+   `setup`, a procedure of no arguments or #f, runs in each buffer
+   that takes the mode, to set local options:
+
+     (define-major-mode! 'lua-mode 'prog-mode '(\"lua\")
+       (lambda () (set-local-option! 'shiftwidth 2)))"
   (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup))))
 
 (define (define-minor-mode! name setup teardown)
+  "Defines minor mode `name`, which a buffer can turn on and off.
+   `setup` runs when it turns on in a buffer and `teardown` when it
+   turns off; each is a procedure of no arguments, or #f."
   (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown))))
 
+;; Files with no extension, or one that misleads, by their whole name.
 (define (define-file-name-mode! file-name mode)
-  "Files with no extension, or one that misleads, by their whole name."
+  "Makes files named exactly `file-name` open in major mode `mode`.
+   This wins over the extension:
+
+     (define-file-name-mode! \"Justfile\" 'makefile-mode)"
   (set! *file-names* (hash-insert *file-names* file-name mode)))
 
 (define (mode-keymap mode state)
@@ -31,10 +46,19 @@
   (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
 
 (define (define-mode-key! mode state key command)
+  "Binds `key` to `command` in `state` for buffers in `mode`.
+   `state` is 'normal, 'visual or 'insert; the binding wins over the
+   global one there. `mode` can be a major or a minor mode:
+
+     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function)"
   (define-key! (mode-keymap mode state) key command))
 
-(define (major-mode) (or (buffer-local 'major-mode) 'fundamental-mode))
-(define (minor-modes) (or (buffer-local 'minor-modes) '()))
+(define (major-mode)
+  "The current buffer's major mode, fundamental-mode if it has none."
+  (or (buffer-local 'major-mode) 'fundamental-mode))
+(define (minor-modes)
+  "The minor modes on in the current buffer, newest first."
+  (or (buffer-local 'minor-modes) '()))
 
 (define (mode-lineage mode)
   "`mode` and its parents, nearest first."
@@ -49,12 +73,15 @@
 ;;; Choosing and switching major modes
 
 (define (file-name-of path)
+  "The last part of `path`, after its final slash."
   (let loop ([i (- (string-length path) 1)])
     (cond [(< i 0) path]
           [(equal? (string-ref path i) #\/) (substring path (+ i 1) (string-length path))]
           [else (loop (- i 1))])))
 
 (define (extension-of name)
+  "The extension of file name `name`, without the dot, or #f.
+   A leading dot doesn't start one: .bashrc has no extension."
   (let loop ([i (- (string-length name) 1)])
     (cond [(<= i 0) #f]
           [(equal? (string-ref name i) #\.) (substring name (+ i 1) (string-length name))]
@@ -83,8 +110,9 @@
   (run-hooks 'major-mode mode))
 
 (define (show-major-mode!)
-  "The status line shows the major mode's name, or the buffer's
-   mode-line-label when it has one (org capture's keys)."
+  "Shows the major mode's name, without -mode, in the status line.
+   The buffer's mode-line-label shows instead when it has one (org
+   capture's keys)."
   (let* ([name (symbol->string (major-mode))]
          [short (or (buffer-local 'mode-line-label)
                     (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name))])
@@ -92,25 +120,31 @@
     ;; %{major} in the status line, per buffer.
     (set-status-value! "major" short #f)))
 
+;; Turns minor mode `name` on or off in the current buffer.
 (define (minor-mode-on! name)
-  "Turns minor mode `name` on or off in the current buffer."
+  "Turns minor mode `name` on in the current buffer, if it's off.
+   Runs its setup."
   (unless (memq name (minor-modes))
     (set-buffer-local! 'minor-modes (cons name (minor-modes)))
     (let ([spec (hash-try-get *minor-modes* name)])
       (when (and spec (car spec)) ((car spec))))))
 
 (define (minor-mode-off! name)
+  "Turns minor mode `name` off in the current buffer, if it's on.
+   Runs its teardown."
   (when (memq name (minor-modes))
     (set-buffer-local! 'minor-modes (filter (lambda (m) (not (eq? m name))) (minor-modes)))
     (let ([spec (hash-try-get *minor-modes* name)])
       (when (and spec (cadr spec)) ((cadr spec))))))
 
 (define (toggle-minor-mode! name)
+  "Turns minor mode `name` on in the current buffer, or off if it's on."
   (if (memq name (minor-modes)) (minor-mode-off! name) (minor-mode-on! name)))
 
+;; A buffer gets its major mode when it opens; switching buffers brings
+;; back its options and mode line.
 (define (pick-major-mode!)
-  "A buffer gets its major mode when it opens; switching buffers brings
-   back its options and mode line."
+  "Sets the current buffer's major mode from its file name."
   (set-major-mode! (mode-for-path (or (buffer-path) ""))))
 
 (add-hook! 'buffer-open pick-major-mode!)
@@ -161,18 +195,27 @@
         (list (trim-right cs) ""))))
 
 (define (trim-left s)
+  "`s` without the whitespace at its start."
   (let loop ([i 0]) (if (and (< i (string-length s)) (char-whitespace? (string-ref s i))) (loop (+ i 1)) (substring s i (string-length s)))))
 (define (trim-right s)
+  "`s` without the whitespace at its end."
   (let loop ([i (string-length s)]) (if (and (> i 0) (char-whitespace? (string-ref s (- i 1)))) (loop (- i 1)) (substring s 0 i))))
 
-(define (line-text line) (buffer-substring (line-start line) (line-end line)))
+(define (line-text line)
+  "The text of `line`, without its newline."
+  (buffer-substring (line-start line) (line-end line)))
 
 (define (commented? line before after)
+  "Whether `line` is commented with `before` and `after`.
+   Leading whitespace is ignored; an empty `after` matches any end."
   (let ([text (trim-left (line-text line))])
     (and (starts-with? text before)
          (or (equal? after "") (ends-with? (trim-right text) after)))))
 
 (define (comment-lines! first last)
+  "Comments lines `first` to `last`, or uncomments them if they all are.
+   Uses the commentstring option. Blank lines are left alone; the
+   others are commented at the smallest indent among them."
   (let* ([parts (comment-parts)] [before (car parts)] [after (cadr parts)]
          [lines (filter (lambda (l) (not (blank-line? l))) (range first (+ last 1)))])
     (unless (null? lines)
@@ -181,14 +224,20 @@
           (let ([indent (apply min (map (lambda (l) (- (line-first-nonblank l) (line-start l))) lines))])
             (for-each (lambda (l) (comment-line! l indent before after)) lines))))))
 
-(define (andmap pred lst) (or (null? lst) (and (pred (car lst)) (andmap pred (cdr lst)))))
+(define (andmap pred lst)
+  "Whether `pred` holds for every element of `lst` (#t for none)."
+  (or (null? lst) (and (pred (car lst)) (andmap pred (cdr lst)))))
 
 (define (comment-line! line indent before after)
+  "Comments `line` with `before` at column `indent`, and `after`
+   (if not empty) at its end."
   (unless (equal? after "")
     (buffer-insert! (line-end line) (string-append " " after)))
   (buffer-insert! (+ (line-start line) indent) (string-append before " ")))
 
 (define (uncomment-line! line before after)
+  "Removes `before` from the start of `line` and `after` from its end,
+   with the space beside each."
   (let* ([start (line-first-nonblank line)]
          [n (string-length before)]
          ;; Take the space after the marker too, if there is one.
@@ -216,6 +265,8 @@
 (define-major-mode! 'prog-mode #f '() #f)
 
 (define (indent-with spaces? width)
+  "Sets the current buffer to indent by `width`, with spaces if
+   `spaces?`, else with tabs (shown 4 wide)."
   (set-local-option! 'expandtab spaces?)
   (set-local-option! 'shiftwidth width)
   (set-local-option! 'tabstop (if spaces? width 4)))
@@ -259,9 +310,10 @@
 
 ;;; Scheme mode: the editor's own language
 
+;; K describes the symbol under the cursor, gd goes to its definition.
 (define-command! 'describe-symbol-at-point
   (lambda (count)
-    "K describes the symbol under the cursor, gd goes to its definition."
+    "Describe the Scheme function or variable under the cursor."
     (let ([name (symbol-at-cursor)])
       (if name (describe-function name) (message "no symbol at the cursor")))))
 
@@ -273,12 +325,17 @@
 (define *mode-leaders* (hash))  ; mode -> hash of keys -> (command description)
 
 (define (define-mode-leader! mode keys command description)
+  "Binds `keys` under SPC m for buffers in major mode `mode`.
+   `command` and `description` are as for define-leader!. A mode's
+   buffers also get the SPC m bindings of its parents:
+
+     (define-mode-leader! 'lua-mode \"r\" 'lua-run \"run file\")"
   (let ([table (or (hash-try-get *mode-leaders* mode) (hash))])
     (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description))))))
 
 (define-command! 'local-leader
   (lambda (count)
-    "SPC m shows the bindings of the buffer's major mode (and its parents)."
+    "Show the SPC m bindings of the buffer's major mode and its parents."
     (let ([bindings (filter (lambda (x) x)
                             (map (lambda (m) (hash-try-get *mode-leaders* m)) (mode-lineage (major-mode))))])
       (if (null? bindings)
@@ -324,10 +381,14 @@
           [else (loop (- line 1))])))
 
 (define (repl-print! text)
+  "Adds `text` at the end of the REPL buffer and moves the cursor there."
   (buffer-insert! (buffer-length) text)
   (set-cursor! (buffer-length)))
 
 (define (repl-send!)
+  "Evaluates the REPL input after the last prompt and prints the result.
+   With the cursor before the input, or no input, it only breaks the
+   line. Prints errors too, then a new prompt."
   (let* ([start (repl-input-start)]
          [input (buffer-substring start (buffer-length))])
     (if (or (< (cursor) start) (equal? (trim-left input) ""))
@@ -346,6 +407,7 @@
 
 (define-command! 'repl
   (lambda (count)
+    "Open the Scheme REPL, *scheme*, ready to type at its prompt."
     (let ([existing (filter (lambda (id) (equal? (car (buffer-info id)) "*scheme*")) (buffer-list))])
       (if (pair? existing)
           (go-to-buffer! (car existing))

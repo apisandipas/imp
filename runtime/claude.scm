@@ -37,7 +37,7 @@
   (or (buffer-local 'claude-root) (project-root) (current-dir)))
 
 (define (claude-buffer root)
-  "Root's Claude buffer, or #f."
+  "The Claude buffer of project `root`, or #f."
   (let ([buf (hash-try-get *claude-buffers* root)])
     (and buf (memv buf (buffer-list)) buf)))
 
@@ -46,6 +46,8 @@
   (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
 
 (define (claude-start! root)
+  "Starts Claude Code for project `root` in a new buffer and shows it.
+   Returns the buffer, or #f if it couldn't start."
   (let ([buf (buffer-new! (string-append "*claude: " (file-name-of root) "*"))])
     (display-buffer! buf)
     (set-buffer-local! 'claude-root root)
@@ -56,8 +58,9 @@
            buf))))
 
 (define (claude-show! root)
-  "Shows root's Claude, starting it if it isn't running, and types to it.
-   Returns its buffer, or #f if it couldn't start."
+  "Shows project `root`'s Claude, starting it if it isn't running.
+   Puts you in the terminal state there. Returns its buffer, or #f if it
+   couldn't start."
   (let ([buf (claude-buffer root)])
     (cond
       [(and buf (claude-terminal buf))
@@ -84,6 +87,7 @@
       [else (message "no other buffer to show")])))
 
 (define (claude-toggle!)
+  "Hides Claude when in its window; else shows this project's Claude."
   (if (buffer-local 'claude-root)
       (claude-hide!)
       (claude-show! (claude-root))))
@@ -91,14 +95,16 @@
 ;;; Sending
 
 (define (bracketed text)
-  "Text to paste: programs that asked for bracketed paste take it as one
-   paste rather than as typing, so its line breaks don't submit anything."
+  "`text` wrapped in bracketed-paste escapes.
+   Programs that asked for bracketed paste take it as one paste rather
+   than as typing, so its line breaks don't submit anything."
   (let ([esc (string (integer->char 27))])
     (string-append esc "[200~" text esc "[201~")))
 
 (define (claude-flush! buf tries)
-  "Pastes what is waiting for `buf` once its Claude takes input; until
-   then, looks again every claude-ready-ms, `tries` more times."
+  "Pastes what is waiting for `buf` once its Claude takes input.
+   Until then, looks again every claude-ready-ms, `tries` more times,
+   and gives up saying so."
   (let ([id (claude-terminal buf)] [texts (hash-try-get *claude-pending* buf)])
     (cond
       [(or (not id) (not texts)) (set! *claude-pending* (hash-remove *claude-pending* buf))]
@@ -139,12 +145,15 @@
                  "```\n"))
 
 (define (claude-source?)
-  "Whether the current buffer is something to send from."
+  "Whether the current buffer is something to send from.
+   Claude's own buffer isn't; says so and returns #f."
   (if (buffer-local 'claude-root)
       (begin (message "this is Claude's own window") #f)
       #t))
 
 (define (claude-send-region! count)
+  "Sends the selection, or the current line, to Claude in a fenced block.
+   It is labelled with the file and line numbers it came from."
   (when (claude-source?)
     (let* ([r (if (eq? *mode* 'visual) (visual-range) (lines-range (current-line) (current-line)))]
            [first (+ (offset->line (car r)) 1)]
@@ -158,17 +167,22 @@
       (claude-send! (claude-quote label text)))))
 
 (define (claude-send-buffer! count)
+  "Sends the whole buffer to Claude, labelled with its file."
   (when (claude-source?)
     (let ([label (claude-path (claude-root))])
       (claude-send! (claude-quote label (buffer-substring 0 (buffer-length)))))))
 
 (define (claude-send-file! count)
+  "Puts an @path reference to the current file in Claude's prompt.
+   Claude reads the file itself; a buffer without a file can't be sent
+   this way."
   (when (claude-source?)
     (if (buffer-path)
         (claude-send! (string-append "@" (claude-path (claude-root)) " "))
         (message "this buffer has no file; SPC a b sends its text"))))
 
 (define (claude-kill! count)
+  "Stops the current project's Claude and kills its buffer."
   (let ([buf (claude-buffer (claude-root))])
     (if buf
         (begin
@@ -184,7 +198,10 @@
                                (set! *claude-buffers* (hash-remove *claude-buffers* root))))
               (hash-keys->list *claude-buffers*))))
 
-(define-command! 'claude (lambda (count) (claude-toggle!)))
+(define-command! 'claude
+  (lambda (count)
+    "Show this project's Claude (starting it), or hide it from inside."
+    (claude-toggle!)))
 (define-command! 'claude-send-region claude-send-region!)
 (define-command! 'claude-send-buffer claude-send-buffer!)
 (define-command! 'claude-send-file claude-send-file!)

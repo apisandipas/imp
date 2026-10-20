@@ -48,6 +48,7 @@
 ;; Your own command, on the leader and in M-x.
 (define-command! 'insert-date
   (lambda (count)
+    "Insert today's date at the cursor."  ; a docstring: M-x and SPC h f show it
     (begin-change!)
     (buffer-insert! (cursor) (without-final-newline (cadr (run-shell "date +%F" ""))))))
 (define-leader! "id" 'insert-date "insert date")

@@ -58,7 +58,9 @@
     (let ([line (min line (max 0 (- (buffer-line-count) 1)))])
       (set-cursor! (line-col->offset line (min col (max 0 (- (buffer-line-length line) 1))))))))
 
-(define (special-buffer?) (and (memq 'special-mode (mode-lineage (major-mode))) #t))
+(define (special-buffer?)
+  "Whether the current buffer's major mode derives from special-mode."
+  (and (memq 'special-mode (mode-lineage (major-mode))) #t))
 
 ;; Each special buffer remembers the buffer it was opened from, and q goes
 ;; back there (so q from a diff opened from git status returns to the
@@ -91,18 +93,31 @@
 (define *popup-windows* '())  ; (window origin-window rule)
 
 (define (popup-props args)
+  "The alist of the 'key value pairs in `args`; an odd one out is dropped."
   (if (or (null? args) (null? (cdr args)))
       '()
       (cons (cons (car args) (cadr args)) (popup-props (cddr args)))))
 
 (define (define-popup-rule! match . props)
+  "Says where buffers whose name starts with `match` open.
+   `match` can also be a procedure given the name. `props` are 'key
+   value pairs: 'side ('bottom, 'top, 'left, 'right), 'size (the part
+   of the frame, 0.3), 'select (#t) and 'quit (#t). A rule for the same
+   `match` replaces the old one:
+
+     (define-popup-rule! \"*grep*\" 'side 'right 'size 0.3)"
   (remove-popup-rule! match)
   (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*)))
 
 (define (remove-popup-rule! match)
+  "Drops the popup rule for `match`, so its buffers take over the
+   current window again:
+
+     (remove-popup-rule! \"*grep*\")"
   (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*)))
 
 (define (popup-prop rule key default)
+  "Property `key` of popup rule `rule`, or `default` if it has none."
   (let ([p (assq key (cadr rule))]) (if p (cdr p) default)))
 
 (define (popup-rule name)
@@ -110,14 +125,19 @@
   (list-find (lambda (r) (if (string? (car r)) (starts-with? name (car r)) ((car r) name)))
              *popup-rules*))
 
-(define (buffer-name-of id) (car (buffer-info id)))
+(define (buffer-name-of id)
+  "The name of buffer `id`."
+  (car (buffer-info id)))
 
 (define (live-popup-windows)
   "The popup windows still open, as (window origin rule)."
   (set! *popup-windows* (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
   *popup-windows*)
 
-(define (popup-window-entry window) (assv window (live-popup-windows)))
+(define (popup-window-entry window)
+  "The (window origin rule) entry for `window` if it is an open popup,
+   or #f."
+  (assv window (live-popup-windows)))
 
 (define (display-buffer! id)
   "Shows buffer `id` where its popup rule says, or in the current window."
@@ -191,11 +211,15 @@
 (define *menu-entries* '())
 
 (define (menu-done!)
+  "Closes the menu: its popup goes and keys work as usual again."
   (set! *key-interceptor* #f)
   (set! *menu-entries* '())
   (set-popup! '()))
 
 (define (menu-input! key)
+  "Runs the menu entry for `key`, the key typed while a menu is open.
+   Esc, C-g, C-c and q just close the menu; any other key says it is
+   undefined."
   (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)])
     (menu-done!)
     (cond [entry (message "") ((caddr entry))]
@@ -203,6 +227,11 @@
           [else (message (string-append (key-label key) " is undefined"))])))
 
 (define (menu! title entries)
+  "Shows a popup menu titled `title`; the next key runs its entry.
+   Each of `entries` is (key label thunk):
+
+     (menu! \"Commit\" (list (list \"c\" \"commit\" commit!)
+                           (list \"a\" \"amend\" amend!)))"
   (set! *menu-entries* entries)
   (set! *key-interceptor* menu-input!)
   (show-which-key-popup! (which-key-table (map (lambda (e) (cons (key-label (car e)) (cadr e))) entries))
@@ -241,6 +270,7 @@
 (define *draw-at* 0)
 
 (define (draw-begin!)
+  "Starts drawing a buffer afresh, for draw-line! and draw-finish!."
   (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0))
 
 (define (draw-line! parts item)

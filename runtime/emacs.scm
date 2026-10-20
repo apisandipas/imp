@@ -24,7 +24,9 @@
 (define *this-command* #f)
 (define *last-command* #f)      ; so kills join up and M-y follows C-y
 
-(define (emacs-key-binding keys) (key-binding 'emacs keys))
+(define (emacs-key-binding keys)
+  "What `keys` are bound to in the emacs keymap, or #f."
+  (key-binding 'emacs keys))
 
 (define (emacs-prefix? keys)
   "Whether `keys` starts a longer binding, as \"C-x\" does."
@@ -35,9 +37,15 @@
                  (and (pair? ks) (or (starts-with? (car ks) prefix) (any (cdr ks)))))
                (loop (cdr maps)))))))
 
-(define (emacs-count) (or *emacs-arg* 1))
+(define (emacs-count)
+  "The universal argument for the next command, or 1 without one."
+  (or *emacs-arg* 1))
 
 (define (emacs-key! key)
+  "Handle `key` in Emacs state: the state's key handler.
+   C-u, C-u digits and M-digit set the universal argument; C-g quits;
+   a bound sequence runs; a prefix such as C-x waits for more keys and
+   shows which-key; a printable key inserts itself."
   (let ([keys (if (equal? *emacs-prefix* "") key (string-append *emacs-prefix* " " key))])
     (cond
       ;; C-u: 4, 16, ... or the digits typed after it.
@@ -77,6 +85,9 @@
        (message (string-append keys " is undefined"))])))
 
 (define (run-emacs-command! binding)
+  "Run `binding`, a command name or a procedure, with the argument.
+   Clears the universal argument and records the command as the last
+   one, so kills join up and M-y can follow C-y."
   (let ([proc (if (symbol? binding) (command-proc binding) binding)]
         [count (emacs-count)])
     (set! *this-command* binding)
@@ -99,6 +110,7 @@
           (sort keys string<?)))))
 
 (define (keyboard-quit!)
+  "Cancel a pending key sequence, the argument and the region (C-g)."
   (set! *emacs-prefix* "")
   (set! *emacs-arg* #f)
   (set-popup! '())
@@ -108,7 +120,8 @@
 ;;; Inserting text
 
 (define (self-insert! key n)
-  "Typing goes into one undo step until another command runs, roughly as
+  "Inserts `key` `n` times at the cursor (<tab> as a tab).
+   Typing goes into one undo step until another command runs, roughly as
    Emacs groups self-inserts."
   (unless (eq? *last-command* 'self-insert) (begin-change!))
   (set! *this-command* 'self-insert)
@@ -116,6 +129,7 @@
   (insert-text! (string-repeat (if (equal? key "<tab>") "\t" key) n)))
 
 (define (emacs-edit! thunk)
+  "Call `thunk` as one undo step, dropping the region first."
   (begin-change!)
   (deactivate-mark!)
   (thunk))
@@ -123,17 +137,21 @@
 ;;; The mark and the region
 
 (define (set-mark!)
+  "Set the mark at the cursor and make the region active."
   (mark-set! "emacs-mark" (cursor))
   (set! *mark* #t)
   (message "Mark set"))
 
-(define (deactivate-mark!) (set! *mark* #f))
+(define (deactivate-mark!)
+  "Make the region inactive; the mark itself stays where it is."
+  (set! *mark* #f))
 
 (define (region)
   "The active region as (start end), or #f."
   (and *mark* (let ([m (mark-get "emacs-mark")]) (and m (list (min m (cursor)) (max m (cursor)))))))
 
 (define (show-region!)
+  "Highlight the active region in Emacs state, after each command."
   (when (eq? *mode* 'emacs)
     (highlight-clear! "visual")
     (let ([r (region)])
@@ -146,6 +164,9 @@
 ;;; them; consecutive kills join into one entry, as in Emacs.
 
 (define (kill-text! text forward?)
+  "Push `text` onto the kill ring and into the unnamed register.
+   Right after another kill it joins the last entry instead: appended
+   when `forward?`, prepended otherwise. The ring keeps 60 entries."
   (if (and (memq *last-command* '(kill-line kill-word backward-kill-word kill-region))
            (pair? *kill-ring*))
       (set! *kill-ring* (cons (if forward? (string-append (car *kill-ring*) text)
@@ -156,6 +177,9 @@
   (register-set! #\" (car *kill-ring*) #f 'delete))
 
 (define (kill-range! start end forward? name)
+  "Kill the text from `start` to `end` as the command `name`.
+   `forward?` says which way it joins a kill just before it. The region
+   is dropped either way."
   (when (< start end)
     (set! *this-command* name)
     (begin-change!)
@@ -165,6 +189,10 @@
   (deactivate-mark!))
 
 (define (yank! count)
+  "Insert the `count`th most recent kill at the cursor (C-y).
+   With an empty kill ring, the unnamed register's text. Sets the mark
+   at the start, so the yanked text is the region, and remembers where
+   it went for M-y."
   (let ([text (if (pair? *kill-ring*)
                   (list-ref *kill-ring* (min (- count 1) (- (length *kill-ring*) 1)))
                   (let ([r (register-get #\")]) (and r (car r))))])
@@ -194,23 +222,29 @@
 ;;; Moving
 
 (define (forward-word p)
-  "Emacs words are runs of word chars; punctuation and space are skipped."
+  "The end of the word after `p`, Emacs-style.
+   Emacs words are runs of word chars; punctuation and space are skipped."
   (let* ([len (buffer-length)]
          [p (let loop ([q p]) (if (and (< q len) (not (char-word? (buffer-char-at q)))) (loop (+ q 1)) q))])
     (let loop ([q p]) (if (and (< q len) (char-word? (buffer-char-at q))) (loop (+ q 1)) q))))
 
 (define (backward-word p)
+  "The start of the word before `p`, Emacs-style."
   (let* ([p (let loop ([q p]) (if (and (> q 0) (not (char-word? (buffer-char-at (- q 1))))) (loop (- q 1)) q))])
     (let loop ([q p]) (if (and (> q 0) (char-word? (buffer-char-at (- q 1)))) (loop (- q 1)) q))))
 
-(define (repeat-move n step) (lambda (count) (set-cursor! (repeat-motion (* n count) step (cursor)))))
+(define (repeat-move n step)
+  "A command that moves the cursor by `step`, `n` times its count."
+  (lambda (count) (set-cursor! (repeat-motion (* n count) step (cursor)))))
 
 (define (emacs-vertical! n)
+  "Move `n` lines down (up when negative), keeping the goal column."
   (let ([col (if (memq *last-command* '(next-line previous-line)) *goal-col* (current-col))])
     (set! *goal-col* col)
     (set-cursor! (line-col->offset (clamp (+ (current-line) n) 0 (last-line)) col))))
 
 (define (commands! specs)
+  "Define a command for each (name proc) in `specs`."
   (for-each (lambda (spec) (define-command! (car spec) (cadr spec))) specs))
 
 (commands!
@@ -240,6 +274,8 @@
 ;;; Editing
 
 (define (transpose-chars!)
+  "Swap the chars around the cursor and move past them.
+   At the end of a line, the two chars before the cursor."
   (let* ([p (cursor)]
          [p (if (and (= p (line-end (current-line))) (> p (line-start (current-line)))) (- p 1) p)])
     (when (> p 0)
@@ -248,6 +284,8 @@
         (set-cursor! (+ p 1))))))
 
 (define (case-word! f)
+  "A command that replaces `count` words from the cursor with `f` of
+   them, leaving the cursor after them."
   (lambda (n)
     (emacs-edit!
      (lambda ()
@@ -256,6 +294,7 @@
          (set-cursor! end))))))
 
 (define (capitalize text)
+  "`text` with each word's first char upper-cased and the rest lower."
   (let loop ([cs (string->list text)] [start? #t] [acc '()])
     (cond [(null? cs) (list->string (reverse acc))]
           [(char-word? (car cs))
@@ -373,6 +412,10 @@
 ;;; Incremental search: C-s and C-r, again to go to the next match.
 
 (define (isearch! forward?)
+  "Search incrementally as the user types, `forward?` or backward.
+   The cursor follows the first match from where the search started;
+   C-s and C-r step to the next match, C-g or Esc go back to the start,
+   and Enter keeps the search for n and N."
   (let ([origin (cursor)] [found (cursor)])
     (open-cmdline!
      (if forward? "I-search: " "I-search backward: ") ""

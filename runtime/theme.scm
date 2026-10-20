@@ -19,12 +19,20 @@
 (define *theme* #f)       ; the theme loaded
 
 (define (define-theme! name parent palette faces)
+  "Defines theme `name`, starting from theme `parent` (or #f).
+   `palette` is a hash of the palette colors to set or change; `faces`
+   is a list of (face spec) to set after the palette's faces:
+
+     (define-theme! 'mine 'one-dark (hash 'bg \"#1a1b26\")
+       (list (list \"syntax.comment\" \"fg=#565f89\")))
+
+   Load it with (load-theme! 'mine)."
   (let* ([base (if parent (hash-ref *themes* parent) (list (hash) '()))]
          [merged (foldl (lambda (k h) (hash-insert h k (hash-ref palette k))) (car base) (hash-keys->list palette))])
     (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces))))))
 
 (define (theme-faces p)
-  "Every face, from a palette."
+  "Every face as a (name spec) list, made from palette `p`."
   (let* ([c (lambda (name) (hash-ref p name))]
          [fg (lambda (name . more)
                (apply string-append (cons (string-append "fg=" (c name)) (map (lambda (m) (string-append " " m)) more))))]
@@ -161,6 +169,10 @@
     (append colors (cons (hash-ref p 'dim) (cdr colors)))))
 
 (define (load-theme! name)
+  "Switches to theme `name`, a symbol, setting every face and the
+   terminal colors from it. An unknown name raises an error:
+
+     (load-theme! 'gruvbox-dark)"
   (let ([theme (hash-try-get *themes* name)])
     (if (not theme)
         (error (string-append "no theme " (symbol->string name)))
@@ -228,26 +240,32 @@
 ;;; (set-face! "name" "fg=#rrggbb bg=#rrggbb bold italic underline").
 
 (define (face-line name)
+  "A line naming face `name` and its spec, for describe-face."
   (string-append (pad-right name 28) (or (face-spec name) "(not defined)")))
 
 (define (face-change-hint name)
+  "The set-face! line that would change face `name`, to copy to init.scm."
   (string-append "Change it: (set-face! \"" name "\" \"" (or (face-spec name) "fg=#rrggbb") "\")"))
 
 (define (describe-face-at! at)
-  "\"normal\" is under everything: the text color and background."
+  "Shows the faces drawn at offset `at` in a popup, bottom first.
+   \"normal\" is under everything: the text color and background."
   (let ([faces (cons "normal" (faces-at at))])
     (show-popup! (append (list "Faces at the cursor, bottom first:")
                          (map (lambda (f) (string-append "  " (face-line f))) faces)
                          (list "" (face-change-hint (last faces)))))))
 
-(define-command! 'describe-face (lambda (count) (describe-face-at! (cursor))))
+(define-command! 'describe-face
+  (lambda (count)
+    "Show the faces drawn under the cursor and how to change them."
+    (describe-face-at! (cursor))))
 
 (define-major-mode! 'faces-mode 'special-mode '() #f)
 
 (define-command! 'list-faces
   (lambda (count)
-    "Each face's name, a sample drawn in it, and its spec; <ret> on one shows
-     how to change it."
+    "List every face with a sample drawn in it and its spec.
+     <ret> on one shows how to change it."
     (display-buffer! (special-buffer "*faces*" 'faces-mode))
     (draw-begin!)
     (for-each (lambda (name)
@@ -264,10 +282,13 @@
       (when (and item (eq? (car item) 'face))
         (show-popup! (list (face-line (cadr item)) "" (face-change-hint (cadr item))))))))
 
-(define (theme-names) (sort (map symbol->string (hash-keys->list *themes*)) string<?))
+(define (theme-names)
+  "The names of the themes defined, sorted, as strings."
+  (sort (map symbol->string (hash-keys->list *themes*)) string<?))
 
 (define-command! 'load-theme
   (lambda (count)
+    "Pick a theme by name and switch to it."
     (completing-read "Theme: " (theme-names) (lambda (name) (load-theme! (string->symbol name))))))
 
 (define-ex! '("theme" "colo" "colorscheme")
@@ -296,7 +317,9 @@
   '(stl))
 (define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
 
-(define (update-statusline! value) (set-statusline! (option 'statusline) (option 'statusline-inactive)))
+(define (update-statusline! value)
+  "Hands the statusline options to the renderer; `value` is unused."
+  (set-statusline! (option 'statusline) (option 'statusline-inactive)))
 (watch-option! 'statusline update-statusline!)
 (watch-option! 'statusline-inactive update-statusline!)
 
@@ -315,8 +338,8 @@
 (define *appearance* (hash))
 
 (define (define-appearance-option! name default apply)
-  "Option `name`, starting at `default`; `apply` gets each new value, and
-   raises an error for a bad one."
+  "Defines option `name` for how the window looks, set to `default`.
+   `apply` gets each new value, and raises an error for a bad one."
   (set! *appearance* (hash-insert *appearance* name default))
   (define-computed-option! name '()
     (lambda () (hash-ref *appearance* name))
@@ -325,6 +348,8 @@
       (set! *appearance* (hash-insert *appearance* name value)))))
 
 (define (check-number name value low high)
+  "Raises an error unless `value` is a number from `low` to `high`.
+   `name` is the option the error message names."
   (unless (and (number? value) (<= low value high))
     (error (string-append (symbol->string name) " is a number from "
                           (number->string low) " to " (number->string high)))))

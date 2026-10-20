@@ -11,10 +11,15 @@
 (define *term-prefix* #f)    ; after C-\ in the terminal state
 (define term-redraw-ms 15)
 
-(define (term-id) (buffer-local 'term-id))
+(define (term-id)
+  "The id of the terminal running in the current buffer, or #f.
+   It is #f in a buffer that isn't a terminal or whose program exited."
+  (buffer-local 'term-id))
 
 (define (term-key-bytes key id)
-  "The bytes a key sends to a program."
+  "The bytes `key` sends to the program in terminal `id`.
+   Arrows follow the program's application-cursor mode; a key with no
+   encoding gives \"\"."
   (let ([app? (term-application-cursor? id)]
         [esc (string (integer->char 27))])
     (cond
@@ -50,11 +55,18 @@
 ;;
 ;;   (define-terminal-key! "M-a" claude-toggle!)
 (define *terminal-keys* (hash))
-(define (define-terminal-key! key proc) (set! *terminal-keys* (hash-insert *terminal-keys* key proc)))
-(define (remove-terminal-key! key) (set! *terminal-keys* (hash-remove *terminal-keys* key)))
+(define (define-terminal-key! key proc)
+  "Keeps `key` for the editor in the terminal state: it runs `proc`.
+   `proc` takes no arguments; the key no longer reaches the program."
+  (set! *terminal-keys* (hash-insert *terminal-keys* key proc)))
+(define (remove-terminal-key! key)
+  "Sends `key` to the program again in the terminal state."
+  (set! *terminal-keys* (hash-remove *terminal-keys* key)))
 
 (define (terminal-key! key)
-  "Keys in the terminal state."
+  "Handles `key` in the terminal state, mostly by sending it on.
+   Keys from define-terminal-key! stay with the editor; C-\\ C-n goes to
+   normal state, and C-\\ C-\\ sends one C-\\."
   (let ([id (term-id)])
     (cond
       [(not id) (set-mode! 'normal)]
@@ -70,8 +82,9 @@
 (define-state! 'terminal "TERMINAL" "bar" terminal-key!)
 
 (define (term-redraw! id)
-  "Redraws terminal `id` into its buffer, sized to the window if it's the
-   current buffer. In the terminal state the cursor follows the program's."
+  "Redraws terminal `id` into its buffer.
+   If it is the current buffer the terminal is sized to the window, and
+   in the terminal state the cursor follows the program's."
   (let ([buf (hash-try-get *terminals* id)])
     (when (and buf (memv buf (buffer-list)))
       (when (= buf (current-buffer))
@@ -81,7 +94,9 @@
           (set-cursor! at))))))
 
 (define (imp-term-output id)
-  "Output arrives in chunks; redraw once they pause for a moment."
+  "Called when terminal `id` has output: redraws terminals shortly.
+   Output arrives in chunks, so the redraw waits term-redraw-ms for them
+   to pause."
   (unless *term-redraw*
     (set! *term-redraw*
           (run-after! term-redraw-ms
@@ -90,6 +105,9 @@
                         (for-each term-redraw! (hash-keys->list *terminals*)))))))
 
 (define (imp-term-exit id code)
+  "Called when terminal `id`'s program exits with status `code`.
+   The buffer stays, read-only, with a line saying how it exited, and
+   leaves the terminal state."
   (term-redraw! id)
   (let ([buf (hash-try-get *terminals* id)])
     (set! *terminals* (hash-remove *terminals* id))
@@ -109,9 +127,10 @@
 (define *term-count* 0)
 
 (define (start-terminal! buf command cwd)
-  "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`, which must
-   be the current buffer, sized to its window. Returns the terminal's id,
-   or #f after saying why it couldn't start (and killing `buf`)."
+  "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`.
+   `buf` must be the current buffer; the terminal is sized to its window.
+   Returns the terminal's id, or #f after saying why it couldn't start
+   (and killing `buf`)."
   (set-major-mode! 'term-mode)
   (let ([id (term-start! command cwd (window-height) (window-text-width))])
     (if (string? id)
@@ -123,6 +142,9 @@
           id))))
 
 (define (terminal! command)
+  "Runs `command` (your shell if \"\") in a new terminal buffer.
+   It starts in the directory of the current file or file browser, else
+   the current directory. Returns the terminal's id, or #f."
   (set! *term-count* (+ *term-count* 1))
   (let* ([cwd (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
                     [(buffer-path) (directory-of (absolute (buffer-path)))]
@@ -141,6 +163,7 @@
     (set-local-option! 'cursorline #f)))
 
 (define (term-resume! count)
+  "Goes back to the terminal state, if the program is still running."
   (if (term-id)
       (begin (set-mode! 'terminal) (term-redraw! (term-id)))
       (message "the program has exited")))
@@ -157,5 +180,8 @@
 (add-hook! 'buffer-enter (lambda () (when (term-id) (term-redraw! (term-id)))))
 
 (define-ex! '("ter" "terminal") (lambda (ex) (terminal! (trim (ex-args ex)))))
-(define-command! 'terminal (lambda (count) (terminal! "")))
+(define-command! 'terminal
+  (lambda (count)
+    "Run your shell in a new terminal buffer."
+    (terminal! "")))
 (define-leader! "ot" 'terminal "terminal")

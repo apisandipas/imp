@@ -21,12 +21,16 @@
 (define *collab-timer* #f)
 (define collab-sync-ms 200)
 
-(define (collab-peers buf) (or (hash-try-get *collab-peers* buf) '()))
+(define (collab-peers buf)
+  "The connections to the peers of shared buffer `buf`, or '()."
+  (or (hash-try-get *collab-peers* buf) '()))
 
 (define (collab-send! conn . words)
+  "Sends `words`, joined by spaces, to `conn` as one message line."
   (socket-send! conn (string-append (string-join words " ") "\n")))
 
 (define (collab-broadcast! buf update except)
+  "Sends `update` to every peer of `buf` but `except` (#f for none)."
   (for-each (lambda (conn) (unless (equal? conn except) (collab-send! conn "update" update)))
             (collab-peers buf)))
 
@@ -38,6 +42,8 @@
             (hash-keys->list *collab-peers*)))
 
 (define (collab-start! buf)
+  "Starts keeping `buf` in sync: shares it with the CRDT and starts
+   the sync timer if it isn't running."
   (unless (crdt-shared? buf) (crdt-share! buf))
   (unless (hash-contains? *collab-peers* buf)
     (set! *collab-peers* (hash-insert *collab-peers* buf '())))
@@ -45,10 +51,13 @@
     (set! *collab-timer* (run-every! collab-sync-ms collab-sync!))))
 
 (define (collab-add-peer! buf conn)
+  "Records `conn` as a peer of shared buffer `buf`."
   (set! *collab-buffers* (hash-insert *collab-buffers* conn buf))
   (set! *collab-peers* (hash-insert *collab-peers* buf (cons conn (collab-peers buf)))))
 
 (define (collab-drop-peer! conn)
+  "Forgets connection `conn`; returns the buffer it was a peer of, or #f.
+   The connection itself stays open."
   (let ([buf (hash-try-get *collab-buffers* conn)])
     (set! *collab-buffers* (hash-remove *collab-buffers* conn))
     (when buf
@@ -70,7 +79,10 @@
     (set! *collab-timer* #f)))
 
 (define (collab-receive! buf conn line)
-  "A message from a peer of `buf`."
+  "Handles `line`, a message from `conn`, a peer of shared buffer `buf`.
+   hello gets the buffer's name and what the joiner lacks; update is
+   applied and relayed to the other peers; name names the joined
+   buffer and picks its major mode."
   (let ([words (split-whitespace line)])
     (cond [(null? words) #f]
           [(equal? (car words) "hello")
@@ -86,9 +98,13 @@
                (when mode (set-major-mode! mode))))])))
 
 (define (collab-socket-path name)
+  "The socket for share `name`: `name` itself when it is a path (has a
+   slash), else imp's socket called share-NAME."
   (if (string-contains? name "/") (expand-path name) (socket-path (string-append "share-" name))))
 
 (define (share-buffer! name)
+  "Serves the current buffer on the socket for `name`, for :share.
+   Peers that join get a copy kept in sync; says where it is shared."
   (let* ([buf (current-buffer)]
          [path (collab-socket-path name)]
          [listener (listen-socket! path
@@ -101,6 +117,9 @@
       (message (string-append "sharing on " path ": others :join " name)))))
 
 (define (join-buffer! name)
+  "Opens the buffer shared as `name` in a new buffer, for :join.
+   If the socket can't be reached the new buffer goes again; when the
+   host goes away, the buffer stops being shared but stays."
   (let* ([buf (buffer-new! (string-append "[shared] " name))]
          [conn (connect-socket! (collab-socket-path name)
                                 (lambda (conn line) (collab-receive! buf conn line))
@@ -118,10 +137,12 @@
         (buffer-kill! buf))))
 
 (define (collab-name ex)
+  "The share name given to the ex command `ex`, \"imp\" by default."
   (let ([words (split-whitespace (ex-args ex))])
     (if (null? words) "imp" (car words))))
 
 (define (collab-check)
+  "Whether imp has the crdt feature; says so and returns #f if not."
   (or (crdt-available?)
       (begin (message "imp was built without the crdt feature") #f)))
 

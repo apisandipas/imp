@@ -443,8 +443,13 @@ Phase 2 adds:
 - Live Scheme: `:eval`, `:source`, eval form/top-level form/region/buffer,
   `M-:`, `:messages`, and a `*scheme*` REPL buffer (`:repl`, `SPC e i`).
 - Help from the source: `describe-key` (press keys, see the binding form and
-  its comment), `describe-function/option/command`, `apropos`,
+  its documentation), `describe-function/option/command`, `apropos`,
   `find-definition`, `:help`; Scheme buffers have `K` and `gd`.
+- Docstrings, as in Emacs: a string first in a function's body, or in a
+  command's lambda, is its documentation (help.scm's header; help.scm reads
+  them from the source). Variables and options keep a comment above.
+  `tests/help.rs` fails on a runtime function without one;
+  `tools/docstrings.py missing` lists them and `insert` adds them.
 - Hooks, advice, named commands.
 - Completion (orderless fuzzy) for M-x, find-file (gitignore-aware),
   switch-buffer, describe-*.

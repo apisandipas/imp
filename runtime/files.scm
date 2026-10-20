@@ -21,6 +21,8 @@
 (define-option! 'state-directory "" '())
 
 (define (imp-state-dir)
+  "The directory imp keeps state in: the state-directory option, or
+   $XDG_STATE_HOME/imp when that is empty."
   (if (equal? (option 'state-directory) "") (state-dir) (option 'state-directory)))
 
 (define-computed-option! 'fileformat '(ff)
@@ -59,6 +61,7 @@
       [else #t])))
 
 (define (check-all-buffers!)
+  "Checks every buffer's file for changes made outside imp."
   (for-each (lambda (id) (with-buffer id check-disk-change!)) (buffer-list)))
 
 (add-hook! 'buffer-enter check-disk-change!)
@@ -74,14 +77,18 @@
                    (list->string (map (lambda (c) (if (equal? c #\/) #\% c)) (string->list full))))))
 
 (define (autosave-buffer!)
+  "Copies the current buffer to its autosave file if it is modified.
+   A copy that can't be written is skipped quietly."
   (when (and (buffer-path) (buffer-modified?))
     (with-handler (lambda (e) #f)
                   (write-text-file! (autosave-path (buffer-path)) (buffer-substring 0 (buffer-length))))))
 
 (define (autosave-all!)
+  "Autosaves every modified buffer that has a file."
   (for-each (lambda (id) (with-buffer id autosave-buffer!)) (buffer-list)))
 
 (define (remove-autosave!)
+  "Deletes the current buffer's autosave copy, once it is saved."
   (when (buffer-path) (delete-file! (autosave-path (buffer-path)))))
 
 (define (recoverable?)

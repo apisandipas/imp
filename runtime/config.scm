@@ -16,13 +16,24 @@
 ;;; line, and the rest still loads. (load-kdl-config! PATH) loads a file
 ;;; by hand.
 
-(define (kdl-name n) (car n))
-(define (kdl-args n) (cadr n))
-(define (kdl-props n) (caddr n))
-(define (kdl-children n) (cadddr n))
-(define (kdl-line n) (list-ref n 4))
+(define (kdl-name n)
+  "The name of KDL node `n`, as kdl-parse gives it."
+  (car n))
+(define (kdl-args n)
+  "The arguments of KDL node `n`, a list of values."
+  (cadr n))
+(define (kdl-props n)
+  "The properties of KDL node `n`, as (key value) lists."
+  (caddr n))
+(define (kdl-children n)
+  "The child nodes of KDL node `n`, from its { } block."
+  (cadddr n))
+(define (kdl-line n)
+  "The line KDL node `n` is on, for reporting problems."
+  (list-ref n 4))
 
 (define (kdl-prop n key default)
+  "Property `key` of KDL node `n`, or `default` if it has none."
   (let ([p (assoc key (kdl-props n))]) (if p (cadr p) default)))
 
 (define (kdl-expect n what ok?)
@@ -30,12 +41,18 @@
   (let ([args (kdl-args n)])
     (if (ok? args) args (error (string-append (kdl-name n) " takes " what)))))
 
-(define (all-strings? args) (or (null? args) (and (string? (car args)) (all-strings? (cdr args)))))
+(define (all-strings? args)
+  "Whether every item of `args` is a string."
+  (or (null? args) (and (string? (car args)) (all-strings? (cdr args)))))
 
 (define (config-option! name value)
+  "Sets the option named by string `name` to `value`."
   (set-option! (string->symbol name) value))
 
 (define (config-node! n)
+  "Applies one top-level config.kdl node `n`: theme, option, options,
+   key, keys, leader or language-server. Raises an error for a node it
+   doesn't understand or one with the wrong arguments."
   (let ([name (kdl-name n)])
     (cond
       [(equal? name "theme")
@@ -90,7 +107,8 @@
   (reverse *config-problems*))
 
 (define (load-kdl-config! path)
-  "Loads PATH, showing what went wrong on the message line."
+  "Loads the KDL config at `path`; returns its problems.
+   Any problems are also shown on the message line."
   (let ([problems (apply-kdl-config! (read-file path))])
     (unless (null? problems)
       (message (string-append (file-name-of path) ": " (string-join problems "; "))))

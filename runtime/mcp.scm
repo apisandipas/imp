@@ -19,13 +19,15 @@
 (define *mcp-versions* '("2025-06-18" "2025-03-26" "2024-11-05"))
 
 (define (define-mcp-tool! name description schema handler)
-  "A tool: `schema` is the JSON Schema of its arguments (a hash), and
-   `handler` gets the arguments (a hash) and returns text, or (error text)."
+  "Adds an MCP tool `name`, replacing any tool of that name.
+   `schema` is the JSON Schema of its arguments (a hash), and `handler`
+   gets the arguments (a hash) and returns text, or (error text)."
   (set! *mcp-tools*
         (append (filter (lambda (t) (not (equal? (car t) name))) *mcp-tools*)
                 (list (list name description schema handler)))))
 
 (define (mcp-log! text)
+  "Adds `text` to the :mcp-log, which keeps the newest 200 entries."
   (set! *mcp-log* (cons text (if (> (length *mcp-log*) 199) (take *mcp-log* 199) *mcp-log*))))
 
 (define (mcp-note! text)
@@ -36,6 +38,9 @@
 ;;; The connection
 
 (define (mcp-enable! . path)
+  "Starts listening for MCP agents on a Unix socket.
+   The socket is `path` if given, else $XDG_RUNTIME_DIR/imp/mcp.sock.
+   Says so and does nothing if MCP is already on."
   (if *mcp-listener*
       (message "MCP is already on")
       (let ([path (if (pair? path) (car path) (socket-path "mcp"))])
@@ -47,6 +52,7 @@
         (when *mcp-listener* (mcp-log! (string-append "listening on " path))))))
 
 (define (mcp-disable!)
+  "Stops listening for MCP agents, if MCP is on."
   (when *mcp-listener*
     (socket-stop! *mcp-listener*)
     (set! *mcp-listener* #f)
@@ -62,9 +68,14 @@
   (lambda (ex) (show-popup! (if (null? *mcp-log*) (list "nothing yet") (reverse *mcp-log*)))))
 
 (define (mcp-send! conn msg)
+  "Sends `msg` to `conn` as one line of JSON.
+   `msg` is a hash, or a list of them for a batch."
   (socket-send! conn (string-append (json-encode msg) "\n")))
 
 (define (mcp-line! conn line)
+  "Handles one line of JSON-RPC an agent sent on `conn`.
+   The line is a message or a batch of them. Each request gets a reply;
+   a line that isn't JSON gets a -32700 parse error."
   (unless (equal? (trim line) "")
     (let ([msg (with-handler (lambda (e) #f) (json-decode line))])
       (cond
@@ -95,6 +106,11 @@
             [else (hash "jsonrpc" "2.0" "id" id "result" (cadr outcome))])))))
 
 (define (mcp-method method params)
+  "The result of MCP request `method` with `params`.
+   Handles initialize (agreeing on a protocol version from
+   *mcp-versions*), ping, tools/list and tools/call. An unknown method
+   returns (rpc-error -32601 text), which mcp-handle turns into an
+   error reply."
   (cond
     [(equal? method "initialize")
      (let ([asked (jget params "protocolVersion")])
@@ -113,6 +129,9 @@
     [else (list 'rpc-error -32601 (string-append "unknown method " (or method "")))]))
 
 (define (mcp-call-tool name args)
+  "The tools/call result of running tool `name` with `args`.
+   A tool's (error text), or an error it raises, comes back as content
+   with isError set; an unknown tool is (rpc-error -32602 text)."
   (let ([tool (assoc name *mcp-tools*)])
     (if (not tool)
         (list 'rpc-error -32602 (string-append "unknown tool " (or name "")))
@@ -135,8 +154,8 @@
 (define buffer-prop '("buffer" "string" "Buffer id, name or file path; the current buffer if omitted"))
 
 (define (mcp-buffer args)
-  "The buffer an argument names: an id, a name, or a path; else the
-   current one."
+  "The buffer the \"buffer\" argument in `args` names, else the current.
+   It may be an id, a name or a path; raises an error for an unknown one."
   (let ([b (jget args "buffer")])
     (cond
       [(or (not b) (equal? b "")) (current-buffer)]
@@ -150,16 +169,21 @@
       [else (error "buffer must be an id, name or path")])))
 
 (define (arg-int args name default)
+  "Argument `name` in `args` as a number, or `default`.
+   It may be sent as a number or a numeric string; `default` is used
+   when it is missing or neither."
   (let ([v (jget args name)])
     (cond [(number? v) v]
           [(and (string? v) (string->number v)) (string->number v)]
           [else default])))
 
 (define (number-pad n width)
+  "`n` as a string, padded with spaces on the left to `width`."
   (let ([s (number->string n)])
     (if (< (string-length s) width) (string-append (make-string (- width (string-length s)) #\space) s) s)))
 
 (define (buffer-label id)
+  "How to name buffer `id` to the user: its file path, else its name."
   (let ([info (buffer-info id)])
     (or (cadr info) (car info))))
 
@@ -169,8 +193,8 @@
                "\n"))
 
 (define (mcp-replace! id start end text)
-  "Changes text in buffer `id` as one undo step, telling the language
-   server."
+  "Replaces `start`..`end` in buffer `id` with `text` as one undo step.
+   Tells the language server about the change."
   (with-buffer id
     (lambda ()
       (begin-change!)

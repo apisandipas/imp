@@ -16,12 +16,23 @@
 (define *leader-keys* "")          ; typed so far in the current sequence
 
 (define (define-leader! keys command description)
+  "Binds the key sequence `keys`, typed after SPC, to `command`.
+   `command` is a command name or a procedure taking a count;
+   `description` is what the which-key popup shows beside the key.
+   Keys are written run together as typed:
+
+     (define-leader! \"gs\" 'git-status \"status\")"
   (set! *leader-bindings* (hash-insert *leader-bindings* keys (list command description))))
 
 (define (define-leader-group! keys name)
+  "Names the group of leader keys that start with `keys`.
+   The which-key popup shows it as +name:
+
+     (define-leader-group! \"g\" \"git\")"
   (set! *leader-groups* (hash-insert *leader-groups* keys name)))
 
 (define (undefine-leader! keys)
+  "Removes the leader binding for `keys`, if there is one."
   (set! *leader-bindings* (hash-remove *leader-bindings* keys)))
 
 (define (first-key text)
@@ -53,7 +64,9 @@
     (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
           (lambda (a b) (string<? (car a) (car b))))))
 
-(define (key-label key) (if (equal? key " ") "SPC" key))
+(define (key-label key)
+  "How `key` shows in prompts and popups: SPC for a space."
+  (if (equal? key " ") "SPC" key))
 
 (define (which-key-lines prefix)
   "The which-key popup for `prefix`: entries in columns across the window."
@@ -99,6 +112,7 @@
                      (hash-keys->list *leader-bindings*)))))
 
 (define (pad-left text width)
+  "`text` padded with spaces on the left to `width` characters."
   (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
 
 (define (show-which-key-popup! lines title)
@@ -107,22 +121,28 @@
   (set-popup-place! "bottom" 0 title))
 
 (define (leader-prompt)
+  "The status-line prompt for the leader keys typed so far: \"SPC f \"."
   (string-append "SPC " (apply string-append (map (lambda (k) (string-append (key-label k) " "))
                                                   (split-keys *leader-keys*)))))
 
 (define (split-keys text)
+  "The keys in `text`, as a list of strings in key notation.
+   \"b<tab>\" -> (\"b\" \"<tab>\")."
   (if (equal? text "")
       '()
       (let ([k (first-key text)]) (cons k (split-keys (substring text (string-length k) (string-length text)))))))
 
 (define (leader-done!)
+  "Ends the leader sequence: forgets its keys, stops reading keys
+   for it and closes the which-key popup."
   (set! *leader-keys* "")
   (set! *key-interceptor* #f)
   (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
   (set-popup! '()))
 
 (define (leader-input! key)
-  "Each key typed after the leader comes here."
+  "Handles `key`, typed after the leader: runs the command it completes,
+   waits for more keys, or cancels on <esc>, C-g or C-c."
   (if (member key '("<esc>" "C-g" "C-c"))
       (begin (leader-done!) (message ""))
       (let* ([keys (string-append *leader-keys* key)]
@@ -146,6 +166,8 @@
 (define *which-key-timer* #f)
 
 (define (show-which-key!)
+  "Shows the leader prompt now, and the which-key popup after
+   which-key-delay ms if the sequence is still waiting on the same keys."
   (message (leader-prompt))
   (when *which-key-timer* (cancel-timer! *which-key-timer*))
   (set! *which-key-timer* #f)
@@ -178,22 +200,70 @@
 (define-leader! "," 'switch-buffer "switch buffer")
 (define-leader! "`" 'alternate-buffer "last buffer")
 
-(define-command! 'alternate-buffer (lambda (count) ((lookup-key 'normal "C-^") count)))
-(define-command! 'save-buffer (lambda (count) (run-ex! "w")))
-(define-command! 'save-all-buffers (lambda (count) (run-ex! "wa")))
-(define-command! 'kill-buffer (lambda (count) (run-ex! "bd")))
-(define-command! 'next-buffer (lambda (count) (run-ex! "bn")))
-(define-command! 'previous-buffer (lambda (count) (run-ex! "bp")))
-(define-command! 'list-buffers (lambda (count) (run-ex! "ls")))
-(define-command! 'new-buffer (lambda (count) (run-ex! "enew")))
-(define-command! 'quit (lambda (count) (run-ex! "qa")))
-(define-command! 'quit-without-saving (lambda (count) (run-ex! "qa!")))
-(define-command! 'save-and-quit (lambda (count) (run-ex! "wqa")))
-(define-command! 'clear-search-highlight (lambda (count) (run-ex! "noh")))
-(define-command! 'show-messages (lambda (count) (run-ex! "messages")))
-(define-command! 'show-registers (lambda (count) (run-ex! "registers")))
-(define-command! 'show-marks (lambda (count) (run-ex! "marks")))
-(define-command! 'search-forward (lambda (count) (process-key! "/")))
+(define-command! 'alternate-buffer
+  (lambda (count)
+    "Switch to the buffer you were in before this one (C-^)."
+    ((lookup-key 'normal "C-^") count)))
+(define-command! 'save-buffer
+  (lambda (count)
+    "Save the current buffer to its file (:w)."
+    (run-ex! "w")))
+(define-command! 'save-all-buffers
+  (lambda (count)
+    "Save every modified buffer (:wa)."
+    (run-ex! "wa")))
+(define-command! 'kill-buffer
+  (lambda (count)
+    "Close the current buffer (:bd)."
+    (run-ex! "bd")))
+(define-command! 'next-buffer
+  (lambda (count)
+    "Go to the next buffer in the list (:bn)."
+    (run-ex! "bn")))
+(define-command! 'previous-buffer
+  (lambda (count)
+    "Go to the previous buffer in the list (:bp)."
+    (run-ex! "bp")))
+(define-command! 'list-buffers
+  (lambda (count)
+    "List the open buffers (:ls)."
+    (run-ex! "ls")))
+(define-command! 'new-buffer
+  (lambda (count)
+    "Open a new, empty buffer (:enew)."
+    (run-ex! "enew")))
+(define-command! 'quit
+  (lambda (count)
+    "Quit the editor (:qa)."
+    (run-ex! "qa")))
+(define-command! 'quit-without-saving
+  (lambda (count)
+    "Quit the editor, throwing away unsaved changes (:qa!)."
+    (run-ex! "qa!")))
+(define-command! 'save-and-quit
+  (lambda (count)
+    "Save every modified buffer and quit (:wqa)."
+    (run-ex! "wqa")))
+(define-command! 'clear-search-highlight
+  (lambda (count)
+    "Hide the highlight of the last search until the next one (:noh)."
+    (run-ex! "noh")))
+(define-command! 'show-messages
+  (lambda (count)
+    "Show the messages shown in the status line so far (:messages)."
+    (run-ex! "messages")))
+(define-command! 'show-registers
+  (lambda (count)
+    "Show what each register holds (:registers)."
+    (run-ex! "registers")))
+(define-command! 'show-marks
+  (lambda (count)
+    "Show the marks and where they are (:marks)."
+    (run-ex! "marks")))
+(define-command! 'search-forward
+  (lambda (count)
+    "Start a search forward, as / does."
+    (process-key! "/")))
 
 (define-leader-group! "b" "buffer")
 (define-leader! "bb" 'switch-buffer "switch buffer")
@@ -241,7 +311,10 @@
 (define-leader! "m" 'local-leader "+major mode")
 
 (define-leader-group! "w" "window")
-(define (window-keys keys) (lambda (n) ((lookup-key 'normal (string-append "C-w" keys)) n)))
+(define (window-keys keys)
+  "A command that runs the window key C-w followed by `keys`.
+   The leader's SPC w bindings are made with it."
+  (lambda (n) ((lookup-key 'normal (string-append "C-w" keys)) n)))
 (define-leader! "ws" (window-keys "s") "split below")
 (define-leader! "wv" (window-keys "v") "split right")
 (define-leader! "ww" (window-keys "w") "next window")
@@ -257,6 +330,10 @@
 (define-leader-group! "t" "toggle")
 
 (define (toggle-option-command name)
+  "A command that turns boolean option `name` on or off.
+   It says in the status line which it is now:
+
+     (define-command! 'toggle-expandtab (toggle-option-command 'expandtab))"
   (lambda (count)
     (set-option! name (not (option name)))
     (message (string-append (symbol->string name) (if (option name) " on" " off")))))

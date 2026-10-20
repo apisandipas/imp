@@ -17,13 +17,15 @@
         'nix-mode "nix" 'markdown-mode "markdown"))
 
 (define (language-for-buffer)
-  "The language for the current buffer: its major mode's, with .tsx files
-   parsed as TSX."
+  "The tree-sitter language for the current buffer, or #f for none.
+   It is its major mode's, except that .tsx files are parsed as TSX."
   (let ([lang (hash-try-get *mode-languages* (major-mode))]
         [path (or (buffer-path) "")])
     (if (and (equal? lang "typescript") (ends-with? path ".tsx")) "tsx" lang)))
 
 (define (define-mode-language! mode language)
+  "Parses buffers in major mode `mode` with tree-sitter grammar
+   `language` (a name like \"rust\")."
   (set! *mode-languages* (hash-insert *mode-languages* mode language)))
 
 (add-hook! 'major-mode
@@ -54,15 +56,26 @@
 ;;; Structural text objects: af if (function), ac ic (class or type),
 ;;; aa ia (argument or parameter).
 
-(define (node-kind n) (car n))
-(define (node-field n) (cadr n))
-(define (node-start n) (caddr n))
-(define (node-end n) (cadddr n))
+(define (node-kind n)
+  "The kind of syntax node `n`, like \"function_item\"."
+  (car n))
+(define (node-field n)
+  "The field name syntax node `n` has in its parent, or \"\" for none."
+  (cadr n))
+(define (node-start n)
+  "The offset where syntax node `n` starts."
+  (caddr n))
+(define (node-end n)
+  "The offset just past the end of syntax node `n`."
+  (cadddr n))
 
 ;; Node kinds per language. Add your own with define-syntax-objects!.
 (define *syntax-objects* (hash))
 
 (define (define-syntax-objects! language functions classes argument-lists)
+  "Sets the node kinds the structural text objects use for `language`.
+   `functions` are for af and if, `classes` for ac and ic, and
+   `argument-lists` the lists whose children aa and ia select."
   (set! *syntax-objects*
         (hash-insert *syntax-objects* language (list functions classes argument-lists))))
 
@@ -93,18 +106,22 @@
           [else (loop (cdr nodes) n)])))
 
 (define (scheme-function? node)
-  "Scheme has no function nodes; a function is a list starting with
-   define or lambda."
+  "Whether Scheme list `node` is a function: starts with define or lambda.
+   Scheme's grammar has no function nodes, only lists."
   (let ([text (buffer-substring (+ 1 (node-start node)) (min (node-end node) (+ 8 (node-start node))))])
     (or (starts-with? text "define") (starts-with? text "lambda"))))
 
 (define (syntax-kinds which)
+  "The node kinds of text object group `which` for the buffer's language.
+   `which` is 0 for functions, 1 for classes, 2 for argument lists; #f
+   when the language has none defined."
   (let* ([lang (buffer-language)] [spec (and lang (hash-try-get *syntax-objects* lang))])
     (and spec (list-ref spec which))))
 
 (define (inner-range node)
-  "The inner part of a function or class: its body without the braces,
-   whole lines when the braces sit on their own lines, as i{ does."
+  "The range of the inner part of function or class `node`.
+   That is its body without the braces, as whole lines when the braces
+   sit on their own lines, as i{ does."
   (let* ([body (let loop ([cs (syntax-children (node-start node) (node-end node))])
                  (cond [(null? cs) #f]
                        [(equal? (node-field (car cs)) "body") (car cs)]
@@ -123,6 +140,10 @@
       [else (list s e #f)])))
 
 (define (syntax-object which inner?)
+  "A text object for the `n`th enclosing function (`which` 0) or class
+   (1); `inner?` selects only its body.
+   In Scheme a function is a list starting with define or lambda, and its
+   inner part is the list without its parentheses."
   (lambda (from n)
     (let ([kinds (syntax-kinds which)])
       (and kinds
@@ -142,9 +163,10 @@
                       (list (node-start node) (node-end node) #f))))))))
 
 (define (argument-object around?)
-  "aa and ia: an argument (or parameter, array element...). The node whose
-   parent is a list kind; aa takes the comma and space after it, or before
-   it if it is the last."
+  "The text object aa (`around?`) or ia: an argument or parameter.
+   It is the node around the cursor whose parent is a list kind (an
+   argument list, parameters, an array...); aa takes the comma and space
+   after it, or before it if it is the last."
   (lambda (from n)
     (let ([lists (syntax-kinds 2)])
       (and lists

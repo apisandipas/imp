@@ -77,6 +77,10 @@
   (set! *extra-states* (hash-insert *extra-states* state (list name cursor-shape handler))))
 
 (define (set-mode! mode)
+  "Switches to `mode`, running the mode hooks and setting the cursor.
+   Entering or leaving insert/replace runs insert-enter or insert-leave;
+   any change of mode runs mode-change. The cursor shape and the mode
+   name in the status line follow the new mode."
   (let ([old *mode*])
     (set! *mode* mode)
     (unless (eq? old mode)
@@ -92,6 +96,8 @@
   (show-mode!))
 
 (define (show-mode!)
+  "Updates the status line's mode name and face for the current mode.
+   The name gets \" recording @x\" while a macro is being recorded."
   ;; %#mode# in the status line: status.mode.normal, .insert, .visual...
   (set-mode-face! (string-append "status.mode."
                                  (cond [(eq? *mode* 'cmdline) "command"]
@@ -109,14 +115,16 @@
     (if *recording* (string-append " recording @" (string *recording*)) ""))))
 
 (define (reset-pending!)
+  "Forgets a half-typed command: its count, operator and prefix key."
   (set! *count* "")
   (set! *operator* #f)
   (set! *operator-count* "")
   (set! *prefix* #f))
 
 (define (normal-clamp!)
-  "In normal mode the cursor sits on a char, never on a line's end, unless the
-   line is empty."
+  "Moves the cursor back onto the line's last char if it is past it.
+   In normal mode the cursor sits on a char, never on a line's end,
+   unless the line is empty."
   (let* ([line (current-line)]
          [len (buffer-line-length line)])
     (set-cursor! (line-col->offset line (clamp (current-col) 0 (max 0 (- len 1)))))))
@@ -132,38 +140,55 @@
 (define *motions* (hash))
 
 (define (define-motion! key type proc)
+  "Makes `key` a motion of `type` (exclusive, inclusive or linewise).
+   `proc` is (lambda (from count) target-offset), returning #f when the
+   motion can't move. It then works with every operator and visual mode."
   (set! *motions* (hash-insert *motions* key (list type proc))))
 
-(define (motion-type m) (car m))
-(define (motion-proc m) (cadr m))
+(define (motion-type m)
+  "The type of motion `m`: exclusive, inclusive or linewise."
+  (car m))
+(define (motion-proc m)
+  "The procedure of motion `m`, (lambda (from count) target)."
+  (cadr m))
 
 (define (repeat-motion n step from)
+  "The position after applying `step` `n` times, starting at `from`."
   (let loop ([i 0] [p from])
     (if (< i n) (loop (+ i 1) (step p)) p)))
 
 (define (char-class c)
-  "Char classes for word motions: 0 whitespace, 1 word, 2 punctuation."
+  "The class of char `c` for word motions: 0 white space, 1 word, 2 other.
+   Punctuation is class 2; #f (past the buffer's end) counts as white
+   space."
   (cond [(not c) 0]
         [(char-whitespace? c) 0]
         [(char-word? c) 1]
         [else 2]))
 
+;; The classifiers motions and text objects are built with. They call
+;; char-class and big-class by name each time, so redefining those (to make
+;; - a word char in Lisp, say) changes w, e, iw and the rest at once.
 (define (word-class c)
-  "The classifiers motions and text objects are built with. They call
-   char-class and big-class by name each time, so redefining those (to make
-   - a word char in Lisp, say) changes w, e, iw and the rest at once."
+  "The class of `c` for word motions and objects (w b e iw aw)."
   (char-class c))
-(define (WORD-class c) (big-class c))
+(define (WORD-class c)
+  "The class of `c` for WORD motions and objects (W B E iW aW)."
+  (big-class c))
 
 (define (big-class c)
-  "WORD classes: anything that isn't white space is part of a WORD."
+  "The class of `c` for WORD motions: 0 for white space, else 1.
+   Anything that isn't white space is part of a WORD."
   (cond [(not c) 0] [(char-whitespace? c) 0] [else 1]))
 
-(define (class-at p) (char-class (buffer-char-at p)))
+(define (class-at p)
+  "The word class (char-class) of the char at offset `p`."
+  (char-class (buffer-char-at p)))
 
+;; Word motions take the classifier, char-class for words (w b e ge) or
+;; big-class for WORDs (W B E gE).
 (define (next-word-start p classify)
-  "Word motions take the classifier, char-class for words (w b e ge) or
-   big-class for WORDs (W B E gE)."
+  "The start of the next word after `p` (w, W), past any white space."
   (let* ([len (buffer-length)]
          [cls-at (lambda (q) (classify (buffer-char-at q)))]
          [cls (cls-at p)]
@@ -177,6 +202,7 @@
           q))))
 
 (define (prev-word-start p classify)
+  "The start of the word before `p`, or of the one `p` is inside (b, B)."
   (let* ([cls-at (lambda (q) (classify (buffer-char-at q)))]
          [q (let loop ([q (- p 1)])
               (if (and (> q 0) (= (cls-at q) 0)) (loop (- q 1)) q))]
@@ -187,6 +213,8 @@
           (max q 0)))))
 
 (define (next-word-end p classify)
+  "The end of the word after `p`, or of the one `p` is inside (e, E).
+   Never goes past the buffer's last char."
   (let* ([len (buffer-length)]
          [cls-at (lambda (q) (classify (buffer-char-at q)))]
          [q (let loop ([q (+ p 1)])
@@ -207,6 +235,7 @@
       (if (and (> q 0) (= (cls-at q) 0)) (loop (- q 1)) q))))
 
 (define (word-motion step classify)
+  "A motion proc that takes `step` count times with classifier `classify`."
   (lambda (from n) (repeat-motion n (lambda (p) (step p classify)) from)))
 
 (define (vertical from n)
@@ -280,6 +309,9 @@
 (define-motion! "gk" 'exclusive (screen-row-motion -1))
 
 (define (line-motion offset)
+  "A motion to the first non-blank of a line `offset` lines away.
+   `offset` maps the count to a line delta, so + is n lines down and _
+   is n - 1. The target is clamped to the buffer."
   (lambda (from n)
     (line-first-nonblank (clamp (+ (offset->line from) (offset n)) 0 (last-line)))))
 
@@ -295,6 +327,10 @@
 (define *bracket-pairs* (list (list #\( #\)) (list #\[ #\]) (list #\{ #\})))
 
 (define (bracket-match from)
+  "The bracket matching the one at or after `from` on its line, or #f.
+   Used by %: from an opening bracket it finds the close, and back from a
+   closing one. #f when the line has no bracket after `from` or the
+   match is missing."
   (let* ([hi (line-end (offset->line from))]
          [p (let loop ([p from])
               (cond [(>= p hi) #f]
@@ -315,11 +351,15 @@
         (line-first-nonblank (- (clamp (quotient (+ (* n (buffer-line-count)) 99) 100) 1 (+ (last-line) 1)) 1))
         (bracket-match from))))
 
+;; { and }: back and forward to the next empty line.
 (define (empty-line? line)
-  "{ and }: back and forward to the next empty line."
+  "Whether `line` has no chars at all."
   (= (buffer-line-length line) 0))
 
 (define (paragraph-forward from n)
+  "The end of the `n`th paragraph from `from`, for }.
+   Lands on the next empty line, or the end of the last line when there
+   is none."
   (let loop ([i 0] [line (offset->line from)])
     (if (= i n)
         (if (empty-line? line) (line-start line) (line-end line))
@@ -328,6 +368,8 @@
           (loop (+ i 1) l)))))
 
 (define (paragraph-backward from n)
+  "The start of the `n`th paragraph back from `from`, for {.
+   Lands on the previous empty line, or the start of the first line."
   (let loop ([i 0] [line (offset->line from)])
     (if (= i n)
         (line-start line)
@@ -338,8 +380,9 @@
 (define-motion! "}" 'exclusive paragraph-forward)
 (define-motion! "{" 'exclusive paragraph-backward)
 
+;; H, M and L: lines of the window.
 (define (window-bottom)
-  "H, M and L: lines of the window."
+  "The last buffer line shown in the window."
   (min (last-line) (+ (window-top) (window-height) -1)))
 
 (define-motion! "H" 'linewise
@@ -360,6 +403,9 @@
 (define *last-char-search* #f) ; (key char) for ; and ,
 
 (define (define-char-motion! key type proc)
+  "Makes `key` a motion that takes a char, as f and t do.
+   `proc` is (lambda (from count char) target); `key` becomes a prefix
+   and `key` plus a char works like any other motion."
   (set! *char-motions* (hash-insert *char-motions* key (list type proc))))
 
 ;; Normal-mode commands that take a char, such as r and m: `proc` is
@@ -367,12 +413,17 @@
 (define *char-commands* (hash))
 
 (define (find-char-command key)
+  "The command for `key` if it is a char command and its char, or #f.
+   Returns (lambda (count) ...) that calls the command with the char, so
+   \"rx\" gives r's proc applied to x."
   (and (> (string-length key) 1)
        (let ([proc (hash-try-get *char-commands* (substring key 0 1))]
              [ch (key-char (substring key 1 (string-length key)))])
          (and proc ch (lambda (count) (proc count ch))))))
 
 (define (define-char-command! key proc)
+  "Makes `key` a normal-mode command that takes the next char, as r does.
+   `proc` is (lambda (count char) ...)."
   (set! *char-commands* (hash-insert *char-commands* key proc)))
 
 (define (key-char key)
@@ -402,6 +453,7 @@
 (define-char-motion! "T" 'exclusive (lambda (from n ch) (char-search from n ch #f #t #f)))
 
 (define (reverse-char-key key)
+  "The char motion going the other way from `key`: f and F, t and T swap."
   (cond [(equal? key "f") "F"] [(equal? key "F") "f"] [(equal? key "t") "T"] [else "t"]))
 
 (define (repeat-char-motion reverse?)
@@ -444,6 +496,8 @@
 (define *operators* (hash))
 
 (define (define-operator! key proc)
+  "Makes `key` an operator. `proc` is (lambda (start end linewise?) ...).
+   It then works with every motion, text object, visual mode and `.`."
   (set! *operators* (hash-insert *operators* key proc)))
 
 (define (lines-range first last)
@@ -463,16 +517,27 @@
 ;;; register "" is whichever was written last. A register is (text
 ;;; linewise?); linewise text is whole lines, each ending in a line break.
 
-(define (upper-letter? c) (let ([n (char->integer c)]) (and (>= n 65) (<= n 90))))
+(define (upper-letter? c)
+  "Whether `c` is an ASCII capital letter (A-Z)."
+  (let ([n (char->integer c)]) (and (>= n 65) (<= n 90))))
 
 (define (valid-register? c)
+  "Whether `c` names a register: a letter, a digit, or one of \"-_+*.:/%."
   (or (letter? c) (char-numeric-ascii? c) (memv c (string->list "\"-_+*.:/%"))))
 
-(define (current-register) (or *register-prefix* #\"))
+(define (current-register)
+  "The register this command uses: the one named with \"x, else \"."
+  (or *register-prefix* #\"))
 
-(define (clipboard-register c) (memv c (list #\+ #\*)))
+(define (clipboard-register c)
+  "Whether `c` is a system clipboard register, \"+ or \"*."
+  (memv c (list #\+ #\*)))
 
 (define (register-get c)
+  "The contents of register `c`, as (text linewise?), or #f if empty.
+   Capitals read their letter; \"+ and \"* read the system clipboard (the
+   last copy kept here if it can't be read); \". \": \"/ and \"% come from
+   the editor's state. With clipboard=unnamedplus, \"\" reads \"+."
   (let ([c (char-downcase c)])
     (cond
       [(clipboard-register c)
@@ -488,6 +553,7 @@
       [else (hash-try-get *registers* c)])))
 
 (define (store! c value)
+  "Sets register `c` to `value`, (text linewise?), and nothing else."
   (set! *registers* (hash-insert *registers* c value)))
 
 (define (register-set! c text linewise? kind)
@@ -529,11 +595,18 @@
       [else (store! c value) (store! #\" value)])))
 
 (define (store-range! start end linewise? kind)
+  "Puts the text from `start` to `end` in the current register.
+   Also sets the [ and ] marks to it. `kind` is 'yank or 'delete, as for
+   register-set!."
   (mark-set! "[" start)
   (mark-set! "]" (max start (- end 1)))
   (register-set! (current-register) (buffer-substring start end) linewise? kind))
 
-(define (yank-range! start end linewise?) (store-range! start end linewise? 'delete))
+(define (yank-range! start end linewise?)
+  "Saves the text from `start` to `end` in the registers as a delete.
+   Operators that remove text call it first, so \"1-\"9 and \"- fill as
+   in Vim."
+  (store-range! start end linewise? 'delete))
 
 (define (without-final-break start end)
   "End of a linewise range without its final line break, if it has one."
@@ -586,6 +659,10 @@
            [else (list lo (line-end (- hi-line 1)) #f)]))])))
 
 (define (run-operator! op-key motion-key count)
+  "Runs operator `op-key` over the text motion `motion-key` covers.
+   `count` goes to the motion. Does nothing if the motion fails (f with
+   no match). Handles Vim's special cases: cw acts like ce, and w with an
+   operator stops at the end of the line."
   (let* (;; Vim special case: `cw` on a word changes to its end, like `ce`,
          ;; leaving the space after it alone. On a word's last char it
          ;; changes just that char, where `ce` would go on to the next word.
@@ -636,20 +713,28 @@
 (define *text-objects* (hash))
 
 (define (define-text-object! key proc)
+  "Makes `key` (such as \"iw\") a text object.
+   `proc` is (lambda (from count) (start end linewise?)), or #f when there
+   is nothing to select. It then works after any operator and in visual
+   mode."
   (set! *text-objects* (hash-insert *text-objects* key proc)))
 
 (define (run-end p classify hi)
-  "The run of chars sharing p's class, as far as `hi` (exclusive)."
+  "The end of the run of chars sharing `p`'s class, as far as `hi`.
+   The end is exclusive: the first offset past the run."
   (let ([cls (classify (buffer-char-at p))])
     (let loop ([q p])
       (if (and (< q hi) (= (classify (buffer-char-at q)) cls)) (loop (+ q 1)) q))))
 
 (define (run-start p classify lo)
+  "The start of the run of chars sharing `p`'s class, back as far as `lo`."
   (let ([cls (classify (buffer-char-at p))])
     (let loop ([q p])
       (if (and (> q lo) (= (classify (buffer-char-at (- q 1))) cls)) (loop (- q 1)) q))))
 
-(define (blank-at? p) (= (char-class (buffer-char-at p)) 0))
+(define (blank-at? p)
+  "Whether the char at offset `p` is white space (or past the end)."
+  (= (char-class (buffer-char-at p)) 0))
 
 (define (inner-word classify)
   "iw: `count` runs of word, punctuation or white space, on the cursor's line."
@@ -692,8 +777,9 @@
 (define-text-object! "aW" (a-word WORD-class))
 
 (define (quote-positions q lo hi)
-  "Quotes, on the cursor's line only, as in Vim. A quote preceded by a
-   backslash doesn't count."
+  "The offsets of quote char `q` from `lo` to `hi`, in order.
+   Quotes count on the cursor's line only, as in Vim. A quote preceded
+   by a backslash doesn't count."
   (let loop ([p lo] [acc '()])
     (cond
       [(>= p hi) (reverse acc)]
@@ -715,6 +801,9 @@
         [else (loop (cddr qs))]))))
 
 (define (quote-object q around?)
+  "The text object for quote char `q`: i\" without the quotes, a\" with.
+   The a form also takes the white space after the closing quote, or
+   before the opening one if there is none after."
   (lambda (from n)
     (let ([pair (quote-pair q from)])
       (cond
@@ -735,15 +824,20 @@
    (define-text-object! (string-append "a" (string q)) (quote-object q #t)))
  (list #\" #\' #\`))
 
+;; Brackets. The count picks the nth enclosing pair. A bracket under the
+;; cursor belongs to the pair it opens or closes. find-open and find-close
+;; are Rust primitives: scanning a large file a char at a time from Scheme
+;; took most of a second.
 (define (only-blanks-before? p)
-  "Brackets. The count picks the nth enclosing pair. A bracket under the
-   cursor belongs to the pair it opens or closes. find-open and find-close
-   are Rust primitives: scanning a large file a char at a time from Scheme
-   took most of a second."
+  "Whether only white space comes before offset `p` on its line."
   (let ([lo (line-start (offset->line p))])
     (let loop ([q lo]) (cond [(= q p) #t] [(blank-at? q) (loop (+ q 1))] [else #f]))))
 
 (define (bracket-object open close around?)
+  "The text object for brackets `open` and `close` (ib, aB and the like).
+   The count picks the nth enclosing pair; `around?` includes the
+   brackets. The inner object of a block whose brackets end and start
+   lines selects just the lines between them. #f when there is no pair."
   (lambda (from n)
     (let* ([o (find-open open close from n)]
            [c (and o (find-close open close (+ o 1)))])
@@ -774,10 +868,13 @@
        (list #\{ #\} "{" "}" "B")
        (list #\< #\> "<" ">")))
 
+;; Tags: <name ...> ... </name>. tag-pairs-around (Rust, for speed on big
+;; files) lists the pairs around the cursor, innermost first, as
+;; (open-start open-end close-start close-end); the count picks one.
 (define (tag-object around?)
-  "Tags: <name ...> ... </name>. tag-pairs-around (Rust, for speed on big
-   files) lists the pairs around the cursor, innermost first, as
-   (open-start open-end close-start close-end); the count picks one."
+  "The it text object, or at with `around?`: the `n`th tag pair out.
+   it is the text between the tags, at includes them. #f when there are
+   fewer than `n` pairs around the cursor."
   (lambda (from n)
     (let ([pairs (tag-pairs-around from)])
       (if (< (length pairs) n)
@@ -790,19 +887,22 @@
 (define-text-object! "it" (tag-object #f))
 (define-text-object! "at" (tag-object #t))
 
+;; Paragraphs: runs of non-blank lines, separated by runs of blank lines
+;; (lines that are empty or only white space). Each run counts once.
 (define (blank-line? line)
-  "Paragraphs: runs of non-blank lines, separated by runs of blank lines
-   (lines that are empty or only white space). Each run counts once."
+  "Whether `line` is empty or holds only white space."
   (let ([end (line-end line)])
     (let loop ([p (line-start line)])
       (cond [(= p end) #t] [(blank-at? p) (loop (+ p 1))] [else #f]))))
 
 (define (run-last-line line)
+  "The last line of the run of blank or non-blank lines holding `line`."
   (let ([blank (blank-line? line)])
     (let loop ([l line])
       (if (and (< l (last-line)) (eq? (blank-line? (+ l 1)) blank)) (loop (+ l 1)) l))))
 
 (define (run-first-line line)
+  "The first line of the run of blank or non-blank lines holding `line`."
   (let ([blank (blank-line? line)])
     (let loop ([l line])
       (if (and (> l 0) (eq? (blank-line? (- l 1)) blank)) (loop (- l 1)) l))))
@@ -832,6 +932,8 @@
             (lines-range (if (blank-line? before) (run-first-line before) first) last))))))
 
 (define (run-text-object! op-key object-key count)
+  "Runs operator `op-key` over text object `object-key` at the cursor.
+   Does nothing if the object finds nothing there."
   (let ([range ((hash-ref *text-objects* object-key) (cursor) count)])
     (when range
       (begin-change!)
@@ -839,7 +941,10 @@
 
 ;;; Changes and dot-repeat
 
-(define (changing-operator? key) (not (member key '("y" "zf"))))
+(define (changing-operator? key)
+  "Whether operator `key` changes text, so `.` should repeat it.
+   Every operator but y and zf does."
+  (not (member key '("y" "zf"))))
 
 (define (with-undo-group thunk)
   "Runs `thunk` with all its changes in one undo step."
@@ -888,7 +993,9 @@
       (integer->char (+ 1 (char->integer reg)))
       reg))
 
-(define (typing-mode?) (member *mode* '(insert replace)))
+(define (typing-mode?)
+  "Whether the editor is in insert or replace mode."
+  (member *mode* '(insert replace)))
 
 (define (repeat-insert! keys n reentry)
   "Types `keys` again `n` more times, as for 3ihi<esc> or 3ofoo<esc>."
@@ -910,6 +1017,9 @@
       [else (insert-key! (car ks)) (loop (cdr ks))])))
 
 (define (finish-insert-record! keys)
+  "Completes the `.` record for an insert that just ended.
+   `keys` are the keys typed. The change replays how the insert began,
+   then the keys, and for insert commands repeats them for the count."
   (let ([entry *insert-entry*] [counted? (> *insert-count* 0)] [reentry *insert-reentry*])
     (when entry
       (set! *last-change*
@@ -931,6 +1041,10 @@
   (buffer-substring (line-start line) (line-first-nonblank line)))
 
 (define (enter-insert! where)
+  "A command that enters insert mode at `where`.
+   `where` is 'here, 'after, 'line-end, 'line-start, 'column-0,
+   'last-insert (gi), 'below or 'above (opening a line), or 'replace for
+   replace mode."
   (lambda (count)
     (begin-change!)
     (let ([line (current-line)])
@@ -964,6 +1078,9 @@
     (set! *autoindent-line* (and (> (string-length indent) 0) (current-line)))))
 
 (define (insert-command! key where)
+  "Binds `key` in normal mode to enter insert mode at `where`.
+   The count repeats the typed text on <esc> (3ihi<esc>); for o and O it
+   opens that many lines. The insert is recorded for `.`."
   (define-key! 'normal key
     (let ([enter (enter-insert! where)])
       (lambda (count)
@@ -1011,10 +1128,15 @@
 (define-key! 'normal "Y" (lambda (count) (run-linewise-operator! "y" count)))
 
 (define (string-repeat text n)
+  "`text` repeated `n` times."
   (let loop ([i 0] [acc '()])
     (if (< i n) (loop (+ i 1) (cons text acc)) (apply string-append acc))))
 
 (define (paste! after? cursor-after?)
+  "A command that puts the current register's text `count` times.
+   `after?` puts it after the cursor (p) rather than before (P);
+   `cursor-after?` leaves the cursor just after it (gp, gP). Returns #f,
+   saying so, when the register is empty."
   (lambda (count)
     (let ([reg (register-get (current-register))])
       (if reg
@@ -1032,6 +1154,10 @@
   (mark-set! "]" (max 0 (- (cursor) (if cursor-after? 1 0)))))
 
 (define (put-text-at! text linewise? after? cursor-after?)
+  "Puts characterwise or linewise `text` before or after the cursor.
+   Whole lines go below or above the cursor's line, with the cursor on
+   the first non-blank of the first one (or after them with
+   `cursor-after?`). Sets the [ mark."
   (if linewise?
       (let* ([line (current-line)]
              [at (if after?
@@ -1055,6 +1181,7 @@
         (set-cursor! (+ at (string-length text) (if cursor-after? 0 -1))))))
 
 (define (paste-command! key after? cursor-after?)
+  "Binds `key` in normal mode to a put (see paste!), recorded for `.`."
   (define-key! 'normal key
     (lambda (count)
       (let ([paste (paste! after? cursor-after?)])
@@ -1066,7 +1193,9 @@
 (paste-command! "gP" #f #t)
 
 (define (undo-command step! message)
-  "u and C-r put the cursor where the text changed, like Vim."
+  "The u or C-r command: runs `step!` `count` times.
+   The cursor goes where the text changed, like Vim; if nothing could
+   be undone or redone, `message` goes on the status line."
   (lambda (count)
     (let loop ([i 0] [at #f])
       (let ([r (and (< i count) (step!))])
@@ -1101,12 +1230,15 @@
 ;;; act on it and return to normal mode.
 
 (define (enter-visual! kind anchor)
+  "Starts visual mode of `kind` (char, line or block) anchored at `anchor`."
   (set! *block-eol* #f)
   (set! *visual* kind)
   (set! *visual-anchor* anchor)
   (set-mode! 'visual))
 
 (define (leave-visual!)
+  "Leaves visual mode for normal, remembering the selection.
+   Sets the < and > marks and what gv needs to select it again."
   (set! *last-visual* (list *visual* *visual-anchor* (cursor)))
   (mark-set! "visual-anchor" *visual-anchor*)
   (mark-set! "visual-cursor" (cursor))
@@ -1123,6 +1255,9 @@
         (list lo (min (+ hi 1) (buffer-length)) #f))))
 
 (define (update-visual-highlight!)
+  "Redraws the visual selection's highlight, or clears it.
+   The selection stays shown while a search prompt opened from visual
+   mode is up."
   (highlight-clear! "visual")
   ;; The selection stays visible while a search prompt is open from it.
   (when (or (eq? *mode* 'visual) (and (eq? *mode* 'cmdline) *visual* (eq? *cmdline-return* 'visual)))
@@ -1139,7 +1274,8 @@
 ;;; tab inside a block counts as one column for now.
 
 (define (block-bounds)
-  "(first-line last-line left-col right-col), right inclusive."
+  "The visual block as (first-line last-line left-col right-col).
+   Both columns are included."
   (let ([a *visual-anchor*] [c (cursor)])
     (list (min (offset->line a) (offset->line c))
           (max (offset->line a) (offset->line c))
@@ -1155,6 +1291,7 @@
          (range (car b) (+ (cadr b) 1)))))
 
 (define (block-text segments)
+  "The text of block `segments`, one line per segment."
   (string-join (map (lambda (seg) (buffer-substring (car seg) (cadr seg))) segments) "\n"))
 
 (define (delete-segments! segments)
@@ -1212,6 +1349,10 @@
   (set! *insert-start* at))
 
 (define (finish-block-insert!)
+  "Copies the text typed on a block's first line into its other lines.
+   Runs on <esc> after I, A or c on a block. Nothing is copied if the
+   cursor left the first line or the text has a line break. Short lines
+   are skipped, except by A, which pads them."
   (let* ([b *block-insert*] [first (car b)] [last (cadr b)] [col (caddr b)])
     (set! *block-insert* #f)
     (when (and (= (current-line) first) (>= (current-col) (if (eq? col 'eol) 0 col)))
@@ -1231,6 +1372,10 @@
               (loop (+ l 1)))))))))
 
 (define (block-insert-command append?)
+  "The visual I (or A, with `append?`) command.
+   In a block, types on every line at its left edge (or right edge, or
+   line ends after $). In other visual modes, enters insert mode at the
+   start or end of the selection."
   (lambda (count)
     (if (not (eq? *visual* 'block))
         ;; In other visual modes I and A insert at the selection's ends.
@@ -1266,7 +1411,8 @@
         ((lookup-key 'visual "o") count))))
 
 (define (visual-command! kind)
-  "v, V: start a selection, or switch kind, or leave if already that kind."
+  "v, V and C-v: start a selection of `kind`, or switch to that kind.
+   Leaves visual mode if the selection is already of that kind."
   (lambda (count)
     (cond
       [(not (eq? *mode* 'visual)) (enter-visual! kind (cursor))]
@@ -1324,11 +1470,16 @@
         ((hash-ref *operators* op-key) (car r) (cadr r) (caddr r))))))
 
 (define (visual-operator! op-key linewise?)
+  "Runs operator `op-key` on the selection and leaves visual mode.
+   `linewise?` makes it act on whole lines (as visual D and Y do); for a
+   block it means to each line's end."
   (if (eq? *visual* 'block)
       (block-operator! op-key linewise?)
       (char-or-line-operator! op-key linewise?)))
 
 (define (char-or-line-operator! op-key linewise?)
+  "Runs operator `op-key` on a char or line selection, recording it for `.`.
+   `linewise?` widens the selection to whole lines."
   (let ([range (if linewise?
                    (let ([r (visual-range)])
                      (lines-range (offset->line (car r)) (offset->line (max (car r) (- (cadr r) 1)))))
@@ -1371,27 +1522,36 @@
                          (max start (- (+ start (string-length text)) 1))))))))
 
 (define (without-final-newline text)
+  "`text` without its final line break, if it has one."
   (if (ends-with? text "\n") (substring text 0 (- (string-length text) 1)) text))
 
 ;;; More operators and commands
 
+;; Case operators: gu gU g~ g?, and ~ on chars.
 (define (map-string f text)
-  "Case operators: gu gU g~ g?, and ~ on chars."
+  "`text` with each char replaced by `f` of it."
   (list->string (map f (string->list text))))
 
-(define (toggle-case c) (if (equal? (char-upcase c) c) (char-downcase c) (char-upcase c)))
+(define (toggle-case c)
+  "`c` in the other case: capitals become small letters, and back."
+  (if (equal? (char-upcase c) c) (char-downcase c) (char-upcase c)))
 
 (define (rot13 c)
+  "`c` rotated 13 places in the alphabet, for g?. Others stay as they are."
   (let ([n (char->integer c)])
     (cond [(and (>= n 97) (<= n 122)) (integer->char (+ 97 (modulo (+ (- n 97) 13) 26)))]
           [(and (>= n 65) (<= n 90)) (integer->char (+ 65 (modulo (+ (- n 65) 13) 26)))]
           [else c])))
 
 (define (replace-range! start end text)
+  "Replaces the text from `start` to `end` with `text`."
   (buffer-delete! start end)
   (buffer-insert! start text))
 
 (define (case-operator f)
+  "An operator that maps every char in its range through `f`.
+   The cursor goes to the range's start (its first non-blank if
+   linewise). gu gU g~ and g? are made with it."
   (lambda (start end linewise?)
     (replace-range! start end (map-string f (buffer-substring start end)))
     (set-cursor! (if linewise? (line-first-nonblank (offset->line start)) start))))
@@ -1402,6 +1562,8 @@
 (define-operator! "g?" (case-operator rot13))
 
 (define (tilde! count)
+  "~: toggles the case of `count` chars from the cursor, then moves past.
+   Stops at the end of the line."
   (let* ([p (cursor)] [end (min (+ p count) (line-end (current-line)))])
     (begin-change!)
     (replace-range! p end (map-string toggle-case (buffer-substring p end)))
@@ -1414,15 +1576,18 @@
 (define-key! 'visual "U" (lambda (count) (visual-operator! "gU" #f)))
 (define-key! 'visual "~" (lambda (count) (visual-operator! "g~" #f)))
 
+;; Shifting: > and < move lines by shiftwidth, with spaces or tabs as
+;; expandtab says. Empty lines are left alone, as in Vim.
 (define (indent-string cols)
-  "Shifting: > and < move lines by shiftwidth, with spaces or tabs as
-   expandtab says. Empty lines are left alone, as in Vim."
+  "Indent `cols` columns wide: spaces with expandtab, else tabs and spaces."
   (if (option 'expandtab)
       (make-string cols #\space)
       (let ([ts (option 'tabstop)])
         (string-append (make-string (quotient cols ts) #\tab) (make-string (modulo cols ts) #\space)))))
 
 (define (shift-line! line dir)
+  "Shifts `line` by `dir` shiftwidths, right if positive, left if negative.
+   Indent never goes below zero, and empty lines are left alone."
   (let* ([start (line-start line)] [indent-end (line-first-nonblank line)]
          [cols (display-col indent-end)]
          [sw (option 'shiftwidth)]
@@ -1431,6 +1596,8 @@
       (replace-range! start indent-end (indent-string new)))))
 
 (define (shift-operator dir)
+  "The > (`dir` 1) or < (`dir` -1) operator: shifts each line in the range.
+   The cursor goes to the first line's first non-blank."
   (lambda (start end linewise?)
     (let ([first (offset->line start)] [last (offset->line (max start (- end 1)))])
       (let loop ([l first]) (when (<= l last) (shift-line! l dir) (loop (+ l 1))))
@@ -1508,6 +1675,8 @@
         (loop (+ i 1))))))
 
 (define (join-command spaces?)
+  "The J command (gJ when `spaces?` is #f): joins `count` lines.
+   Recorded for `.`."
   (lambda (count)
     (let ([change (lambda (n) (begin-change!) (join-lines! (current-line) n spaces?))])
       (change count)
@@ -1517,6 +1686,8 @@
 (define-key! 'normal "gJ" (join-command #f))
 
 (define (visual-join spaces?)
+  "Visual J (gJ when `spaces?` is #f): joins the selected lines.
+   A selection on one line joins it with the next."
   (lambda (count)
     (let* ([r (visual-range)] [first (offset->line (car r))]
            [last (offset->line (max (car r) (- (cadr r) 1)))])
@@ -1527,14 +1698,15 @@
 (define-key! 'visual "J" (visual-join #t))
 (define-key! 'visual "gJ" (visual-join #f))
 
+;; C-a and C-x: add to the number under or after the cursor. Decimal
+;; (with a minus sign) and 0x hex, as with Vim's default nrformats.
 (define (hex-digit? c)
-  "C-a and C-x: add to the number under or after the cursor. Decimal
-   (with a minus sign) and 0x hex, as with Vim's default nrformats."
+  "Whether `c` is a hex digit, 0-9 or a-f in either case. #f for #f."
   (and c (or (char-numeric-ascii? c) (memv (char-downcase c) (string->list "abcdef")))))
 
 (define (number-at p)
-  "The number at or after p on its line, as (start end value hex?), start
-   including any sign or 0x."
+  "The number at or after `p` on its line, as (start end value hex?).
+   `start` includes any minus sign or 0x. #f if there is none."
   (let* ([line (offset->line p)] [lo (line-start line)] [hi (line-end line)]
          [digit? (lambda (q) (and (< q hi) (char-numeric-ascii? (buffer-char-at q))))]
          ;; Back up to the start of a number the cursor is inside.
@@ -1561,11 +1733,16 @@
                (list (if neg? (- start 1) start) end (if neg? (- n) n) #f))))))
 
 (define (pad-left text width)
+  "`text` padded on the left with zeros to `width` chars."
   (if (< (string-length text) width)
       (string-append (make-string (- width (string-length text)) #\0) text)
       text))
 
 (define (increment! delta)
+  "Adds `delta` to the number at or after the cursor, for C-a and C-x.
+   Hex keeps its width and letter case and wraps at 64 bits. The cursor
+   ends on the number's last digit. Returns #t, or #f if no number was
+   found on the line."
   (let ([num (number-at (cursor))])
     (when num
       (let* ([start (car num)] [end (cadr num)] [value (+ (caddr num) delta)]
@@ -1586,6 +1763,8 @@
         #t))))
 
 (define (increment-command sign)
+  "The C-a (`sign` 1) or C-x (`sign` -1) command, adding the count.
+   Recorded for `.` when it found a number."
   (lambda (count)
     (let ([change (lambda (n) (increment! (* sign n)))])
       (when (change count) (record-change! change count)))))
@@ -1613,9 +1792,11 @@
 ;;; (last changed or yanked text), < and > (last visual selection).
 
 (define (mark-char? c)
+  "Whether `c` can name a mark: a letter or one of ' ` [ ] < > . ^ \"."
   (or (letter? c) (memv c (string->list "'`[]<>.^\""))))
 
 (define (mark-pos c)
+  "The position of mark `c` (` meaning '), or #f after saying it isn't set."
   (let ([m (mark-get (if (equal? c #\`) "'" (string c)))])
     (or m (begin (set-status! (string-append "mark not set: " (string c))) #f))))
 
@@ -1630,18 +1811,22 @@
 (define-char-motion! "`" 'exclusive (lambda (from n c) (mark-pos c)))
 
 (define (fold-opening-motion? key)
-  "Motions that count as jumps: they set the ' mark and go in the jump list.
-   Motions that open a closed fold they land in ('foldopen': hor, mark,
-   percent, search, block)."
+  "Whether motion `key` opens a closed fold it lands in.
+   These are the motions of Vim's default 'foldopen': hor, mark,
+   percent, search and block."
   (or (member key '("%" "{" "}" "n" "N" "*" "#" "g*" "g#" "(" ")"
                     "h" "l" "<left>" "<right>" "<bs>" "0" "^" "$" "|" "w" "W" "b" "B" "e" "E" "ge" "gE" ";" ","))
       (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`" "f" "F" "t" "T")))))
 
 (define (jump-motion? key)
+  "Whether motion `key` counts as a jump.
+   Jumps set the ' mark and go in the jump list."
   (or (member key '("G" "gg" "%" "{" "}" "n" "N" "*" "#" "g*" "g#" "H" "M" "L"))
       (and (= (string-length key) 2) (member (substring key 0 1) '("'" "`")))))
 
-(define (jump-mark-line name) (offset->line (or (mark-get name) 0)))
+(define (jump-mark-line name)
+  "The line of mark `name`, or 0 if it isn't set."
+  (offset->line (or (mark-get name) 0)))
 
 (define (with-buffer id thunk)
   "Runs `thunk` with buffer `id` current, then switches back."
@@ -1654,10 +1839,13 @@
             (switch-to-buffer! here)
             result)))))
 
+;; Jump list entries are (buffer-id . mark-name), so jumps cross buffers.
 (define (jump-buffer j)
-  "Jump list entries are (buffer-id . mark-name), so jumps cross buffers."
+  "The buffer id of jump list entry `j`."
   (car j))
-(define (jump-mark j) (cdr j))
+(define (jump-mark j)
+  "The name of the mark that holds jump list entry `j`'s position."
+  (cdr j))
 
 (define (record-jump!)
   "Records the cursor as a jump. Like Vim, an older entry on the same line
@@ -1680,8 +1868,10 @@
       (set! *jumps* (cdr *jumps*)))
     (set! *jump-index* (length *jumps*))))
 
+;; C-o and C-i (<tab> in a terminal) move back and forth in the list.
 (define (jump-older! count)
-  "C-o and C-i (<tab> in a terminal) move back and forth in the list."
+  "C-o: goes `count` entries back in the jump list.
+   Leaving the newest position records it first, so C-i can return."
   (when (= *jump-index* (length *jumps*))
     ;; Leaving the newest position: remember it so C-i can come back.
     (record-jump!)
@@ -1689,6 +1879,8 @@
   (jump-to-index! (- *jump-index* count)))
 
 (define (jump-to-index! i)
+  "Goes to entry `i` of the jump list, switching buffer if it is elsewhere.
+   An index outside the list fails the command, which stops a macro."
   (if (or (< i 0) (>= i (length *jumps*)))
       (set! *command-failed* #t)
       (let ([j (list-ref *jumps* i)])
@@ -1704,23 +1896,27 @@
 ;;; Popups: output longer than the status line
 
 (define (show-popup! lines)
+  "Shows `lines` in a popup that the next key closes."
   (set-popup! lines)
   (set! *popup-shown* #t))
 
 (define (close-popup!)
+  "Closes the popup."
   (set-popup! '())
   (set! *popup-shown* #f))
 
 (define (printable text)
-  "Shows a char as it would be typed: line breaks as ^J, tabs as ^I."
+  "`text` as it would be typed: line breaks as ^J, tabs as ^I."
   (apply string-append
          (map (lambda (c) (cond [(equal? c #\newline) "^J"] [(equal? c #\tab) "^I"] [else (string c)]))
               (string->list text))))
 
 (define (pad-right text width)
+  "`text` padded on the right with spaces to `width` chars."
   (if (< (string-length text) width) (string-append text (make-string (- width (string-length text)) #\space)) text))
 
 (define (clip text width)
+  "`text` cut to at most `width` chars."
   (if (> (string-length text) width) (substring text 0 width) text))
 
 ;;; Macros
@@ -1731,15 +1927,19 @@
 ;;; the last command line. A key that fails stops the macro, as in Vim.
 
 (define (key->notation key)
+  "`key` in Vim's key notation: \"<lt>\" for <, \"<C-r>\" for C-r."
   (cond [(equal? key "<") "<lt>"]
         [(= (string-length key) 1) key]
         [(starts-with? key "<") key]
         [else (string-append "<" key ">")]))
 
-(define (keys->string keys) (apply string-append (map key->notation keys)))
+(define (keys->string keys)
+  "`keys` written as text in Vim's key notation, as a macro register holds."
+  (apply string-append (map key->notation keys)))
 
 (define (string->keys text)
-  "The inverse: splits text back into keys."
+  "Splits `text` written in key notation back into keys.
+   The inverse of keys->string; a line break becomes <ret>."
   (let ([n (string-length text)])
     (let loop ([i 0] [acc '()])
       (if (>= i n)
@@ -1760,11 +1960,15 @@
               [else (loop (+ close 1) (cons (string-append "<" name ">") acc))]))))))
 
 (define (start-recording! c)
+  "Starts recording keys into register `c`, as q{reg} does."
   (set! *recording* c)
   (set! *recorded-keys* '())
   (show-mode!))
 
 (define (stop-recording!)
+  "Stops recording and stores the recorded keys in the register.
+   The keys are written in key notation, so the macro can be pasted
+   and edited as text."
   (let ([c *recording*])
     (set! *recording* #f)
     (register-set! c (keys->string (reverse *recorded-keys*)) #f 'macro)
@@ -1810,10 +2014,12 @@
 ;;; and visual mode.
 
 (define (define-normal-and-visual! key proc)
+  "Binds `key` to `proc` in both normal and visual mode."
   (define-key! 'normal key proc)
   (define-key! 'visual key proc))
 
 (define (scroll-to! top)
+  "Scrolls the window so that `top` is its first line, clamped to the buffer."
   (set-window-top! (clamp top 0 (last-line))))
 
 (define (cursor-to-line! line)
@@ -1887,9 +2093,13 @@
   (lambda (count) (fold-create! (current-line) (fold-step (current-line) (- count 1)) #t)))
 
 (define (fold-command! key proc)
+  "Binds `key` in normal and visual mode to `proc` on the cursor's line.
+   `proc` is (lambda (line) ...); the count is ignored."
   (define-normal-and-visual! key (lambda (count) (proc (current-line)))))
 
 (define (fold-or-complain line ok? what)
+  "The innermost fold at `line` that satisfies `ok?`, or #f.
+   When there is none, says E490 on the status line, followed by `what`."
   (or (innermost-fold line ok?) (begin (set-status! (string-append "E490: No fold found" what)) #f)))
 
 ;; zo opens the fold under the cursor (the closed one showing there), zO
@@ -1954,23 +2164,37 @@
 (define *prefix-keys* (hash "g" #t "z" #t "Z" #t "[" #t "]" #t "\"" #t))
 
 (define (define-prefix! key)
+  "Makes `key` a prefix: in normal mode it waits for the next key.
+   (define-prefix! \"z\") is what lets \"zz\" and \"zt\" be bound."
   (set! *prefix-keys* (hash-insert *prefix-keys* key #t)))
 
 (define (prefix-key? key)
+  "Whether `key` waits for another key in normal mode.
+   True for declared prefixes and char motions, and for char commands
+   when no operator is pending."
   (or (hash-contains? *prefix-keys* key)
       (hash-contains? *char-motions* key)
       (and (not *operator*) (hash-contains? *char-commands* key))))
 
 (define (digit? key)
+  "Whether `key` is a single digit key, 0 to 9."
   (and (= (string-length key) 1)
        (char-numeric-ascii? (string-ref key 0))))
 
 (define (char-numeric-ascii? c)
+  "Whether `c` is an ASCII digit, 0 to 9."
   (let ([n (char->integer c)]) (and (>= n 48) (<= n 57))))
 
-(define (count-value s) (if (equal? s "") 1 (string->number s)))
+(define (count-value s)
+  "The count typed as the digits `s`, 1 if none were typed."
+  (if (equal? s "") 1 (string->number s)))
 
 (define (normal-key! key)
+  "Handles `key` in normal or visual mode.
+   Builds up counts, prefixes, registers and pending operators, then
+   runs the command, motion, operator or text object they make. Looks in
+   the buffer's mode keys before Vim's own. Afterwards keeps the cursor
+   on a char and updates the goal column."
   (cond
     [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
      (reset-pending!)]
@@ -2127,6 +2351,7 @@
           (loop (+ q 1) (if (equal? (buffer-char-at q) #\tab) (+ col (- ts (modulo col ts))) (+ col 1)))))))
 
 (define (insert-tab!)
+  "Inserts a tab, or spaces to the next tab stop when expandtab is on."
   (if (option 'expandtab)
       (let ([ts (option 'tabstop)])
         (insert-text! (make-string (- ts (modulo (display-col (cursor)) ts)) #\space)))
@@ -2149,6 +2374,7 @@
 (define-option! 'indent-close "}])" '())
 
 (define (char-before-cursor-on-line)
+  "The last non-blank char before the cursor on its line, or #f."
   (let ([lo (line-start (current-line))])
     (let loop ([p (cursor)])
       (cond [(<= p lo) #f]
@@ -2156,16 +2382,25 @@
             [else (buffer-char-at (- p 1))]))))
 
 (define (char-after-cursor-on-line)
+  "The first non-blank char at or after the cursor on its line, or #f."
   (let ([hi (line-end (current-line))])
     (let loop ([p (cursor)])
       (cond [(>= p hi) #f]
             [(char-whitespace? (buffer-char-at p)) (loop (+ p 1))]
             [else (buffer-char-at p)]))))
 
-(define (opens-indent? c) (and c (memv c (string->list (option 'indent-open)))))
-(define (closes-indent? c) (and c (memv c (string->list (option 'indent-close)))))
+(define (opens-indent? c)
+  "Whether `c` is one of the indent-open brackets, for smartindent."
+  (and c (memv c (string->list (option 'indent-open)))))
+(define (closes-indent? c)
+  "Whether `c` is one of the indent-close brackets, for smartindent."
+  (and c (memv c (string->list (option 'indent-close)))))
 
 (define (insert-newline!)
+  "Inserts a line break in insert mode, indenting the new line.
+   With autoindent it copies the indent; with smartindent it goes one
+   shiftwidth deeper after an opening bracket, and between a pair of
+   brackets puts the closing one on a line of its own."
   (let* ([indent (if (option 'autoindent)
                      (buffer-substring (line-start (current-line))
                                        (min (cursor) (line-first-nonblank (current-line))))
@@ -2220,6 +2455,9 @@
     (set-cursor! (max (line-first-nonblank line) (- (line-end line) from-end)))))
 
 (define (replace-char! ch)
+  "Types `ch` in replace mode, overwriting the char under the cursor.
+   What it overwrote is remembered so <bs> can put it back. At the end of
+   the line it just inserts."
   (let ([p (cursor)])
     (if (< p (line-end (current-line)))
         (begin
@@ -2241,6 +2479,10 @@
           (set-cursor! (max (line-start (current-line)) p))))))
 
 (define (insert-key! key)
+  "Handles one key typed in insert or replace mode.
+   The buffer's mode keys come first, then the editing keys (<ret>,
+   <bs>, C-w, C-u, C-t, C-d, arrows...), then plain chars, then the
+   insert keymap."
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
   (cond
     ;; A mode's own insert keys come first (the REPL's <ret>).
@@ -2273,10 +2515,14 @@
     [else #t]))
 
 (define (insert-text! text)
+  "Inserts `text` at the cursor and moves the cursor past it."
   (buffer-insert! (cursor) text)
   (set-cursor! (+ (cursor) (string-length text))))
 
 (define (leave-insert!)
+  "Goes back to normal mode from insert, Vim's way.
+   The cursor steps back onto the last char typed. Sets the ^ mark and
+   where gi resumes, and drops indent autoindent added to an empty line."
   (drop-unused-autoindent!)
   (mark-set! "^" (cursor))
   (set! *last-insert-pos* (cursor))
@@ -2288,6 +2534,10 @@
   (set! *goal-col* (current-col)))
 
 (define (insert-mode-key! key)
+  "Handles `key` in insert or replace mode, around insert-key!.
+   Takes care of C-r {register}, C-o for one normal command, and <esc>,
+   which repeats the text for a count, finishes a block insert, records
+   the insert for `.` and leaves insert mode."
   (cond
     ;; C-r {register} inserts the register's text.
     [*insert-pending*
@@ -2321,6 +2571,10 @@
 ;;; on each edit, on <ret> and on <esc>.
 
 (define (open-cmdline! prompt initial on-submit on-change on-cancel)
+  "Opens the command line with `prompt` and `initial` text.
+   `on-submit` gets the text on <ret>; `on-change` (or #f) gets it after
+   each edit; `on-cancel` (or #f) runs on <esc>. Closing it returns to
+   the mode it was opened from."
   ;; Back to whatever state opened it (normal, visual, emacs...).
   (set! *cmdline-return* (if (eq? *mode* 'cmdline) *cmdline-return* *mode*))
   (set! *cmdline-prompt* prompt)
@@ -2334,10 +2588,13 @@
   (show-cmdline!))
 
 (define (show-cmdline!)
+  "Redraws the command line: the prompt, the text and the cursor."
   (set-cmdline! (string-append *cmdline-prompt* *cmdline*)
                 (+ (string-length *cmdline-prompt*) *cmdline-pos*)))
 
 (define (close-cmdline!)
+  "Closes the command line and returns to the mode it was opened from.
+   Also drops any completion list and clears the status line."
   (wild-reset!)
   (set! *cmdline-key-handler* #f)
   (clear-cmdline!)
@@ -2345,22 +2602,27 @@
   (set-status! ""))
 
 (define (cmdline-edit! text pos)
-  "Replaces the text, putting the cursor at `pos`."
+  "Replaces the command line's text with `text`, its cursor at `pos`.
+   Runs the prompt's on-change procedure, if it has one."
   (set! *cmdline* text)
   (set! *cmdline-pos* (clamp pos 0 (string-length text)))
   (show-cmdline!)
   (when *cmdline-change* (*cmdline-change* text)))
 
-(define (cmdline-before) (substring *cmdline* 0 *cmdline-pos*))
-(define (cmdline-after) (substring *cmdline* *cmdline-pos* (string-length *cmdline*)))
+(define (cmdline-before)
+  "The command line's text before the cursor."
+  (substring *cmdline* 0 *cmdline-pos*))
+(define (cmdline-after)
+  "The command line's text from the cursor on."
+  (substring *cmdline* *cmdline-pos* (string-length *cmdline*)))
 
 (define (cmdline-insert! text)
-  "Inserts text at the cursor."
+  "Inserts `text` at the command line's cursor."
   (cmdline-edit! (string-append (cmdline-before) text (cmdline-after))
                  (+ *cmdline-pos* (string-length text))))
 
 (define (cmdline-delete-back! from)
-  "Deletes from `from` to the cursor."
+  "Deletes the command line's text from index `from` to the cursor."
   (cmdline-edit! (string-append (substring *cmdline* 0 from) (cmdline-after)) from))
 
 (define (drop-last-word text)
@@ -2379,9 +2641,14 @@
 ;;; Command-line history: one list per prompt, newest first. <up> and
 ;;; <down> go through the entries that start with what was typed.
 
-(define (history prompt) (or (hash-try-get *history* prompt) '()))
+(define (history prompt)
+  "The history entries for `prompt`, newest first."
+  (or (hash-try-get *history* prompt) '()))
 
 (define (add-history! prompt text)
+  "Adds `text` to `prompt`'s history as the newest entry.
+   An earlier copy of it is dropped, empty text isn't kept, and each
+   prompt keeps 200 entries."
   (unless (equal? text "")
     (let* ([old (filter (lambda (h) (not (equal? h text))) (history prompt))]
            [new (cons text old)])
@@ -2390,6 +2657,9 @@
 
 
 (define (history-step! dir)
+  "Steps `dir` entries through the prompt's history (1 is older).
+   Only entries starting with what was typed before the first step are
+   visited; stepping past the newest brings that text back."
   (when (= *history-index* -1) (set! *history-prefix* *cmdline*))
   (let* ([entries (history *cmdline-prompt*)]
          [n (length entries)])
@@ -2405,6 +2675,10 @@
         [else (loop (+ i dir))]))))
 
 (define (cmdline-key! key)
+  "Handles `key` on the command line: editing, history and completion.
+   <ret> submits and <esc> cancels, both adding the line to history; <bs>
+   on an empty line cancels too. C-r {register} inserts a register and
+   C-r C-w the word under the cursor."
   (unless (member key '("<tab>" "<s-tab>")) (wild-reset!))
   (cond
     ;; Completion menus and the like take the keys they want first.
@@ -2465,6 +2739,8 @@
 (define *ex-completions* (hash))  ; ex command name -> proc
 
 (define (define-ex-completion! names proc)
+  "Makes <tab> complete the argument of the ex commands `names`.
+   `proc` takes the argument typed so far and returns the candidates."
   (for-each (lambda (n) (set! *ex-completions* (hash-insert *ex-completions* n proc))) names))
 
 (define *wild* '())       ; the candidates being stepped through
@@ -2472,12 +2748,14 @@
 (define *wild-start* 0)   ; where the completed word starts in the line
 
 (define (wild-reset!)
+  "Ends command-line completion: forgets the candidates and their popup."
   (when (pair? *wild*)
     (set! *wild* '())
     (set! *wild-index* -1)
     (set-popup! '())))
 
 (define (common-prefix a b)
+  "The longest start that strings `a` and `b` share."
   (let loop ([i 0])
     (if (and (< i (string-length a)) (< i (string-length b)) (equal? (string-ref a i) (string-ref b i)))
         (loop (+ i 1))
@@ -2552,6 +2830,8 @@
     (if slash (substring candidate (+ slash 1) n) candidate)))
 
 (define (wild-show!)
+  "Lists the completion candidates in a popup, in columns.
+   The selected one is highlighted, and the page holding it is shown."
   (let* ([labels (map wild-label *wild*)]
          [width (+ 2 (apply max (map string-length labels)))]
          [columns (max 1 (quotient (- (window-width) 1) width))]
@@ -2581,11 +2861,15 @@
   (wild-show!))
 
 (define (wild-replace! text)
+  "Replaces the word being completed on the command line with `text`."
   (let ([after (substring *cmdline* *cmdline-pos* (string-length *cmdline*))])
     (cmdline-edit! (string-append (substring *cmdline* 0 *wild-start*) text after)
                    (+ *wild-start* (string-length text)))))
 
 (define (cmdline-complete! step)
+  "<tab> (`step` 1) and <s-tab> (`step` -1) on the : command line.
+   The first press extends the word as far as the candidates agree and
+   lists them, or fills in the only one; more presses step through them."
   (cond
     [(not (equal? *cmdline-prompt* ":")) #f]
     [(pair? *wild*) (wild-select! (modulo (+ *wild-index* step) (length *wild*)))]
@@ -2620,6 +2904,8 @@
        [else (cons (car cs) (loop (cdr cs)))]))))
 
 (define (refresh-search-highlight!)
+  "Highlights the last search's matches, or clears them.
+   Matches show while hlsearch is on and :noh hasn't hidden them."
   (if (and *hlsearch* *last-search* (option 'hlsearch))
       (highlight-pattern! "search" *last-search* "search")
       (highlight-clear! "search")))
@@ -2657,6 +2943,9 @@
   (search-target pattern from forward? count))
 
 (define (repeat-search from count reverse?)
+  "The target of n (or N with `reverse?`): the `count`th match from `from`.
+   Returns `from` when there is no previous search or no match, so
+   the cursor stays put."
   (cond
     [(not *last-search*) (set-status! "no previous regular expression") from]
     [else
@@ -2756,17 +3045,29 @@
   (for-each (lambda (name) (set! *ex-commands* (hash-insert *ex-commands* name proc)))
             (if (list? names) names (list names))))
 
-(define (ex-range ex) (car ex))          ; (first-line last-line), 0-based
-(define (ex-range-given? ex) (cadr ex))
-(define (ex-bang? ex) (caddr ex))
-(define (ex-args ex) (cadddr ex))
+(define (ex-range ex)
+  "The lines of parsed command `ex`, as (first last), 0-based."
+  (car ex))          ; (first-line last-line), 0-based
+(define (ex-range-given? ex)
+  "Whether the user typed a range for parsed command `ex`."
+  (cadr ex))
+(define (ex-bang? ex)
+  "Whether parsed command `ex` was given with ! (as :w!)."
+  (caddr ex))
+(define (ex-args ex)
+  "The argument text of parsed command `ex`, after its name."
+  (cadddr ex))
 
-(define (char-at s i) (and (< i (string-length s)) (string-ref s i)))
+(define (char-at s i)
+  "The char at index `i` of `s`, or #f past its end."
+  (and (< i (string-length s)) (string-ref s i)))
 
 (define (skip-spaces s i)
+  "The index of the first non-white-space char of `s` at or after `i`."
   (if (and (char-at s i) (char-whitespace? (char-at s i))) (skip-spaces s (+ i 1)) i))
 
 (define (digits-end s i)
+  "The index just past the run of digits in `s` starting at `i`."
   (if (and (char-at s i) (char-numeric-ascii? (char-at s i))) (digits-end s (+ i 1)) i))
 
 (define (visual-mark-line which)
@@ -2775,8 +3076,10 @@
     (and m (offset->line m))))
 
 (define (read-delimited s i delim)
-  "Reads text up to an unescaped `delim`, from i. Returns (text . next-i),
-   next-i being just past the delimiter (or the end of the string)."
+  "Reads `s` from index `i` up to an unescaped `delim`.
+   Returns (text . next-i), next-i being just past the delimiter (or the
+   end of the string). A backslash before `delim` is dropped; other
+   backslashes are kept."
   (let loop ([i i] [acc '()])
     (let ([c (char-at s i)])
       (cond
@@ -2825,7 +3128,8 @@
             (cons line i))))))
 
 (define (parse-range s i)
-  "The range, as ((first last) given? . next-i)."
+  "Parses the range at index `i` of `s`, as ((first last) given? next-i).
+   With no range typed it is the cursor's line and given? is #f."
   (let ([i (skip-spaces s i)])
     (if (equal? (char-at s i) #\%)
         (list (list 0 (last-line)) #t (+ i 1))
@@ -2840,6 +3144,7 @@
                     i))))))
 
 (define (letter? c)
+  "Whether `c` is an ASCII letter. #f for #f."
   (and c (let ([n (char->integer (char-downcase c))]) (and (>= n 97) (<= n 122)))))
 
 (define (parse-ex line)
@@ -2864,6 +3169,9 @@
     (list name (list range (cadr r) bang? args))))
 
 (define (run-ex! line)
+  "Parses and runs the command line `line`, as typed after :.
+   It becomes the \": register. Errors show on the status line. A range on
+   its own goes to its last line."
   (unless (equal? line "") (set! *last-ex* line))
   (let ([parsed (with-handler (lambda (e) (error-message e)) (parse-ex line))])
     (if (string? parsed)
@@ -2953,7 +3261,7 @@
 (define (save-buffer! . force)
   "Saves the current buffer, running the save hooks. Returns #t if saved.
    A file changed on disk since it was read isn't overwritten unless
-   `force?` (as :w! does)."
+   `force` is given and true (as :w! does)."
   (cond
     [(and (buffer-changed-on-disk?) (file-exists? (or (buffer-path) "")) (or (null? force) (not (car force))))
      (message (string-append (buffer-name) " changed on disk since it was read (:w! to overwrite, :e! to reload)"))
@@ -3010,7 +3318,8 @@
         (quit-if-saved! ex))))
 (define-ex! '("qa" "qall" "quita" "quitall") quit-if-saved!)
 (define (quit-window-or-editor! ex)
-  ":wq and :x close the window too when there are several."
+  "Closes the window if there are several, else quits as :q does.
+   So :wq and :x close the window too when there are several."
   (if (> (length (window-list)) 1)
       (close-current-window!)
       (quit-if-saved! ex)))
@@ -3041,6 +3350,9 @@
 ;; :[range]fold, :[range]foldopen[!], :[range]foldclose[!]
 (define-ex! '("fo" "fold") (lambda (ex) (fold-create! (car (ex-range ex)) (cadr (ex-range ex)) #t)))
 (define (ex-fold-set! closed?)
+  "The :foldopen (`closed?` #f) or :foldclose command over its range.
+   With ! it acts on every fold in the range; without, only on those
+   not already in that state."
   (lambda (ex)
     (let ([first (car (ex-range ex))] [last (cadr (ex-range ex))])
       (for-each (lambda (f)
@@ -3105,7 +3417,9 @@
   (set-one-option-with! set-option! arg))
 
 (define (set-one-option-with! setter arg)
-  "The same, setting with `setter` (set-option! or set-local-option!)."
+  "Applies one :set argument `arg`, setting with `setter`.
+   `setter` is set-option! or set-local-option!. See set-one-option!
+   for the forms `arg` takes."
   (let* ([eq (let loop ([i 0]) (cond [(>= i (string-length arg)) #f] [(equal? (string-ref arg i) #\=) i] [else (loop (+ i 1))]))]
          [query? (ends-with? arg "?")]
          [toggle? (ends-with? arg "!")]
@@ -3143,12 +3457,13 @@
     (set! *goal-col* (current-col))
     (run-hooks 'buffer-enter)))
 
-;; Opens `path` (or switches to the buffer that has it) and returns the id,
-;; or #f after saying why on the status line.
 ;; What opening a directory does; the file browser (dired.scm) sets it.
 (define *open-directory* #f)
 
 (define (open-file! path)
+  "Opens `path`, or switches to the buffer that has it, returning its id.
+   Returns #f after saying why on the status line. A directory goes to
+   the file browser when one is set up."
   (if (and *open-directory* (file-directory? (expand-path path)))
       (*open-directory* (expand-path path))
       (open-file-buffer! path)))
@@ -3157,6 +3472,9 @@
 (define *leave-popup-window!* (lambda () #f))
 
 (define (open-file-buffer! path)
+  "Opens `path` in a buffer and makes it current, recording a jump.
+   Returns the buffer id, or #f after saying why on the status line. The
+   buffer-open hooks run the first time a buffer is shown."
   (*leave-popup-window!*)
   (let ([r (buffer-open! (expand-path path))])
     (if (string? r)
@@ -3173,18 +3491,22 @@
   (for-each open-file! paths))
 
 (define *seen-buffers* (hash))
-(define (buffer-seen? id) (hash-contains? *seen-buffers* id))
-(define (mark-buffer-seen! id) (set! *seen-buffers* (hash-insert *seen-buffers* id #t)))
+(define (buffer-seen? id)
+  "Whether buffer `id` has been shown before."
+  (hash-contains? *seen-buffers* id))
+(define (mark-buffer-seen! id)
+  "Remembers that buffer `id` has been shown."
+  (set! *seen-buffers* (hash-insert *seen-buffers* id #t)))
 
 (define (expand-path path)
-  "~ and $HOME at the start of a path."
+  "`path` with a leading ~ replaced by the home directory."
   (cond
     [(equal? path "~") (home-dir)]
     [(starts-with? path "~/") (string-append (home-dir) (substring path 1 (string-length path)))]
     [else path]))
 
 (define (abbreviate-path path)
-  "~ for the home directory, for showing a path."
+  "`path` with the home directory shown as ~, for display."
   (let ([home (home-dir)])
     (if (and (> (string-length home) 1) (starts-with? path (string-append home "/")))
         (string-append "~" (substring path (string-length home) (string-length path)))
@@ -3198,9 +3520,11 @@
           [else (loop (cdr ids))])))
 
 (define (buffer-modified-by-id? id)
+  "Whether buffer `id` has unsaved changes."
   (let ([info (buffer-info id)]) (and info (caddr info))))
 
 (define (modified-buffers)
+  "The ids of the buffers with unsaved changes."
   (filter buffer-modified-by-id? (buffer-list)))
 
 ;; :e FILE opens it; :e alone re-reads the current file if unchanged, and
@@ -3233,6 +3557,8 @@
   (lambda (ex) (go-to-buffer! (buffer-new! ""))))
 
 (define (buffer-line id)
+  "The line :ls shows for buffer `id`: number, flags and name.
+   %a marks the current buffer, # the alternate one, + unsaved changes."
   (let ([info (buffer-info id)])
     (string-append (pad-right (number->string id) 4)
                    (cond [(= id (current-buffer)) "%a "]
@@ -3245,7 +3571,9 @@
   (lambda (ex) (show-popup! (map buffer-line (buffer-list)))))
 
 (define (find-buffer arg)
-  ":b N or :b NAME (any unique part of a name)."
+  "The buffer :b `arg` means: a number, or any unique part of a name.
+   Returns #f if there is none, saying why when a name matched no
+   buffer or several."
   (let ([n (string->number arg)])
     (if n
         (and (memv n (buffer-list)) n)
@@ -3322,9 +3650,13 @@
 (define-option! 'splitright #f '(spr))
 
 (define (leave-pending-states!)
+  "Leaves visual mode, if in it, before focus moves to another window."
   (when (eq? *mode* 'visual) (leave-visual!)))
 
 (define (split! vertical?)
+  "Splits the current window, focusing the new one.
+   `vertical?` splits side by side. The new window goes above or to the
+   left unless splitbelow or splitright is set."
   (leave-pending-states!)
   (split-window! (if vertical?
                      (if (option 'splitright) "right" "left")
@@ -3339,6 +3671,7 @@
   (run-hooks 'buffer-enter))
 
 (define (go-to-window! id)
+  "Focuses window `id`. Does nothing when `id` is #f."
   (when id
     (leave-pending-states!)
     (unless (= id (current-window))
@@ -3346,11 +3679,13 @@
       (after-window-change!))))
 
 (define (window-step step)
+  "The window `step` places after (or before) the current one, wrapping."
   (let* ([ws (window-list)] [n (length ws)]
          [i (let loop ([l ws] [i 0]) (if (= (car l) (current-window)) i (loop (cdr l) (+ i 1))))])
     (list-ref ws (modulo (+ i step) n))))
 
 (define (close-current-window!)
+  "Closes the current window, or says it can't if it is the last one."
   (if (close-window! (current-window))
       (after-window-change!)
       (message "can't close the last window")))
@@ -3369,6 +3704,7 @@
 (define-ex! '("on" "only") (lambda (ex) (only-window!)))
 
 (define (window-command! keys proc)
+  "Binds C-w followed by each of `keys` to `proc`, in normal and visual."
   (for-each (lambda (k) (define-key! 'normal (string-append "C-w" k) proc)
                         (define-key! 'visual (string-append "C-w" k) proc))
             keys))
@@ -3394,13 +3730,13 @@
 ;;; Line commands: :m :t :> :< :j :pu :k :p :sort :normal :g
 
 (define (lines-text first last)
-  "Text of lines first..last, each with its line break."
+  "The text of lines `first` through `last`, each with its line break."
   (let ([r (lines-range first last)])
     (let ([text (buffer-substring (car r) (cadr r))])
       (if (ends-with? text "\n") text (string-append text "\n")))))
 
 (define (delete-lines! first last)
-  "Deletes lines first..last, keeping the file's final newline."
+  "Deletes lines `first` through `last`, keeping the final newline."
   (let ([r (lines-range first last)])
     (if (and (= (cadr r) (buffer-length)) (> (car r) 0))
         (buffer-delete! (- (car r) 1) (without-final-break (car r) (cadr r)))
@@ -3487,6 +3823,7 @@
             (set-cursor! (line-first-nonblank (+ after (length (split-lines text))))))))))
 
 (define (split-lines text)
+  "`text` split into lines, without a trailing empty one."
   ;; split-many is native: a char-by-char loop here was most of the time
   ;; M-x spent reading doc comments.
   (let ([lines (split-many text "\n")])
@@ -3503,6 +3840,9 @@
 (define *print-lines* #f)
 
 (define (print-lines! ex numbered?)
+  "Shows the lines of `ex`'s range in a popup, for :p and :nu.
+   `numbered?` puts line numbers in front. Under :g the lines are
+   collected instead, to show all at once."
   (let loop ([l (car (ex-range ex))] [acc '()])
     (if (> l (cadr (ex-range ex)))
         (let ([lines (reverse acc)])
@@ -3518,9 +3858,10 @@
 (define-ex! '("p" "print") (lambda (ex) (print-lines! ex #f)))
 (define-ex! '("nu" "number" "#") (lambda (ex) (print-lines! ex #t)))
 
+;; :sort [!] [i] [n] [u] sorts lines: reversed, ignoring case, by the first
+;; number on the line, dropping duplicates. Without a range, the whole file.
 (define (first-number text)
-  ":sort [!] [i] [n] [u] sorts lines: reversed, ignoring case, by the first
-   number on the line, dropping duplicates. Without a range, the whole file."
+  "The first run of digits in `text` as a number, or #f if it has none."
   (let loop ([cs (string->list text)] [digits '()])
     (cond
       [(and (null? cs) (null? digits)) #f]
@@ -3529,6 +3870,7 @@
       [else (string->number (list->string (reverse digits)))])))
 
 (define (dedupe lines same?)
+  "`lines` with runs of neighbours that are `same?` reduced to one."
   (cond [(null? lines) '()]
         [(and (pair? (cdr lines)) (same? (car lines) (cadr lines))) (dedupe (cdr lines) same?)]
         [else (cons (car lines) (dedupe (cdr lines) same?))]))
@@ -3571,6 +3913,9 @@
              (run-normal-keys! keys)))))))
 
 (define (run-normal-keys! keys)
+  "Plays `keys` as if typed in normal mode, for :normal.
+   Afterwards finishes what they left half done: leaves insert,
+   command-line or visual mode and forgets pending keys."
   (play-keys! keys)
   ;; Finish whatever the keys left half done, as Vim does.
   (when (typing-mode?) (process-key! "<esc>"))
@@ -3580,11 +3925,14 @@
   (set! *command-failed* #f))
 
 (define (for-each-line-mark first last thunk)
-  "Runs `thunk` with the cursor at the start of each line first..last.
+  "Runs `thunk` with the cursor at the start of lines `first` to `last`.
    Lines are marked first, so the thunk may add or delete lines."
   (for-each-marked-line (range first (+ last 1)) thunk))
 
 (define (for-each-marked-line lines thunk)
+  "Runs `thunk` with the cursor at the start of each of `lines`.
+   The lines are marked first, so `thunk` may add or delete lines; a
+   line already deleted is skipped."
   (let ([names (map (lambda (l)
                       (let ([name (string-append "line" (number->string l))])
                         (mark-set! name (line-start l))
@@ -3634,6 +3982,7 @@
                    (set-status! (string-append "Pattern not found: " pattern))))]))))))
 
 (define (line-matches? pattern line)
+  "Whether `pattern` matches somewhere on `line`."
   (let ([hit (search-next pattern (max 0 (- (line-start line) 1)) #t)])
     (and hit
          (let ([at (car hit)])
@@ -3688,7 +4037,7 @@
 ;;; function replaces it for the whole editor right away.
 
 (define (show-result! value)
-  "Shows a result: on the status line, or in a popup if it is long."
+  "Shows `value` on the status line, or in a popup if it is long."
   (let ([text (if (string? value) value (to-string value))])
     (if (or (string-contains? text "\n") (> (string-length text) 100))
         (show-popup! (split-lines text))
@@ -3713,7 +4062,8 @@
   (lambda (ex) (show-popup! (if (null? *messages*) (list "no messages") (reverse *messages*)))))
 
 (define (delimiter? c)
-  "Chars that end a symbol."
+  "Whether `c` ends a symbol: white space, brackets, quotes, ; or ,.
+   #f (past the buffer's end) counts too."
   (or (not c) (char-whitespace? c) (memv c (string->list "()[]\"';`,"))))
 
 (define (form-at p)
@@ -3740,6 +4090,9 @@
            (if outer (loop outer) (form-at o))))))
 
 (define (eval-range-command range-of)
+  "A command that evaluates the text `range-of` finds at the cursor.
+   `range-of` takes the cursor and returns (start end), or #f, in which
+   case it says there is no form."
   (lambda (count)
     (let ([r (range-of (cursor))])
       (if r
@@ -3770,6 +4123,7 @@
 ;;; Entry points
 
 (define (imp-init)
+  "Starts the editor in normal mode and runs the startup hooks."
   (set-mode! 'normal)
   (normal-clamp!)
   (run-hooks 'startup))
@@ -3777,6 +4131,10 @@
 (define *last-version* #f)  ; buffer and version after the last key
 
 (define (imp-handle-key key)
+  "Handles one key from the user: Rust calls this for every key.
+   Records it while a macro is being recorded, then runs the
+   after-change hooks if it changed the buffer and the post-command
+   hooks always."
   (when (and *recording* (not (stops-recording? key)))
     (set! *recorded-keys* (cons key *recorded-keys*)))
   (handle-top-level-key! key)
@@ -3789,6 +4147,9 @@
   (run-hooks 'post-command))
 
 (define (handle-top-level-key! key)
+  "Handles a key, closing the popup first if one is up.
+   The key that closes a popup also runs, unless it is <ret>, <esc>,
+   space or C-c, as at Vim's \"Press ENTER\" prompt."
   (if *popup-shown*
       ;; Any key closes a popup; <ret>, <esc> and space only do that, other
       ;; keys also run, as at Vim's "Press ENTER" prompt.
@@ -3822,6 +4183,8 @@
 (define *local-prefix* #f)
 
 (define (local-prefix-state)
+  "The state whose keymaps a mode's key sequence is looked up in.
+   It is 'insert while typing, 'visual in visual mode, else 'normal."
   (cond [(typing-mode?) 'insert] [(eq? *mode* 'visual) 'visual] [else 'normal]))
 
 (define (local-prefix? state keys)
@@ -3839,6 +4202,9 @@
   (if (eq? state 'insert) (proc) (proc 1)))
 
 (define (local-prefix-key! key)
+  "Handles `key` after the start of a mode's key sequence (C-c C-c).
+   Runs the binding if the keys so far make one, waits for more if they
+   begin a longer one, and otherwise says they are undefined."
   (let* ([state (local-prefix-state)] [keys (string-append *local-prefix* key)])
     (set! *local-prefix* #f)
     (cond [(member key '("<esc>" "C-g")) (message "")]
@@ -3847,6 +4213,9 @@
           [else (message (string-append keys " is undefined"))])))
 
 (define (handle-key! key)
+  "Sends `key` to whatever handles it in the current mode.
+   A mode's control or meta key sequence comes first, then extra
+   states, insert, the command line, and normal or visual mode."
   (cond
     [*local-prefix* (local-prefix-key! key)]
     [(and (memq *mode* '(normal visual insert replace))

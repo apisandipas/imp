@@ -27,14 +27,16 @@
 ;;; Headings and subtrees
 
 (define (org-level-of text)
-  "The level of the heading on `line` (how many stars), or #f."
+  "The level of heading text `text` (how many stars), or #f."
   (let ([n (string-length text)])
     (let loop ([i 0])
       (cond [(and (< i n) (equal? (string-ref text i) #\*)) (loop (+ i 1))]
             [(and (> i 0) (< i n) (equal? (string-ref text i) #\space)) i]
             [else #f]))))
 
-(define (org-level line) (org-level-of (line-text line)))
+(define (org-level line)
+  "The level of the heading on buffer line `line`, or #f if it isn't one."
+  (org-level-of (line-text line)))
 
 (define (org-heading-line line)
   "The heading at or above `line`, or #f."
@@ -68,17 +70,22 @@
                 (loop (+ l 1) acc child-level)))))))
 
 (define (org-headings)
+  "Every heading line in the buffer, in order."
   (filter org-level (range 0 (buffer-line-count))))
 
 ;;; Visibility, with folds (fold.scm)
 
 (define (org-folds-from first last)
+  "The folds that start on a line from `first` to `last`."
   (filter (lambda (f) (and (>= (fold-first f) first) (<= (fold-first f) last))) (buffer-folds)))
 
 (define (org-unfold! first last)
+  "Deletes every fold starting between lines `first` and `last`."
   (for-each (lambda (f) (fold-delete! (fold-id f))) (org-folds-from first last)))
 
-(define (org-fold! first last) (when (> last first) (fold-create! first last #t)))
+(define (org-fold! first last)
+  "Folds lines `first` to `last` closed, unless that is a single line."
+  (when (> last first) (fold-create! first last #t)))
 
 (define (org-cycle! line)
   "Cycles the subtree under the heading on `line`: FOLDED, CHILDREN (the
@@ -130,6 +137,7 @@
                     (if break? text (substring text 0 (- (string-length text) 1))))))
 
 (define (org-set-line! line text)
+  "Replaces the text of `line`, leaving its line break."
   (replace-range! (line-start line) (line-end line) text))
 
 (define (org-keyword-in rest)
@@ -190,6 +198,7 @@
       (let ([h (org-heading-line line)]) (when h (org-update-cookie! h))))))
 
 (define (org-count-boxes first last)
+  "(checked total): the checkboxes on lines `first` to `last`."
   (foldl (lambda (l acc)
            (let* ([item (org-list-item l)] [box (and item (caddr item))])
              (if box
@@ -215,6 +224,9 @@
         [else (loop (+ i 1))]))))
 
 (define (org-update-cookie! heading)
+  "Recounts the [n/m] or [n%] cookie on `heading` from its checkboxes.
+   Counts the boxes in the heading's own text, not its subheadings',
+   and does nothing when the heading has no cookie."
   (let* ([text (line-text heading)] [cookie (org-find-cookie text)])
     (when cookie
       (let* ([counts (org-count-boxes (+ heading 1) (org-body-end heading))]
@@ -321,6 +333,11 @@
        (and (or (starts-with? word "http://") (starts-with? word "https://")) word)))))
 
 (define (org-follow! target)
+  "Follows link `target`, like Org's C-c C-o.
+   A URL or mailto: opens with xdg-open; *Title jumps to the heading
+   ending in Title; anything else is a file (file: optional, relative
+   to this buffer's directory) with an optional ::LINE or ::TEXT to
+   go to."
   (cond
     [(or (starts-with? target "http://") (starts-with? target "https://") (starts-with? target "mailto:"))
      (start-job! (string-append "xdg-open " (shell-quote target)) "" #f #f)
@@ -346,23 +363,29 @@
 ;;; Tables
 
 (define (org-table-line? line)
+  "Whether buffer line `line` exists and is a table row (starts with |)."
   (and (<= 0 line) (<= line (last-line)) (starts-with? (trim-start (line-text line)) "|")))
 
 (define (org-table-bounds line)
+  "(first last): the lines of the table around `line`."
   (list (let up ([l line]) (if (org-table-line? (- l 1)) (up (- l 1)) l))
         (let down ([l line]) (if (org-table-line? (+ l 1)) (down (+ l 1)) l))))
 
-(define (org-separator? text) (starts-with? (trim-start text) "|-"))
+(define (org-separator? text)
+  "Whether table row `text` is a rule, |-..."
+  (starts-with? (trim-start text) "|-"))
 
 (define (org-row-cells text)
+  "The cells of table row `text`, trimmed."
   (let* ([t (trim text)]
          [parts (split-many (substring t 1 (string-length t)) "|")]
          [parts (if (and (pair? parts) (equal? (trim (last parts)) "")) (reverse (cdr (reverse parts))) parts)])
     (map trim parts)))
 
 (define (org-table-align! line)
-  "Aligns the table around `line`, keeping the cursor in its cell. Returns
-   (first-line cell-index) of where the cursor was."
+  "Aligns the table around `line`, padding every column to its widest.
+   Returns (first-line columns cell-index), the cell being the 1-based
+   one the cursor was in."
   (let* ([bounds (org-table-bounds line)] [first (car bounds)] [last (cadr bounds)]
          [texts (map line-text (range first (+ last 1)))]
          [indent (let ([t (car texts)]) (substring t 0 (- (string-length t) (string-length (trim-start t)))))]
@@ -410,6 +433,10 @@
 ;;; Do what the line means
 
 (define (org-dwim! count)
+  "<ret> in Org: does what the line at the cursor means.
+   Follows a link, toggles a checkbox, cycles a heading's TODO keyword
+   or aligns a table; elsewhere it is the usual <ret> motion, `count`
+   times."
   (let* ([line (current-line)] [link (org-link-at (cursor))] [item (org-list-item line)])
     (cond
       [link (org-follow! link)]
@@ -420,6 +447,8 @@
               (when target (set-cursor! target)))])))
 
 (define (org-tab! count)
+  "<tab> in Org: next table cell, or cycle the heading's subtree.
+   Elsewhere it does whatever <tab> does in normal state."
   (let ([line (current-line)])
     (cond
       [(org-table-line? line) (org-table-next-cell!)]
@@ -430,11 +459,17 @@
 ;;; The agenda
 
 (define (org-notes-file)
+  "The full path of the default notes file, where captures go.
+   That is org-default-notes-file, or inbox.org in org-directory when
+   the option is empty."
   (expand-path (if (equal? (option 'org-default-notes-file) "")
                    (string-append (option 'org-directory) "/inbox.org")
                    (option 'org-default-notes-file))))
 
 (define (org-agenda-file-list)
+  "The full paths of the files the agenda reads.
+   They are org-agenda-files, or when that is empty every .org file
+   under org-directory (none if it doesn't exist)."
   (let ([files (option 'org-agenda-files)])
     (if (pair? files)
         (map org-path files)
@@ -472,11 +507,18 @@
                  (loop (cdr lines) (+ n 1) acc current))]
               [else (loop (cdr lines) (+ n 1) acc current)]))))))
 
-(define (org-today) (trim (cadr (run-shell "date +%F" ""))))
+(define (org-today)
+  "Today's date as YYYY-MM-DD. Runs date."
+  (trim (cadr (run-shell "date +%F" ""))))
 
-(define (org-entry-done? e) (equal? (caddr e) (last (option 'org-todo-keywords))))
+(define (org-entry-done? e)
+  "Whether agenda entry `e` has the last TODO keyword, the done one."
+  (equal? (caddr e) (last (option 'org-todo-keywords))))
 
 (define (org-agenda-line! e date what)
+  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...).
+   Either may be #f. The line remembers the entry's file and line, so
+   <ret> on it goes there."
   (draw-line! (list (list "  " #f)
                    (list (if date (string-append date "  ") "") "org.date")
                    (list (if what (pad-right what 12) "") "org.special")
@@ -486,6 +528,10 @@
              (list 'org (car e) (cadr e))))
 
 (define (org-render-agenda!)
+  "Redraws the agenda from the agenda files, like Org's agenda.
+   Undone entries scheduled or due today or earlier, then those
+   upcoming, by date; then the TODOs with no date. Done entries are
+   left out."
   (let* ([today (org-today)]
          [entries (apply append (map org-file-entries (org-agenda-file-list)))]
          [open (filter (lambda (e) (not (org-entry-done? e))) entries)]
@@ -516,11 +562,13 @@
     (draw-finish!)))
 
 (define (org-agenda!)
+  "Shows the agenda in its own buffer, freshly read from the files."
   (go-to-buffer! (special-buffer "*org agenda*" 'org-agenda-mode))
   (org-render-agenda!)
   (set-cursor! 0))
 
 (define (org-agenda-visit!)
+  "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
     (when (and item (eq? (car item) 'org))
       (when (open-file! (cadr item))
@@ -553,10 +601,14 @@
 (define *capture-templates* '())  ; (key description target template), in order
 
 (define (define-capture-template! key description target template)
+  "Adds capture template `key`, replacing one already bound to it.
+   `description` is what the menu shows, `target` where the entry
+   goes and `template` its text; see the Capture notes above."
   (remove-capture-template! key)
   (set! *capture-templates* (append *capture-templates* (list (list key description target template)))))
 
 (define (remove-capture-template! key)
+  "Removes the capture template bound to `key`, if there is one."
   (set! *capture-templates* (filter (lambda (t) (not (equal? (car t) key))) *capture-templates*)))
 
 (define-capture-template! "t" "Todo" '(file+headline "" "Tasks") "* TODO %?\n/Entered on/ %U")
@@ -585,7 +637,9 @@
                           (let ([r (visual-range)]) (buffer-substring (car r) (cadr r)))
                           ""))))
 
-(define (context-ref ctx key) (cdr (assq key ctx)))
+(define (context-ref ctx key)
+  "The value under `key` in capture context `ctx`."
+  (cdr (assq key ctx)))
 
 (define (capture-prompts template)
   "The %^{Prompt} prompts in `template`, in order."
@@ -782,10 +836,13 @@
 (add-hook! 'buffer-enter (lambda () (when (buffer-local 'capture) (capture-hint!))))
 
 (define (capture-target-label target)
+  "A short name for where `target` files to: the file, › heading."
   (string-append (file-name-of (org-path (cadr target)))
                  (if (eq? (car target) 'file+headline) (string-append " › " (caddr target)) "")))
 
 (define (org-capture!)
+  "Starts a capture, asking which template when there is more than one.
+   When a capture is already in progress, shows it instead."
   (cond
     [(list-find (lambda (id) (equal? (car (buffer-info id)) "*capture*")) (buffer-list))
      => (lambda (id) (display-buffer! id) (message "a capture is in progress: C-c C-c files it, C-c C-k cancels"))]
@@ -823,9 +880,12 @@
         (message "nothing captured"))))
 
 (define (capture-finish!)
+  "C-c C-c: files the capture at its template's target and closes it.
+   It is also the capture buffer's :w. Nothing typed, nothing filed."
   (when (buffer-local 'capture) (capture-finish-at! (caddr (car (buffer-local 'capture))))))
 
 (define (capture-abort!)
+  "C-c C-k: throws the capture away and closes its window."
   (when (buffer-local 'capture) (capture-close!) (message "capture cancelled")))
 
 (define (org-refile-targets)
@@ -848,6 +908,7 @@
               (org-agenda-file-list))))
 
 (define (capture-refile!)
+  "C-c C-w: asks for a heading in the agenda files and files under it."
   (let ([targets (org-refile-targets)])
     (if (null? targets)
         (message "no headings in the agenda files to refile under")
@@ -889,6 +950,7 @@
                     (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))))
 
 (define (org-key! states key proc)
+  "Binds `key` to `proc` in Org buffers, in each of `states`."
   (for-each (lambda (state) (define-mode-key! 'org-mode state key proc)) states))
 
 (org-key! '(normal) "<tab>" org-tab!)
@@ -915,8 +977,14 @@
 (define-mode-key! 'org-agenda-mode 'normal "<ret>" (lambda (n) (org-agenda-visit!)))
 (define-mode-key! 'org-agenda-mode 'normal "gr" (lambda (n) (org-render-agenda!)))
 
-(define-command! 'org-agenda (lambda (count) (org-agenda!)))
-(define-command! 'org-capture (lambda (count) (org-capture!)))
+(define-command! 'org-agenda
+  (lambda (count)
+    "Show the agenda: TODOs and SCHEDULED and DEADLINE dates."
+    (org-agenda!)))
+(define-command! 'org-capture
+  (lambda (count)
+    "Capture a TODO, note or journal entry from a template."
+    (org-capture!)))
 (define-leader-group! "o" "org")
 (define-leader! "oa" 'org-agenda "agenda")
 (define-leader! "oc" 'org-capture "capture")

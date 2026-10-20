@@ -18,6 +18,10 @@
 (define *mouse-press* #f)  ; (window offset) where the left button went down
 
 (define (imp-handle-mouse action button x y)
+  "Handles a mouse event from the client, `action` with `button` at
+   screen cell `x`, `y`: press, drag, release, scroll-up or scroll-down.
+   Ignored with nomouse, on the command line, and while something else
+   is reading keys."
   (when (and (option 'mouse) (not (eq? *mode* 'cmdline))
              ;; Something reading keys (the leader menu, describe-key)
              ;; owns the next input, except the completion menu.
@@ -35,6 +39,10 @@
       (run-hooks 'post-command))))
 
 (define (mouse-click! window offset)
+  "Focuses `window` and moves the cursor to `offset` there.
+   Closes menus and popups and ends visual mode; insert mode stays.
+   `offset` is #f on a status line, which only focuses the window.
+   Remembers the press for a drag."
   (close-menu!)
   (when *popup-shown* (close-popup!))
   (reset-pending!)
@@ -50,7 +58,8 @@
     (set! *mouse-press* (and offset (list window (cursor))))))
 
 (define (mouse-drag! window offset)
-  "The first drag away from the press starts a selection there."
+  "Moves the cursor to `offset` as the left button drags in `window`.
+   The first drag away from the press starts a selection there."
   (when (and *mouse-press* offset (= window (car *mouse-press*)) (= window (current-window)))
     (unless (eq? *mode* 'visual)
       (when (typing-mode?) (leave-insert!))

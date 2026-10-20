@@ -21,6 +21,8 @@
   (max 1 (min 10 (- (window-height) 2))))
 
 (define (refilter! text)
+  "Narrows the menu to the candidates matching `text`, best first.
+   Called as the prompt's text changes; selects the first match."
   (set! *completion-matches* (fuzzy-filter text *completion-candidates* *completion-limit*))
   (set! *completion-index* 0)
   (show-completions!))
@@ -55,12 +57,16 @@
                   (+ (string-length *cmdline-prompt*) *cmdline-pos*))))
 
 (define (move-selection! step)
+  "Moves the menu's selection `step` rows, down for positive.
+   It wraps around at either end."
   (let ([n (length *completion-matches*)])
     (when (> n 0)
       (set! *completion-index* (modulo (+ *completion-index* step) n))
       (show-completions!))))
 
 (define (completion-key key)
+  "Handles `key` if it moves the menu's selection, returning #t.
+   #f for any other key, which the prompt then handles itself."
   (cond
     [(member key '("C-n" "<down>" "<tab>" "C-j")) (move-selection! 1) #t]
     [(member key '("C-p" "<up>" "<s-tab>" "C-k")) (move-selection! -1) #t]
@@ -69,13 +75,18 @@
     [else #f]))
 
 (define (close-completions!)
+  "Closes the completion menu."
   (set-popup! '())
   (set-popup-selected! -1))
 
 (define (completing-read prompt candidates on-select . annotate)
-  "`candidates` is a list of strings. `on-select` gets the chosen string.
-   An `annotate` procedure, if given, returns text to show beside each
-   candidate (or #f)."
+  "Asks for one of `candidates` with `prompt`, narrowing as you type.
+   `candidates` is a list of strings. `on-select` gets the chosen
+   string, or the typed text when nothing matches (but not \"\"). An
+   `annotate` procedure, if given, returns text to show beside each
+   candidate (or #f).
+
+     (completing-read \"Open: \" '(\"notes.org\" \"todo.org\") open-file!)"
   (set! *completion-candidates* candidates)
   (set! *completion-annotate* (if (null? annotate) #f (car annotate)))
   (open-cmdline!
@@ -102,6 +113,9 @@
 (define *command-labels* (lambda () '()))  ; -> list of (name description)
 
 (define (command-keys-table)
+  "The keys bound to each command, for M-x: a hash of command name
+   (a string) -> list of key labels. Normal mode's keys (Emacs's in
+   Emacs mode), then those *more-command-keys* adds."
   (let* ([mode (if (eq? *mode* 'emacs) 'emacs 'normal)]
          [m (keymap mode)]
          [pairs (append (map (lambda (k) (list (hash-ref m k) (if (equal? k " ") "SPC" k)))
@@ -114,8 +128,9 @@
 
 (define-command! 'execute-command
   (lambda (count)
-    "Run a command by name (Emacs's M-x), its keys and what it does shown
-     beside it: the first line of its doc comment, else its which-key label."
+    "Run a command by name, chosen from a list (Emacs's M-x).
+     Beside each are its keys and what it does: the first line of its
+     docstring, else its which-key label."
     (let ([keys (command-keys-table)]
           [docs (doc-lines)]
           [labels (foldl (lambda (p h) (hash-insert h (symbol->string (car p)) (sentence-case (cadr p))))
@@ -127,19 +142,23 @@
                                              (or (command-doc name docs) (hash-try-get labels name))))))))
 
 (define (sentence-case text)
-  "\"last buffer\" -> \"Last buffer\", to sit among doc comments' first lines."
+  "`text` with its first letter upper case: \"last buffer\" -> \"Last buffer\".
+   Which-key labels then sit among docstrings' first lines in M-x."
   (if (equal? text "")
       text
       (string-append (string-upcase (substring text 0 1)) (substring text 1 (string-length text)))))
 
 (define (command-annotation key-labels doc)
-  "\"KEYS  description\", the description in a column of its own."
+  "The M-x annotation for a command: up to three of its keys, then `doc`.
+   \"KEYS  description\", the description in a column of its own; #f
+   when there are neither keys nor `doc`."
   (let ([keys (if key-labels (string-join (take-at-most-keys key-labels 3) "  ") "")])
     (cond [(not doc) (and key-labels keys)]
           [(equal? keys "") (string-append (make-string 14 #\space) doc)]
           [else (string-append (pad-right (string-append keys "  ") 14) doc)])))
 
 (define (take-at-most-keys items n)
+  "The first `n` elements of `items`, or all of them if fewer."
   (if (or (null? items) (= n 0)) '() (cons (car items) (take-at-most-keys (cdr items) (- n 1)))))
 
 (define-command! 'find-file
@@ -168,19 +187,25 @@
   (apropos ""))
 
 (define-command! 'describe-function
-  (lambda (count) (completing-read "Describe function: " (all-definitions) describe-function)))
+  (lambda (count)
+    "Describe a function, chosen from every definition in the sources."
+    (completing-read "Describe function: " (all-definitions) describe-function)))
 
 (define-command! 'describe-option
   (lambda (count)
+    "Describe an option, chosen from a list: its value and documentation."
     (completing-read "Describe option: "
                      (sort (map symbol->string (hash-keys->list *options*)) string<?)
                      describe-option)))
 
 (define-command! 'find-definition
-  (lambda (count) (completing-read "Find definition: " (all-definitions) find-definition)))
+  (lambda (count)
+    "Open the source of a definition chosen from a list."
+    (completing-read "Find definition: " (all-definitions) find-definition)))
 
 (define-command! 'describe-command
   (lambda (count)
+    "Describe a command, chosen from a list: its source and documentation."
     (completing-read "Describe command: " (sort (map symbol->string (command-names)) string<?)
                      describe-function)))
 

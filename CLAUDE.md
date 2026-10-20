@@ -11,3 +11,7 @@ New editing behavior goes in Scheme, not Rust. Add a primitive to
 `crates/imp-server/src/api.rs` only when Scheme can't do it or is measurably
 too slow. Test Vim behavior by feeding keys (see `crates/imp-server/tests/vim.rs`)
 and match what real Vim does.
+
+Every function and command in `runtime/` gets an Emacs-style docstring, a
+string first in its body (or in the command's lambda), first line a sentence
+of its own: help and M-x show it. Variables and options get a comment above.

@@ -123,17 +123,19 @@ fn m_x_describes_each_command() {
         row.contains("Open a file under the current directory, skipping what .gitignore does."),
         "{row}"
     );
-    // With no doc comment, its which-key label.
+    // With no docstring, its which-key label.
     type_keys(&mut s, "<esc>");
+    s.eval("(define-command! 'undocumented-thing (lambda (count) #t)) (define-leader! \"zq\" 'undocumented-thing \"do the thing\")")
+        .unwrap();
     s.keys(&["M-x"]);
-    type_keys(&mut s, "describe-face");
+    type_keys(&mut s, "undocumented-thing");
     let menu = rows(&mut s).join("\n");
     let row = menu
         .lines()
-        .find(|r| r.starts_with("describe-face "))
+        .find(|r| r.starts_with("undocumented-thing "))
         .expect(&menu);
     assert!(
-        row.contains("SPC h F") && row.contains("Describe face"),
+        row.contains("SPC z q") && row.contains("Do the thing"),
         "{row}"
     );
     // A command from a table, documented with document-command!.

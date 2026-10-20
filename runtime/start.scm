@@ -11,17 +11,22 @@
 
 ;;; Recent files
 
-(define (recent-files-file) (string-append (imp-state-dir) "/recent"))
+(define (recent-files-file)
+  "The file the recent files list is kept in, in the state directory."
+  (string-append (imp-state-dir) "/recent"))
 
 (define (recent-files)
+  "The recent files, newest first, or '() if none can be read."
   (with-handler (lambda (e) '())
                 (if (file-exists? (recent-files-file)) (text-lines (read-file (recent-files-file))) '())))
 
 (define (take-at-most items n)
+  "The first `n` of `items`, or all of them if there are fewer."
   (if (or (null? items) (<= n 0)) '() (cons (car items) (take-at-most (cdr items) (- n 1)))))
 
 (define (remember-file! path)
-  "Remembering is a convenience: an unwritable state directory isn't an
+  "Puts `path` first in the recent files, keeping recent-files-max.
+   Remembering is a convenience: an unwritable state directory isn't an
    error worth showing."
   (with-handler
    (lambda (e) #f)
@@ -41,6 +46,7 @@
 
 (define-command! 'recent-files
   (lambda (count)
+    "Pick a recently visited file and open it."
     (let ([files (filter file-exists? (recent-files))])
       (if (null? files)
           (message "no recent files yet")
@@ -52,7 +58,9 @@
 
 (define-major-mode! 'start-mode 'special-mode '() #f)
 
-(define (start-entry key label face action) (list key label face action))
+(define (start-entry key label face action)
+  "A start screen entry: `key` runs `action`, shown as `label` in `face`."
+  (list key label face action))
 
 (define (start-entries)
   "What the screen offers, as (key label face action): recent files on
@@ -81,9 +89,13 @@
            (start-entry "?" "Help" #f (lambda () (run-ex! "help")))
            (start-entry "q" "Quit" #f (lambda () (run-ex! "qa")))))))
 
-(define (start-section entries face) (filter (lambda (e) (equal? (caddr e) face)) entries))
+(define (start-section entries face)
+  "The entries of `entries` drawn in `face`: one section of the screen."
+  (filter (lambda (e) (equal? (caddr e) face)) entries))
 
 (define (start-draw!)
+  "Draws the start screen into the current buffer, centred in the
+   window, with the cursor on the first entry."
   (let* ([entries (start-entries)]
          [files (start-section entries "start.file")]
          [projects (start-section entries "start.project")]
@@ -121,16 +133,18 @@
               (set-cursor! (line-first-nonblank i))
               (loop (+ i 1))))))))
 
-(define (start-run! entry) ((list-ref entry 3)))
+(define (start-run! entry)
+  "Runs start screen entry `entry`'s action."
+  ((list-ref entry 3)))
 
 (define (start-key! key)
-  "The key typed on the start screen, if it names an entry."
+  "Runs the start screen entry for `key`, the key typed, if there is one."
   (let ([entry (list-find (lambda (e) (equal? (car e) key)) (or (buffer-local 'start-entries) '()))])
     (if entry (start-run! entry) (message (string-append (key-label key) " is undefined")))))
 
 (define (start-new-buffer! changed?)
-  "An unnamed buffer (with `changed?`, even one with text in it), or a
-   new one."
+  "Goes to an unmodified unnamed buffer, or a new one if there is none.
+   With `changed?`, an unnamed buffer with text in it will do too."
   (let ([blank (list-find (lambda (id)
                             (let ([info (buffer-info id)])
                               (and (equal? (car info) "[No Name]") (or changed? (not (caddr info))))))
@@ -147,6 +161,7 @@
   (lambda (n) (let ([e (line-item)]) (when e (start-run! e)))))
 
 (define (show-start-screen!)
+  "Goes to the *start* buffer and draws the start screen afresh."
   (go-to-buffer! (special-buffer "*start*" 'start-mode))
   (start-draw!))
 
@@ -156,5 +171,6 @@
                                  (show-start-screen!)))
 
 (define (imp-start-screen)
-  "Called by the editor when it starts with no file."
+  "Shows the start screen unless 'start-screen is off.
+   Called by the editor when it starts with no file."
   (when (option 'start-screen) (show-start-screen!)))

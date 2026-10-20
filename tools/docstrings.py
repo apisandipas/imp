@@ -87,9 +87,10 @@ def token(text, i):
 
 
 class Definition:
-    def __init__(self, name, start, body, form, end):
+    def __init__(self, name, start, head, body, form, end):
         self.name = name    # what it defines
         self.start = start  # offset of its "(" at the start of a line
+        self.head = head    # offset just after its name and arguments
         self.body = body    # offset of the first form of the body
         self.form = form    # offset of the form whose body it is
         self.end = end      # offset of its closing bracket
@@ -121,10 +122,11 @@ def definitions(text):
                 continue
             form = at
             head = skip_blank(text, skip_form(text, skip_blank(text, at + 1), match))
-        body = skip_blank(text, skip_form(text, head, match))
+        head = skip_form(text, head, match)
+        body = skip_blank(text, head)
         if text[body] in ")]":
             continue  # no body to document
-        found.append(Definition(name, start, body, form, match[start]))
+        found.append(Definition(name, start, head, body, form, match[start]))
     return found
 
 
@@ -185,12 +187,10 @@ def insert(text, docs):
                 + text[d.end :]
             )
         else:
+            # First in the body: above any comment that opens it.
+            at = text.find("\n", d.head) + 1
             indent = column(text, d.body)
-            text = (
-                text[:body_line]
-                + " " * indent + literal(doc, indent + 1) + "\n"
-                + text[body_line:]
-            )
+            text = text[:at] + " " * indent + literal(doc, indent + 1) + "\n" + text[at:]
     return text
 
 

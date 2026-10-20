@@ -114,7 +114,9 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 - **Help.** `:help`, `SPC h k` (describe key), `SPC h f` (describe
   function), `SPC h o` (describe option), `SPC h F` (the faces under the
   cursor, to change with `set-face!`), `M-x list-faces` (every face, drawn
-  in itself). M-x shows each command's keys and what it does.
+  in itself). M-x shows each command's keys and what it does. Functions
+  carry Emacs-style docstrings, which help shows; yours in `init.scm`
+  can too.
 
 ## Configuration
 
@@ -131,6 +133,7 @@ runtime and can change anything in it. `c` on the start screen opens it.
 ;; A command of your own, on the leader and in M-x.
 (define-command! 'insert-date
   (lambda (count)
+    "Insert today's date at the cursor."    ; what M-x and SPC h f show
     (begin-change!)
     (buffer-insert! (cursor) (without-final-newline (cadr (run-shell "date +%F" ""))))))
 (define-leader! "id" 'insert-date "insert date")

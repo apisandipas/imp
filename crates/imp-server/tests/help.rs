@@ -9,7 +9,7 @@ fn popup_text(s: &mut imp_server::Server) -> String {
 }
 
 #[test]
-fn describe_function_shows_comment_and_location() {
+fn describe_function_shows_docstring_and_location() {
     let mut s = server("");
     type_keys(&mut s, ":help line-first-nonblank<ret>");
     let text = popup_text(&mut s);
@@ -177,4 +177,35 @@ fn docstrings_document_functions_and_commands() {
         doc(&mut s, "commented"),
         "\"A comment, as variables have.\""
     );
+}
+
+/// Every function in the runtime, and every command defined with a lambda,
+/// has a docstring (help.scm's header has the convention). Variables and
+/// options are documented by comments, which this doesn't check.
+#[test]
+fn the_runtime_is_documented() {
+    let mut s = server("");
+    let missing = s
+        .eval(
+            r#"(apply append
+                 (map (lambda (src)
+                        (let ([lines (list->vector (source-lines src))])
+                          (let loop ([i 0] [acc '()])
+                            (if (= i (vector-length lines))
+                                (reverse acc)
+                                (let* ([line (vector-ref lines i)]
+                                       [form (and (starts-with? line "(define-command! '")
+                                                  (skip-blank lines (skip-form lines (skip-blank lines (skip-form lines (cons i 1))))))]
+                                       [wanted (or (starts-with? line "(define (")
+                                                   (and form (equal? (source-char lines form) #\()
+                                                        (equal? (token-at lines (skip-blank lines (source-next lines form))) "lambda")))]
+                                       [doc (and wanted (definition-docstring lines i))])
+                                  (loop (+ i 1)
+                                        (if (and wanted (not doc))
+                                            (cons (string-append src ":" (number->string (+ i 1)) " " (defined-name line)) acc)
+                                            acc)))))))
+                      (filter (lambda (n) (starts-with? n "runtime/")) (source-names))))"#,
+        )
+        .unwrap();
+    assert_eq!(missing, "()", "definitions without a docstring");
 }

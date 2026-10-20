@@ -23,7 +23,8 @@
 ;;; Finding definitions in the loaded sources
 
 (define (source-lines name)
-  "Every loaded source as (name . lines), lines as a list of strings."
+  "The lines of loaded source `name`, as a list of strings.
+   '() for a source that isn't loaded."
   (split-lines (or (source-text name) "")))
 
 (define (find-line lines match?)
@@ -48,9 +49,13 @@
   (equal? (defined-name line) name))
 
 (define (find-definition-site name)
+  "Where `name` (a string) is defined, as (source-name line), or #f.
+   The most recently loaded source wins, so init.scm's redefinition
+   is found before the runtime's."
   (find-in-sources (lambda (line) (defines-name? line name))))
 
 (define (strip-comment line)
+  "`line` without its leading semicolons and the space after them."
   (let loop ([i 0])
     (if (and (< i (string-length line)) (equal? (string-ref line i) #\;))
         (loop (+ i 1))
@@ -59,22 +64,28 @@
 
 ;;; Reading docstrings out of the source
 
+;; A reader over a vector of source lines: just enough Scheme to step
+;; over forms and read a string literal. A position is (line . col); the
+;; end of a line reads as #\newline, the end of the source as #f.
+
 (define (source-char lines pos)
-  "A reader over a vector of source lines, from line `n`: just enough Scheme
-   to step over forms and read a string literal. A position is (line . col);
-   the end of a line reads as #\\newline, the end of the source as #f."
+  "The character at `pos` in `lines`, a vector of strings.
+   #\\newline at the end of a line, #f past the end of the source."
   (let ([i (car pos)] [j (cdr pos)])
     (cond [(>= i (vector-length lines)) #f]
           [(< j (string-length (vector-ref lines i))) (string-ref (vector-ref lines i) j)]
           [else #\newline])))
 
 (define (source-next lines pos)
+  "The position after `pos` in `lines`: the next column, or the start
+   of the next line from the end of one."
   (if (< (cdr pos) (string-length (vector-ref lines (car pos))))
       (cons (car pos) (+ (cdr pos) 1))
       (cons (+ (car pos) 1) 0)))
 
 (define (skip-blank lines pos)
-  "Past whitespace and ; comments."
+  "The position of the first thing from `pos` that isn't whitespace
+   or a ; comment."
   (let ([c (source-char lines pos)])
     (cond [(not c) pos]
           [(char-whitespace? c) (skip-blank lines (source-next lines pos))]
@@ -82,6 +93,8 @@
           [else pos])))
 
 (define (delimiter? c)
+  "Whether `c` ends a symbol: whitespace, a bracket, a quote, a ; or
+   the end of the source (#f)."
   (or (not c) (char-whitespace? c) (memv c '(#\( #\) #\[ #\] #\" #\;))))
 
 (define (read-string-literal lines pos)
@@ -190,11 +203,21 @@
 (define *command-docs* (hash))
 
 (define (document-command! name text)
+  "Gives command `name` the one-line doc `text`, for M-x and help.
+   For commands defined without a docstring of their own, such as
+   those made in a loop from a table:
+
+     (document-command! 'my-command \"Do the thing.\")"
   (set! *command-docs* (hash-insert *command-docs* (symbol->string name) text)))
 
 (define (command-doc name docs)
-  "What a command does, in a line, or #f."
-  (or (hash-try-get *command-docs* name) (hash-try-get docs name)))
+  "What command `name` (a string) does, in a line, or #f.
+   A line from document-command! wins over one from `docs`, the
+   table doc-lines returns. A command's own docstring comes before that
+   of a function with the same name."
+  (or (hash-try-get *command-docs* name)
+      (hash-try-get docs (string-append "command " name))
+      (hash-try-get docs name)))
 
 (define *doc-lines* (hash))
 (define *doc-lines-key* #f)  ; the sources (name . length) they were read from
@@ -210,6 +233,10 @@
       (set! *doc-lines-key* key))
     *doc-lines*))
 
+;; Reading every docstring takes a moment (~0.3s), so do it shortly after
+;; startup, when init.scm has loaded, rather than on the first M-x.
+(run-after! 1500 (lambda () (doc-lines)))
+
 (define (command-procedure-name line)
   "The procedure a (define-command! 'name procedure) line names, or #f."
   (and (starts-with? line "(define-command! '")
@@ -219,7 +246,9 @@
          (and c (not (delimiter? c)) (not (equal? c #\()) (token-at lines after)))))
 
 (define (source-doc-lines lines table)
-  "Adds each definition in `lines` that is documented. A command defined
+  "`table` with the first doc line of each definition in `lines` added.
+   Only documented definitions are added. Commands go in as \"command
+   NAME\", apart from functions that share their name; a command defined
    as a named procedure gets that procedure's line."
   (let ([v (list->vector lines)])
     (let loop ([i 0] [table table] [aliases '()])
@@ -231,15 +260,19 @@
                 (loop (+ i 1) table aliases)
                 (let* ([doc (definition-doc v i)]
                        [first (and (pair? doc) (not (equal? (trim (car doc)) "")) (trim (car doc)))]
+                       [key (if (starts-with? line "(define-command! '") (string-append "command " name) name)]
                        [proc (and (not first) (command-procedure-name line))])
                   (loop (+ i 1)
-                        (if first (hash-insert table name first) table)
-                        (if proc (cons (cons name proc) aliases) aliases)))))))))
+                        (if first (hash-insert table key first) table)
+                        (if proc (cons (cons key proc) aliases) aliases)))))))))
 
 ;;; describe-function, describe-option, apropos
 
 (define (describe-function name)
-  "Describe a function: where it is defined and its documentation (C-h f)."
+  "Shows in a popup where `name` (a string) is defined and its docs.
+   A command with no source line, or a primitive from Steel or Rust,
+   is said to be one; for anything else the status line says there
+   is no definition."
   (let ([site (find-definition-site name)])
     (cond
       [site (show-popup! (cons (string-append name ":") (site-description site)))]
@@ -251,6 +284,9 @@
       [else (message (string-append "no definition of " name))])))
 
 (define (describe-option name)
+  "Shows in a popup the value of option `name` (a string) and its docs.
+   `name` can be an alias; the docs are the comment above the
+   option's define-option!."
   (let ([opt (option-name (string->symbol name))])
     (if (not opt)
         (message (string-append "unknown option: " name))
@@ -259,9 +295,8 @@
            (append (list (string-append (symbol->string opt) " = " (to-string (option opt))) "")
                    (if site (cddr (site-description site)) '())))))))
 
-;; Names defined in the loaded sources that contain `text`.
 (define (apropos text)
-  "List definitions whose name contains a string."
+  "The names defined in the loaded sources that contain `text`, sorted."
   (let ([hits '()])
     (for-each
      (lambda (src)
@@ -329,6 +364,8 @@
       [else #f])))
 
 (define (show-key-description! keys)
+  "Shows in a popup what `keys` run in normal mode and where it was
+   bound, or says in the status line that they're not bound."
   (let ([d (key-description keys)])
     (if (not d)
         (message (string-append keys " is not bound"))
@@ -368,7 +405,9 @@
     (open-cmdline! "Describe function: " "" describe-function #f #f)))
 
 (define-command! 'describe-option
-  (lambda (count) (open-cmdline! "Describe option: " "" describe-option #f #f)))
+  (lambda (count)
+    "Describe an option, typed at a prompt: its value and documentation."
+    (open-cmdline! "Describe option: " "" describe-option #f #f)))
 
 (define-command! 'apropos
   (lambda (count)
@@ -401,6 +440,8 @@
 (define *source-buffers* (hash))
 
 (define (source-copy-buffer name)
+  "The buffer holding a copy of embedded source `name`, made on first use.
+   It is made again if it was closed."
   (let ([existing (hash-try-get *source-buffers* name)])
     (if (and existing (memv existing (buffer-list)))
         existing
@@ -435,9 +476,7 @@
 
 (define-command! 'find-definition
   (lambda (count)
-    "Opens the source of `name`'s definition at its line. Runtime files open
-     from disk when IMP_RUNTIME is set; otherwise as a copy of the embedded
-     text in a buffer of its own."
+    "Open the source of a definition, its name typed at a prompt."
     (open-cmdline! "Find definition: " "" find-definition #f #f)))
 
 ;;; Ex commands: :help and friends

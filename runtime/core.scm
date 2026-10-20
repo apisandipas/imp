@@ -11,6 +11,8 @@
 (define *keymaps* (hash))
 
 (define (keymap mode)
+  "The keymap for `mode`: a hash of key string -> command.
+   An empty hash when nothing is bound in `mode` yet."
   (let ([m (hash-try-get *keymaps* mode)])
     (if m m (hash))))
 
@@ -56,11 +58,22 @@
 (define *commands* (hash))
 
 (define (define-command! name proc)
+  "Gives procedure `proc` the name `name`, for keys, SPC and M-x.
+   The procedure takes a count (1 when none was typed). Redefining a
+   name replaces it for every key bound to that name. Its docstring,
+   first in the lambda, is what M-x and help show:
+
+     (define-command! 'hello
+       (lambda (count) \"Say hello.\" (message \"hello\")))"
   (set! *commands* (hash-insert *commands* name proc)))
 
-(define (command-proc name) (hash-try-get *commands* name))
+(define (command-proc name)
+  "The procedure of the command named `name`, or #f."
+  (hash-try-get *commands* name))
 
-(define (command-names) (hash-keys->list *commands*))
+(define (command-names)
+  "The names (symbols) of every defined command."
+  (hash-keys->list *commands*))
 
 (define (run-command name . count)
   "Runs command `name` (with a count of 1 unless given)."
@@ -80,6 +93,8 @@
 (define *messages* '())
 
 (define (message text)
+  "Shows `text` in the status line and adds it to :messages.
+   The history keeps the last 200."
   (set-status! text)
   (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
 
@@ -100,6 +115,7 @@
 ;;; same markers from the server (with_mutable_globals in lib.rs).
 
 (define (bound? name)
+  "Whether `name` (a symbol) is defined as a global."
   (with-handler (lambda (e) #f) (begin (eval name) #t)))
 
 (define (define-target form)
@@ -133,7 +149,9 @@
         (list rewritten (list 'set! (define-target rewritten) (define-target rewritten)))
         (list rewritten))))
 
-(define (imp-eval-form form) (imp-eval-forms (list form)))
+(define (imp-eval-form form)
+  "Evaluates the single form `form` as imp-eval-forms does."
+  (imp-eval-forms (list form)))
 
 (define (imp-eval-forms forms)
   "Evaluates `forms` as one unit, returning the last one's value. Macro
@@ -150,7 +168,8 @@
         (eval-allowing-later-definitions (cons 'begin (apply append (map unit-forms others))) 100))))
 
 (define (eval-allowing-later-definitions form tries)
-  "Steel won't compile a reference to a global that doesn't exist yet. But
+  "Evaluates `form`, defining placeholders for globals it names early.
+   Steel won't compile a reference to a global that doesn't exist yet. But
    init.scm routinely names functions a package will define when it loads
    (in a use-package! 'config, say). So a missing global is defined as a
    placeholder that complains if called before the real definition, which
@@ -181,6 +200,9 @@
                  [else (loop (+ i 1))])))))
 
 (define (not-defined-yet name)
+  "A placeholder procedure for `name`, a global not defined yet.
+   Calling it raises an error saying so; the real definition, when it
+   comes, replaces it everywhere."
   (lambda args (error (string-append name " is not defined (yet)"))))
 
 (define (imp-eval-string text)
@@ -194,8 +216,9 @@
           (loop (read port) (cons form forms))))))
 
 (define (imp-load-file path)
-  "Loads a Scheme file the same way, and remembers its source so
-   describe-function and find-definition can show it."
+  "Evaluates the Scheme file at `path` as one unit, like imp-eval-string.
+   Its source is remembered so describe-function and find-definition
+   can show it."
   (let ([text (read-file path)])
     (record-source! path path text)
     (imp-eval-string text)))
@@ -212,13 +235,21 @@
 
 (define *hooks* (hash))
 
-(define (hook-procs name) (or (hash-try-get *hooks* name) '()))
+(define (hook-procs name)
+  "The procedures on hook `name`, in the order they run."
+  (or (hash-try-get *hooks* name) '()))
 
 (define (add-hook! name proc)
+  "Adds `proc` to the end of hook `name`, unless it's already there.
+   It is called with the hook's arguments each time the hook runs:
+
+     (add-hook! 'after-save (lambda () (message \"saved\")))"
   (unless (memq proc (hook-procs name))
     (set! *hooks* (hash-insert *hooks* name (append (hook-procs name) (list proc))))))
 
 (define (remove-hook! name proc)
+  "Takes `proc` off hook `name`. Pass the same procedure that was
+   added, so a hook to be removed later needs a name of its own."
   (set! *hooks* (hash-insert *hooks* name (filter (lambda (p) (not (eq? p proc))) (hook-procs name)))))
 
 (define (run-hooks name . args)
@@ -241,9 +272,14 @@
 
 (define *advice* (hash))  ; name -> (original befores afters arounds)
 
-(define (advised name) (hash-try-get *advice* name))
+(define (advised name)
+  "The advice on function `name`, as (original befores afters
+   arounds), or #f when it has none."
+  (hash-try-get *advice* name))
 
-(define (advice-original name) (car (advised name)))
+(define (advice-original name)
+  "The function `name` was before any advice was added to it."
+  (car (advised name)))
 
 (define (apply-advised name args)
   "Calls `name` with `args` through its advice."
@@ -261,6 +297,12 @@
       (apply (car arounds) (cons (lambda more (wrap-call (cdr arounds) original more)) args))))
 
 (define (advice-add! name where proc)
+  "Adds `proc` as advice on the function named `name`.
+   `where` is 'before or 'after (proc gets the same arguments), or
+   'around (proc gets the original, then the arguments, and decides
+   whether to call it). Adding the same proc twice does nothing.
+
+     (advice-add! 'save-buffer 'before (lambda (count) ...))"
   (unless (advised name)
     (set! *advice* (hash-insert *advice* name (list (eval name) '() '() '())))
     (eval (list 'set! name (list 'lambda 'args (list 'apply-advised (list 'quote name) 'args)))))
@@ -274,6 +316,8 @@
     (set! *advice* (hash-insert *advice* name a))))
 
 (define (advice-remove! name proc)
+  "Takes `proc` off the advice on `name`. With none left, the original
+   function is put back."
   (let ([a (advised name)])
     (when a
       (let* ([drop (lambda (lst) (filter (lambda (p) (not (eq? p proc))) lst))]
@@ -302,14 +346,25 @@
 (define *jobs* (hash))    ; id -> (on-output on-exit)
 
 (define (start-timer ms thunk repeat?)
+  "Starts a timer that calls `thunk` after `ms` milliseconds, again
+   and again if `repeat?`. Returns its id, or #f if it didn't start."
   (let ([id (timer-start! ms repeat?)])
     (when id (set! *timers* (hash-insert *timers* id (list thunk repeat?))))
     id))
 
-(define (run-after! ms thunk) (start-timer ms thunk #f))
-(define (run-every! ms thunk) (start-timer ms thunk #t))
+(define (run-after! ms thunk)
+  "Calls `thunk` once, `ms` milliseconds from now. Returns the timer
+   id, for cancel-timer!.
+
+     (run-after! 500 (lambda () (message \"half a second\")))"
+  (start-timer ms thunk #f))
+(define (run-every! ms thunk)
+  "Calls `thunk` every `ms` milliseconds until (cancel-timer! id).
+   Returns the timer id."
+  (start-timer ms thunk #t))
 
 (define (cancel-timer! id)
+  "Stops timer `id`, from run-after! or run-every!."
   (timer-cancel! id)
   (set! *timers* (hash-remove *timers* id)))
 
@@ -332,12 +387,16 @@
         (begin (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))) id))))
 
 (define (imp-job-output id stream text)
+  "Called by the server with output `text` from job `id`.
+   `stream` is \"stdout\" or \"stderr\"; the job's on-output gets both."
   (let ([j (hash-try-get *jobs* id)])
     (when (and j (car j))
       (with-handler (lambda (e) (set-status! (string-append "error in job output: " (to-string (error-object-message e)))))
                     ((car j) text stream)))))
 
 (define (imp-job-exit id code)
+  "Called by the server when job `id` exits with `code`.
+   Forgets the job, then calls its on-exit with the code."
   (let ([j (hash-try-get *jobs* id)])
     (set! *jobs* (hash-remove *jobs* id))
     (when (and j (cadr j))
@@ -356,7 +415,10 @@
 (define *connections* (hash))  ; connection id -> listener id
 
 (define (listen-socket! path on-open on-line on-close)
-  "Returns the listener id, or #f after showing why it couldn't listen."
+  "Listens on the Unix socket at `path`, calling the procedures given.
+   (on-open conn) for each connection, (on-line conn line) for each
+   line read, (on-close conn) when it closes. Returns the listener id,
+   or #f after showing why it couldn't listen."
   (let ([id (socket-listen! path)])
     (if (string? id)
         (begin (set-status! id) #f)
@@ -365,32 +427,44 @@
 (define *client-sockets* (hash))  ; connection id -> (#f on-line on-close)
 
 (define (connect-socket! path on-line on-close)
-  "Returns the connection id, or #f after showing why it couldn't connect."
+  "Connects to the Unix socket at `path` as a client.
+   (on-line conn line) gets each line read, (on-close conn) the end.
+   Returns the connection id, or #f after showing why it couldn't
+   connect."
   (let ([conn (socket-connect! path)])
     (if (string? conn)
         (begin (set-status! conn) #f)
         (begin (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))) conn))))
 
 (define (socket-handlers conn)
+  "The (on-open on-line on-close) procedures for connection `conn`,
+   whether it is a client socket or one a listener accepted, or #f."
   (or (hash-try-get *client-sockets* conn)
       (let ([listener (hash-try-get *connections* conn)])
         (and listener (hash-try-get *listeners* listener)))))
 
 (define (socket-call what conn proc . args)
+  "Calls `proc` with `args`, if there is one, showing any error as
+   an error in socket `what` (\"open\", \"line\", \"close\")."
   (when proc
     (with-handler (lambda (e) (set-status! (string-append "error in socket " what ": " (to-string (error-object-message e)))))
                   (apply proc args))))
 
 (define (imp-socket-opened listener conn)
+  "Called by the server when `listener` accepts connection `conn`.
+   Remembers which listener it belongs to and calls its on-open."
   (set! *connections* (hash-insert *connections* conn listener))
   (let ([h (hash-try-get *listeners* listener)])
     (when h (socket-call "open" conn (car h) conn))))
 
 (define (imp-socket-line conn line)
+  "Called by the server with each `line` read from connection `conn`."
   (let ([h (socket-handlers conn)])
     (when h (socket-call "line" conn (cadr h) conn line))))
 
 (define (imp-socket-closed conn)
+  "Called by the server when connection `conn` closes.
+   Forgets it, then calls its on-close."
   (let ([h (socket-handlers conn)])
     (set! *connections* (hash-remove *connections* conn))
     (set! *client-sockets* (hash-remove *client-sockets* conn))
@@ -403,17 +477,26 @@
 
 (define *buffer-locals* (hash))  ; buffer id -> hash of name -> value
 
-(define (buffer-locals) (or (hash-try-get *buffer-locals* (current-buffer)) (hash)))
+(define (buffer-locals)
+  "The current buffer's table of buffer-local values (a hash)."
+  (or (hash-try-get *buffer-locals* (current-buffer)) (hash)))
 
-(define (buffer-local name) (hash-try-get (buffer-locals) name))
+(define (buffer-local name)
+  "The current buffer's value for `name`, or #f if it has none."
+  (hash-try-get (buffer-locals) name))
 
-(define (buffer-local? name) (hash-contains? (buffer-locals) name))
+(define (buffer-local? name)
+  "Whether the current buffer has a value of its own for `name`."
+  (hash-contains? (buffer-locals) name))
 
 (define (set-buffer-local! name value)
+  "Sets the current buffer's own value for `name` to `value`."
   (set! *buffer-locals*
         (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value))))
 
-(define (kill-buffer-locals! id) (set! *buffer-locals* (hash-remove *buffer-locals* id)))
+(define (kill-buffer-locals! id)
+  "Forgets every buffer-local value of buffer `id`, when it goes."
+  (set! *buffer-locals* (hash-remove *buffer-locals* id)))
 
 ;;; Options
 ;;;
@@ -433,6 +516,8 @@
   (for-each (lambda (a) (set! *option-aliases* (hash-insert *option-aliases* a name))) aliases))
 
 (define (option-name name)
+  "The option `name` refers to, itself or the option it is a short
+   name for (sw -> shiftwidth); #f if there is no such option."
   (cond [(hash-contains? *options* name) name]
         [(hash-try-get *option-aliases* name) => (lambda (n) n)]
         [else #f]))
@@ -442,10 +527,16 @@
 (define *computed-options* (hash))
 
 (define (define-computed-option! name aliases getter setter)
+  "Defines option `name` whose value lives elsewhere (in Rust, say).
+   (option 'name) calls `getter`; setting it calls `setter` with the
+   new value. `aliases` are short names for :set, as in define-option!."
   (set! *computed-options* (hash-insert *computed-options* name (list getter setter)))
   (define-option! name #f aliases))
 
 (define (option name)
+  "The value of option `name` for the current buffer.
+   A value set with set-local-option! wins over the global one. Takes
+   the full name, not an alias: (option 'shiftwidth)."
   (let ([computed (hash-try-get *computed-options* name)])
     (if computed
         ((car computed))
@@ -453,6 +544,11 @@
           (if (hash-contains? local key) (hash-ref local key) (hash-ref *options* name))))))
 
 (define (set-local-option! name value)
+  "Sets option `name` to `value` for the current buffer only (:setlocal).
+   `name` may be an alias; an unknown one is an error. Runs the
+   option's watcher and the option-change hook.
+
+     (set-local-option! 'shiftwidth 2)"
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
@@ -468,6 +564,12 @@
             (hash-keys->list *option-watchers*)))
 
 (define (set-option! name value)
+  "Sets option `name` globally to `value` (:set).
+   `name` may be an alias; an unknown one is an error. A buffer with
+   its own value keeps it. Runs the option's watcher and the
+   option-change hook.
+
+     (set-option! 'relativenumber #t)"
   (let ([name (or (option-name name) (error (string-append "unknown option: " (symbol->string name))))])
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
@@ -477,6 +579,10 @@
     (run-hooks 'option-change name value)))
 
 (define (watch-option! name proc)
+  "Makes `proc` the watcher of option `name`, and calls it now.
+   It gets the new value each time the option changes and whenever
+   the current buffer changes. One watcher per option: a second
+   replaces the first."
   (set! *option-watchers* (hash-insert *option-watchers* name proc))
   (proc (option name)))
 
@@ -500,6 +606,8 @@
 (watch-option! 'wrap set-wrap!)
 
 (define (update-line-numbers! value)
+  "Tells Rust which line numbers to draw, from number and relativenumber.
+   The watcher of both options; `value` is ignored."
   (set-line-numbers!
    (cond [(and (option 'number) (option 'relativenumber)) "hybrid"]
          [(option 'number) "absolute"]
@@ -529,6 +637,10 @@
 ;;; buffer and the one with the highest priority shows on each line.
 
 (define (set-sign-source! source priority signs)
+  "Sets the current buffer's gutter signs from `source` (a symbol).
+   `signs` is a list of (line text face). On each line the sign from
+   the source with the highest `priority` shows; an empty list clears
+   this source's signs."
   (set-buffer-local! (list 'signs source) (cons priority signs))
   (let* ([sources (filter (lambda (k) (and (pair? k) (eq? (car k) 'signs))) (hash-keys->list (buffer-locals)))]
          [sets (sort (map (lambda (k) (buffer-local k)) sources) (lambda (a b) (< (car a) (car b))))]
@@ -540,18 +652,32 @@
 
 ;;; Environment
 
-(define (home-dir) (or (getenv "HOME") "/"))
+(define (home-dir)
+  "The user's home directory, from $HOME (\"/\" if unset)."
+  (or (getenv "HOME") "/"))
 
 ;;; Buffer helpers built from the primitives
 
-(define (clamp n lo hi) (max lo (min n hi)))
+(define (clamp n lo hi)
+  "`n` limited to the range `lo` to `hi`."
+  (max lo (min n hi)))
 
-(define (current-line) (offset->line (cursor)))
-(define (current-col) (offset->col (cursor)))
+(define (current-line)
+  "The line the cursor is on, counting from 0."
+  (offset->line (cursor)))
+(define (current-col)
+  "The column the cursor is on, counting from 0."
+  (offset->col (cursor)))
 
-(define (line-start line) (line-col->offset line 0))
-(define (line-end line) (+ (line-start line) (buffer-line-length line)))
-(define (last-line) (- (buffer-line-count) 1))
+(define (line-start line)
+  "The offset where `line` starts."
+  (line-col->offset line 0))
+(define (line-end line)
+  "The offset of the end of `line`, before its newline."
+  (+ (line-start line) (buffer-line-length line)))
+(define (last-line)
+  "The number of the buffer's last line, counting from 0."
+  (- (buffer-line-count) 1))
 
 (define (line-first-nonblank line)
   "Offset of the first non-blank char on `line`, or its end if it is blank."

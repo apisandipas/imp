@@ -27,6 +27,7 @@
                 [else (up (directory-of d))])))))
 
 (define (absolute path)
+  "`path` expanded (~ too) and made absolute from the working directory."
   (let ([p (expand-path path)]) (if (starts-with? p "/") p (string-append (current-dir) "/" p))))
 
 (define (project-root)
@@ -39,14 +40,18 @@
 
 ;;; Remembered projects
 
-(define (projects-file) (string-append (imp-state-dir) "/projects"))
+(define (projects-file)
+  "The file listing the remembered projects, in imp's state directory."
+  (string-append (imp-state-dir) "/projects"))
 
 (define (known-projects)
+  "The roots of the remembered projects, most recently added first."
   (if (file-exists? (projects-file)) (text-lines (read-file (projects-file))) '()))
 
 (define (remember-project! root)
-  "Remembering is a convenience: an unwritable state directory isn't an
-   error worth showing."
+  "Adds `root` to the front of the remembered projects, if it's new.
+   Remembering is a convenience: an unwritable state directory isn't an
+   error worth showing, so failures are ignored."
   (with-handler
    (lambda (e) #f)
    (let ([known (known-projects)])
@@ -58,20 +63,28 @@
 ;;; Files and buffers
 
 (define (project-find-file-in root)
+  "Asks for a file anywhere under `root`, then opens it."
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
                    (lambda (file) (open-file! (string-append root "/" file)))))
 
 (define (with-project proc)
+  "Calls `proc` with the current project's root, or says there is none."
   (let ([root (project-root)])
     (if root (proc root) (message "not in a project (no marker from project-markers above it)"))))
 
-(define (under? path root) (starts-with? path (string-append root "/")))
+(define (under? path root)
+  "Whether `path` is inside directory `root` (not `root` itself)."
+  (starts-with? path (string-append root "/")))
 
-(define-command! 'project-find-file (lambda (count) (with-project project-find-file-in)))
+(define-command! 'project-find-file
+  (lambda (count)
+    "Find a file in the current project and open it."
+    (with-project project-find-file-in)))
 
 (define-command! 'project-switch
   (lambda (count)
+    "Pick a remembered project, then a file in it to open."
     (let ([known (filter file-directory? (known-projects))])
       (if (null? known)
           (message "no projects yet: open a file in one")
@@ -79,6 +92,7 @@
 
 (define-command! 'project-switch-buffer
   (lambda (count)
+    "Switch to a buffer visiting a file in the current project."
     (with-project
      (lambda (root)
        (let* ([ids (filter (lambda (id) (let ([p (cadr (buffer-info id))]) (and p (under? (absolute p) root))))
@@ -97,13 +111,18 @@
 (define *quickfix-title* "")
 
 (define (grep-command pattern)
+  "The shell command that searches the current directory for `pattern`.
+   It is grepprg with the pattern added when that is set, else rg if
+   it is installed, else grep -rnI. Output is path:line[:col]:text."
   (cond [(not (equal? (option 'grepprg) "")) (string-append (option 'grepprg) " " (shell-quote pattern))]
         [(= (car (run-shell "command -v rg" "")) 0)
          ;; The explicit . matters: with stdin not a terminal, rg searches stdin.
          (string-append "rg --vimgrep --no-heading --color=never --smart-case --sort=path -- " (shell-quote pattern) " .")]
         [else (string-append "grep -rnI --exclude-dir=.git -- " (shell-quote pattern) " .")]))
 
-(define (digits? s) (and (> (string-length s) 0) (char-numeric-ascii? (string-ref s 0)) (string->number s) #t))
+(define (digits? s)
+  "Whether `s` is a number that starts with a digit, like a line number."
+  (and (> (string-length s) 0) (char-numeric-ascii? (string-ref s 0)) (string->number s) #t))
 
 (define (parse-grep-line root line)
   "One output line, \"path:line:col:text\" or \"path:line:text\", as a quickfix
@@ -133,6 +152,8 @@
     (length entries)))
 
 (define (quickfix-label e root)
+  "Quickfix entry `e` as path:line: text, the path relative to `root`.
+   Paths outside `root`, or with `root` #f, stay absolute."
   (let ([p (car e)])
     (string-append (if (and root (under? p root)) (substring p (+ (string-length root) 1) (string-length p)) p)
                    ":" (number->string (cadr e)) ": " (trim (cadddr e)))))
@@ -152,12 +173,17 @@
                                     (trim (cadddr e)))))))))
 
 (define (quickfix-step! n)
+  "Moves `n` entries along the quickfix list (back when negative).
+   Like Vim's :cnext and :cprevious, says E553 instead of going past
+   either end."
   (cond [(null? *quickfix*) (message "E42: No Errors")]
         [(and (> n 0) (>= (+ *quickfix-index* n) (length *quickfix*))) (message "E553: No more items")]
         [(and (< n 0) (< (+ *quickfix-index* n) 0)) (message "E553: No more items")]
         [else (quickfix-go! (+ *quickfix-index* n))]))
 
 (define (quickfix-open!)
+  "Shows the quickfix list in the *grep* buffer, like Vim's :copen.
+   The cursor starts on the current entry; <ret> on a line jumps there."
   (let ([root (project-root)])
     (display-buffer! (special-buffer "*grep*" 'grep-mode))
     (draw-begin!)
@@ -174,6 +200,7 @@
     (set-cursor! (line-start (min (+ *quickfix-index* 1) (last-line))))))
 
 (define (search-project! pattern)
+  "Searches the current project for `pattern` and lists the matches."
   (with-project
    (lambda (root)
      (let ([n (project-grep! root pattern)])
@@ -186,9 +213,12 @@
       (when (and item (eq? (car item) 'quickfix)) (quickfix-go! (cadr item))))))
 
 (define-command! 'search-project
-  (lambda (count) (ask "Search project: " (word-at-cursor-or-empty) search-project!)))
+  (lambda (count)
+    "Search the project for a pattern (the word at the cursor to start)."
+    (ask "Search project: " (word-at-cursor-or-empty) search-project!)))
 
 (define (word-at-cursor-or-empty)
+  "The word the cursor is on, or \"\" when it isn't on a word character."
   (let ([c (buffer-char-at (cursor))])
     (if (and c (= (char-class c) 1))
         (let ([start (run-start (cursor) char-class (line-start (current-line)))]

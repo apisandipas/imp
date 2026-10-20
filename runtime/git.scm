@@ -21,6 +21,7 @@
 ;;; Running git
 
 (define (git-command root args)
+  "The shell command that runs git with `args` in repository `root`."
   (string-append "git -C " (shell-quote root) " " args))
 
 (define (git-output root args)
@@ -36,6 +37,7 @@
         (begin (message (string-append "git " args ": " (trim (cadr r)))) #f))))
 
 (define (git-root-of dir)
+  "The top of the git repository holding `dir`, or #f outside one."
   (let ([r (run-shell (string-append "git -C " (shell-quote dir) " rev-parse --show-toplevel 2>/dev/null") "")])
     (and (= (car r) 0) (trim (cadr r)))))
 
@@ -48,12 +50,17 @@
 ;;; Reading the status
 
 (define (git-status-name letter)
+  "The word git status uses for the porcelain status `letter`.
+   M is \"modified\", A \"new file\" and so on; anything unknown is
+   \"changed\"."
   (cond [(equal? letter "M") "modified"] [(equal? letter "A") "new file"]
         [(equal? letter "D") "deleted"] [(equal? letter "R") "renamed"]
         [(equal? letter "C") "copied"] [(equal? letter "T") "typechange"]
         [else "changed"]))
 
 (define (git-unquote path)
+  "`path` without the double quotes git puts around unusual names.
+   Only the quotes go; backslash escapes inside are left as they are."
   (if (and (> (string-length path) 1) (starts-with? path "\""))
       (substring path 1 (- (string-length path) 1))
       path))
@@ -66,7 +73,9 @@
           (reverse (cons rest acc))
           (loop (+ i 1) (cadr parts) (cons (car parts) acc))))))
 
-(define (git-push st key entry) (hash-insert st key (cons entry (hash-ref st key))))
+(define (git-push st key entry)
+  "`st` with `entry` added to the front of the list under `key`."
+  (hash-insert st key (cons entry (hash-ref st key))))
 
 (define (git-status-line st line)
   "Adds one line of `git status --porcelain=v2 --branch` to `st`."
@@ -112,23 +121,35 @@
       [else (loop (cdr lines) (cons (car lines) header) hunks hunk)])))
 
 (define (git-file-diff root section path)
+  "The diff of `path` in `section`, parsed as (header hunks).
+   The staged section diffs the index against HEAD, any other the
+   working tree against the index. Runs git."
   (git-parse-diff
    (git-output root (string-append "diff --no-color --no-ext-diff" (if (eq? section 'staged) " --cached" "")
                                    " -- " (shell-quote path)))))
 
 (define (git-diff-face line)
+  "The face for diff `line`: added, removed, or #f for context."
   (cond [(starts-with? line "+") "diff.added"] [(starts-with? line "-") "diff.removed"] [else #f]))
 
 ;;; The status buffer
 
-(define (git-key section path) (string-append (symbol->string section) ":" path))
-(define (git-open? key) (hash-contains? (or (buffer-local 'git-expanded) (hash)) key))
+(define (git-key section path)
+  "The key under which `section`'s `path` is remembered as expanded."
+  (string-append (symbol->string section) ":" path))
+(define (git-open? key)
+  "Whether the file or section under `key` is expanded in this buffer."
+  (hash-contains? (or (buffer-local 'git-expanded) (hash)) key))
 
 (define (git-toggle-key! key)
+  "Expands what `key` names if it is folded, and folds it if expanded."
   (let ([open (or (buffer-local 'git-expanded) (hash))])
     (set-buffer-local! 'git-expanded (if (hash-contains? open key) (hash-remove open key) (hash-insert open key #t)))))
 
 (define (git-hunk-lines! root section path)
+  "Draws each hunk of `path`'s diff in `section`, under its file.
+   Every line remembers its hunk and position, so staging, discarding
+   and visiting can act on it."
   (let loop ([hunks (cadr (git-file-diff root section path))] [i 0])
     (unless (null? hunks)
       (draw-line! (list (list (car (car hunks)) "diff.hunk")) (list 'hunk section path i))
@@ -139,10 +160,14 @@
       (loop (cdr hunks) (+ i 1)))))
 
 (define (git-section! title section count)
+  "Draws a section heading, `title` with its `count`, for `section`."
   (draw-line! (list (list title "git.section") (list (string-append " (" (number->string count) ")") "git.count"))
              (list 'section section)))
 
 (define (git-files-section! root title section files)
+  "Draws `section` of the status: its heading, then its files.
+   Draws nothing when `files` is empty. The files are left out when
+   the section is folded; an expanded file is followed by its hunks."
   (unless (null? files)
     (git-section! title section (length files))
     (unless (git-open? (git-key 'section (symbol->string section)))
@@ -155,10 +180,15 @@
     (draw-line! '() #f)))
 
 (define (git-tab-separated root args)
+  "Each line git prints for `args`, split at its first tab into a pair.
+   A line with no tab comes back as (line \"\")."
   (map (lambda (line) (let ([p (split-once line "\t")]) (if (and (pair? p) (pair? (cdr p))) p (list line ""))))
        (text-lines (git-output root args))))
 
 (define (git-render-status! root)
+  "Redraws the status buffer for `root`, like Magit's status.
+   The head and upstream, the untracked, unstaged and staged files,
+   the stashes and the `git-recent-commits` latest commits. Runs git."
   (let* ([st (git-status root)]
          [branch (hash-ref st 'branch)]
          [subject (trim (git-output root "log -1 --format=%s"))]
@@ -199,6 +229,8 @@
     (draw-finish!)))
 
 (define (git-refresh!)
+  "Redraws the current git status or log buffer from the repository.
+   Does nothing (#f) in a buffer that isn't one of them."
   (let ([root (buffer-local 'git-root)])
     (cond [(not root) #f]
           [(eq? (major-mode) 'git-status-mode) (git-render-status! root)]
@@ -212,9 +244,14 @@
     (switch-to-buffer! here)
     id))
 
-(define (git-status-buffer-name root) (string-append "*git " (file-name-of root) "*"))
+(define (git-status-buffer-name root)
+  "The name of the status buffer for the repository at `root`."
+  (string-append "*git " (file-name-of root) "*"))
 
 (define (git-status!)
+  "Shows the git status of the current buffer's repository.
+   Reuses the repository's status buffer, refreshing it if it is
+   already the current one; says so outside a repository."
   (let ([root (git-current-root)])
     (if (not root)
         (message "not in a git repository")
@@ -228,7 +265,9 @@
 
 ;;; Acting on the item at the cursor
 
-(define (git-root) (buffer-local 'git-root))
+(define (git-root)
+  "The repository the current git buffer belongs to."
+  (buffer-local 'git-root))
 
 (define (git-hunk-patch root section path i)
   "The patch for hunk `i` of `path`'s diff in `section`."
@@ -236,6 +275,7 @@
     (string-append (string-join (append (car diff) (list-ref (cadr diff) i)) "\n") "\n")))
 
 (define (git-files-in section)
+  "The paths of the files drawn in `section` of the status buffer."
   (let ([items (buffer-local 'line-items)])
     (let loop ([i 0] [acc '()])
       (if (>= i (vector-length items))
@@ -244,9 +284,14 @@
             (loop (+ i 1) (if (and item (eq? (car item) 'file) (eq? (cadr item) section))
                               (cons (caddr item) acc) acc)))))))
 
-(define (git-paths paths) (string-join (map shell-quote paths) " "))
+(define (git-paths paths)
+  "`paths`, each shell-quoted, joined by spaces for a git command line."
+  (string-join (map shell-quote paths) " "))
 
 (define (git-stage!)
+  "Stages what the cursor is on: a section, a file or one hunk.
+   The untracked section adds its files, the unstaged one updates
+   every tracked file. Refreshes the status."
   (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to stage here")]
@@ -260,11 +305,16 @@
     (git-refresh!)))
 
 (define (git-unstage-paths! root paths)
+  "Takes `paths` out of the index, back to how HEAD has them.
+   Before the first commit, removes them from the index instead.
+   Returns #f if git fails."
   (or (git-do! root (string-append "restore --staged -- " (git-paths paths)))
       ;; Before the first commit there is nothing to restore from.
       (git-do! root (string-append "rm --cached -q -- " (git-paths paths)))))
 
 (define (git-unstage!)
+  "Unstages what the cursor is on: the staged section, a file or a hunk.
+   Refreshes the status."
   (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to unstage here")]
@@ -275,13 +325,21 @@
       [else (message "not staged")])
     (git-refresh!)))
 
-(define (git-stage-all!) (git-do! (git-root) "add -A") (git-refresh!))
+(define (git-stage-all!)
+  "Stages every change, untracked files included, and refreshes."
+  (git-do! (git-root) "add -A") (git-refresh!))
 (define (git-unstage-all!)
+  "Unstages every staged file and refreshes the status."
   (let ([staged (git-files-in 'staged)])
     (unless (null? staged) (git-unstage-paths! (git-root) staged))
     (git-refresh!)))
 
 (define (git-discard!)
+  "Throws away what the cursor is on, after asking.
+   Deletes an untracked file, restores a changed file (a staged one
+   from HEAD, both index and working tree), reverses an unstaged hunk,
+   or drops a stash. A staged hunk can't be discarded; unstage it
+   first."
   (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) (message "nothing to discard here")]
@@ -304,9 +362,14 @@
                  (lambda () (git-do! root (string-append "stash drop " (cadr item))) (git-refresh!)))]
       [else (message "can't discard that; unstage it first")])))
 
-(define (stash-item? item) (and item (eq? (car item) 'stash)))
+(define (stash-item? item)
+  "Whether line `item` is a stash in the status buffer."
+  (and item (eq? (car item) 'stash)))
 
 (define (git-toggle!)
+  "Shows or hides the diff of the file at the cursor, or a section.
+   On a hunk, folds its file's diff and leaves the cursor on the file.
+   Untracked files have no diff to show."
   (let ([item (line-item)])
     (cond
       [(not item) #f]
@@ -340,6 +403,8 @@
           (loop (cdr lines) (+ k 1) (if (starts-with? (car lines) "-") line (+ line 1)))))))
 
 (define (git-visit!)
+  "Opens what the cursor is on: a file, a commit or a stash.
+   On a hunk, opens the file at the line the hunk shows there."
   (let ([item (line-item)] [root (git-root)])
     (cond
       [(not item) #f]
@@ -357,6 +422,11 @@
 ;;; Commits
 
 (define (git-commit! amend?)
+  "Opens a buffer to write the commit message in; `amend?` amends HEAD.
+   The message goes in COMMIT_EDITMSG, below which the staged changes
+   (or HEAD's, when amending) are listed as # comments. Amending
+   starts from HEAD's message. Without `amend?` and with nothing
+   staged, only says so."
   (let* ([root (git-root)]
          [stat (git-output root "diff --cached --stat")])
     (if (and (not amend?) (equal? (trim stat) ""))
@@ -378,6 +448,9 @@
             (set-cursor! 0))))))
 
 (define (git-commit-finish!)
+  "Saves the commit message and commits, back to the status buffer.
+   Comment lines are stripped. Shows git's summary line on success;
+   on failure shows git's complaint and stays in the message."
   (let ([root (buffer-local 'git-root)] [path (buffer-path)] [id (current-buffer)])
     (run-ex! "w")
     (let ([r (run-shell (git-command root (string-append "commit --cleanup=strip"
@@ -392,6 +465,7 @@
           (message (string-append "git commit: " (trim (cadr r))))))))
 
 (define (git-commit-cancel!)
+  "Abandons the commit message and goes back to the status buffer."
   (let ([root (buffer-local 'git-root)] [id (current-buffer)])
     (git-back-to-status! root)
     (buffer-kill! id)
@@ -400,6 +474,9 @@
 ;;; Log, diffs and commits shown
 
 (define (git-render-log! root)
+  "Redraws the log buffer: the last 300 commits of `root`, one a line.
+   Each shows its short hash, age, author and subject; <ret> on one
+   shows it."
   (draw-begin!)
   (for-each (lambda (line)
               (let ([f (split-many line "\t")])
@@ -412,6 +489,7 @@
   (draw-finish!))
 
 (define (git-log! root)
+  "Shows the log of the repository at `root` in its own buffer."
   (display-buffer! (git-buffer (string-append "*git log " (file-name-of root) "*") 'git-log-mode root))
   (git-render-log! root)
   (set-cursor! 0))
@@ -423,10 +501,13 @@
   (set-cursor! 0))
 
 (define (git-show! root hash)
+  "Shows commit `hash` of `root`: its message, stat and patch."
   (git-show-text! root (string-append "*git show " hash "*")
                   (git-output root (string-append "show --stat -p --no-color --no-ext-diff " hash))))
 
 (define (git-diff! staged?)
+  "Shows the whole diff of the repository: staged if `staged?`, else
+   unstaged."
   (let ([root (git-root)])
     (git-show-text! root (if staged? "*git diff --cached*" "*git diff*")
                     (git-output root (string-append "diff --no-color --no-ext-diff" (if staged? " --cached" ""))))))
@@ -434,6 +515,9 @@
 ;;; Branches, stashes, remotes
 
 (define (git-checkout!)
+  "Asks for a branch, local or remote, and checks it out.
+   A remote branch like origin/x checks out x, which git sets up to
+   track it."
   (let* ([root (git-root)]
          [branches (text-lines (git-output root "branch -a --format=%(refname:short)"))])
     (completing-read "Checkout: " branches
@@ -447,6 +531,7 @@
                          (git-refresh!))))))
 
 (define (git-create-branch!)
+  "Asks for a name, then creates that branch and checks it out."
   (let ([root (git-root)])
     (ask "New branch: " ""
          (lambda (name)
@@ -455,6 +540,7 @@
            (git-refresh!)))))
 
 (define (git-stash-ref)
+  "The stash at the cursor, or stash@{0} when the cursor isn't on one."
   (let ([item (line-item)]) (if (stash-item? item) (cadr item) "stash@{0}")))
 
 (define *git-process-log* '())  ; newest first
@@ -473,6 +559,7 @@
                   (git-refresh!)))))
 
 (define (git-show-process!)
+  "Shows what the background git commands printed, the last 200 lines."
   (show-popup! (if (null? *git-process-log*) (list "no git commands run yet")
                    (reverse (take *git-process-log* (min 200 (length *git-process-log*)))))))
 
@@ -492,6 +579,7 @@
     (buffer-highlight-pattern! "git-comment" "^#.*" "syntax.comment")))
 
 (define (git-keys! mode keys)
+  "Binds each (key action) of `keys` in normal state in `mode`."
   (for-each (lambda (k) (define-mode-key! mode 'normal (car k) (cadr k))) keys))
 
 (define git-common-keys
@@ -537,16 +625,17 @@
 (define-mode-leader! 'git-commit-mode "k" (lambda (n) (git-commit-cancel!)) "cancel")
 
 (define (git-help-lines)
+  "The lines the status buffer's ? key shows, a summary of its keys."
   (list "<tab> show/hide diff   s stage   u unstage   x discard   S/U all"
         "<ret> visit            c commit  b branch    l log       d diff"
         "z stash   f fetch   F pull   P push   $ git output   gr refresh   q leave"))
 
 (define-command! 'git-status (lambda (count)
-                               "A hash: 'branch 'oid 'upstream 'ahead 'behind, and 'untracked
-                                'unstaged 'staged lists of (status path)."
+                               "Show the Magit-style status of the current file's repository."
                                (git-status!)))
 (define-command! 'git-log
   (lambda (count)
+    "Show the commit log of the current file's repository."
     (let ([root (git-current-root)])
       (if root (git-log! root) (message "not in a git repository")))))
 

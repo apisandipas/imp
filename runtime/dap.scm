@@ -36,6 +36,11 @@
 (define *breakpoint-counter* 0)
 
 (define (define-debug-adapter! mode command adapter-id launch)
+  "Sets the debug adapter for major mode `mode`.
+   `command` is the shell command that runs the adapter, `adapter-id` the
+   adapterID sent in initialize, and `launch` a procedure that gets a
+   `done` procedure and calls it with the launch arguments (a hash); it
+   may prompt first."
   (set! *debug-adapters* (hash-insert *debug-adapters* mode (list command adapter-id launch))))
 
 ;; Faces debug-line, sign.breakpoint and sign.debug come from theme.scm.
@@ -43,7 +48,7 @@
 ;;; Launch configurations that come with imp
 
 (define (cargo-package-name toml)
-  "The package name in a Cargo.toml, or #f."
+  "The package name in Cargo.toml file `toml`, or #f."
   (let loop ([lines (split-lines (read-file toml))] [in-package? #f])
     (cond
       [(null? lines) #f]
@@ -53,7 +58,7 @@
       [else (loop (cdr lines) in-package?)])))
 
 (define (split-quoted text)
-  "The \"quoted\" parts of a line."
+  "The \"quoted\" parts of line `text`, without their quotes."
   (let loop ([cs (string->list text)] [cur #f] [out '()])
     (cond [(null? cs) (reverse out)]
           [(and (equal? (car cs) #\") cur) (loop (cdr cs) #f (cons (list->string (reverse cur)) out))]
@@ -62,7 +67,9 @@
           [else (loop (cdr cs) #f out)])))
 
 (define (native-launch done)
-  "A compiled program: asks for it, suggesting Cargo's debug build."
+  "Launch arguments for a compiled program, passed to `done`.
+   Asks for the program, suggesting Cargo's debug build of the package
+   around the current file."
   (let* ([file (absolute-path (or (buffer-path) "."))]
          [root (lsp-root file '("Cargo.toml"))]
          [toml (string-append root "/Cargo.toml")]
@@ -83,18 +90,25 @@
 
 ;;; Breakpoints: marks, so they follow edits, listed per buffer.
 
-(define (breakpoint-marks) (or (buffer-local 'breakpoints) '()))
+(define (breakpoint-marks)
+  "The names of the marks holding the current buffer's breakpoints."
+  (or (buffer-local 'breakpoints) '()))
 
 (define (breakpoint-lines)
+  "The current buffer's breakpoint lines (0-based), in order.
+   Breakpoints whose marks are gone are left out."
   (sort (filter (lambda (l) l)
                 (map (lambda (m) (let ([p (mark-get m)]) (and p (offset->line p)))) (breakpoint-marks)))
         <))
 
 (define (show-breakpoints!)
+  "Puts a sign in the gutter on each of the current buffer's breakpoints."
   (set-sign-source! 'breakpoints 20 (map (lambda (l) (list l "●" "sign.breakpoint")) (breakpoint-lines))))
 
 (define-command! 'toggle-breakpoint
   (lambda (count)
+    "Set a breakpoint on the cursor's line, or remove the one there.
+     In a debug session the adapter is told at once."
     (let* ([line (current-line)]
            [here (filter (lambda (m) (let ([p (mark-get m)]) (and p (= (offset->line p) line)))) (breakpoint-marks))])
       (if (pair? here)
@@ -110,6 +124,7 @@
 
 (define-command! 'clear-breakpoints
   (lambda (count)
+    "Remove every breakpoint in every buffer."
     (for-each (lambda (id)
                 (with-buffer id
                   (lambda ()
@@ -135,19 +150,27 @@
 ;;; Talking to the adapter
 
 (define (dap-write! msg)
+  "Sends `msg` (a hash) to the debug adapter, framed as DAP expects.
+   Does nothing without a session."
   (when *dap-job* (job-send! *dap-job* (lsp-frame (json-encode msg)))))
 
-(define (next-dap-seq!) (set! *dap-seq* (+ *dap-seq* 1)) *dap-seq*)
+(define (next-dap-seq!)
+  "Returns the next sequence number for a message to the adapter."
+  (set! *dap-seq* (+ *dap-seq* 1)) *dap-seq*)
 
 (define (dap-request! command arguments on-response)
-  "Sends request `command`; `on-response` gets the response's body when it
-   succeeds. A failure is shown."
+  "Sends DAP request `command` with `arguments`; returns its seq.
+   `on-response`, unless #f, gets the response's body when it succeeds.
+   A failure is shown."
   (let ([seq (next-dap-seq!)])
     (when on-response (set! *dap-pending* (hash-insert *dap-pending* seq on-response)))
     (dap-write! (hash "seq" seq "type" "request" "command" command "arguments" arguments))
     seq))
 
 (define (dap-output! text stream)
+  "Handles output from the adapter's job on `stream`.
+   stdout carries DAP messages, which are framed and dispatched as they
+   complete; anything else (stderr) goes to the program output."
   (if (not (equal? stream "stdout"))
       (dap-add-output! text)
       (begin
@@ -162,6 +185,10 @@
               (loop)))))))
 
 (define (dap-dispatch! msg)
+  "Handles one message `msg` from the debug adapter.
+   A response goes to the callback its request left, or is shown if it
+   failed; an event goes to dap-event!. Reverse requests
+   (runInTerminal, startDebugging) are answered as unsupported."
   (let ([type (jget msg "type")])
     (cond
       [(equal? type "response")
@@ -181,6 +208,11 @@
       [else #f])))
 
 (define (dap-event! name body)
+  "Handles DAP event `name` with `body`.
+   initialized sends the breakpoints and configurationDone; stopped
+   fetches the stack and shows its innermost frame; continued clears the
+   stopped line; output is kept for SPC d O; exited reports the exit
+   code; terminated ends the session."
   (cond
     [(equal? name "initialized")
      ;; Now the adapter wants the breakpoints, then configurationDone.
@@ -207,11 +239,13 @@
     [else #f]))
 
 (define (dap-add-output! text)
+  "Adds `text` to the program's output, keeping the newest 1000 chunks."
   (set! *dap-output* (cons text (if (> (length *dap-output*) 999) (take *dap-output* 999) *dap-output*))))
 
 ;;; Where it stopped
 
 (define (clear-stopped!)
+  "Removes the mark and highlight of where the program stopped."
   (when *dap-stopped-at*
     (let ([id (car *dap-stopped-at*)])
       (when (memv id (buffer-list)) (with-buffer id (lambda () (set-sign-source! 'debug 30 '()))))))
@@ -219,6 +253,8 @@
   (highlight-clear! "debug"))
 
 (define (show-stopped-line!)
+  "Highlights the line the program stopped at, if it is in this buffer.
+   Run on buffer-enter, as highlights belong to the current buffer."
   (highlight-clear! "debug")
   (when (and *dap-stopped-at* (= (car *dap-stopped-at*) (current-buffer)))
     (let ([line (cadr *dap-stopped-at*)])
@@ -228,7 +264,8 @@
 (add-hook! 'buffer-enter show-stopped-line!)
 
 (define (show-frame! frame)
-  "Opens a frame's source at its line and marks it."
+  "Opens the source of stack frame `frame` at its line and marks it.
+   It becomes the frame SPC d v and SPC d e use."
   (set! *dap-frame* (jget frame "id"))
   (let ([path (jget frame "source" "path")]
         [line (max 0 (- (or (jget frame "line") 1) 1))]
@@ -247,6 +284,9 @@
 ;;; Sessions
 
 (define (dap-end!)
+  "Ends the debug session: forgets its state and clears the stopped
+   line. The adapter's job is killed a second later, giving it time to
+   exit on its own."
   (clear-stopped!)
   (let ([job *dap-job*])
     (set! *dap-job* #f)
@@ -258,6 +298,9 @@
   (message "debug session ended"))
 
 (define (dap-start! spec arguments)
+  "Starts a debug session with adapter `spec` and launch `arguments`.
+   `spec` is (command adapter-id launch) from define-debug-adapter!.
+   Runs the adapter, sends initialize, then launch once it answers."
   (set! *dap-input* "")
   (set! *dap-pending* (hash))
   (set! *dap-capabilities* (hash))
@@ -281,7 +324,7 @@
 
 (define-command! 'debug-continue
   (lambda (count)
-    "Starts debugging the current buffer's program, or continues it."
+    "Start debugging the current buffer's program, or continue it."
     (cond
       [*dap-job*
        (if *dap-thread*
@@ -298,6 +341,8 @@
       [else (message (string-append "no debug adapter for " (symbol->string (major-mode))))])))
 
 (define (step-command request)
+  "A command that sends step request `request` for the stopped thread.
+   `request` is a DAP command: next, stepIn or stepOut."
   (lambda (count)
     (if (and *dap-job* *dap-thread*)
         (begin (dap-request! request (hash "threadId" *dap-thread*) #f) (clear-stopped!))
@@ -309,12 +354,14 @@
 
 (define-command! 'debug-pause
   (lambda (count)
+    "Pause the program being debugged."
     (if *dap-job*
         (dap-request! "pause" (hash "threadId" (or *dap-thread* 1)) #f)
         (message "no debug session"))))
 
 (define-command! 'debug-stop
   (lambda (count)
+    "End the debug session, terminating the program."
     (if *dap-job*
         (dap-request! "disconnect" (hash "terminateDebuggee" #t) (lambda (body) (when *dap-job* (dap-end!))))
         (message "no debug session"))))
@@ -322,12 +369,15 @@
 ;;; Looking around while stopped
 
 (define (frame-label f)
+  "How stack frame `f` reads in SPC d s: its name, file and line."
   (let ([path (jget f "source" "path")])
     (string-append (or (jget f "name") "?") "  "
                    (if path (relative-path path) "?") ":" (to-string (or (jget f "line") "?")))))
 
 (define-command! 'debug-stack
   (lambda (count)
+    "Pick a frame of the stopped program's stack and go to its source.
+     SPC d v and SPC d e then use that frame."
     (if (null? *dap-frames*)
         (message "not stopped in a debug session")
         (let ([entries (let loop ([fs *dap-frames*] [i 0] [acc '()])
@@ -341,8 +391,8 @@
 
 (define-command! 'debug-variables
   (lambda (count)
-    "The variables of the shown frame, by scope; one with children has a
-     ▸ (evaluate it with SPC d e to see inside)."
+    "Show the variables of the frame shown, by scope.
+     One with children has a ▸ (evaluate it with SPC d e to see inside)."
     (if (not *dap-frame*)
         (message "not stopped in a debug session")
         (dap-request! "scopes" (hash "frameId" *dap-frame*)
@@ -354,6 +404,9 @@
                                         '()))))))
 
 (define (collect-scopes! scopes lines)
+  "Fetches the variables of each of `scopes` in turn, then shows them.
+   `lines` are those collected so far; scopes without variables are left
+   out, and a variable with children gets a ▸."
   (if (null? scopes)
       (show-popup! (if (null? lines) (list "no variables") lines))
       (let ([scope (car scopes)])
@@ -373,6 +426,8 @@
 
 (define-command! 'debug-eval
   (lambda (count)
+    "Evaluate an expression in the frame shown, and show its value.
+     The prompt starts with the word at the cursor."
     (if (not *dap-job*)
         (message "no debug session")
         (let ([w (word-at (cursor))])
@@ -385,6 +440,7 @@
 
 (define-command! 'debug-output
   (lambda (count)
+    "Show the last 100 chunks of the debugged program's output."
     (if (null? *dap-output*)
         (message "no program output")
         (show-popup! (apply append (map split-lines (reverse (take *dap-output* (min 100 (length *dap-output*))))))))))

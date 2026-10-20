@@ -17,16 +17,21 @@
 (define *wasm-plugins* (hash))  ; name -> handle
 
 (define (load-wasm-plugin! name path)
+  "Loads the WASM plugin at `path` under the symbol `name`; returns it.
+
+     (load-wasm-plugin! 'case \"~/.config/imp/plugins/case.wasm\")"
   (let ([handle (wasm-load (expand-path path))])
     (set! *wasm-plugins* (hash-insert *wasm-plugins* name handle))
     handle))
 
 (define (wasm-plugin name)
+  "The plugin loaded as `name`; raises an error if there is none."
   (let ([handle (hash-try-get *wasm-plugins* name)])
     (or handle (error (string-append "no WASM plugin " (symbol->string name))))))
 
 (define (wasm-replace! plugin function start end)
-  "Replaces start..end with (FUNCTION text) from the plugin, as one change."
+  "Replaces `start`..`end` with what `function` of `plugin` makes of it.
+   One undo step; nothing changes if the text comes back the same."
   (let* ([text (buffer-substring start end)]
          [result (wasm-call (wasm-plugin plugin) function text)])
     (unless (equal? result text)
@@ -34,14 +39,19 @@
       (replace-range! start end result))))
 
 (define (wasm-operator plugin function)
-  "An operator (define-operator!) that runs FUNCTION over the text moved over."
+  "An operator that runs `function` of `plugin` over the text moved over.
+   For define-operator!:
+
+     (define-operator! \"gs\" (wasm-operator 'case \"snake\"))"
   (lambda (start end linewise?)
     (wasm-replace! plugin function start end)
     (set-cursor! (if linewise? (line-first-nonblank (offset->line start)) (min start (max 0 (- (buffer-length) 1)))))))
 
 (define (define-wasm-filter! command plugin function)
-  "A command that runs FUNCTION over the whole buffer, keeping the cursor's
-   line."
+  "Defines `command` to run `function` of `plugin` over the whole buffer.
+   The cursor keeps its line:
+
+     (define-wasm-filter! 'snake-buffer 'case \"snake\")"
   (define-command! command
     (lambda (count)
       (let ([line (current-line)])
@@ -49,6 +59,8 @@
         (set-cursor! (line-first-nonblank (min line (- (buffer-line-count) 1))))))))
 
 (define (wasm-plugin-lines)
+  "Lines naming each loaded plugin and its functions, for :wasm.
+   With none loaded, one line saying so (or that imp lacks the feature)."
   (if (= (hash-length *wasm-plugins*) 0)
       (list (if (wasm-available?) "no WASM plugins loaded" "imp was built without the wasm feature"))
       (map (lambda (name)
