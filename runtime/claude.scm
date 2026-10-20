@@ -32,17 +32,17 @@
 
 (define-popup-rule! "*claude" 'side 'right 'size 0.4)
 
-;; The project the current buffer belongs to; in a Claude buffer, its own.
 (define (claude-root)
+  "The project the current buffer belongs to; in a Claude buffer, its own."
   (or (buffer-local 'claude-root) (project-root) (current-dir)))
 
-;; Root's Claude buffer, or #f.
 (define (claude-buffer root)
+  "Root's Claude buffer, or #f."
   (let ([buf (hash-try-get *claude-buffers* root)])
     (and buf (memv buf (buffer-list)) buf)))
 
-;; The terminal running in Claude buffer `buf`, or #f once it has exited.
 (define (claude-terminal buf)
+  "The terminal running in Claude buffer `buf`, or #f once it has exited."
   (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
 
 (define (claude-start! root)
@@ -55,9 +55,9 @@
            (set! *claude-buffers* (hash-insert *claude-buffers* root buf))
            buf))))
 
-;; Shows root's Claude, starting it if it isn't running, and types to it.
-;; Returns its buffer, or #f if it couldn't start.
 (define (claude-show! root)
+  "Shows root's Claude, starting it if it isn't running, and types to it.
+   Returns its buffer, or #f if it couldn't start."
   (let ([buf (claude-buffer root)])
     (cond
       [(and buf (claude-terminal buf))
@@ -70,8 +70,8 @@
        (when buf (kill-buffer! buf))
        (claude-start! root)])))
 
-;; Leaves the current window's Claude, closing the window, but not Claude.
 (define (claude-hide!)
+  "Leaves the current window's Claude, closing the window, but not Claude."
   (set-mode! 'normal)
   (let ([popup (popup-window-entry (current-window))])
     (cond
@@ -90,15 +90,15 @@
 
 ;;; Sending
 
-;; Text to paste: programs that asked for bracketed paste take it as one
-;; paste rather than as typing, so its line breaks don't submit anything.
 (define (bracketed text)
+  "Text to paste: programs that asked for bracketed paste take it as one
+   paste rather than as typing, so its line breaks don't submit anything."
   (let ([esc (string (integer->char 27))])
     (string-append esc "[200~" text esc "[201~")))
 
-;; Pastes what is waiting for `buf` once its Claude takes input; until
-;; then, looks again every claude-ready-ms, `tries` more times.
 (define (claude-flush! buf tries)
+  "Pastes what is waiting for `buf` once its Claude takes input; until
+   then, looks again every claude-ready-ms, `tries` more times."
   (let ([id (claude-terminal buf)] [texts (hash-try-get *claude-pending* buf)])
     (cond
       [(or (not id) (not texts)) (set! *claude-pending* (hash-remove *claude-pending* buf))]
@@ -115,8 +115,8 @@
        (set! *claude-pending* (hash-remove *claude-pending* buf))
        (message "Claude didn't start taking input, so nothing was sent")])))
 
-;; Puts `text` in the prompt of the current project's Claude and goes there.
 (define (claude-send! text)
+  "Puts `text` in the prompt of the current project's Claude and goes there."
   (let ([buf (claude-show! (claude-root))])
     (when buf
       (set! *claude-pending*
@@ -124,22 +124,22 @@
                          (append (or (hash-try-get *claude-pending* buf) '()) (list text))))
       (claude-flush! buf claude-ready-tries))))
 
-;; The current buffer's file relative to `root`, or its name if it has none.
 (define (claude-path root)
+  "The current buffer's file relative to `root`, or its name if it has none."
   (let ([path (and (buffer-path) (absolute (buffer-path)))])
     (cond [(not path) (buffer-name-of (current-buffer))]
           [(starts-with? path (string-append root "/"))
            (substring path (+ (string-length root) 1) (string-length path))]
           [else path])))
 
-;; `text` labelled with where it came from, in a fenced block.
 (define (claude-quote label text)
+  "`text` labelled with where it came from, in a fenced block."
   (string-append label "\n```\n" text
                  (if (or (equal? text "") (ends-with? text "\n")) "" "\n")
                  "```\n"))
 
-;; Whether the current buffer is something to send from.
 (define (claude-source?)
+  "Whether the current buffer is something to send from."
   (if (buffer-local 'claude-root)
       (begin (message "this is Claude's own window") #f)
       #t))

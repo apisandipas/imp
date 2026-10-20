@@ -30,8 +30,8 @@
   (for-each (lambda (conn) (unless (equal? conn except) (collab-send! conn "update" update)))
             (collab-peers buf)))
 
-;; Sends each shared buffer's local changes to its peers.
 (define (collab-sync!)
+  "Sends each shared buffer's local changes to its peers."
   (for-each (lambda (buf)
               (let ([update (crdt-sync! buf)])
                 (when update (collab-broadcast! buf update #f))))
@@ -56,8 +56,8 @@
             (hash-insert *collab-peers* buf (filter (lambda (c) (not (equal? c conn))) (collab-peers buf)))))
     buf))
 
-;; Stops sharing (or leaves) buffer `buf`.
 (define (collab-stop! buf)
+  "Stops sharing (or leaves) buffer `buf`."
   (let ([listener (hash-try-get *collab-listeners* buf)])
     (when listener
       (socket-stop! (car listener))
@@ -69,8 +69,8 @@
     (cancel-timer! *collab-timer*)
     (set! *collab-timer* #f)))
 
-;; A message from a peer of `buf`.
 (define (collab-receive! buf conn line)
+  "A message from a peer of `buf`."
   (let ([words (split-whitespace line)])
     (cond [(null? words) #f]
           [(equal? (car words) "hello")

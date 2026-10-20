@@ -23,14 +23,14 @@
 (define (git-command root args)
   (string-append "git -C " (shell-quote root) " " args))
 
-;; The output of a git command whose output is read; "" if it fails.
 (define (git-output root args)
+  "The output of a git command whose output is read; \"\" if it fails."
   (let ([r (run-shell (string-append (git-command root args) " 2>/dev/null") "")])
     (if (= (car r) 0) (cadr r) "")))
 
-;; Runs a git command that changes something, with `input` on its stdin.
-;; Shows git's complaint and returns #f if it fails.
 (define (git-do! root args . input)
+  "Runs a git command that changes something, with `input` on its stdin.
+   Shows git's complaint and returns #f if it fails."
   (let ([r (run-shell (git-command root args) (if (null? input) "" (car input)))])
     (or (= (car r) 0)
         (begin (message (string-append "git " args ": " (trim (cadr r)))) #f))))
@@ -39,9 +39,9 @@
   (let ([r (run-shell (string-append "git -C " (shell-quote dir) " rev-parse --show-toplevel 2>/dev/null") "")])
     (and (= (car r) 0) (trim (cadr r)))))
 
-;; The repository of the current buffer: a git buffer's own, its file's,
-;; or the working directory's.
 (define (git-current-root)
+  "The repository of the current buffer: a git buffer's own, its file's,
+   or the working directory's."
   (or (buffer-local 'git-root)
       (git-root-of (if (buffer-path) (directory-of (expand-path (buffer-path))) (current-dir)))))
 
@@ -58,8 +58,8 @@
       (substring path 1 (- (string-length path) 1))
       path))
 
-;; The first `n` space-separated fields of `line`, then the rest as one.
 (define (git-fields line n)
+  "The first `n` space-separated fields of `line`, then the rest as one."
   (let loop ([i 0] [rest line] [acc '()])
     (let ([parts (split-once rest " ")])
       (if (or (= i n) (not (pair? parts)) (null? (cdr parts)))
@@ -68,8 +68,8 @@
 
 (define (git-push st key entry) (hash-insert st key (cons entry (hash-ref st key))))
 
-;; Adds one line of `git status --porcelain=v2 --branch` to `st`.
 (define (git-status-line st line)
+  "Adds one line of `git status --porcelain=v2 --branch` to `st`."
   (let ([kind (if (> (string-length line) 0) (substring line 0 1) "")])
     (cond
       [(starts-with? line "# branch.oid ") (hash-insert st 'oid (substring line 13))]
@@ -91,17 +91,17 @@
       [(equal? kind "u") (git-push st 'unstaged (list "unmerged" (git-unquote (last (git-fields line 10)))))]
       [else st])))
 
-;; A hash: 'branch 'oid 'upstream 'ahead 'behind, and 'untracked
-;; 'unstaged 'staged lists of (status path).
 (define (git-status root)
+  "A hash: 'branch 'oid 'upstream 'ahead 'behind, and 'untracked
+   'unstaged 'staged lists of (status path)."
   (let ([st (foldl (lambda (line st) (git-status-line st line))
                    (hash 'branch "" 'oid "" 'upstream #f 'ahead 0 'behind 0 'untracked '() 'unstaged '() 'staged '())
                    (text-lines (git-output root "status --porcelain=v2 --branch --untracked-files=all")))])
     (foldl (lambda (key st) (hash-insert st key (reverse (hash-ref st key)))) st '(untracked unstaged staged))))
 
-;; A file's diff as (header hunks): the lines before the first hunk, and
-;; each hunk as its lines, the @@ line first.
 (define (git-parse-diff text)
+  "A file's diff as (header hunks): the lines before the first hunk, and
+   each hunk as its lines, the @@ line first."
   (let loop ([lines (text-lines text)] [header '()] [hunks '()] [hunk #f])
     (cond
       [(null? lines)
@@ -204,8 +204,8 @@
           [(eq? (major-mode) 'git-status-mode) (git-render-status! root)]
           [(eq? (major-mode) 'git-log-mode) (git-render-log! root)])))
 
-;; A git buffer called `name` for `root`, in `mode`.
 (define (git-buffer name mode root)
+  "A git buffer called `name` for `root`, in `mode`."
   (let ([id (special-buffer name mode)] [here (current-buffer)])
     (switch-to-buffer! id)
     (unless (buffer-local 'git-root) (set-buffer-local! 'git-root root))
@@ -221,8 +221,8 @@
         (let ([id (git-buffer (git-status-buffer-name root) 'git-status-mode root)])
           (if (= id (current-buffer)) (git-refresh!) (display-buffer! id))))))
 
-;; Back to the status buffer of `root`, refreshed, if there is one.
 (define (git-back-to-status! root)
+  "Back to the status buffer of `root`, refreshed, if there is one."
   (let ([id (list-find (lambda (id) (equal? (car (buffer-info id)) (git-status-buffer-name root))) (buffer-list))])
     (if id (if (= id (current-buffer)) (git-refresh!) (display-buffer! id)) (git-status!))))
 
@@ -230,8 +230,8 @@
 
 (define (git-root) (buffer-local 'git-root))
 
-;; The patch for hunk `i` of `path`'s diff in `section`.
 (define (git-hunk-patch root section path i)
+  "The patch for hunk `i` of `path`'s diff in `section`."
   (let ([diff (git-file-diff root section path)])
     (string-append (string-join (append (car diff) (list-ref (cadr diff) i)) "\n") "\n")))
 
@@ -321,16 +321,16 @@
          (set-buffer-local! 'line-items (vector-map-file file))
          (git-refresh!))])))
 
-;; The items with every line of a file's diff replaced by the file, so
-;; refreshing keeps the cursor on the file once its diff is folded.
 (define (vector-map-file file)
+  "The items with every line of a file's diff replaced by the file, so
+   refreshing keeps the cursor on the file once its diff is folded."
   (list->vector (map (lambda (item) (if (and item (memq (car item) '(hunk hunk-line))
                                              (equal? (cadr item) (cadr file)) (equal? (caddr item) (caddr file)))
                                         file item))
                      (vector->list (buffer-local 'line-items)))))
 
-;; The line in the new file that line `j` of hunk `i` shows.
 (define (git-hunk-target root section path i j)
+  "The line in the new file that line `j` of hunk `i` shows."
   (let* ([hunk (list-ref (cadr (git-file-diff root section path)) i)]
          [plus (cadr (split-whitespace (car hunk)))]                      ; +START,COUNT
          [start (string->number (car (split-many (substring plus 1) ",")))])
@@ -416,8 +416,8 @@
   (git-render-log! root)
   (set-cursor! 0))
 
-;; Shows `text` (a diff or a commit) in buffer `name`.
 (define (git-show-text! root name text)
+  "Shows `text` (a diff or a commit) in buffer `name`."
   (display-buffer! (git-buffer name 'git-diff-mode root))
   (set-buffer-contents! (if (equal? text "") "no changes\n" text))
   (set-cursor! 0))
@@ -459,9 +459,9 @@
 
 (define *git-process-log* '())  ; newest first
 
-;; Runs a git command that may take a while (it talks to a remote) in the
-;; background, refreshing the status when it is done.
 (define (git-job! root args)
+  "Runs a git command that may take a while (it talks to a remote) in the
+   background, refreshing the status when it is done."
   (message (string-append "git " args "..."))
   (set! *git-process-log* (cons (string-append "$ git " args) *git-process-log*))
   (start-job! (string-append "GIT_TERMINAL_PROMPT=0 " (git-command root args) " 2>&1") ""
@@ -541,7 +541,10 @@
         "<ret> visit            c commit  b branch    l log       d diff"
         "z stash   f fetch   F pull   P push   $ git output   gr refresh   q leave"))
 
-(define-command! 'git-status (lambda (count) (git-status!)))
+(define-command! 'git-status (lambda (count)
+                               "A hash: 'branch 'oid 'upstream 'ahead 'behind, and 'untracked
+                                'unstaged 'staged lists of (status path)."
+                               (git-status!)))
 (define-command! 'git-log
   (lambda (count)
     (let ([root (git-current-root)])

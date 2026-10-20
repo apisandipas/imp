@@ -49,8 +49,8 @@
       (set! *goal-col* (current-col)))
     (set! *mouse-press* (and offset (list window (cursor))))))
 
-;; The first drag away from the press starts a selection there.
 (define (mouse-drag! window offset)
+  "The first drag away from the press starts a selection there."
   (when (and *mouse-press* offset (= window (car *mouse-press*)) (= window (current-window)))
     (unless (eq? *mode* 'visual)
       (when (typing-mode?) (leave-insert!))
@@ -58,9 +58,9 @@
     (set-cursor! (min offset (max 0 (- (buffer-length) 1))))
     (set! *goal-col* (current-col))))
 
-;; Scrolls `window` (focusing it for the moment if it isn't current); the
-;; cursor stays put unless it would leave the window, as with C-e and C-y.
 (define (mouse-scroll! window sign)
+  "Scrolls `window` (focusing it for the moment if it isn't current); the
+   cursor stays put unless it would leave the window, as with C-e and C-y."
   (let ([here (current-window)] [n (option 'mouse-scroll)])
     (unless (= window here) (focus-window! window))
     (scroll-to! (+ (window-top) (* sign n)))

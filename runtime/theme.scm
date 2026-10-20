@@ -23,8 +23,8 @@
          [merged (foldl (lambda (k h) (hash-insert h k (hash-ref palette k))) (car base) (hash-keys->list palette))])
     (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces))))))
 
-;; Every face, from a palette.
 (define (theme-faces p)
+  "Every face, from a palette."
   (let* ([c (lambda (name) (hash-ref p name))]
          [fg (lambda (name . more)
                (apply string-append (cons (string-append "fg=" (c name)) (map (lambda (m) (string-append " " m)) more))))]
@@ -151,9 +151,9 @@
      (list "syntax.text.emphasis" "italic")
      (list "syntax.text.strong" "bold"))))
 
-;; The 16 colors programs in a terminal buffer ask for by number: black,
-;; red, green, yellow, blue, magenta, cyan, white, then the bright ones.
 (define (terminal-palette p)
+  "The 16 colors programs in a terminal buffer ask for by number: black,
+   red, green, yellow, blue, magenta, cyan, white, then the bright ones."
   (let* ([get (lambda (k fallback) (or (hash-try-get p k) (hash-ref p fallback)))]
          [colors (cons (get 'black 'dim)
                        (append (map (lambda (k) (hash-ref p k)) '(red green yellow blue magenta cyan))
@@ -233,8 +233,8 @@
 (define (face-change-hint name)
   (string-append "Change it: (set-face! \"" name "\" \"" (or (face-spec name) "fg=#rrggbb") "\")"))
 
-;; "normal" is under everything: the text color and background.
 (define (describe-face-at! at)
+  "\"normal\" is under everything: the text color and background."
   (let ([faces (cons "normal" (faces-at at))])
     (show-popup! (append (list "Faces at the cursor, bottom first:")
                          (map (lambda (f) (string-append "  " (face-line f))) faces)
@@ -244,10 +244,10 @@
 
 (define-major-mode! 'faces-mode 'special-mode '() #f)
 
-;; Each face's name, a sample drawn in it, and its spec; <ret> on one shows
-;; how to change it.
 (define-command! 'list-faces
   (lambda (count)
+    "Each face's name, a sample drawn in it, and its spec; <ret> on one shows
+     how to change it."
     (display-buffer! (special-buffer "*faces*" 'faces-mode))
     (draw-begin!)
     (for-each (lambda (name)
@@ -314,9 +314,9 @@
 
 (define *appearance* (hash))
 
-;; Option `name`, starting at `default`; `apply` gets each new value, and
-;; raises an error for a bad one.
 (define (define-appearance-option! name default apply)
+  "Option `name`, starting at `default`; `apply` gets each new value, and
+   raises an error for a bad one."
   (set! *appearance* (hash-insert *appearance* name default))
   (define-computed-option! name '()
     (lambda () (hash-ref *appearance* name))

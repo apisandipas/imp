@@ -25,8 +25,8 @@
 (define (kdl-prop n key default)
   (let ([p (assoc key (kdl-props n))]) (if p (cadr p) default)))
 
-;; Checks that node `n` has arguments that `ok?` accepts; returns them.
 (define (kdl-expect n what ok?)
+  "Checks that node `n` has arguments that `ok?` accepts; returns them."
   (let ([args (kdl-args n)])
     (if (ok? args) args (error (string-append (kdl-name n) " takes " what)))))
 
@@ -70,8 +70,8 @@
                                   (kdl-prop n "language" (car a))))]
       [else (error (string-append "unknown setting " name))])))
 
-;; Runs `thunk` for node `n`, turning an error into a problem with its line.
 (define (config-guard n thunk)
+  "Runs `thunk` for node `n`, turning an error into a problem with its line."
   (with-handler
    (lambda (e)
      (set! *config-problems*
@@ -81,16 +81,16 @@
 
 (define *config-problems* '())
 
-;; Loads a KDL config; returns its problems, each "line N: what".
 (define (apply-kdl-config! text)
+  "Loads a KDL config; returns its problems, each \"line N: what\"."
   (set! *config-problems* '())
   (with-handler
    (lambda (e) (set! *config-problems* (list (trim (to-string (error-object-message e))))))
    (for-each (lambda (n) (config-guard n (lambda () (config-node! n)))) (kdl-parse text)))
   (reverse *config-problems*))
 
-;; Loads PATH, showing what went wrong on the message line.
 (define (load-kdl-config! path)
+  "Loads PATH, showing what went wrong on the message line."
   (let ([problems (apply-kdl-config! (read-file path))])
     (unless (null? problems)
       (message (string-append (file-name-of path) ": " (string-join problems "; "))))

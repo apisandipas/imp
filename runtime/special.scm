@@ -11,15 +11,15 @@
 ;;; Faces go on with buffer-highlight-add! (ranges, redrawn with the text)
 ;;; or buffer-highlight-pattern! (follows edits).
 
-;; The directory part of `path`, without a trailing slash ("." for none).
 (define (directory-of path)
+  "The directory part of `path`, without a trailing slash (\".\" for none)."
   (let loop ([i (- (string-length path) 1)])
     (cond [(< i 0) "."]
           [(equal? (string-ref path i) #\/) (if (= i 0) "/" (substring path 0 i))]
           [else (loop (- i 1))])))
 
-;; The first item of `items` that `pred` accepts, or #f.
 (define (list-find pred items)
+  "The first item of `items` that `pred` accepts, or #f."
   (cond [(null? items) #f]
         [(pred (car items)) (car items)]
         [else (list-find pred (cdr items))]))
@@ -28,17 +28,17 @@
   (lambda () (not (buffer-read-only?)))
   (lambda (value) (set-buffer-read-only! (not value))))
 
-;; Calls `thunk` with the current buffer writable, then puts back how it was.
 (define (with-writable thunk)
+  "Calls `thunk` with the current buffer writable, then puts back how it was."
   (let ([was (buffer-read-only?)])
     (set-buffer-read-only! #f)
     (let ([result (with-handler (lambda (e) (set-buffer-read-only! was) (raise-error e)) (thunk))])
       (set-buffer-read-only! was)
       result)))
 
-;; The buffer called `name`, made with major mode `mode` if there is none.
-;; It isn't made current.
 (define (special-buffer name mode)
+  "The buffer called `name`, made with major mode `mode` if there is none.
+   It isn't made current."
   (or (list-find (lambda (id) (equal? (car (buffer-info id)) name)) (buffer-list))
       (let ([id (buffer-new! name)] [here (current-buffer)])
         (switch-to-buffer! id)
@@ -46,9 +46,9 @@
         (switch-to-buffer! here)
         id)))
 
-;; Replaces the current buffer's text, keeping the cursor on its line and
-;; column where they still exist. The buffer stays unmodified.
 (define (set-buffer-contents! text)
+  "Replaces the current buffer's text, keeping the cursor on its line and
+   column where they still exist. The buffer stays unmodified."
   (let ([line (current-line)] [col (current-col)])
     (with-writable
      (lambda ()
@@ -105,22 +105,22 @@
 (define (popup-prop rule key default)
   (let ([p (assq key (cadr rule))]) (if p (cdr p) default)))
 
-;; The rule for buffer name `name`, or #f.
 (define (popup-rule name)
+  "The rule for buffer name `name`, or #f."
   (list-find (lambda (r) (if (string? (car r)) (starts-with? name (car r)) ((car r) name)))
              *popup-rules*))
 
 (define (buffer-name-of id) (car (buffer-info id)))
 
-;; The popup windows still open, as (window origin rule).
 (define (live-popup-windows)
+  "The popup windows still open, as (window origin rule)."
   (set! *popup-windows* (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
   *popup-windows*)
 
 (define (popup-window-entry window) (assv window (live-popup-windows)))
 
-;; Shows buffer `id` where its popup rule says, or in the current window.
 (define (display-buffer! id)
+  "Shows buffer `id` where its popup rule says, or in the current window."
   (let ([rule (popup-rule (buffer-name-of id))]
         [shown (list-find (lambda (w) (eqv? (window-buffer w) id)) (window-list))])
     (cond
@@ -157,11 +157,11 @@
                                (cadr entry)
                                (list-find (lambda (w) (not (popup-window-entry w))) (window-list))))))))
 
-;; Leaves a special buffer for the one it was opened from, keeping it. In
-;; a popup window, leaving for a buffer that isn't a popup closes the
-;; window instead.
 (define-command! 'quit-window
   (lambda (count)
+    "Leaves a special buffer for the one it was opened from, keeping it. In
+     a popup window, leaving for a buffer that isn't a popup closes the
+     window instead."
     (let* ([live? (lambda (id) (and id (memv id (buffer-list)) (not (= id (current-buffer)))))]
            [target (cond [(live? (buffer-local 'return-to)) (buffer-local 'return-to)]
                          [(live? *alternate-buffer*) *alternate-buffer*]
@@ -208,12 +208,12 @@
   (show-which-key-popup! (which-key-table (map (lambda (e) (cons (key-label (car e)) (cadr e))) entries))
                          title))
 
-;; Asks for a value on the command line, starting from `default`.
 (define (ask prompt default done)
+  "Asks for a value on the command line, starting from `default`."
   (open-cmdline! prompt default (lambda (text) (unless (equal? text "") (done text))) #f #f))
 
-;; Asks a yes-or-no question on the message line; `thunk` runs on y.
 (define (confirm! question thunk)
+  "Asks a yes-or-no question on the message line; `thunk` runs on y."
   (message (string-append question " (y or n)"))
   (set! *key-interceptor*
         (lambda (key)
@@ -221,8 +221,8 @@
           (message "")
           (when (equal? key "y") (thunk)))))
 
-;; The lines of `text`, without the empty one after a final line break.
 (define (text-lines text)
+  "The lines of `text`, without the empty one after a final line break."
   (let ([lines (split-many text "\n")])
     (if (and (pair? lines) (equal? (last lines) ""))
         (reverse (cdr (reverse lines)))
@@ -243,8 +243,8 @@
 (define (draw-begin!)
   (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0))
 
-;; Adds a line made of (text face) parts, about `item`.
 (define (draw-line! parts item)
+  "Adds a line made of (text face) parts, about `item`."
   (let loop ([parts parts] [at *draw-at*] [text ""])
     (if (null? parts)
         (begin (set! *draw-lines* (cons text *draw-lines*))
@@ -254,9 +254,9 @@
           (when (and face (> n 0)) (set! *draw-faces* (cons (list at (+ at n) face) *draw-faces*)))
           (loop (cdr parts) (+ at n) (string-append text t))))))
 
-;; Puts what was drawn into the current buffer, keeping the cursor on the
-;; same item if it is still there.
 (define (draw-finish!)
+  "Puts what was drawn into the current buffer, keeping the cursor on the
+   same item if it is still there."
   (let* ([old (line-item)]
          [items (list->vector (reverse *draw-items*))])
     (set-buffer-contents! (string-append (string-join (reverse *draw-lines*) "\n") "\n"))
@@ -270,8 +270,8 @@
               (set-cursor! (line-first-nonblank i))
               (loop (+ i 1))))))))
 
-;; What the cursor's line is about: (head), (section S), (file S PATH),
-;; (hunk S PATH I), (hunk-line S PATH I J), (stash REF), (commit HASH), or #f.
 (define (line-item)
+  "What the cursor's line is about: (head), (section S), (file S PATH),
+   (hunk S PATH I), (hunk-line S PATH I J), (stash REF), (commit HASH), or #f."
   (let ([items (buffer-local 'line-items)] [line (current-line)])
     (and items (< line (vector-length items)) (vector-ref items line))))

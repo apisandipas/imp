@@ -93,3 +93,88 @@ fn find_definition_opens_the_source() {
     type_keys(&mut s, ":bd<ret>");
     assert_eq!(s.text(), "");
 }
+
+/// Records `text` as a loaded source called `name`, as init.scm would be.
+fn record_source(s: &mut imp_server::Server, name: &str, text: &str) {
+    let path = temp_path(name);
+    std::fs::write(&path, text).unwrap();
+    s.eval(&format!(
+        "(record-source! {name:?} \"\" (read-file {:?}))",
+        path.display().to_string()
+    ))
+    .unwrap();
+}
+
+const DOCUMENTED: &str = r#"(define (shout text)
+  "TEXT in capitals, with a \"!\" after.
+   A second line, lined up under the first.
+     Indented further."
+  (string-append (string-upcase text) "!"))
+
+(define (paren-char) #\()
+
+(define (not-a-docstring)
+  "This is the value.")
+
+;; A comment, as variables have.
+(define (commented x) x)
+
+(define (both x)
+  "The docstring wins."
+  x)
+
+(define-command! 'shout-line
+  (lambda (count)
+    "Shout the current line."
+    (message "!")))
+
+(define (whisper! count)
+  "Whisper the current line."
+  #t)
+(define-command! 'whisper-line whisper!)
+"#;
+
+#[test]
+fn docstrings_document_functions_and_commands() {
+    let mut s = server("");
+    s.set_size(120, 30);
+    record_source(&mut s, "documented.scm", DOCUMENTED);
+    s.eval(DOCUMENTED).unwrap();
+    // The value is unchanged by the docstring.
+    assert_eq!(s.eval("(shout \"hi\")").unwrap(), "\"HI!\"");
+    type_keys(&mut s, ":help shout<ret>");
+    let text = popup_text(&mut s);
+    assert!(
+        text.contains("TEXT in capitals, with a \"!\" after."),
+        "{text}"
+    );
+    assert!(
+        text.contains("\nA second line, lined up under the first."),
+        "{text}"
+    );
+    assert!(text.contains("\n  Indented further."), "{text}");
+    // A string that is the whole body is its value.
+    type_keys(&mut s, "<esc>:help not-a-docstring<ret>");
+    assert!(popup_text(&mut s).contains("Not documented."));
+    // Without a docstring, the comment above.
+    type_keys(&mut s, "<esc>:help commented<ret>");
+    assert!(popup_text(&mut s).contains("A comment, as variables have."));
+    type_keys(&mut s, "<esc>:help both<ret>");
+    assert!(popup_text(&mut s).contains("The docstring wins."));
+    // M-x shows a command's first line, from its lambda or its procedure.
+    let doc = |s: &mut imp_server::Server, name: &str| {
+        s.eval(&format!("(command-doc {name:?} (doc-lines))"))
+            .unwrap()
+    };
+    assert_eq!(doc(&mut s, "shout-line"), "\"Shout the current line.\"");
+    assert_eq!(doc(&mut s, "whisper-line"), "\"Whisper the current line.\"");
+    assert_eq!(
+        doc(&mut s, "shout"),
+        "\"TEXT in capitals, with a \\\"!\\\" after.\""
+    );
+    // A character literal like #\( doesn't throw the reader.
+    assert_eq!(
+        doc(&mut s, "commented"),
+        "\"A comment, as variables have.\""
+    );
+}

@@ -1,50 +1,54 @@
 ;;; help.scm -- the editor describes itself.
 ;;;
-;;; Documentation is the comment block above a definition, which is how the
-;;; runtime is written anyway. The server keeps the source of every file it
-;;; loaded (the runtime, init.scm, packages), so describe-function finds
-;;; `(define (name` there and shows the comment, the signature and where it
-;;; is; describe-key works out what a key does and finds the form that
-;;; bound it the same way; find-definition opens the source at that line.
+;;; A function's documentation is its docstring, as in Emacs: a string as
+;;; the first thing in its body, before the code.
+;;;
+;;;   (define (directory-of path)
+;;;     "The directory part of PATH, without a trailing slash.
+;;;      Continuation lines line up under the first; help strips that."
+;;;     ...)
+;;;
+;;; A command's goes first in its lambda, (define-command! 'name (lambda
+;;; (count) "Doc." ...)). The first line is a sentence of its own: M-x
+;;; shows it beside the command. A string that is the whole body is the
+;;; value, not documentation. Variables and options, which have no body,
+;;; are documented by the comment block above them instead.
+;;;
+;;; The server keeps the source of every file it loaded (the runtime,
+;;; init.scm, packages), so describe-function finds `(define (name` there
+;;; and shows the docstring, the signature and where it is; describe-key
+;;; works out what a key does and finds the form that bound it the same
+;;; way; find-definition opens the source at that line.
 
 ;;; Finding definitions in the loaded sources
 
-;; Every loaded source as (name . lines), lines as a list of strings.
-(define (source-lines name) (split-lines (or (source-text name) "")))
+(define (source-lines name)
+  "Every loaded source as (name . lines), lines as a list of strings."
+  (split-lines (or (source-text name) "")))
 
-;; The first line (counting from 0) in `lines` for which `match?` is true.
 (define (find-line lines match?)
+  "The first line (counting from 0) in `lines` for which `match?` is true."
   (let loop ([ls lines] [i 0])
     (cond [(null? ls) #f]
           [(match? (car ls)) i]
           [else (loop (cdr ls) (+ i 1))])))
 
-;; Where `match?` first holds, as (source-name line), searching the most
-;; recently loaded source first so a redefinition in init.scm wins.
 (define (find-in-sources match?)
+  "Where `match?` first holds, as (source-name line), searching the most
+   recently loaded source first so a redefinition in init.scm wins."
   (let loop ([names (reverse (source-names))])
     (if (null? names)
         #f
         (let ([line (find-line (source-lines (car names)) match?)])
           (if line (list (car names) line) (loop (cdr names)))))))
 
-;; Does `line` define `name` with define, define-command!, define-option!
-;; or define-syntax?
 (define (defines-name? line name)
+  "Does `line` define `name` with define, define-command!, define-option!
+   or define-syntax?"
   (equal? (defined-name line) name))
 
 (define (find-definition-site name)
   (find-in-sources (lambda (line) (defines-name? line name))))
-
-;; The comment block right above line `n`, without the semicolons.
-(define (doc-comment lines n)
-  (let loop ([i (- n 1)] [acc '()])
-    (if (< i 0)
-        acc
-        (let ([line (list-ref lines i)])
-          (if (starts-with? line ";")
-              (loop (- i 1) (cons (strip-comment line) acc))
-              acc)))))
 
 (define (strip-comment line)
   (let loop ([i 0])
@@ -53,15 +57,129 @@
         (substring line (if (and (< i (string-length line)) (equal? (string-ref line i) #\space)) (+ i 1) i)
                    (string-length line)))))
 
-;; Lines describing the definition at `site`: where it is, its first line
-;; and its comment.
+;;; Reading docstrings out of the source
+
+(define (source-char lines pos)
+  "A reader over a vector of source lines, from line `n`: just enough Scheme
+   to step over forms and read a string literal. A position is (line . col);
+   the end of a line reads as #\\newline, the end of the source as #f."
+  (let ([i (car pos)] [j (cdr pos)])
+    (cond [(>= i (vector-length lines)) #f]
+          [(< j (string-length (vector-ref lines i))) (string-ref (vector-ref lines i) j)]
+          [else #\newline])))
+
+(define (source-next lines pos)
+  (if (< (cdr pos) (string-length (vector-ref lines (car pos))))
+      (cons (car pos) (+ (cdr pos) 1))
+      (cons (+ (car pos) 1) 0)))
+
+(define (skip-blank lines pos)
+  "Past whitespace and ; comments."
+  (let ([c (source-char lines pos)])
+    (cond [(not c) pos]
+          [(char-whitespace? c) (skip-blank lines (source-next lines pos))]
+          [(equal? c #\;) (skip-blank lines (cons (+ (car pos) 1) 0))]
+          [else pos])))
+
+(define (delimiter? c)
+  (or (not c) (char-whitespace? c) (memv c '(#\( #\) #\[ #\] #\" #\;))))
+
+(define (read-string-literal lines pos)
+  "The string literal at `pos` (on its opening quote), as (text . after)."
+  (let loop ([pos (source-next lines pos)] [acc '()])
+    (let ([c (source-char lines pos)])
+      (cond
+        [(not c) (cons (list->string (reverse acc)) pos)]
+        [(equal? c #\") (cons (list->string (reverse acc)) (source-next lines pos))]
+        [(equal? c #\\)
+         (let* ([at (source-next lines pos)] [e (source-char lines at)])
+           (loop (source-next lines at)
+                 (cons (case e [(#\n) #\newline] [(#\t) #\tab] [else (or e #\\)]) acc)))]
+        [else (loop (source-next lines pos) (cons c acc))]))))
+
+(define (skip-form lines pos)
+  "The position after the form at `pos`."
+  (let ([c (source-char lines pos)])
+    (cond
+      [(not c) pos]
+      [(equal? c #\") (cdr (read-string-literal lines pos))]
+      [(memv c '(#\' #\` #\,)) (skip-form lines (source-next lines pos))]
+      [(memv c '(#\( #\[))
+       (let loop ([pos (skip-blank lines (source-next lines pos))])
+         (let ([c (source-char lines pos)])
+           (cond [(not c) pos]
+                 [(memv c '(#\) #\])) (source-next lines pos)]
+                 [else (loop (skip-blank lines (skip-form lines pos)))])))]
+      [(and (equal? c #\#) (equal? (source-char lines (source-next lines pos)) #\\))
+       ;; A character: #\( is one, so step over the char before the name.
+       (let loop ([pos (source-next lines (source-next lines (source-next lines pos)))])
+         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))]
+      [else
+       (let loop ([pos pos])
+         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))])))
+
+(define (token-at lines pos)
+  "The symbol at `pos`, or \"\"."
+  (let loop ([p pos] [acc '()])
+    (let ([c (source-char lines p)])
+      (if (delimiter? c) (list->string (reverse acc)) (loop (source-next lines p) (cons c acc))))))
+
+(define (body-docstring lines pos)
+  "The docstring at `pos`, the start of a body, or #f: a string literal
+   with more of the body after it."
+  (and (equal? (source-char lines pos) #\")
+       (let ([read (read-string-literal lines pos)])
+         (and (not (memv (source-char lines (skip-blank lines (cdr read))) '(#\) #\] #f)))
+              (car read)))))
+
+(define (lambda-docstring lines pos)
+  "At `pos`, a (lambda ARGS ...) form: its docstring, or #f."
+  (and (equal? (source-char lines pos) #\()
+       (let ([at (skip-blank lines (source-next lines pos))])
+         (and (equal? (token-at lines at) "lambda")
+              (body-docstring lines (skip-blank lines (skip-form lines (skip-blank lines (skip-form lines at)))))))))
+
+(define (definition-docstring lines n)
+  "The docstring of the definition starting on line `n` of `lines` (a
+   vector), or #f: (define (name ...) \"Doc\" ...), (define name (lambda ...
+   \"Doc\" ...)) or (define-command! 'name (lambda (count) \"Doc\" ...))."
+  (let* ([start (skip-blank lines (source-next lines (cons n 0)))]
+         [head (skip-blank lines (skip-form lines start))]
+         [after (skip-blank lines (skip-form lines head))])
+    (if (and (equal? (token-at lines start) "define") (equal? (source-char lines head) #\())
+        (body-docstring lines after)
+        (lambda-docstring lines after))))
+
+(define (docstring-lines text)
+  "A docstring as lines: continuation lines lose the indentation they
+   share, which lines them up under the first in the source."
+  (let* ([lines (split-many text "\n")]
+         [rest (cdr lines)]
+         [indent (lambda (l) (let loop ([i 0]) (if (and (< i (string-length l)) (equal? (string-ref l i) #\space)) (loop (+ i 1)) i)))]
+         [common (foldl (lambda (l m) (if (equal? (trim l) "") m (min m (indent l)))) 1000 rest)])
+    (cons (car lines)
+          (map (lambda (l) (if (< (string-length l) common) "" (substring l common (string-length l)))) rest))))
+
+(define (definition-doc lines n)
+  "The documentation of the definition on line `n`: its docstring, or the
+   comment block above it; as lines, '() if there is none."
+  (let ([doc (definition-docstring lines n)])
+    (if doc
+        (docstring-lines doc)
+        (let loop ([i (- n 1)] [acc '()])
+          (if (and (>= i 0) (starts-with? (vector-ref lines i) ";"))
+              (loop (- i 1) (cons (strip-comment (vector-ref lines i)) acc))
+              acc)))))
+
 (define (site-description site)
-  (let* ([lines (source-lines (car site))] [n (cadr site)])
+  "Lines describing the definition at `site`: where it is, its first line
+   and its documentation."
+  (let* ([lines (list->vector (source-lines (car site)))] [n (cadr site)])
     (append (list (string-append "Defined in " (car site) ":" (number->string (+ n 1)))
                   ""
-                  (string-append "  " (list-ref lines n))
+                  (string-append "  " (vector-ref lines n))
                   "")
-            (let ([doc (doc-comment lines n)])
+            (let ([doc (definition-doc lines n)])
               (if (null? doc) (list "Not documented.") doc)))))
 
 ;;; One-line docs, shown beside commands in M-x (completion.scm)
@@ -74,17 +192,17 @@
 (define (document-command! name text)
   (set! *command-docs* (hash-insert *command-docs* (symbol->string name) text)))
 
-;; What a command does, in a line, or #f.
 (define (command-doc name docs)
+  "What a command does, in a line, or #f."
   (or (hash-try-get *command-docs* name) (hash-try-get docs name)))
 
 (define *doc-lines* (hash))
 (define *doc-lines-key* #f)  ; the sources (name . length) they were read from
 
-;; A hash of name -> the first line of the comment above its definition,
-;; from every loaded source, later sources winning (as describe-function
-;; finds init.scm's redefinition first). Read again when a source changes.
 (define (doc-lines)
+  "A hash of name -> the first line of its documentation, from every
+   loaded source, later sources winning (as describe-function finds
+   init.scm's redefinition first). Read again when a source changes."
   (let ([key (map (lambda (n) (cons n (string-length (or (source-text n) "")))) (source-names))])
     (unless (equal? key *doc-lines-key*)
       (set! *doc-lines* (foldl (lambda (name table) (source-doc-lines (source-lines name) table))
@@ -92,23 +210,36 @@
       (set! *doc-lines-key* key))
     *doc-lines*))
 
-;; Adds each definition in `lines` that has a comment right above it.
+(define (command-procedure-name line)
+  "The procedure a (define-command! 'name procedure) line names, or #f."
+  (and (starts-with? line "(define-command! '")
+       (let* ([lines (vector line)]
+              [after (skip-blank lines (skip-form lines (skip-blank lines (skip-form lines (cons 0 1)))))]
+              [c (source-char lines after)])
+         (and c (not (delimiter? c)) (not (equal? c #\()) (token-at lines after)))))
+
 (define (source-doc-lines lines table)
-  (let loop ([ls lines] [first #f] [in-comment? #f] [table table])
-    (if (null? ls)
-        table
-        (let ([line (car ls)])
-          (cond
-            [(starts-with? line ";")
-             (let ([text (trim (strip-comment line))])
-               (loop (cdr ls) (if (and in-comment? first) first (if (equal? text "") #f text)) #t table))]
-            [else
-             (let ([name (and first (defined-name line))])
-               (loop (cdr ls) #f #f (if name (hash-insert table name first) table)))])))))
+  "Adds each definition in `lines` that is documented. A command defined
+   as a named procedure gets that procedure's line."
+  (let ([v (list->vector lines)])
+    (let loop ([i 0] [table table] [aliases '()])
+      (if (= i (vector-length v))
+          (foldl (lambda (a t) (let ([doc (hash-try-get t (cdr a))]) (if doc (hash-insert t (car a) doc) t)))
+                 table aliases)
+          (let* ([line (vector-ref v i)] [name (defined-name line)])
+            (if (not name)
+                (loop (+ i 1) table aliases)
+                (let* ([doc (definition-doc v i)]
+                       [first (and (pair? doc) (not (equal? (trim (car doc)) "")) (trim (car doc)))]
+                       [proc (and (not first) (command-procedure-name line))])
+                  (loop (+ i 1)
+                        (if first (hash-insert table name first) table)
+                        (if proc (cons (cons name proc) aliases) aliases)))))))))
 
 ;;; describe-function, describe-option, apropos
 
 (define (describe-function name)
+  "Describe a function: where it is defined and its documentation (C-h f)."
   (let ([site (find-definition-site name)])
     (cond
       [site (show-popup! (cons (string-append name ":") (site-description site)))]
@@ -130,6 +261,7 @@
 
 ;; Names defined in the loaded sources that contain `text`.
 (define (apropos text)
+  "List definitions whose name contains a string."
   (let ([hits '()])
     (for-each
      (lambda (src)
@@ -142,8 +274,8 @@
      (source-names))
     (sort hits string<?)))
 
-;; The name a line defines, if it starts a definition.
 (define (defined-name line)
+  "The name a line defines, if it starts a definition."
   (let loop ([prefixes '("(define (" "(define-command! '" "(define-option! '" "(define-syntax " "(define ")])
     (cond
       [(null? prefixes) #f]
@@ -164,9 +296,9 @@
 
 (define *describing-keys* #f)  ; the keys read so far, or #f
 
-;; What a key sequence is bound to in normal mode, as (kind name site), or
-;; #f. Kinds: motion, operator, text-object, command.
 (define (key-description keys)
+  "What a key sequence is bound to in normal mode, as (kind name site), or
+   #f. Kinds: motion, operator, text-object, command."
   (let* ([quoted (string-append "\"" keys "\"")]
          [binds? (lambda (forms)
                    (lambda (line)
@@ -206,8 +338,8 @@
                    (cdr (site-description (caddr d)))
                    (list "" "No source line found.")))))))
 
-;; Called with each key while describe-key is reading.
 (define (describe-key-input! key)
+  "Called with each key while describe-key is reading."
   (let ([keys (string-append *describing-keys* key)])
     (if (and (prefix-key-for-describe? keys) (not (key-description keys)))
         (set! *describing-keys* keys)
@@ -216,30 +348,31 @@
           (set! *key-interceptor* #f)
           (show-key-description! keys)))))
 
-;; Whether `keys` could be the start of a longer key.
 (define (prefix-key-for-describe? keys)
+  "Whether `keys` could be the start of a longer key."
   (and (= (string-length keys) 1)
        (or (hash-contains? *prefix-keys* keys)
            (hash-contains? *char-motions* keys)
            (hash-contains? *char-commands* keys))))
 
-;; Describe what the next keys do (Emacs's C-h k).
 (define-command! 'describe-key
   (lambda (count)
+    "Describe what the next keys do (Emacs's C-h k)."
     (set! *describing-keys* "")
     (set! *key-interceptor* describe-key-input!)
     (message "Describe key: ")))
 
-;; Describe a function: where it is defined and its documentation (C-h f).
 (define-command! 'describe-function
-  (lambda (count) (open-cmdline! "Describe function: " "" describe-function #f #f)))
+  (lambda (count)
+    "Describe a function: where it is defined and its documentation (C-h f)."
+    (open-cmdline! "Describe function: " "" describe-function #f #f)))
 
 (define-command! 'describe-option
   (lambda (count) (open-cmdline! "Describe option: " "" describe-option #f #f)))
 
-;; List definitions whose name contains a string.
 (define-command! 'apropos
   (lambda (count)
+    "List definitions whose name contains a string."
     (open-cmdline! "Apropos: " ""
                    (lambda (text)
                      (let ([hits (apropos text)])
@@ -248,10 +381,10 @@
 
 ;;; Going to a definition
 
-;; Opens the source of `name`'s definition at its line. Runtime files open
-;; from disk when IMP_RUNTIME is set; otherwise as a copy of the embedded
-;; text in a buffer of its own.
 (define (find-definition name)
+  "Opens the source of `name`'s definition at its line. Runtime files open
+   from disk when IMP_RUNTIME is set; otherwise as a copy of the embedded
+   text in a buffer of its own."
   (let ([site (find-definition-site name)])
     (if (not site)
         (message (string-append "no definition of " name))
@@ -279,15 +412,15 @@
           (set! *source-buffers* (hash-insert *source-buffers* name id))
           id))))
 
-;; The Scheme symbol under the cursor.
 (define (symbol-at-cursor)
+  "The Scheme symbol under the cursor."
   (let ([r (form-at (cursor))])
     (and r (not (equal? (buffer-char-at (car r)) #\())
          (buffer-substring (car r) (cadr r)))))
 
-;; Go to the definition of the symbol under the cursor.
 (define-command! 'find-definition-at-point
   (lambda (count)
+    "Go to the definition of the symbol under the cursor."
     (let ([name (symbol-at-cursor)])
       (if name (find-definition name) (message "no symbol at the cursor")))))
 
@@ -301,7 +434,11 @@
             [else (message "K needs a language server for this file (see :help define-language-server!)")]))))
 
 (define-command! 'find-definition
-  (lambda (count) (open-cmdline! "Find definition: " "" find-definition #f #f)))
+  (lambda (count)
+    "Opens the source of `name`'s definition at its line. Runtime files open
+     from disk when IMP_RUNTIME is set; otherwise as a copy of the embedded
+     text in a buffer of its own."
+    (open-cmdline! "Find definition: " "" find-definition #f #f)))
 
 ;;; Ex commands: :help and friends
 

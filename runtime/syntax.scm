@@ -16,9 +16,9 @@
         'javascript-mode "javascript" 'typescript-mode "typescript"
         'nix-mode "nix" 'markdown-mode "markdown"))
 
-;; The language for the current buffer: its major mode's, with .tsx files
-;; parsed as TSX.
 (define (language-for-buffer)
+  "The language for the current buffer: its major mode's, with .tsx files
+   parsed as TSX."
   (let ([lang (hash-try-get *mode-languages* (major-mode))]
         [path (or (buffer-path) "")])
     (if (and (equal? lang "typescript") (ends-with? path ".tsx")) "tsx" lang)))
@@ -39,8 +39,8 @@
     (let ([tree (syntax-tree)])
       (show-popup! (if tree (split-sexp tree) (list "no syntax tree (no language for this buffer)"))))))
 
-;; Breaks a one-line S-expression into lines at each "(", indented by depth.
 (define (split-sexp text)
+  "Breaks a one-line S-expression into lines at each \"(\", indented by depth."
   (let loop ([cs (string->list text)] [depth 0] [line '()] [lines '()])
     (cond
       [(null? cs) (reverse (if (null? line) lines (cons (list->string (reverse line)) lines)))]
@@ -84,17 +84,17 @@
 
 (define-syntax-objects! "scheme" '("list") '("list") '("list"))
 
-;; The `n`th innermost node around `at` whose kind is in `kinds`.
 (define (enclosing-node at kinds n)
+  "The `n`th innermost node around `at` whose kind is in `kinds`."
   (let loop ([nodes (syntax-ancestors at)] [n n])
     (cond [(null? nodes) #f]
           [(member (node-kind (car nodes)) kinds)
            (if (= n 1) (car nodes) (loop (cdr nodes) (- n 1)))]
           [else (loop (cdr nodes) n)])))
 
-;; Scheme has no function nodes; a function is a list starting with
-;; define or lambda.
 (define (scheme-function? node)
+  "Scheme has no function nodes; a function is a list starting with
+   define or lambda."
   (let ([text (buffer-substring (+ 1 (node-start node)) (min (node-end node) (+ 8 (node-start node))))])
     (or (starts-with? text "define") (starts-with? text "lambda"))))
 
@@ -102,9 +102,9 @@
   (let* ([lang (buffer-language)] [spec (and lang (hash-try-get *syntax-objects* lang))])
     (and spec (list-ref spec which))))
 
-;; The inner part of a function or class: its body without the braces,
-;; whole lines when the braces sit on their own lines, as i{ does.
 (define (inner-range node)
+  "The inner part of a function or class: its body without the braces,
+   whole lines when the braces sit on their own lines, as i{ does."
   (let* ([body (let loop ([cs (syntax-children (node-start node) (node-end node))])
                  (cond [(null? cs) #f]
                        [(equal? (node-field (car cs)) "body") (car cs)]
@@ -141,10 +141,10 @@
                           (inner-range node))
                       (list (node-start node) (node-end node) #f))))))))
 
-;; aa and ia: an argument (or parameter, array element...). The node whose
-;; parent is a list kind; aa takes the comma and space after it, or before
-;; it if it is the last.
 (define (argument-object around?)
+  "aa and ia: an argument (or parameter, array element...). The node whose
+   parent is a list kind; aa takes the comma and space after it, or before
+   it if it is the last."
   (lambda (from n)
     (let ([lists (syntax-kinds 2)])
       (and lists

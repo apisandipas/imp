@@ -25,23 +25,23 @@
   (let ([handle (hash-try-get *wasm-plugins* name)])
     (or handle (error (string-append "no WASM plugin " (symbol->string name))))))
 
-;; Replaces start..end with (FUNCTION text) from the plugin, as one change.
 (define (wasm-replace! plugin function start end)
+  "Replaces start..end with (FUNCTION text) from the plugin, as one change."
   (let* ([text (buffer-substring start end)]
          [result (wasm-call (wasm-plugin plugin) function text)])
     (unless (equal? result text)
       (begin-change!)
       (replace-range! start end result))))
 
-;; An operator (define-operator!) that runs FUNCTION over the text moved over.
 (define (wasm-operator plugin function)
+  "An operator (define-operator!) that runs FUNCTION over the text moved over."
   (lambda (start end linewise?)
     (wasm-replace! plugin function start end)
     (set-cursor! (if linewise? (line-first-nonblank (offset->line start)) (min start (max 0 (- (buffer-length) 1)))))))
 
-;; A command that runs FUNCTION over the whole buffer, keeping the cursor's
-;; line.
 (define (define-wasm-filter! command plugin function)
+  "A command that runs FUNCTION over the whole buffer, keeping the cursor's
+   line."
   (define-command! command
     (lambda (count)
       (let ([line (current-line)])

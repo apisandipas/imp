@@ -40,9 +40,9 @@
 
 ;;; Changes made outside the editor
 
-;; Checks the current buffer's file. Reloads it if nothing would be lost;
-;; otherwise says so once until it changes again.
 (define (check-disk-change!)
+  "Checks the current buffer's file. Reloads it if nothing would be lost;
+   otherwise says so once until it changes again."
   (when (and (buffer-path) (buffer-changed-on-disk?))
     (cond
       [(and (option 'autoread) (not (buffer-modified?)) (file-exists? (buffer-path)))
@@ -67,8 +67,8 @@
 
 ;;; Autosave and recovery
 
-;; Where the autosave copy of `path` goes: its full path, slashes made %.
 (define (autosave-path path)
+  "Where the autosave copy of `path` goes: its full path, slashes made %."
   (let ([full (if (starts-with? path "/") path (string-append (current-dir) "/" path))])
     (string-append (imp-state-dir) "/autosave/"
                    (list->string (map (lambda (c) (if (equal? c #\/) #\% c)) (string->list full))))))
@@ -84,8 +84,8 @@
 (define (remove-autosave!)
   (when (buffer-path) (delete-file! (autosave-path (buffer-path)))))
 
-;; Whether there is an autosave copy newer than the file itself.
 (define (recoverable?)
+  "Whether there is an autosave copy newer than the file itself."
   (and (buffer-path)
        (let ([copy (file-mtime (autosave-path (buffer-path)))]
              [file (file-mtime (buffer-path))])
@@ -117,16 +117,16 @@
 ;;; copy-file). Each asks for the file, offering the current buffer's, and
 ;;; a buffer visiting it follows: deleted with the file, or renamed.
 
-;; What the file prompts start from: the current buffer's file, or the
-;; current directory.
 (define (file-prompt-default)
+  "What the file prompts start from: the current buffer's file, or the
+   current directory."
   (abbreviate-path (if (buffer-path)
                        (absolute-path (buffer-path))
                        (string-append (current-dir) "/"))))
 
-;; Asks for an existing file (not a directory), then calls `done` with
-;; its absolute path.
 (define (ask-existing-file prompt done)
+  "Asks for an existing file (not a directory), then calls `done` with
+   its absolute path."
   (ask prompt (file-prompt-default)
        (lambda (name)
          (let ([path (absolute-path (expand-path name))])
@@ -134,17 +134,17 @@
                  [(file-directory? path) (message (string-append name " is a directory; use the file browser (:Ex)"))]
                  [else (done path)])))))
 
-;; Where `from` goes when the answer is `name`: into `name` if that is a
-;; directory, as mv and cp do.
 (define (destination-path from name)
+  "Where `from` goes when the answer is `name`: into `name` if that is a
+   directory, as mv and cp do."
   (let ([to (absolute-path (expand-path name))])
     (if (file-directory? to)
         (string-append (if (ends-with? to "/") to (string-append to "/")) (file-name-of from))
         to)))
 
-;; Delete a file, the current buffer's unless you name another, after asking.
 (define-command! 'delete-file
   (lambda (count)
+    "Delete a file, the current buffer's unless you name another, after asking."
     (ask-existing-file "Delete file: "
       (lambda (path)
         (confirm! (string-append "Delete " (abbreviate-path path) "?")
@@ -156,9 +156,9 @@
                     [else (when id (kill-buffer! id))
                           (message (string-append "deleted " (abbreviate-path path)))]))))))))
 
-;; Rename or move a file, the current buffer's unless you name another.
 (define-command! 'rename-file
   (lambda (count)
+    "Rename or move a file, the current buffer's unless you name another."
     (ask-existing-file "Rename file: "
       (lambda (from)
         (ask (string-append "Rename " (abbreviate-path from) " to: ") (abbreviate-path from)
@@ -173,16 +173,16 @@
                           (when id (with-buffer id (lambda () (buffer-renamed! from to))))
                           (message (string-append "renamed " (abbreviate-path from) " to " (abbreviate-path to))))))))))))))
 
-;; Points the current buffer at its file's new path `to`: its name, its
-;; major mode (the extension may have changed) and its language server.
 (define (buffer-renamed! from to)
+  "Points the current buffer at its file's new path `to`: its name, its
+   major mode (the extension may have changed) and its language server."
   (set-buffer-path! to)
   (run-hooks 'buffer-renamed from)
   (pick-major-mode!))
 
-;; Copy a file, the current buffer's unless you name another.
 (define-command! 'copy-file
   (lambda (count)
+    "Copy a file, the current buffer's unless you name another."
     (ask-existing-file "Copy file: "
       (lambda (from)
         (ask (string-append "Copy " (abbreviate-path from) " to: ") (abbreviate-path from)

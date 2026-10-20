@@ -22,12 +22,12 @@
 (define (define-minor-mode! name setup teardown)
   (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown))))
 
-;; Files with no extension, or one that misleads, by their whole name.
 (define (define-file-name-mode! file-name mode)
+  "Files with no extension, or one that misleads, by their whole name."
   (set! *file-names* (hash-insert *file-names* file-name mode)))
 
-;; The keymap name for `mode` in `state`, e.g. scheme-mode:normal.
 (define (mode-keymap mode state)
+  "The keymap name for `mode` in `state`, e.g. scheme-mode:normal."
   (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
 
 (define (define-mode-key! mode state key command)
@@ -36,8 +36,8 @@
 (define (major-mode) (or (buffer-local 'major-mode) 'fundamental-mode))
 (define (minor-modes) (or (buffer-local 'minor-modes) '()))
 
-;; `mode` and its parents, nearest first.
 (define (mode-lineage mode)
+  "`mode` and its parents, nearest first."
   (let ([spec (hash-try-get *major-modes* mode)])
     (if (and spec (car spec)) (cons mode (mode-lineage (car spec))) (list mode))))
 
@@ -60,8 +60,8 @@
           [(equal? (string-ref name i) #\.) (substring name (+ i 1) (string-length name))]
           [else (loop (- i 1))])))
 
-;; The major mode for a file path.
 (define (mode-for-path path)
+  "The major mode for a file path."
   (let* ([name (file-name-of path)] [ext (extension-of name)])
     (or (hash-try-get *file-names* name)
         (and ext
@@ -71,9 +71,9 @@
                      [else (loop (cdr modes))])))
         'fundamental-mode)))
 
-;; Makes `mode` the current buffer's major mode: its parents' setups run
-;; first, then its own, so a mode can adjust what its parent set.
 (define (set-major-mode! mode)
+  "Makes `mode` the current buffer's major mode: its parents' setups run
+   first, then its own, so a mode can adjust what its parent set."
   (set-buffer-local! 'major-mode mode)
   (for-each (lambda (m)
               (let ([spec (hash-try-get *major-modes* m)])
@@ -82,9 +82,9 @@
   (show-major-mode!)
   (run-hooks 'major-mode mode))
 
-;; The status line shows the major mode's name, or the buffer's
-;; mode-line-label when it has one (org capture's keys).
 (define (show-major-mode!)
+  "The status line shows the major mode's name, or the buffer's
+   mode-line-label when it has one (org capture's keys)."
   (let* ([name (symbol->string (major-mode))]
          [short (or (buffer-local 'mode-line-label)
                     (if (ends-with? name "-mode") (substring name 0 (- (string-length name) 5)) name))])
@@ -92,8 +92,8 @@
     ;; %{major} in the status line, per buffer.
     (set-status-value! "major" short #f)))
 
-;; Turns minor mode `name` on or off in the current buffer.
 (define (minor-mode-on! name)
+  "Turns minor mode `name` on or off in the current buffer."
   (unless (memq name (minor-modes))
     (set-buffer-local! 'minor-modes (cons name (minor-modes)))
     (let ([spec (hash-try-get *minor-modes* name)])
@@ -108,9 +108,9 @@
 (define (toggle-minor-mode! name)
   (if (memq name (minor-modes)) (minor-mode-off! name) (minor-mode-on! name)))
 
-;; A buffer gets its major mode when it opens; switching buffers brings
-;; back its options and mode line.
 (define (pick-major-mode!)
+  "A buffer gets its major mode when it opens; switching buffers brings
+   back its options and mode line."
   (set-major-mode! (mode-for-path (or (buffer-path) ""))))
 
 (add-hook! 'buffer-open pick-major-mode!)
@@ -150,8 +150,8 @@
 
 (define-option! 'commentstring "# %s" '(cms))
 
-;; (before after) from commentstring, without padding spaces.
 (define (comment-parts)
+  "(before after) from commentstring, without padding spaces."
   (let* ([cs (option 'commentstring)]
          [at (let loop ([i 0]) (cond [(>= (+ i 1) (string-length cs)) #f]
                                      [(and (equal? (string-ref cs i) #\%) (equal? (string-ref cs (+ i 1)) #\s)) i]
@@ -259,9 +259,9 @@
 
 ;;; Scheme mode: the editor's own language
 
-;; K describes the symbol under the cursor, gd goes to its definition.
 (define-command! 'describe-symbol-at-point
   (lambda (count)
+    "K describes the symbol under the cursor, gd goes to its definition."
     (let ([name (symbol-at-cursor)])
       (if name (describe-function name) (message "no symbol at the cursor")))))
 
@@ -276,9 +276,9 @@
   (let ([table (or (hash-try-get *mode-leaders* mode) (hash))])
     (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description))))))
 
-;; SPC m shows the bindings of the buffer's major mode (and its parents).
 (define-command! 'local-leader
   (lambda (count)
+    "SPC m shows the bindings of the buffer's major mode (and its parents)."
     (let ([bindings (filter (lambda (x) x)
                             (map (lambda (m) (hash-try-get *mode-leaders* m)) (mode-lineage (major-mode))))])
       (if (null? bindings)
@@ -315,8 +315,8 @@
 
 (define-major-mode! 'repl-mode 'scheme-mode '() #f)
 
-;; Where the input after the last prompt starts.
 (define (repl-input-start)
+  "Where the input after the last prompt starts."
   (let loop ([line (last-line)])
     (cond [(< line 0) 0]
           [(starts-with? (buffer-substring (line-start line) (line-end line)) *repl-prompt*)

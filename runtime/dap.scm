@@ -42,8 +42,8 @@
 
 ;;; Launch configurations that come with imp
 
-;; The package name in a Cargo.toml, or #f.
 (define (cargo-package-name toml)
+  "The package name in a Cargo.toml, or #f."
   (let loop ([lines (split-lines (read-file toml))] [in-package? #f])
     (cond
       [(null? lines) #f]
@@ -52,8 +52,8 @@
        (let ([parts (split-quoted (car lines))]) (and (pair? parts) (car parts)))]
       [else (loop (cdr lines) in-package?)])))
 
-;; The "quoted" parts of a line.
 (define (split-quoted text)
+  "The \"quoted\" parts of a line."
   (let loop ([cs (string->list text)] [cur #f] [out '()])
     (cond [(null? cs) (reverse out)]
           [(and (equal? (car cs) #\") cur) (loop (cdr cs) #f (cons (list->string (reverse cur)) out))]
@@ -61,8 +61,8 @@
           [cur (loop (cdr cs) (cons (car cs) cur) out)]
           [else (loop (cdr cs) #f out)])))
 
-;; A compiled program: asks for it, suggesting Cargo's debug build.
 (define (native-launch done)
+  "A compiled program: asks for it, suggesting Cargo's debug build."
   (let* ([file (absolute-path (or (buffer-path) "."))]
          [root (lsp-root file '("Cargo.toml"))]
          [toml (string-append root "/Cargo.toml")]
@@ -122,8 +122,8 @@
 
 (add-hook! 'after-change (lambda () (when (pair? (breakpoint-marks)) (show-breakpoints!))))
 
-;; Tells the adapter the current buffer's breakpoints (1-based lines).
 (define (send-breakpoints!)
+  "Tells the adapter the current buffer's breakpoints (1-based lines)."
   (when (buffer-path)
     (let ([lines (map (lambda (l) (+ l 1)) (breakpoint-lines))])
       (dap-request! "setBreakpoints"
@@ -139,9 +139,9 @@
 
 (define (next-dap-seq!) (set! *dap-seq* (+ *dap-seq* 1)) *dap-seq*)
 
-;; Sends request `command`; `on-response` gets the response's body when it
-;; succeeds. A failure is shown.
 (define (dap-request! command arguments on-response)
+  "Sends request `command`; `on-response` gets the response's body when it
+   succeeds. A failure is shown."
   (let ([seq (next-dap-seq!)])
     (when on-response (set! *dap-pending* (hash-insert *dap-pending* seq on-response)))
     (dap-write! (hash "seq" seq "type" "request" "command" command "arguments" arguments))
@@ -227,8 +227,8 @@
 
 (add-hook! 'buffer-enter show-stopped-line!)
 
-;; Opens a frame's source at its line and marks it.
 (define (show-frame! frame)
+  "Opens a frame's source at its line and marks it."
   (set! *dap-frame* (jget frame "id"))
   (let ([path (jget frame "source" "path")]
         [line (max 0 (- (or (jget frame "line") 1) 1))]
@@ -279,9 +279,9 @@
                     (dap-request! "launch" arguments #f)))
     (message (string-append "debugging with " (car spec)))))
 
-;; Starts debugging the current buffer's program, or continues it.
 (define-command! 'debug-continue
   (lambda (count)
+    "Starts debugging the current buffer's program, or continues it."
     (cond
       [*dap-job*
        (if *dap-thread*
@@ -339,10 +339,10 @@
                              (let ([hit (assoc choice entries)])
                                (when hit (show-frame! (cdr hit))))))))))
 
-;; The variables of the shown frame, by scope; one with children has a
-;; ▸ (evaluate it with SPC d e to see inside).
 (define-command! 'debug-variables
   (lambda (count)
+    "The variables of the shown frame, by scope; one with children has a
+     ▸ (evaluate it with SPC d e to see inside)."
     (if (not *dap-frame*)
         (message "not stopped in a debug session")
         (dap-request! "scopes" (hash "frameId" *dap-frame*)

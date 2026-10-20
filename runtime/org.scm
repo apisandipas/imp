@@ -26,8 +26,8 @@
 
 ;;; Headings and subtrees
 
-;; The level of the heading on `line` (how many stars), or #f.
 (define (org-level-of text)
+  "The level of the heading on `line` (how many stars), or #f."
   (let ([n (string-length text)])
     (let loop ([i 0])
       (cond [(and (< i n) (equal? (string-ref text i) #\*)) (loop (+ i 1))]
@@ -36,28 +36,28 @@
 
 (define (org-level line) (org-level-of (line-text line)))
 
-;; The heading at or above `line`, or #f.
 (define (org-heading-line line)
+  "The heading at or above `line`, or #f."
   (let loop ([l line]) (cond [(< l 0) #f] [(org-level l) l] [else (loop (- l 1))])))
 
-;; The last line under the heading on `line`, before a heading of its
-;; level or higher.
 (define (org-subtree-end line)
+  "The last line under the heading on `line`, before a heading of its
+   level or higher."
   (let ([level (org-level line)])
     (let loop ([l (+ line 1)])
       (cond [(> l (last-line)) (last-line)]
             [(let ([lv (org-level l)]) (and lv (<= lv level))) (- l 1)]
             [else (loop (+ l 1))]))))
 
-;; The last line of the heading's own text, before any heading.
 (define (org-body-end line)
+  "The last line of the heading's own text, before any heading."
   (let loop ([l (+ line 1)])
     (cond [(> l (last-line)) (last-line)]
           [(org-level l) (- l 1)]
           [else (loop (+ l 1))])))
 
-;; The headings directly under the one on `line`.
 (define (org-children line)
+  "The headings directly under the one on `line`."
   (let ([end (org-subtree-end line)])
     (let loop ([l (+ line 1)] [acc '()] [child-level #f])
       (if (> l end)
@@ -80,9 +80,9 @@
 
 (define (org-fold! first last) (when (> last first) (fold-create! first last #t)))
 
-;; Cycles the subtree under the heading on `line`: FOLDED, CHILDREN (the
-;; child headings, their text hidden), SUBTREE (everything).
 (define (org-cycle! line)
+  "Cycles the subtree under the heading on `line`: FOLDED, CHILDREN (the
+   child headings, their text hidden), SUBTREE (everything)."
   (let ([end (org-subtree-end line)] [children (org-children line)])
     (cond
       [(= end line) (message "empty entry")]
@@ -98,9 +98,9 @@
       [else (org-fold! line end) (message "FOLDED")])
     (set-cursor! (line-start line))))
 
-;; Cycles the whole buffer: OVERVIEW (top headings), CONTENTS (every
-;; heading), SHOW ALL.
 (define (org-global-cycle!)
+  "Cycles the whole buffer: OVERVIEW (top headings), CONTENTS (every
+   heading), SHOW ALL."
   (let ([state (or (buffer-local 'org-visibility) 'all)] [headings (org-headings)])
     (org-unfold! 0 (last-line))
     (cond
@@ -119,12 +119,12 @@
 
 ;;; Editing lines
 
-;; Text of lines first..last, each ending in a line break.
 (define (org-lines-text first last)
+  "Text of lines first..last, each ending in a line break."
   (string-append (buffer-substring (line-start first) (line-end last)) "\n"))
 
-;; Replaces lines first..last with `text` (lines ending in line breaks).
 (define (org-replace-lines! first last text)
+  "Replaces lines first..last with `text` (lines ending in line breaks)."
   (let* ([end (line-end last)] [break? (< end (buffer-length))])
     (replace-range! (line-start first) (if break? (+ end 1) end)
                     (if break? text (substring text 0 (- (string-length text) 1))))))
@@ -132,13 +132,13 @@
 (define (org-set-line! line text)
   (replace-range! (line-start line) (line-end line) text))
 
-;; The keyword the heading text after its stars starts with, or #f.
 (define (org-keyword-in rest)
+  "The keyword the heading text after its stars starts with, or #f."
   (list-find (lambda (k) (or (equal? rest k) (starts-with? rest (string-append k " "))))
              (option 'org-todo-keywords)))
 
-;; Moves the heading on `line` to the next TODO keyword (none after the last).
 (define (org-todo-cycle! line)
+  "Moves the heading on `line` to the next TODO keyword (none after the last)."
   (let* ([text (line-text line)]
          [level (org-level line)]
          [rest (substring text (+ level 1) (string-length text))]
@@ -154,8 +154,8 @@
     (set-cursor! (line-start line))
     (message (or next "no keyword"))))
 
-;; A list item on `line`: (indent-width marker-end checkbox-offset-or-#f), or #f.
 (define (org-list-item line)
+  "A list item on `line`: (indent-width marker-end checkbox-offset-or-#f), or #f."
   (let* ([text (line-text line)] [n (string-length text)] [start (line-start line)])
     (let skip ([i 0])
       (cond
@@ -179,9 +179,9 @@
                            (equal? (string-ref text (+ after 2)) #\])
                            (+ start after)))))]))))
 
-;; Toggles the checkbox on `line`, then updates the [n/m] or [n%] cookie of
-;; its heading.
 (define (org-toggle-checkbox! line)
+  "Toggles the checkbox on `line`, then updates the [n/m] or [n%] cookie of
+   its heading."
   (let* ([item (org-list-item line)] [box (and item (caddr item))])
     (when box
       (begin-change!)
@@ -197,8 +197,8 @@
                  acc)))
          (list 0 0) (range first (+ last 1))))
 
-;; The [..] cookie in `text`: (start end percent?), or #f.
 (define (org-find-cookie text)
+  "The [..] cookie in `text`: (start end percent?), or #f."
   (let ([n (string-length text)])
     (let loop ([i 0])
       (cond
@@ -225,8 +225,8 @@
              [start (+ (line-start heading) (car cookie))])
         (replace-range! start (+ (line-start heading) (cadr cookie)) new)))))
 
-;; M-<ret>: a new item after a list item, or a heading after this subtree.
 (define (org-insert-heading!)
+  "M-<ret>: a new item after a list item, or a heading after this subtree."
   (let* ([line (current-line)] [item (org-list-item line)] [h (org-heading-line line)])
     (begin-change!)
     (cond
@@ -250,9 +250,9 @@
     (set-mode! 'insert)
     (set! *insert-start* (cursor))))
 
-;; Promotes (-1) or demotes (+1) the heading or list item on `line`, or
-;; with `subtree?` every heading under it too.
 (define (org-shift! line delta subtree?)
+  "Promotes (-1) or demotes (+1) the heading or list item on `line`, or
+   with `subtree?` every heading under it too."
   (let ([level (org-level line)] [item (org-list-item line)])
     (cond
       [level
@@ -272,9 +272,9 @@
            (buffer-delete! (line-start line) (+ (line-start line) (min 2 (car item)))))]
       [else (message "not on a heading or list item")])))
 
-;; Swaps the subtree under the heading at the cursor with the sibling
-;; after it (down?) or before it.
 (define (org-move-subtree! down?)
+  "Swaps the subtree under the heading at the cursor with the sibling
+   after it (down?) or before it."
   (let* ([h (org-heading-line (current-line))] [level (and h (org-level h))])
     (if (not h)
         (message "not in a subtree")
@@ -297,9 +297,9 @@
 
 ;;; Links
 
-;; The link at offset `at`: its target, or #f. [[target][text]],
-;; [[target]], or a bare http(s) URL.
 (define (org-link-at at)
+  "The link at offset `at`: its target, or #f. [[target][text]],
+   [[target]], or a bare http(s) URL."
   (let* ([line (offset->line at)] [text (line-text line)] [col (- at (line-start line))] [n (string-length text)])
     (or
      (let loop ([i 0])
@@ -360,9 +360,9 @@
          [parts (if (and (pair? parts) (equal? (trim (last parts)) "")) (reverse (cdr (reverse parts))) parts)])
     (map trim parts)))
 
-;; Aligns the table around `line`, keeping the cursor in its cell. Returns
-;; (first-line cell-index) of where the cursor was.
 (define (org-table-align! line)
+  "Aligns the table around `line`, keeping the cursor in its cell. Returns
+   (first-line cell-index) of where the cursor was."
   (let* ([bounds (org-table-bounds line)] [first (car bounds)] [last (cadr bounds)]
          [texts (map line-text (range first (+ last 1)))]
          [indent (let ([t (car texts)]) (substring t 0 (- (string-length t) (string-length (trim-start t)))))]
@@ -385,14 +385,14 @@
       (org-replace-lines! first last new))
     (list first cols (max 1 cell-index))))
 
-;; Moves to cell `index` (1-based) of row `line`.
 (define (org-go-to-cell! line index)
+  "Moves to cell `index` (1-based) of row `line`."
   (let* ([t (line-text line)] [bars (filter (lambda (i) (equal? (string-ref t i) #\|)) (range 0 (string-length t)))])
     (set-cursor! (+ (line-start line) (min (+ (list-ref bars (min (- index 1) (- (length bars) 1))) 2) (string-length t))))))
 
-;; <tab> in a table: align it and go to the next cell, past rules, adding
-;; a row at the end.
 (define (org-table-next-cell!)
+  "<tab> in a table: align it and go to the next cell, past rules, adding
+   a row at the end."
   (let* ([line (current-line)] [r (org-table-align! line)] [cols (cadr r)] [index (caddr r)])
     (if (< index cols)
         (org-go-to-cell! line (+ index 1))
@@ -444,16 +444,16 @@
                    (filter (lambda (f) (ends-with? f ".org")) (list-files dir 10000)))
               '())))))
 
-;; The date in "<2026-10-18 Sun>" after `key` on `text`, or #f.
 (define (org-date-after text key)
+  "The date in \"<2026-10-18 Sun>\" after `key` on `text`, or #f."
   (let ([parts (split-once text key)])
     (and (pair? parts) (pair? (cdr parts))
          (let ([rest (trim-start (cadr parts))])
            (and (>= (string-length rest) 11) (member (substring rest 0 1) '("<" "["))
                 (substring rest 1 11))))))
 
-;; Agenda entries in `file`: (file line keyword title scheduled deadline).
 (define (org-file-entries file)
+  "Agenda entries in `file`: (file line keyword title scheduled deadline)."
   (let loop ([lines (text-lines (read-file file))] [n 0] [acc '()] [current #f])
     (let ([finish (lambda (acc) (if current (cons current acc) acc))])
       (if (null? lines)
@@ -563,21 +563,21 @@
 (define-capture-template! "n" "Note" '(file+headline "" "Notes") "* %? %a\n/Entered on/ %U")
 (define-capture-template! "j" "Journal" '(file+datetree "journal.org") "* %<%H:%M> %?")
 
-;; `path` under org-directory unless it is absolute (or starts with ~);
-;; "" is the default notes file.
 (define (org-path path)
+  "`path` under org-directory unless it is absolute (or starts with ~);
+   \"\" is the default notes file."
   (cond [(equal? path "") (org-notes-file)]
         [(or (starts-with? path "/") (starts-with? path "~")) (expand-path path)]
         [else (string-append (expand-path (option 'org-directory)) "/" path)]))
 
-;; The time, as (date day time weekday month-name): ("2026-10-19" "Mon"
-;; "14:02" "Monday" "October").
 (define (capture-clock)
+  "The time, as (date day time weekday month-name): (\"2026-10-19\" \"Mon\"
+   \"14:02\" \"Monday\" \"October\")."
   (let ([parts (split-many (trim (cadr (run-shell "date '+%Y-%m-%d|%a|%H:%M|%A|%B'" ""))) "|")])
     (if (= (length parts) 5) parts (list "1970-01-01" "Thu" "00:00" "Thursday" "January"))))
 
-;; What a template can refer to, gathered where capture starts.
 (define (capture-context)
+  "What a template can refer to, gathered where capture starts."
   (list (cons 'clock (capture-clock))
         (cons 'path (and (buffer-path) (absolute-path (buffer-path))))
         (cons 'line (+ (current-line) 1))
@@ -587,8 +587,8 @@
 
 (define (context-ref ctx key) (cdr (assq key ctx)))
 
-;; The %^{Prompt} prompts in `template`, in order.
 (define (capture-prompts template)
+  "The %^{Prompt} prompts in `template`, in order."
   (let loop ([i 0] [acc '()])
     (let ([at (string-index-from template "%^{" i)])
       (if (not at)
@@ -598,17 +598,17 @@
                 (loop (+ close 1) (cons (substring template (+ at 3) close) acc))
                 (reverse acc)))))))
 
-;; The first index of `needle` in `text` at or after `from`, or #f.
 (define (string-index-from text needle from)
+  "The first index of `needle` in `text` at or after `from`, or #f."
   (let ([n (string-length text)] [m (string-length needle)])
     (let loop ([i from])
       (cond [(> (+ i m) n) #f]
             [(equal? (substring text i (+ i m)) needle) i]
             [else (loop (+ i 1))]))))
 
-;; `template` filled in from `ctx`, with `answers` for its prompts in
-;; order: (text cursor), the cursor where %? was (else the end).
 (define (capture-expand template ctx answers)
+  "`template` filled in from `ctx`, with `answers` for its prompts in
+   order: (text cursor), the cursor where %? was (else the end)."
   (let* ([clock (context-ref ctx 'clock)]
          [date (car clock)] [day (cadr clock)] [time (caddr clock)]
          [path (context-ref ctx 'path)]
@@ -645,19 +645,19 @@
              [else (loop (+ i 1) (string-append out "%") cursor answers)]))]
         [else (loop (+ i 1) (string-append out (string (string-ref template i))) cursor answers)]))))
 
-;; Asks each prompt in turn, then calls `done` with the answers.
 (define (ask-all prompts done)
+  "Asks each prompt in turn, then calls `done` with the answers."
   (let loop ([prompts prompts] [acc '()])
     (if (null? prompts)
         (done (reverse acc))
         (ask (string-append (car prompts) ": ") ""
              (lambda (answer) (loop (cdr prompts) (cons answer acc)))))))
 
-;; Where an entry goes in a file's `lines`: (index text), the text going
-;; before line `index` (the line count for the end). It holds any
-;; headings the target needs that aren't there yet, then `entry` with its
-;; headings moved under the target's.
 (define (capture-placement lines target entry clock)
+  "Where an entry goes in a file's `lines`: (index text), the text going
+   before line `index` (the line count for the end). It holds any
+   headings the target needs that aren't there yet, then `entry` with its
+   headings moved under the target's."
   (let* ([lines (list->vector lines)] [count (vector-length lines)]
          [level-at (lambda (i) (org-level-of (vector-ref lines i)))]
          ;; The end of the subtree under the heading at `h` (level `level`).
@@ -717,17 +717,17 @@
                             (org-demote-entry entry 3))))))))]
       [else (list count (org-demote-entry entry 0))])))
 
-;; `entry` with each heading `by` levels deeper, ending in a line break.
 (define (org-demote-entry entry by)
+  "`entry` with each heading `by` levels deeper, ending in a line break."
   (apply string-append
          (map (lambda (line)
                 (string-append (if (org-level-of line) (string-append (make-string by #\*) line) line) "\n"))
               (text-lines entry))))
 
-;; Files `entry` (text ending in a line break) at `target`. A buffer that
-;; has the file gets it (and is saved, if it had no other changes);
-;; otherwise the file is written. Returns the path.
 (define (capture-file! target entry clock)
+  "Files `entry` (text ending in a line break) at `target`. A buffer that
+   has the file gets it (and is saved, if it had no other changes);
+   otherwise the file is written. Returns the path."
   (let* ([path (org-path (cadr target))] [id (buffer-for-path path)])
     (if id
         (with-buffer id
@@ -754,8 +754,8 @@
           (write-text-file! path (string-append (join before) (cadr place) (join after)))))
     path))
 
-;; Starts capturing with template `t`.
 (define (capture-with! t)
+  "Starts capturing with template `t`."
   (let ([ctx (capture-context)])
     (when (eq? *mode* 'visual) (leave-visual!))
     (ask-all (capture-prompts (cadddr t))
@@ -773,8 +773,8 @@
           ((enter-insert! 'here) 1)
           (capture-hint!))))))
 
-;; Where the capture goes and its keys, on the message line.
 (define (capture-hint!)
+  "Where the capture goes and its keys, on the message line."
   (let ([t (car (buffer-local 'capture))])
     (message (string-append (cadr t) " → " (capture-target-label (caddr t))
                             ": C-c C-c to file, C-c C-k to cancel, C-c C-w to refile"))))
@@ -795,23 +795,23 @@
                  (map (lambda (t) (list (car t) (cadr t) (lambda () (capture-with! t))))
                       *capture-templates*))]))
 
-;; Closes the capture buffer and its window.
 (define (capture-close!)
+  "Closes the capture buffer and its window."
   (let ([id (current-buffer)])
     (when (memq *mode* '(insert replace)) (leave-insert!))
     (set-buffer-unmodified!)
     (run-command 'quit-window)
     (when (memv id (buffer-list)) (kill-buffer! id))))
 
-;; The entry as typed, or #f when nothing was added to the template.
 (define (capture-entry)
+  "The entry as typed, or #f when nothing was added to the template."
   (let ([text (buffer-substring 0 (buffer-length))] [made (caddr (buffer-local 'capture))])
     (and (not (equal? (trim text) (trim made)))
          (not (equal? (trim text) ""))
          (trim-end text))))
 
-;; Files the capture at `target` (its template's, unless refiling).
 (define (capture-finish-at! target)
+  "Files the capture at `target` (its template's, unless refiling)."
   (let ([entry (capture-entry)] [clock (context-ref (cadr (buffer-local 'capture)) 'clock)])
     (capture-close!)
     (if entry
@@ -828,8 +828,8 @@
 (define (capture-abort!)
   (when (buffer-local 'capture) (capture-close!) (message "capture cancelled")))
 
-;; Every heading in the agenda files, as ("file › outline path" path line).
 (define (org-refile-targets)
+  "Every heading in the agenda files, as (\"file › outline path\" path line)."
   (apply append
          (map (lambda (path)
                 (let loop ([lines (if (file-exists? path) (text-lines (read-file path)) '())] [n 0] [stack '()] [acc '()])

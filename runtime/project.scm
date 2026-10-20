@@ -16,8 +16,8 @@
 (define-option! 'project-markers '(".git" ".hg" ".jj" ".project") '())
 (define-option! 'grepprg "" '())
 
-;; The project root of directory `dir`, or #f.
 (define (project-root-of dir)
+  "The project root of directory `dir`, or #f."
   (let try ([markers (option 'project-markers)])
     (if (null? markers)
         #f
@@ -29,9 +29,9 @@
 (define (absolute path)
   (let ([p (expand-path path)]) (if (starts-with? p "/") p (string-append (current-dir) "/" p))))
 
-;; The current buffer's project root (a browser buffer's directory counts),
-;; or #f.
 (define (project-root)
+  "The current buffer's project root (a browser buffer's directory counts),
+   or #f."
   (project-root-of (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
                          [(buffer-local 'git-root) (buffer-local 'git-root)]
                          [(buffer-path) (directory-of (absolute (buffer-path)))]
@@ -44,9 +44,9 @@
 (define (known-projects)
   (if (file-exists? (projects-file)) (text-lines (read-file (projects-file))) '()))
 
-;; Remembering is a convenience: an unwritable state directory isn't an
-;; error worth showing.
 (define (remember-project! root)
+  "Remembering is a convenience: an unwritable state directory isn't an
+   error worth showing."
   (with-handler
    (lambda (e) #f)
    (let ([known (known-projects)])
@@ -105,9 +105,9 @@
 
 (define (digits? s) (and (> (string-length s) 0) (char-numeric-ascii? (string-ref s 0)) (string->number s) #t))
 
-;; One output line, "path:line:col:text" or "path:line:text", as a quickfix
-;; entry with the path made absolute, or #f.
 (define (parse-grep-line root line)
+  "One output line, \"path:line:col:text\" or \"path:line:text\", as a quickfix
+   entry with the path made absolute, or #f."
   (let ([a (split-once line ":")])
     (and (pair? a) (pair? (cdr a))
          (let ([b (split-once (cadr a) ":")])
@@ -120,9 +120,9 @@
                         (if col? (string->number (car c)) 1)
                         (if col? (cadr c) (cadr b)))))))))
 
-;; Searches the project for `pattern`, filling the quickfix list; returns
-;; how many matches.
 (define (project-grep! root pattern)
+  "Searches the project for `pattern`, filling the quickfix list; returns
+   how many matches."
   (let* ([r (run-shell (string-append "cd " (shell-quote root) " && " (grep-command pattern)) "")]
          [entries (filter (lambda (x) x) (map (lambda (l) (parse-grep-line root l)) (text-lines (cadr r))))])
     (set! *quickfix* entries)
@@ -137,8 +137,8 @@
     (string-append (if (and root (under? p root)) (substring p (+ (string-length root) 1) (string-length p)) p)
                    ":" (number->string (cadr e)) ": " (trim (cadddr e)))))
 
-;; Jumps to entry `i` of the list.
 (define (quickfix-go! i)
+  "Jumps to entry `i` of the list."
   (if (null? *quickfix*)
       (message "E42: No Errors")
       (let ([i (clamp i 0 (- (length *quickfix*) 1))])

@@ -25,8 +25,8 @@
 
 (define-option! 'packages-dir "" '())
 
-;; (key value ...) options as a lookup.
 (define (package-option options key)
+  "(key value ...) options as a lookup."
   (let loop ([o options])
     (cond [(or (null? o) (null? (cdr o))) #f]
           [(eq? (car o) key) (cadr o)]
@@ -43,8 +43,8 @@
                                                       (string->list text))))
                  "'"))
 
-;; Runs a shell command, returning #t or saying what went wrong.
 (define (run-or-report! command)
+  "Runs a shell command, returning #t or saying what went wrong."
   (let ([r (run-shell command "")])
     (or (= (car r) 0)
         (begin (message (string-append "failed: " command ": " (cadr r))) #f))))
@@ -61,8 +61,8 @@
   (set! *packages*
         (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*)))
 
-;; Loads package `name`: its main file, then its 'config.
 (define (load-package! name)
+  "Loads package `name`: its main file, then its 'config."
   (let* ([p (assq name *packages*)] [dir (caddr p)] [options (cadddr p)]
          [file (package-main-file dir (symbol->string name))])
     (if (not file)

@@ -20,9 +20,9 @@
 (define (take-at-most items n)
   (if (or (null? items) (<= n 0)) '() (cons (car items) (take-at-most (cdr items) (- n 1)))))
 
-;; Remembering is a convenience: an unwritable state directory isn't an
-;; error worth showing.
 (define (remember-file! path)
+  "Remembering is a convenience: an unwritable state directory isn't an
+   error worth showing."
   (with-handler
    (lambda (e) #f)
    (let* ([known (recent-files)])
@@ -54,9 +54,9 @@
 
 (define (start-entry key label face action) (list key label face action))
 
-;; What the screen offers, as (key label face action): recent files on
-;; digits, projects on letters, then commands.
 (define (start-entries)
+  "What the screen offers, as (key label face action): recent files on
+   digits, projects on letters, then commands."
   (let* ([files (take-at-most (filter file-exists? (recent-files)) 9)]
          [projects (take-at-most (filter file-directory? (known-projects)) 5)]
          [n 0])
@@ -123,14 +123,14 @@
 
 (define (start-run! entry) ((list-ref entry 3)))
 
-;; The key typed on the start screen, if it names an entry.
 (define (start-key! key)
+  "The key typed on the start screen, if it names an entry."
   (let ([entry (list-find (lambda (e) (equal? (car e) key)) (or (buffer-local 'start-entries) '()))])
     (if entry (start-run! entry) (message (string-append (key-label key) " is undefined")))))
 
-;; An unnamed buffer (with `changed?`, even one with text in it), or a
-;; new one.
 (define (start-new-buffer! changed?)
+  "An unnamed buffer (with `changed?`, even one with text in it), or a
+   new one."
   (let ([blank (list-find (lambda (id)
                             (let ([info (buffer-info id)])
                               (and (equal? (car info) "[No Name]") (or changed? (not (caddr info))))))
@@ -151,9 +151,10 @@
   (start-draw!))
 
 (define-ex! '("start") (lambda (ex) (show-start-screen!)))
-;; Show the start screen: recent files, projects and a few commands.
-(define-command! 'start-screen (lambda (count) (show-start-screen!)))
+(define-command! 'start-screen (lambda (count)
+                                 "Show the start screen: recent files, projects and a few commands."
+                                 (show-start-screen!)))
 
-;; Called by the editor when it starts with no file.
 (define (imp-start-screen)
+  "Called by the editor when it starts with no file."
   (when (option 'start-screen) (show-start-screen!)))

@@ -20,11 +20,12 @@
 (define-option! 'dired-show-hidden #f '())
 (define-option! 'dired-details #t '())
 
-;; Each listed entry has a sticky mark at the start of its line: text
-;; typed at the start of the line (cw, cc, I) goes after it, so a renamed
-;; line keeps its mark. Deleting a line moves its mark onto the next line,
-;; or (for the last lines) to the end of the line before.
-(define (dired-mark i) (string-append "dired:" (number->string i)))
+(define (dired-mark i)
+  "Each listed entry has a sticky mark at the start of its line: text
+   typed at the start of the line (cw, cc, I) goes after it, so a renamed
+   line keeps its mark. Deleting a line moves its mark onto the next line,
+   or (for the last lines) to the end of the line before."
+  (string-append "dired:" (number->string i)))
 
 (define (dired-dir) (buffer-local 'dired-dir))
 
@@ -35,16 +36,16 @@
 
 (define (dired-hidden? name) (starts-with? name "."))
 
-;; The entries to show: (name directory?), directories first.
 (define (dired-listing dir)
+  "The entries to show: (name directory?), directories first."
   (let ([entries (directory-entries dir)])
     (if (string? entries)
         (begin (message entries) '())
         (let ([shown (filter (lambda (e) (or (option 'dired-show-hidden) (not (dired-hidden? (car e))))) entries)])
           (append (filter cadr shown) (filter (lambda (e) (not (cadr e))) shown))))))
 
-;; Lists the current buffer's directory afresh.
 (define (dired-refresh!)
+  "Lists the current buffer's directory afresh."
   (let* ([dir (dired-dir)] [entries (dired-listing dir)] [old (buffer-local 'dired-entries)])
     (when old (for-each (lambda (e) (mark-delete! (dired-mark (car e)))) old))
     (set-buffer-contents!
@@ -61,9 +62,9 @@
 
 ;;; Details: permissions, size and modification time, in the margin
 
-;; Days since 1970-01-01 as (year month day): Howard Hinnant's
-;; civil_from_days.
 (define (civil-from-days days)
+  "Days since 1970-01-01 as (year month day): Howard Hinnant's
+   civil_from_days."
   (let* ([z (+ days 719468)]
          [era (quotient (if (>= z 0) z (- z 146096)) 146097)]
          [doe (- z (* era 146097))]
@@ -78,10 +79,10 @@
 
 (define (two-digits n) (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
 
-;; `seconds` (since the epoch, UTC) as ls shows it, 12 columns: "Oct 19 14:02"
-;; within half a year of `now`, else "Oct 19  2024". `offset` is the local
-;; time zone's, in seconds.
 (define (format-file-time seconds now offset)
+  "`seconds` (since the epoch, UTC) as ls shows it, 12 columns: \"Oct 19 14:02\"
+   within half a year of `now`, else \"Oct 19  2024\". `offset` is the local
+   time zone's, in seconds."
   (let* ([local (+ seconds offset)]
          [date (civil-from-days (quotient local 86400))]
          [in-day (modulo local 86400)]
@@ -92,8 +93,8 @@
         (string-append head " " (two-digits (quotient in-day 3600)) ":" (two-digits (quotient (modulo in-day 3600) 60)))
         (string-append head "  " (number->string (car date))))))
 
-;; A size as ls -h shows it: 512, 4.0K, 12K, 1.5M.
 (define (format-file-size bytes)
+  "A size as ls -h shows it: 512, 4.0K, 12K, 1.5M."
   (let loop ([n bytes] [units '("K" "M" "G" "T" "P")] [unit ""])
     (cond [(< n 1024)
            (cond [(equal? unit "") (number->string n)]
@@ -106,8 +107,8 @@
           [(null? units) (string-append (number->string (exact (round n))) unit)]
           [else (loop (/ n 1024.0) (cdr units) (car units))])))
 
-;; The current time and the local zone's offset from UTC, in seconds.
 (define (clock-now)
+  "The current time and the local zone's offset from UTC, in seconds."
   (let ([words (split-whitespace (cadr (run-shell "date '+%s %z'" "")))])
     (if (= (length words) 2)
         (let* ([z (cadr words)]
@@ -117,9 +118,9 @@
           (list (or (string->number (car words)) 0) (* sign (+ (* hours 3600) (* minutes 60)))))
         (list 0 0))))
 
-;; Reads every entry's details into the buffer-local dired-details, a hash
-;; of entry index -> margin parts.
 (define (dired-read-details! dir)
+  "Reads every entry's details into the buffer-local dired-details, a hash
+   of entry index -> margin parts."
   (let* ([clock (clock-now)] [now (car clock)] [offset (cadr clock)])
     (set-buffer-local! 'dired-details
       (foldl (lambda (e h)
@@ -132,8 +133,8 @@
                      h)))
              (hash) (buffer-local 'dired-entries)))))
 
-;; Puts each entry's details beside the line it is on now.
 (define (dired-show-details!)
+  "Puts each entry's details beside the line it is on now."
   (let ([details (buffer-local 'dired-details)])
     (set-buffer-local! 'dired-details-version (buffer-version))
     (set-margin!
@@ -157,9 +158,9 @@
 
 (define (dired-buffer-name dir) (if (equal? dir "/") "/" (string-append dir "/")))
 
-;; Opens `dir` (an absolute path) in a browser buffer, the cursor on
-;; `focus` (a name) if given.
 (define (dired-open! dir . focus)
+  "Opens `dir` (an absolute path) in a browser buffer, the cursor on
+   `focus` (a name) if given."
   (let* ([dir (if (and (> (string-length dir) 1) (ends-with? dir "/")) (substring dir 0 (- (string-length dir) 1)) dir)]
          [name (dired-buffer-name dir)]
          [existing (list-find (lambda (id) (equal? (car (buffer-info id)) name)) (buffer-list))]
@@ -194,13 +195,13 @@
 
 ;;; Saving: working out the changes, then making them
 
-;; The original entry on each line, as a hash line -> entry; the rest were
-;; deleted. A line that reads exactly as an entry did is that entry (so
-;; moving lines, or opening one above, changes nothing). Otherwise an
-;; entry's mark says which line it became, if it sits at the start of a
-;; line nobody else has; when two marks meet there, the later entry's is
-;; the line's own (deleting a line pushes its mark onto the next).
 (define (dired-survivors)
+  "The original entry on each line, as a hash line -> entry; the rest were
+   deleted. A line that reads exactly as an entry did is that entry (so
+   moving lines, or opening one above, changes nothing). Otherwise an
+   entry's mark says which line it became, if it sits at the start of a
+   line nobody else has; when two marks meet there, the later entry's is
+   the line's own (deleting a line pushes its mark onto the next)."
   (let* ([entries (buffer-local 'dired-entries)]
          [lines (range 0 (buffer-line-count))]
          [shown (lambda (e) (string-append (cadr e) (if (caddr e) "/" "")))]
@@ -227,9 +228,9 @@
                          (hash) entries)])
     (foldl (lambda (x h) (hash-insert h (car x) (cadr x))) renamed exact)))
 
-;; The changes as a list of (rename FROM TO), (delete NAME DIR?),
-;; (create NAME), names relative to the directory.
 (define (dired-changes)
+  "The changes as a list of (rename FROM TO), (delete NAME DIR?),
+   (create NAME), names relative to the directory."
   (let* ([survivors (dired-survivors)]
          [kept (hash-values->list survivors)]
          [lines (range 0 (buffer-line-count))]
@@ -249,8 +250,8 @@
         [(eq? (car c) 'delete) (string-append "delete  " (cadr c) (if (caddr c) "/ and everything in it" ""))]
         [else (string-append "create  " (cadr c))]))
 
-;; Makes the changes; returns the problems, if any.
 (define (dired-apply! dir changes)
+  "Makes the changes; returns the problems, if any."
   (let* ([problems '()]
          [try (lambda (r) (when (string? r) (set! problems (cons r problems))))]
          [path (lambda (name) (dired-join dir (dired-strip-slash name)))]

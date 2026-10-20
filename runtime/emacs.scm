@@ -26,8 +26,8 @@
 
 (define (emacs-key-binding keys) (key-binding 'emacs keys))
 
-;; Whether `keys` starts a longer binding, as "C-x" does.
 (define (emacs-prefix? keys)
+  "Whether `keys` starts a longer binding, as \"C-x\" does."
   (let ([prefix (string-append keys " ")])
     (let loop ([maps (append (*local-keymaps* 'emacs) (list 'emacs))])
       (and (pair? maps)
@@ -87,8 +87,8 @@
         (message (string-append "no command " (symbol->string binding))))
     (set! *last-command* *this-command*)))
 
-;; The bindings after `prefix`, for the popup.
 (define (emacs-which-key prefix)
+  "The bindings after `prefix`, for the popup."
   (let* ([start (string-append prefix " ")]
          [keys (filter (lambda (k) (starts-with? k start)) (hash-keys->list (keymap 'emacs)))])
     (which-key-table
@@ -107,9 +107,9 @@
 
 ;;; Inserting text
 
-;; Typing goes into one undo step until another command runs, roughly as
-;; Emacs groups self-inserts.
 (define (self-insert! key n)
+  "Typing goes into one undo step until another command runs, roughly as
+   Emacs groups self-inserts."
   (unless (eq? *last-command* 'self-insert) (begin-change!))
   (set! *this-command* 'self-insert)
   (deactivate-mark!)
@@ -129,8 +129,8 @@
 
 (define (deactivate-mark!) (set! *mark* #f))
 
-;; The active region as (start end), or #f.
 (define (region)
+  "The active region as (start end), or #f."
   (and *mark* (let ([m (mark-get "emacs-mark")]) (and m (list (min m (cursor)) (max m (cursor)))))))
 
 (define (show-region!)
@@ -178,8 +178,8 @@
             (set! *last-yank* (list start (cursor))))
           (set! *this-command* 'yank)))))
 
-;; M-y right after C-y: replace what was yanked with the previous kill.
 (define (yank-pop! count)
+  "M-y right after C-y: replace what was yanked with the previous kill."
   (if (not (and (memq *last-command* '(yank yank-pop)) *last-yank* (pair? *kill-ring*)))
       (message "Previous command was not a yank")
       (begin
@@ -193,8 +193,8 @@
 
 ;;; Moving
 
-;; Emacs words are runs of word chars; punctuation and space are skipped.
 (define (forward-word p)
+  "Emacs words are runs of word chars; punctuation and space are skipped."
   (let* ([len (buffer-length)]
          [p (let loop ([q p]) (if (and (< q len) (not (char-word? (buffer-char-at q)))) (loop (+ q 1)) q))])
     (let loop ([q p]) (if (and (< q len) (char-word? (buffer-char-at q))) (loop (+ q 1)) q))))
@@ -399,24 +399,26 @@
               [(equal? key "C-g") (cmdline-key! "<esc>") #t]
               [else #f])))))
 
-;; Search forward as you type; C-s again for the next match.
-(define-command! 'isearch-forward (lambda (n) (isearch! #t)))
-;; Search backward as you type; C-r again for the previous match.
-(define-command! 'isearch-backward (lambda (n) (isearch! #f)))
+(define-command! 'isearch-forward (lambda (n)
+                                    "Search forward as you type; C-s again for the next match."
+                                    (isearch! #t)))
+(define-command! 'isearch-backward (lambda (n)
+                                     "Search backward as you type; C-r again for the previous match."
+                                     (isearch! #f)))
 
 ;;; Switching between Vim and Emacs
 
-;; Switch to Emacs keys (C-z switches back).
 (define-command! 'emacs-state
   (lambda (n)
+    "Switch to Emacs keys (C-z switches back)."
     (when (eq? *mode* 'visual) (leave-visual!))
     (when (typing-mode?) (leave-insert!))
     (set-mode! 'emacs)
     (message "Emacs state (C-z for Vim)")))
 
-;; Switch to Vim keys (C-z switches back).
 (define-command! 'vim-state
   (lambda (n)
+    "Switch to Vim keys (C-z switches back)."
     (deactivate-mark!)
     (highlight-clear! "visual")
     (set-mode! 'normal)

@@ -18,9 +18,9 @@
 (define *mcp-log* '())           ; newest first
 (define *mcp-versions* '("2025-06-18" "2025-03-26" "2024-11-05"))
 
-;; A tool: `schema` is the JSON Schema of its arguments (a hash), and
-;; `handler` gets the arguments (a hash) and returns text, or (error text).
 (define (define-mcp-tool! name description schema handler)
+  "A tool: `schema` is the JSON Schema of its arguments (a hash), and
+   `handler` gets the arguments (a hash) and returns text, or (error text)."
   (set! *mcp-tools*
         (append (filter (lambda (t) (not (equal? (car t) name))) *mcp-tools*)
                 (list (list name description schema handler)))))
@@ -28,8 +28,8 @@
 (define (mcp-log! text)
   (set! *mcp-log* (cons text (if (> (length *mcp-log*) 199) (take *mcp-log* 199) *mcp-log*))))
 
-;; Tells the user what an agent did.
 (define (mcp-note! text)
+  "Tells the user what an agent did."
   (mcp-log! text)
   (message (string-append "agent: " text)))
 
@@ -52,10 +52,12 @@
     (set! *mcp-listener* #f)
     (message "MCP is off")))
 
-;; Let AI agents use the editor over the Model Context Protocol.
-(define-command! 'mcp-enable (lambda (count) (mcp-enable!) (when *mcp-listener* (message "MCP is on"))))
-;; Stop listening for MCP agents.
-(define-command! 'mcp-disable (lambda (count) (mcp-disable!)))
+(define-command! 'mcp-enable (lambda (count)
+                               "Let AI agents use the editor over the Model Context Protocol."
+                               (mcp-enable!) (when *mcp-listener* (message "MCP is on"))))
+(define-command! 'mcp-disable (lambda (count)
+                                "Stop listening for MCP agents."
+                                (mcp-disable!)))
 (define-ex! '("mcp-log")
   (lambda (ex) (show-popup! (if (null? *mcp-log*) (list "nothing yet") (reverse *mcp-log*)))))
 
@@ -77,8 +79,8 @@
          (let ([reply (mcp-handle msg)])
            (when reply (mcp-send! conn reply)))]))))
 
-;; The reply to one message, or #f for a notification.
 (define (mcp-handle msg)
+  "The reply to one message, or #f for a notification."
   (let ([id (and (hash? msg) (hash-try-get msg "id"))] [method (jget msg "method")] [params (or (jget msg "params") (hash))])
     (if (not id)
         #f
@@ -122,9 +124,9 @@
 
 ;;; Helpers for tools
 
-;; A JSON Schema object with `props`: (name type description) lists;
-;; `required` names those that must be given.
 (define (schema props required)
+  "A JSON Schema object with `props`: (name type description) lists;
+   `required` names those that must be given."
   (hash "type" "object"
         "properties" (foldl (lambda (p h) (hash-insert h (car p) (hash "type" (cadr p) "description" (caddr p))))
                             (hash) props)
@@ -132,9 +134,9 @@
 
 (define buffer-prop '("buffer" "string" "Buffer id, name or file path; the current buffer if omitted"))
 
-;; The buffer an argument names: an id, a name, or a path; else the
-;; current one.
 (define (mcp-buffer args)
+  "The buffer an argument names: an id, a name, or a path; else the
+   current one."
   (let ([b (jget args "buffer")])
     (cond
       [(or (not b) (equal? b "")) (current-buffer)]
@@ -161,14 +163,14 @@
   (let ([info (buffer-info id)])
     (or (cadr info) (car info))))
 
-;; Lines `first`..`last` (0-based) numbered from 1, as cat -n does.
 (define (numbered-lines first last)
+  "Lines `first`..`last` (0-based) numbered from 1, as cat -n does."
   (string-join (map (lambda (l) (string-append (number-pad (+ l 1) 6) "\t" (line-text l))) (range first (+ last 1)))
                "\n"))
 
-;; Changes text in buffer `id` as one undo step, telling the language
-;; server.
 (define (mcp-replace! id start end text)
+  "Changes text in buffer `id` as one undo step, telling the language
+   server."
   (with-buffer id
     (lambda ()
       (begin-change!)
@@ -335,8 +337,8 @@
                       (string-join (map (lambda (l) (string-append (number->string (+ l 1)) ": " (line-text l))) lines)
                                    "\n"))))))))))
 
-;; What a command left for the user to see.
 (define (command-output)
+  "What a command left for the user to see."
   (let ([popup (popup-lines)] [status (status-text)])
     (cond [(pair? popup) (string-join popup "\n")]
           [(equal? status "") "done"]

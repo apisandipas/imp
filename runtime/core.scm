@@ -14,35 +14,35 @@
   (let ([m (hash-try-get *keymaps* mode)])
     (if m m (hash))))
 
-;; Binds `key` to `command` in `mode`. A command is a procedure, or the
-;; name (a symbol) of one made with define-command!; a name is looked up
-;; each time the key is pressed, so redefining the command changes every
-;; key bound to it. What arguments a command takes is up to the mode that
-;; calls it; Vim's modes pass the count.
 (define (define-key! mode key command)
+  "Binds `key` to `command` in `mode`. A command is a procedure, or the
+   name (a symbol) of one made with define-command!; a name is looked up
+   each time the key is pressed, so redefining the command changes every
+   key bound to it. What arguments a command takes is up to the mode that
+   calls it; Vim's modes pass the count."
   (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command))))
 
 ;; Keymaps checked before `mode`'s own, given `mode`: modes.scm sets this
 ;; so a buffer's minor and major modes can override keys.
 (define *local-keymaps* (lambda (mode) '()))
 
-;; The procedure `key` runs in `mode`, or #f.
 (define (lookup-key mode key)
+  "The procedure `key` runs in `mode`, or #f."
   (let ([binding (key-binding mode key)])
     (if (symbol? binding) (command-proc binding) binding)))
 
-;; The procedure `key` runs in the buffer's mode keymaps for `mode` only,
-;; or #f. Insert mode checks these before its own keys (<ret>, <tab>).
 (define (local-key-proc mode key)
+  "The procedure `key` runs in the buffer's mode keymaps for `mode` only,
+   or #f. Insert mode checks these before its own keys (<ret>, <tab>)."
   (let loop ([maps (*local-keymaps* mode)])
     (cond [(null? maps) #f]
           [(hash-try-get (keymap (car maps)) key)
            => (lambda (b) (if (symbol? b) (command-proc b) b))]
           [else (loop (cdr maps))])))
 
-;; What `key` is bound to as written: a command name or a procedure,
-;; looking in the buffer's mode keymaps first.
 (define (key-binding mode key)
+  "What `key` is bound to as written: a command name or a procedure,
+   looking in the buffer's mode keymaps first."
   (let loop ([maps (append (*local-keymaps* mode) (list mode))])
     (cond [(null? maps) #f]
           [(hash-try-get (keymap (car maps)) key) => (lambda (b) b)]
@@ -62,8 +62,8 @@
 
 (define (command-names) (hash-keys->list *commands*))
 
-;; Runs command `name` (with a count of 1 unless given).
 (define (run-command name . count)
+  "Runs command `name` (with a count of 1 unless given)."
   (let ([proc (command-proc name)])
     (if proc
         (proc (if (null? count) 1 (car count)))
@@ -102,17 +102,17 @@
 (define (bound? name)
   (with-handler (lambda (e) #f) (begin (eval name) #t)))
 
-;; The name a top-level define form defines, or #f.
 (define (define-target form)
+  "The name a top-level define form defines, or #f."
   (and (pair? form) (eq? (car form) 'define) (pair? (cdr form))
        (let ([target (cadr form)])
          (cond [(symbol? target) target]
                [(and (pair? target) (symbol? (car target))) (car target)]
                [else #f]))))
 
-;; `form` with a top-level define of an existing name made into a set!.
-;; (begin ...) forms are rewritten inside, as at top level.
 (define (redefinition form)
+  "`form` with a top-level define of an existing name made into a set!.
+   (begin ...) forms are rewritten inside, as at top level."
   (cond
     [(not (pair? form)) form]
     [(eq? (car form) 'begin) (cons 'begin (map redefinition (cdr form)))]
@@ -125,9 +125,9 @@
            (list 'set! target (if (pair? (cddr form)) (caddr form) #f))))]
     [else form]))
 
-;; The forms to evaluate for `form`: itself (rewritten), and for a new
-;; definition a set! that keeps it redefinable.
 (define (unit-forms form)
+  "The forms to evaluate for `form`: itself (rewritten), and for a new
+   definition a set! that keeps it redefinable."
   (let ([rewritten (redefinition form)])
     (if (define-target rewritten)
         (list rewritten (list 'set! (define-target rewritten) (define-target rewritten)))
@@ -135,10 +135,10 @@
 
 (define (imp-eval-form form) (imp-eval-forms (list form)))
 
-;; Evaluates `forms` as one unit, returning the last one's value. Macro
-;; definitions go first, each on its own: inside a (begin ...) a macro
-;; isn't defined yet for the forms after it.
 (define (imp-eval-forms forms)
+  "Evaluates `forms` as one unit, returning the last one's value. Macro
+   definitions go first, each on its own: inside a (begin ...) a macro
+   isn't defined yet for the forms after it."
   (let* ([macro? (lambda (f) (and (pair? f) (eq? (car f) 'define-syntax)))]
          [macros (filter macro? forms)]
          [others (filter (lambda (f) (not (macro? f))) forms)])
@@ -149,12 +149,12 @@
         ;; form doesn't change the result that matters.
         (eval-allowing-later-definitions (cons 'begin (apply append (map unit-forms others))) 100))))
 
-;; Steel won't compile a reference to a global that doesn't exist yet. But
-;; init.scm routinely names functions a package will define when it loads
-;; (in a use-package! 'config, say). So a missing global is defined as a
-;; placeholder that complains if called before the real definition, which
-;; (being a define of an existing name) then replaces it everywhere.
 (define (eval-allowing-later-definitions form tries)
+  "Steel won't compile a reference to a global that doesn't exist yet. But
+   init.scm routinely names functions a package will define when it loads
+   (in a use-package! 'config, say). So a missing global is defined as a
+   placeholder that complains if called before the real definition, which
+   (being a define of an existing name) then replaces it everywhere."
   (let ([outcome (with-handler (lambda (e) (list 'failed e)) (list 'ok (eval form)))])
     (if (eq? (car outcome) 'ok)
         (cadr outcome)
@@ -165,9 +165,9 @@
                 (eval-allowing-later-definitions form (- tries 1)))
               (raise-error (cadr outcome)))))))
 
-;; The name in a "Cannot reference an identifier before its definition"
-;; error, or #f for any other error.
 (define (missing-identifier e)
+  "The name in a \"Cannot reference an identifier before its definition\"
+   error, or #f for any other error."
   (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))]
          [marker "before its definition: "])
     (and (string-contains? m marker)
@@ -183,8 +183,8 @@
 (define (not-defined-yet name)
   (lambda args (error (string-append name " is not defined (yet)"))))
 
-;; Evaluates every form in `text` as one unit, returning the last value.
 (define (imp-eval-string text)
+  "Evaluates every form in `text` as one unit, returning the last value."
   (let ([problem (parse-error text)])
     (when problem (error problem)))
   (let ([port (open-input-string text)])
@@ -193,9 +193,9 @@
           (imp-eval-forms (reverse forms))
           (loop (read port) (cons form forms))))))
 
-;; Loads a Scheme file the same way, and remembers its source so
-;; describe-function and find-definition can show it.
 (define (imp-load-file path)
+  "Loads a Scheme file the same way, and remembers its source so
+   describe-function and find-definition can show it."
   (let ([text (read-file path)])
     (record-source! path path text)
     (imp-eval-string text)))
@@ -221,8 +221,8 @@
 (define (remove-hook! name proc)
   (set! *hooks* (hash-insert *hooks* name (filter (lambda (p) (not (eq? p proc))) (hook-procs name)))))
 
-;; Runs hook `name`, passing `args` to each procedure.
 (define (run-hooks name . args)
+  "Runs hook `name`, passing `args` to each procedure."
   (for-each (lambda (proc)
               (with-handler
                (lambda (e)
@@ -245,17 +245,17 @@
 
 (define (advice-original name) (car (advised name)))
 
-;; Calls `name` with `args` through its advice.
 (define (apply-advised name args)
+  "Calls `name` with `args` through its advice."
   (let* ([a (advised name)] [original (car a)])
     (for-each (lambda (p) (apply p args)) (cadr a))
     (let ([result (wrap-call (cadddr a) original args)])
       (for-each (lambda (p) (apply p args)) (caddr a))
       result)))
 
-;; Calls `original` through `arounds`, the first added outermost: each gets
-;; a procedure that calls the rest of the chain.
 (define (wrap-call arounds original args)
+  "Calls `original` through `arounds`, the first added outermost: each gets
+   a procedure that calls the rest of the chain."
   (if (null? arounds)
       (apply original args)
       (apply (car arounds) (cons (lambda more (wrap-call (cdr arounds) original more)) args))))
@@ -313,8 +313,8 @@
   (timer-cancel! id)
   (set! *timers* (hash-remove *timers* id)))
 
-;; Called by the server when timer `id` fires.
 (define (imp-timer-fired id)
+  "Called by the server when timer `id` fires."
   (let ([t (hash-try-get *timers* id)])
     (when t
       (timer-done! id (cadr t))
@@ -322,10 +322,10 @@
       (with-handler (lambda (e) (set-status! (string-append "error in timer: " (to-string (error-object-message e)))))
                     ((car t))))))
 
-;; Starts `command` (run by sh). A string `input` is written to its stdin,
-;; which is then closed; #f leaves stdin open for job-send!. Returns the
-;; job id, or #f after showing why it couldn't start.
 (define (start-job! command input on-output on-exit)
+  "Starts `command` (run by sh). A string `input` is written to its stdin,
+   which is then closed; #f leaves stdin open for job-send!. Returns the
+   job id, or #f after showing why it couldn't start."
   (let ([id (job-start! command input)])
     (if (string? id)
         (begin (set-status! id) #f)
@@ -355,8 +355,8 @@
 (define *listeners* (hash))    ; listener id -> (on-open on-line on-close)
 (define *connections* (hash))  ; connection id -> listener id
 
-;; Returns the listener id, or #f after showing why it couldn't listen.
 (define (listen-socket! path on-open on-line on-close)
+  "Returns the listener id, or #f after showing why it couldn't listen."
   (let ([id (socket-listen! path)])
     (if (string? id)
         (begin (set-status! id) #f)
@@ -364,8 +364,8 @@
 
 (define *client-sockets* (hash))  ; connection id -> (#f on-line on-close)
 
-;; Returns the connection id, or #f after showing why it couldn't connect.
 (define (connect-socket! path on-line on-close)
+  "Returns the connection id, or #f after showing why it couldn't connect."
   (let ([conn (socket-connect! path)])
     (if (string? conn)
         (begin (set-status! conn) #f)
@@ -426,9 +426,9 @@
 (define *option-watchers* (hash))
 (define *option-aliases* (hash))
 
-;; Defines option `name` (a symbol) with a default value and short names
-;; for :set, e.g. (define-option! 'shiftwidth 4 '(sw)).
 (define (define-option! name default aliases)
+  "Defines option `name` (a symbol) with a default value and short names
+   for :set, e.g. (define-option! 'shiftwidth 4 '(sw))."
   (set! *options* (hash-insert *options* name default))
   (for-each (lambda (a) (set! *option-aliases* (hash-insert *option-aliases* a name))) aliases))
 
@@ -461,9 +461,9 @@
       (when watch (watch value)))
     (run-hooks 'option-change name value)))
 
-;; Runs every watcher with the current buffer's values; after switching
-;; buffers, Rust's copies (tab width, line numbers) follow the buffer.
 (define (refresh-option-watchers!)
+  "Runs every watcher with the current buffer's values; after switching
+   buffers, Rust's copies (tab width, line numbers) follow the buffer."
   (for-each (lambda (name) ((hash-ref *option-watchers* name) (option name)))
             (hash-keys->list *option-watchers*)))
 
@@ -553,8 +553,8 @@
 (define (line-end line) (+ (line-start line) (buffer-line-length line)))
 (define (last-line) (- (buffer-line-count) 1))
 
-;; Offset of the first non-blank char on `line`, or its end if it is blank.
 (define (line-first-nonblank line)
+  "Offset of the first non-blank char on `line`, or its end if it is blank."
   (let ([end (line-end line)])
     (let loop ([p (line-start line)])
       (if (and (< p end) (char-whitespace? (buffer-char-at p)))
@@ -563,9 +563,10 @@
 
 ;;; Entry points called by the server
 
-;; Called once after init.scm has loaded. Modes redefine it.
-(define (imp-init) #t)
+(define (imp-init)
+  "Called once after init.scm has loaded. Modes redefine it."
+  #t)
 
-;; Called for every key from the client. Modes redefine it.
 (define (imp-handle-key key)
+  "Called for every key from the client. Modes redefine it."
   (set-status! (string-append "no mode loaded; got " key)))

@@ -13,8 +13,8 @@
 
 (define (term-id) (buffer-local 'term-id))
 
-;; The bytes a key sends to a program.
 (define (term-key-bytes key id)
+  "The bytes a key sends to a program."
   (let ([app? (term-application-cursor? id)]
         [esc (string (integer->char 27))])
     (cond
@@ -53,8 +53,8 @@
 (define (define-terminal-key! key proc) (set! *terminal-keys* (hash-insert *terminal-keys* key proc)))
 (define (remove-terminal-key! key) (set! *terminal-keys* (hash-remove *terminal-keys* key)))
 
-;; Keys in the terminal state.
 (define (terminal-key! key)
+  "Keys in the terminal state."
   (let ([id (term-id)])
     (cond
       [(not id) (set-mode! 'normal)]
@@ -69,9 +69,9 @@
 
 (define-state! 'terminal "TERMINAL" "bar" terminal-key!)
 
-;; Redraws terminal `id` into its buffer, sized to the window if it's the
-;; current buffer. In the terminal state the cursor follows the program's.
 (define (term-redraw! id)
+  "Redraws terminal `id` into its buffer, sized to the window if it's the
+   current buffer. In the terminal state the cursor follows the program's."
   (let ([buf (hash-try-get *terminals* id)])
     (when (and buf (memv buf (buffer-list)))
       (when (= buf (current-buffer))
@@ -80,8 +80,8 @@
         (when (and at (= buf (current-buffer)) (eq? *mode* 'terminal))
           (set-cursor! at))))))
 
-;; Output arrives in chunks; redraw once they pause for a moment.
 (define (imp-term-output id)
+  "Output arrives in chunks; redraw once they pause for a moment."
   (unless *term-redraw*
     (set! *term-redraw*
           (run-after! term-redraw-ms
@@ -108,10 +108,10 @@
 
 (define *term-count* 0)
 
-;; Runs `command` (your shell if "") in `cwd`, in buffer `buf`, which must
-;; be the current buffer, sized to its window. Returns the terminal's id,
-;; or #f after saying why it couldn't start (and killing `buf`).
 (define (start-terminal! buf command cwd)
+  "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`, which must
+   be the current buffer, sized to its window. Returns the terminal's id,
+   or #f after saying why it couldn't start (and killing `buf`)."
   (set-major-mode! 'term-mode)
   (let ([id (term-start! command cwd (window-height) (window-text-width))])
     (if (string? id)

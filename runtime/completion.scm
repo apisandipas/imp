@@ -16,16 +16,17 @@
 (define *completion-limit* 500)  ; matches kept per keystroke
 (define *completion-annotate* #f)  ; candidate -> text shown dimmed beside it, or #f
 
-;; Menu height: up to ten rows, less in a small window.
-(define (completion-rows) (max 1 (min 10 (- (window-height) 2))))
+(define (completion-rows)
+  "Menu height: up to ten rows, less in a small window."
+  (max 1 (min 10 (- (window-height) 2))))
 
 (define (refilter! text)
   (set! *completion-matches* (fuzzy-filter text *completion-candidates* *completion-limit*))
   (set! *completion-index* 0)
   (show-completions!))
 
-;; Draws the menu, scrolled so the selection is visible.
 (define (show-completions!)
+  "Draws the menu, scrolled so the selection is visible."
   (let* ([n (length *completion-matches*)]
          [rows (completion-rows)]
          [top (max 0 (min (- *completion-index* (- rows 1)) (- n rows)))]
@@ -71,10 +72,10 @@
   (set-popup! '())
   (set-popup-selected! -1))
 
-;; `candidates` is a list of strings. `on-select` gets the chosen string.
-;; An `annotate` procedure, if given, returns text to show beside each
-;; candidate (or #f).
 (define (completing-read prompt candidates on-select . annotate)
+  "`candidates` is a list of strings. `on-select` gets the chosen string.
+   An `annotate` procedure, if given, returns text to show beside each
+   candidate (or #f)."
   (set! *completion-candidates* candidates)
   (set! *completion-annotate* (if (null? annotate) #f (car annotate)))
   (open-cmdline!
@@ -111,10 +112,10 @@
                (hash-insert table name (append (or (hash-try-get table name) '()) (list (cadr p))))))
            (hash) pairs)))
 
-;; Run a command by name (Emacs's M-x), its keys and what it does shown
-;; beside it: the first line of its doc comment, else its which-key label.
 (define-command! 'execute-command
   (lambda (count)
+    "Run a command by name (Emacs's M-x), its keys and what it does shown
+     beside it: the first line of its doc comment, else its which-key label."
     (let ([keys (command-keys-table)]
           [docs (doc-lines)]
           [labels (foldl (lambda (p h) (hash-insert h (symbol->string (car p)) (sentence-case (cadr p))))
@@ -125,14 +126,14 @@
                          (command-annotation (hash-try-get keys name)
                                              (or (command-doc name docs) (hash-try-get labels name))))))))
 
-;; "last buffer" -> "Last buffer", to sit among doc comments' first lines.
 (define (sentence-case text)
+  "\"last buffer\" -> \"Last buffer\", to sit among doc comments' first lines."
   (if (equal? text "")
       text
       (string-append (string-upcase (substring text 0 1)) (substring text 1 (string-length text)))))
 
-;; "KEYS  description", the description in a column of its own.
 (define (command-annotation key-labels doc)
+  "\"KEYS  description\", the description in a column of its own."
   (let ([keys (if key-labels (string-join (take-at-most-keys key-labels 3) "  ") "")])
     (cond [(not doc) (and key-labels keys)]
           [(equal? keys "") (string-append (make-string 14 #\space) doc)]
@@ -141,14 +142,14 @@
 (define (take-at-most-keys items n)
   (if (or (null? items) (= n 0)) '() (cons (car items) (take-at-most-keys (cdr items) (- n 1)))))
 
-;; Open a file under the current directory, skipping what .gitignore does.
 (define-command! 'find-file
   (lambda (count)
+    "Open a file under the current directory, skipping what .gitignore does."
     (completing-read "Find file: " (list-files (current-dir) 50000) open-file!)))
 
-;; Switch to another buffer by name.
 (define-command! 'switch-buffer
   (lambda (count)
+    "Switch to another buffer by name."
     (let* ([ids (filter (lambda (id) (not (= id (current-buffer)))) (buffer-list))]
            [ids (if *alternate-buffer*
                     (cons *alternate-buffer* (filter (lambda (id) (not (equal? id *alternate-buffer*))) ids))
@@ -162,8 +163,9 @@
                                (message (string-append "no buffer " name))
                                (go-to-buffer! (car hit)))))))))
 
-;; Every name defined in the loaded sources, for the describe commands.
-(define (all-definitions) (apropos ""))
+(define (all-definitions)
+  "Every name defined in the loaded sources, for the describe commands."
+  (apropos ""))
 
 (define-command! 'describe-function
   (lambda (count) (completing-read "Describe function: " (all-definitions) describe-function)))

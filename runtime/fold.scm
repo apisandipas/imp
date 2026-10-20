@@ -8,15 +8,16 @@
 
 (define *fold-next* 0)
 
-;; The current buffer's folds, as (id closed?).
-(define (fold-entries) (or (buffer-local 'folds) '()))
+(define (fold-entries)
+  "The current buffer's folds, as (id closed?)."
+  (or (buffer-local 'folds) '()))
 
 (define (fold-mark id end?)
   (string-append "fold:" (number->string id) (if end? ":end" ":start")))
 
-;; (first last) of fold `id`, or #f once its lines are gone. The end mark
-;; sits at the start of the line after the fold.
 (define (fold-lines id)
+  "(first last) of fold `id`, or #f once its lines are gone. The end mark
+   sits at the start of the line after the fold."
   (let ([s (mark-get (fold-mark id #f))] [e (mark-get (fold-mark id #t))])
     (and s e (> e s) (list (offset->line s) (offset->line (- e 1))))))
 
@@ -24,9 +25,9 @@
   (mark-delete! (fold-mark id #f))
   (mark-delete! (fold-mark id #t)))
 
-;; The current buffer's live folds, as (id first last closed?), dropping
-;; dead ones.
 (define (buffer-folds)
+  "The current buffer's live folds, as (id first last closed?), dropping
+   dead ones."
   (let loop ([entries (fold-entries)] [live '()] [kept '()] [dead? #f])
     (cond
       [(null? entries)
@@ -43,14 +44,14 @@
 (define (fold-last f) (caddr f))
 (define (fold-closed? f) (cadddr f))
 
-;; Tells the renderer which lines closed folds hide.
 (define (folds-changed!)
+  "Tells the renderer which lines closed folds hide."
   (set-closed-folds! (map (lambda (f) (list (fold-first f) (fold-last f)))
                           (filter fold-closed? (buffer-folds))))
   (set-buffer-local! 'folds-version (buffer-version)))
 
-;; Makes a fold of lines first..last; returns its id.
 (define (fold-create! first last closed?)
+  "Makes a fold of lines first..last; returns its id."
   (set! *fold-next* (+ *fold-next* 1))
   (let ([id *fold-next*] [first (min first last)] [last (max first last)])
     (mark-set! (fold-mark id #f) (line-start first))
@@ -73,25 +74,26 @@
 
 (define (fold-size f) (- (fold-last f) (fold-first f)))
 
-;; The innermost fold holding `line` that `ok?` accepts, or #f.
 (define (innermost-fold line ok?)
+  "The innermost fold holding `line` that `ok?` accepts, or #f."
   (foldl (lambda (f best) (if (and (ok? f) (or (not best) (< (fold-size f) (fold-size best)))) f best))
          #f (folds-at line)))
 
-;; The outermost closed fold holding `line`: what the screen shows there.
 (define (closed-fold-at line)
+  "The outermost closed fold holding `line`: what the screen shows there."
   (if (null? (fold-entries))
       #f
       (foldl (lambda (f best) (if (and (fold-closed? f) (or (not best) (> (fold-size f) (fold-size best)))) f best))
              #f (folds-at line))))
 
-;; The line `line` shows on, and the last line that shows there.
-(define (shown-line line) (let ([f (closed-fold-at line)]) (if f (fold-first f) line)))
+(define (shown-line line)
+  "The line `line` shows on, and the last line that shows there."
+  (let ([f (closed-fold-at line)]) (if f (fold-first f) line)))
 (define (shown-last line) (let ([f (closed-fold-at line)]) (if f (fold-last f) line)))
 
-;; The line `n` shown lines from `line` (negative goes up), stopping at the
-;; ends: what j and k count.
 (define (fold-step line n)
+  "The line `n` shown lines from `line` (negative goes up), stopping at the
+   ends: what j and k count."
   (if (null? (fold-entries))
       (clamp (+ line n) 0 (last-line))
       (let loop ([line (shown-line line)] [n n])
@@ -105,9 +107,9 @@
 ;; undo): the folds where they land open.
 (define *fold-open-wanted* #f)
 
-;; Edits move fold marks; refresh what the renderer hides when the text
-;; changed.
 (define (folds-after-command!)
+  "Edits move fold marks; refresh what the renderer hides when the text
+   changed."
   (unless (null? (fold-entries))
     (unless (equal? (buffer-local 'folds-version) (buffer-version))
       (folds-changed!))

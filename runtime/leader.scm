@@ -24,8 +24,8 @@
 (define (undefine-leader! keys)
   (set! *leader-bindings* (hash-remove *leader-bindings* keys)))
 
-;; The first key of `text` in key notation: "<tab>", "C-x" or one char.
 (define (first-key text)
+  "The first key of `text` in key notation: \"<tab>\", \"C-x\" or one char."
   (cond
     [(and (starts-with? text "<") (string-contains? text ">"))
      (let loop ([i 1]) (if (equal? (string-ref text i) #\>) (substring text 0 (+ i 1)) (loop (+ i 1))))]
@@ -33,8 +33,8 @@
      (substring text 0 3)]
     [else (substring text 0 1)]))
 
-;; The keys that can follow `prefix`, as (key . description) pairs.
 (define (leader-continuations prefix)
+  "The keys that can follow `prefix`, as (key . description) pairs."
   (let ([seen (hash)] [n (string-length prefix)])
     (for-each
      (lambda (keys)
@@ -55,13 +55,13 @@
 
 (define (key-label key) (if (equal? key " ") "SPC" key))
 
-;; The which-key popup for `prefix`: entries in columns across the window.
 (define (which-key-lines prefix)
+  "The which-key popup for `prefix`: entries in columns across the window."
   (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e))) (leader-continuations prefix))))
 
-;; Popup rows for (key . description) pairs, in columns down then across.
-;; Keys, the arrow, groups (+name) and commands each have a face.
 (define (which-key-table entries)
+  "Popup rows for (key . description) pairs, in columns down then across.
+   Keys, the arrow, groups (+name) and commands each have a face."
   (let* ([key-width (apply max (cons 3 (map (lambda (e) (string-length (car e))) entries)))]
          [width (max 22 (+ key-width 6 (apply max (cons 0 (map (lambda (e) (string-length (cdr e))) entries)))))]
          [columns (max 1 (quotient (- (window-width) 2) width))]
@@ -101,8 +101,8 @@
 (define (pad-left text width)
   (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
 
-;; Shows `lines` as the which-key popup, titled with the keys so far.
 (define (show-which-key-popup! lines title)
+  "Shows `lines` as the which-key popup, titled with the keys so far."
   (set-popup! lines)
   (set-popup-place! "bottom" 0 title))
 
@@ -121,8 +121,8 @@
   (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
   (set-popup! '()))
 
-;; Each key typed after the leader comes here.
 (define (leader-input! key)
+  "Each key typed after the leader comes here."
   (if (member key '("<esc>" "C-g" "C-c"))
       (begin (leader-done!) (message ""))
       (let* ([keys (string-append *leader-keys* key)]
@@ -160,9 +160,9 @@
                             (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
                               (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt))))))))))
 
-;; Start a leader sequence.
 (define-command! 'leader
   (lambda (count)
+    "Start a leader sequence."
     (set! *leader-keys* "")
     (set! *key-interceptor* leader-input!)
     (show-which-key!)))
