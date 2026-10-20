@@ -35,6 +35,13 @@
 (define-popup-rule! "*grep*" 'side 'right 'size 0.3)
 ;; (remove-popup-rule! "*git")  ; git status takes over the window again
 
+;;; Packages that come with imp, off until you ask (:packages lists them).
+;; (use-package! 'olivetti                    ; SPC t o: a centred column of text
+;;   'config (lambda ()
+;;             (set-option! 'olivetti-body-width 80)
+;;             (set-option! 'olivetti-modes '(org-mode markdown-mode))))
+;; (use-package! 'posframe)                   ; M-x, find-file... in a centred box
+
 ;;; Claude Code (M-a, SPC a): the program it runs, and where its window goes.
 ;; (set-option! 'claude-command "claude --model opus")
 ;; (define-popup-rule! "*claude" 'side 'right 'size 0.4)

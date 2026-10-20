@@ -142,7 +142,15 @@ runtime and can change anything in it. `c` on the start screen opens it.
 An error in `init.scm` shows on the status line; the editor still starts.
 Edit it and `SPC e b` (evaluate buffer) to apply changes without a restart.
 Packages load from `~/.config/imp/packages`, or from git with
-`use-package!`.
+`use-package!`. A few come with imp, off until you ask for them:
+
+```scheme
+(use-package! 'olivetti                       ; a centred column of text
+  'config (lambda () (set-option! 'olivetti-modes '(org-mode markdown-mode))))
+(use-package! 'posframe)                      ; M-x and friends in a centred box
+```
+
+`:packages` lists what's loaded and what else comes with imp.
 
 ## Daemon
 
@@ -173,6 +181,7 @@ crates/
   imp/         the imp binary (package imp-editor) and the terminal client
   imp-gui/     the window client: winit, wgpu and glyphon
 runtime/       the editor, in Scheme
+packages/      opt-in packages that come with imp (use-package!)
 ```
 
 [`docs/HANDOFF.md`](docs/HANDOFF.md) has the design decisions, the

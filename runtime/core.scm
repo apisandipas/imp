@@ -617,6 +617,9 @@
 ;; Long lines continue on the next screen rows; off, they scroll sideways.
 (define-option! 'wrap #t '())
 (watch-option! 'wrap set-wrap!)
+;; With wrap, rows end between words rather than inside one.
+(define-option! 'linebreak #f '(lbr))
+(watch-option! 'linebreak set-linebreak!)
 
 (define (update-line-numbers! value)
   "Tells Rust which line numbers to draw, from number and relativenumber.

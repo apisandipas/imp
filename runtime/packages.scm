@@ -14,6 +14,11 @@
 ;;; A package with 'git that isn't there yet is cloned (pinned to 'rev if
 ;;; given) before loading. :packages lists them; :package-update NAME
 ;;; fetches and checks out its 'rev again (or pulls), then reloads it.
+;;;
+;;; Some packages come with imp (packages/ in its source): what isn't
+;;; essential to editing, like olivetti. They're built in but opt-in,
+;;; loaded only when declared: (use-package! 'olivetti). A directory of
+;;; the same name in packages-dir, or a 'git, takes their place.
 
 (define *packages* '())  ; (name status dir options), in declaration order
 
@@ -71,13 +76,18 @@
         (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*)))
 
 (define (load-package! name)
-  "Loads package `name`: its main file, then its 'config."
+  "Loads package `name`: its main file (or the built-in copy, for one
+   that comes with imp), then its 'config."
   (let* ([p (assq name *packages*)] [dir (caddr p)] [options (cadddr p)]
-         [file (package-main-file dir (symbol->string name))])
-    (if (not file)
+         [builtin (and (not (file-exists? dir)) (builtin-package (symbol->string name)))]
+         [file (and (not builtin) (package-main-file dir (symbol->string name)))])
+    (if (not (or builtin file))
         (set-package-status! name "no main file")
         (let ([result (with-handler (lambda (e) (error-message e))
-                                    (begin (imp-load-file file)
+                                    (begin (if builtin
+                                               (begin (record-source! (car builtin) (cadr builtin) (caddr builtin))
+                                                      (imp-eval-string (caddr builtin)))
+                                               (imp-load-file file))
                                            (let ([config (package-option options 'config)])
                                              (when config (config)))
                                            #t))])
@@ -92,7 +102,8 @@
 
      (use-package! 'surround 'git \"https://github.com/someone/imp-surround\")
 
-   Without 'git, the package must already be in packages-dir."
+   Without 'git, the package must be in packages-dir or come with imp
+   (builtin-package-names lists those)."
   (let ([dir (string-append (packages-dir) "/" (symbol->string name))])
     (set! *packages* (append (filter (lambda (p) (not (eq? (car p) name))) *packages*)
                              (list (list name "declared" dir options))))
@@ -102,36 +113,50 @@
        (if (clone-package! name dir options)
            (load-package! name)
            (set-package-status! name "clone failed"))]
+      [(builtin-package (symbol->string name)) (load-package! name)]
       [else (set-package-status! name "missing")
             (message (string-append "package " (symbol->string name) " is not in " (packages-dir)))])))
 
 (define (package-revision dir)
-  "The short commit hash checked out in `dir`, or \"-\" if it isn't a
-   git checkout."
+  "The short commit hash checked out in `dir`, \"built-in\" for a package
+   that comes with imp, or \"-\" if it isn't a git checkout."
+  (if (not (file-exists? dir))
+      "built-in"
+      (package-revision-of dir)))
+
+(define (package-revision-of dir)
+  "The short commit hash checked out in git checkout `dir`, or \"-\"."
   (let ([r (run-shell (string-append "git -C " (shell-quote dir) " rev-parse --short HEAD") "")])
     (if (= (car r) 0) (trim-right (cadr r)) "-")))
 
 (define-ex! '("packages")
   (lambda (ex)
     (show-popup!
-     (if (null? *packages*)
-         (list (string-append "No packages declared. Packages live in " (packages-dir)))
-         (map (lambda (p)
-                (string-append (pad-right (symbol->string (car p)) 20)
-                               (pad-right (package-revision (caddr p)) 10)
-                               (cadr p)))
-              *packages*)))))
+     (append
+      (if (null? *packages*)
+          (list (string-append "No packages declared. Packages live in " (packages-dir)))
+          (map (lambda (p)
+                 (string-append (pad-right (symbol->string (car p)) 20)
+                                (pad-right (package-revision (caddr p)) 10)
+                                (cadr p)))
+               *packages*))
+      (let ([unused (filter (lambda (n) (not (assq (string->symbol n) *packages*))) (builtin-package-names))])
+        (if (null? unused)
+            '()
+            (list "" (string-append "Built in, off until (use-package! 'NAME): " (string-join unused " ")))))))))
 
 (define-ex! '("package-update")
   (lambda (ex)
     (let* ([name (string->symbol (ex-args ex))] [p (assq name *packages*)])
-      (if (not p)
-          (message (string-append "no package " (ex-args ex)))
-          (let* ([dir (caddr p)] [rev (package-option (cadddr p) 'rev)]
+      (cond
+        [(not p) (message (string-append "no package " (ex-args ex)))]
+        [(not (file-exists? (caddr p))) (message (string-append (ex-args ex) " comes with imp, and updates with it"))]
+        [else
+         (let* ([dir (caddr p)] [rev (package-option (cadddr p) 'rev)]
                  [ok (if rev
                          (run-or-report! (string-append "git -C " (shell-quote dir) " fetch --quiet && git -C "
                                                         (shell-quote dir) " checkout --quiet " (shell-quote rev)))
                          (run-or-report! (string-append "git -C " (shell-quote dir) " pull --quiet")))])
             (when ok
               (load-package! name)
-              (message (string-append "updated " (ex-args ex)))))))))
+              (message (string-append "updated " (ex-args ex)))))]))))

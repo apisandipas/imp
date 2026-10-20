@@ -15,6 +15,10 @@
 (define *completion-index* 0)
 (define *completion-limit* 500)  ; matches kept per keystroke
 (define *completion-annotate* #f)  ; candidate -> text shown dimmed beside it, or #f
+;; Where the menu is drawn, as set-popup-place! takes it: "bottom", or
+;; "center" and a width in percent for a box in the middle of the screen
+;; with the prompt inside (the posframe package sets that).
+(define *completion-place* (list "bottom" 0))
 
 (define (completion-rows)
   "Menu height: up to ten rows, less in a small window."
@@ -46,7 +50,7 @@
                           shown))]
                   [else (map (lambda (c) (string-append " " c)) shown)]))
     ;; Titled with the prompt, without its colon.
-    (set-popup-place! "bottom" 0 (trim (let ([p (trim *cmdline-prompt*)])
+    (set-popup-place! (car *completion-place*) (cadr *completion-place*) (trim (let ([p (trim *cmdline-prompt*)])
                                          (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))
     (set-popup-selected! (if (null? shown) -1 (- *completion-index* top)))
     (set-cmdline! (string-append *cmdline-prompt* *cmdline*

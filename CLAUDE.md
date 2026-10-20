@@ -15,3 +15,8 @@ and match what real Vim does.
 Every function and command in `runtime/` gets an Emacs-style docstring, a
 string first in its body (or in the command's lambda), first line a sentence
 of its own: help and M-x show it. Variables and options get a comment above.
+
+What isn't essential to editing is an opt-in package, not runtime: it goes
+in `packages/NAME/NAME.scm` (listed in `PACKAGES` in
+`crates/imp-server/src/lib.rs`) and loads only with `(use-package! 'NAME)`.
+Core gets only the primitive the package can't do without.

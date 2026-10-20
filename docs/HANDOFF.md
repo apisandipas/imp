@@ -108,6 +108,7 @@ runtime/                   loaded in this order
   mcp.scm                  MCP: AI agents use the editor (opt-in)
   claude.scm               Claude Code per project, in a window on the right
   theme.scm                themes (palettes -> every face), the status line
+packages/NAME/NAME.scm     opt-in packages that come with imp (use-package!)
 docs/design/phase-N.md     how each phase was designed, and what changed
 ```
 
@@ -252,6 +253,14 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
 - Completion: `(completing-read prompt candidates on-select)`.
 - Emacs keys: `(define-key! 'emacs "C-x C-s" 'save-buffer)`.
 - Packages: `(use-package! 'name 'git URL 'rev REV 'config thunk)`.
+  Packages that come with imp live in `packages/NAME/NAME.scm`, embedded
+  (lib.rs `PACKAGES`, read from beside `IMP_RUNTIME` in dev) and loaded
+  only when declared; packages-dir or a 'git of the same name wins.
+  The rule: what isn't essential to editing is a package, not runtime.
+  - `olivetti`: a centred column (`set-body-width!`, a per-buffer text
+    width the renderer centres) that wraps between words (`linebreak`).
+  - `posframe`: completion menus in a centred box with the prompt inside
+    (`*completion-place*`, `set-popup-place! "center" percent`).
 - Background: `(run-after! ms thunk)`, `(run-every! ms thunk)`,
   `(start-job! command input on-output on-exit)` (input `#f` keeps stdin
   open for `job-send!`).

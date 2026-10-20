@@ -47,6 +47,10 @@ pub struct Editor {
     /// None puts the popup at the bottom; Some(dx) in a bordered box under
     /// (or over) the cursor, shifted `dx` columns.
     pub popup_at_cursor: Option<isize>,
+    /// Some(percent) puts the popup in a box in the middle of the screen,
+    /// that percent of its width, with the command line's text in the box
+    /// instead of at the bottom (the posframe package).
+    pub popup_center: Option<usize>,
     /// Shown in the popup's top border; empty for none.
     pub popup_title: String,
     /// The status line formats (see render::status_line), for the focused
@@ -74,6 +78,9 @@ pub struct Editor {
     pub next_window_id: usize,
     /// Whether long lines wrap onto the next screen rows.
     pub wrap: bool,
+    /// With wrap, rows end between words rather than inside one (Vim's
+    /// 'linebreak').
+    pub linebreak: bool,
     pub line_numbers: crate::render::LineNumbers,
     /// Whether the cursor's line is drawn with the "cursorline" face.
     pub cursorline: bool,
@@ -91,6 +98,10 @@ pub struct Editor {
     /// face) parts. It takes a column as wide as the widest, after the
     /// line numbers, and can't be edited (the file browser's details).
     pub margins: HashMap<usize, BTreeMap<usize, MarginText>>,
+    /// The width the text of a buffer takes, centred in its windows with
+    /// blank margins either side (olivetti), by buffer id. Unset, text
+    /// fills the window.
+    pub body_widths: HashMap<usize, usize>,
     /// Each buffer's closed folds as (first, last) lines: sorted, not
     /// nested. Scheme decides where folds are (runtime/fold.scm).
     pub folds: HashMap<usize, Vec<(usize, usize)>>,
@@ -267,6 +278,7 @@ impl Editor {
         self.folds.remove(&id);
         self.signs.remove(&id);
         self.margins.remove(&id);
+        self.body_widths.remove(&id);
         self.status_values.remove(&id);
         true
     }

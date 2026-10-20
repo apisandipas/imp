@@ -75,6 +75,36 @@ const RUNTIME: &[(&str, &str)] = &[
     ("config.scm", include_str!("../../../runtime/config.scm")),
 ];
 
+/// The packages that come with imp (`packages/NAME/NAME.scm`): opt-in,
+/// loaded only when init.scm asks with `(use-package! 'NAME)`. Embedded
+/// like the runtime; with `IMP_RUNTIME` set they're read from the
+/// `packages` directory beside it instead.
+pub(crate) const PACKAGES: &[(&str, &str)] = &[
+    (
+        "olivetti",
+        include_str!("../../../packages/olivetti/olivetti.scm"),
+    ),
+    (
+        "posframe",
+        include_str!("../../../packages/posframe/posframe.scm"),
+    ),
+];
+
+/// Built-in package `name`: (source name, path on disk if read from
+/// there, text), or None if imp has no such package.
+pub(crate) fn builtin_package(name: &str) -> Option<(String, Option<String>, String)> {
+    let embedded = PACKAGES.iter().find(|(n, _)| *n == name)?.1;
+    let source = format!("packages/{name}/{name}.scm");
+    let on_disk = std::env::var_os("IMP_RUNTIME")
+        .map(PathBuf::from)
+        .and_then(|dir| dir.parent().map(|p| p.join(&source)))
+        .and_then(|path| Some((std::fs::read_to_string(&path).ok()?, path)));
+    Some(match on_disk {
+        Some((text, path)) => (source, Some(path.display().to_string()), text),
+        None => (source, None, embedded.to_string()),
+    })
+}
+
 pub struct Options {
     /// The user's config, loaded after the runtime if it exists. Usually
     /// [`user_config_path`]; `None` skips it, as tests do.

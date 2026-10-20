@@ -179,12 +179,15 @@ fn docstrings_document_functions_and_commands() {
     );
 }
 
-/// Every function in the runtime, and every command defined with a lambda,
-/// has a docstring (help.scm's header has the convention). Variables and
+/// Every function in the runtime and the packages that come with imp, and
+/// every command defined with a lambda, has a docstring (help.scm's header has the convention). Variables and
 /// options are documented by comments, which this doesn't check.
 #[test]
 fn the_runtime_is_documented() {
     let mut s = server("");
+    // The packages that come with imp count too.
+    s.eval("(for-each (lambda (n) (use-package! (string->symbol n))) (builtin-package-names))")
+        .unwrap();
     let missing = s
         .eval(
             r#"(apply append
@@ -204,7 +207,7 @@ fn the_runtime_is_documented() {
                                         (if (and wanted (not doc))
                                             (cons (string-append src ":" (number->string (+ i 1)) " " (defined-name line)) acc)
                                             acc)))))))
-                      (filter (lambda (n) (starts-with? n "runtime/")) (source-names))))"#,
+                      (filter (lambda (n) (or (starts-with? n "runtime/") (starts-with? n "packages/"))) (source-names))))"#,
         )
         .unwrap();
     assert_eq!(missing, "()", "definitions without a docstring");

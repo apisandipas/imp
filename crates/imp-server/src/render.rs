@@ -93,14 +93,21 @@ pub fn frame(e: &mut Editor) -> Frame {
         .collect();
 
     let area = height - 1;
+    // Where the command line's cursor is when it is drawn in a centred box.
+    let mut boxed = None;
     if !e.popup.is_empty() {
-        match e.popup_at_cursor {
-            None => bottom_popup(e, &mut rows, area, width),
-            Some(dx) => cursor_popup(e, &mut rows, area, width, cursor, dx),
+        match (e.popup_center, e.popup_at_cursor) {
+            (Some(percent), _) => boxed = center_popup(e, &mut rows, area, width, percent),
+            (None, None) => bottom_popup(e, &mut rows, area, width),
+            (None, Some(dx)) => cursor_popup(e, &mut rows, area, width, cursor, dx),
         }
     }
 
     match &e.cmdline {
+        Some(_) if boxed.is_some() => {
+            rows.push(Vec::new());
+            cursor = boxed.expect("checked");
+        }
         Some((text, col)) => {
             // Keep the cursor's end of a long command line in view.
             let skip = (col + 1).saturating_sub(width);
@@ -250,6 +257,77 @@ fn cursor_popup(
     rows[bottom] = splice(&rows[bottom], x, row, inner + 2);
 }
 
+/// The popup in a box across the middle of the screen, `percent` of its
+/// width and a fifth of the way down, with the command line (when one is
+/// open) as its first row: the posframe package's completion menu.
+/// Returns where the command line's cursor goes, if it is in the box.
+fn center_popup(
+    e: &Editor,
+    rows: &mut [Row],
+    area: usize,
+    width: usize,
+    percent: usize,
+) -> Option<(usize, usize)> {
+    let inner = (width * percent / 100)
+        .max(40)
+        .min(width.saturating_sub(2))
+        .max(1);
+    let top = area / 5;
+    let input = usize::from(e.cmdline.is_some());
+    // Borders, the input and the line under it take 2 + 2 * input rows.
+    let room = area.saturating_sub(top + 2 + 2 * input);
+    if room == 0 {
+        return None;
+    }
+    let shown = e.popup.len().min(room);
+    let first = match e.popup_selected {
+        Some(i) if i >= shown => i + 1 - shown,
+        _ => 0,
+    };
+    let x = width.saturating_sub(inner + 2) / 2;
+    let border = e.face("popup-border");
+    let mut y = top;
+    rows[y] = splice(&rows[y], x, border_row(e, "╭", "╮", inner + 2), inner + 2);
+    let mut cursor = None;
+    if let Some((text, col)) = &e.cmdline {
+        y += 1;
+        // Keep the cursor's end of a long input in view.
+        let room = inner.saturating_sub(2);
+        let skip = (col + 1).saturating_sub(room);
+        let shown: String = text.chars().skip(skip).take(room).collect();
+        let mut row = vec![Span::new("│", border)];
+        row.extend(popup_row(
+            e,
+            &[(format!(" {shown}"), String::new())],
+            false,
+            inner,
+        ));
+        push(&mut row, "│", border);
+        rows[y] = splice(&rows[y], x, row, inner + 2);
+        cursor = Some((x + 2 + col - skip, y));
+        y += 1;
+        let mut row = vec![Span::new("├", border)];
+        push(&mut row, &"─".repeat(inner), border);
+        push(&mut row, "┤", border);
+        rows[y] = splice(&rows[y], x, row, inner + 2);
+    }
+    for i in first..first + shown {
+        y += 1;
+        let mut line = vec![(String::from(" "), String::new())];
+        line.extend(e.popup[i].iter().cloned());
+        let mut row = vec![Span::new("│", border)];
+        row.extend(popup_row(e, &line, e.popup_selected == Some(i), inner));
+        push(&mut row, "│", border);
+        rows[y] = splice(&rows[y], x, row, inner + 2);
+    }
+    y += 1;
+    let mut row = vec![Span::new("╰", border)];
+    push(&mut row, &"─".repeat(inner), border);
+    push(&mut row, "╯", border);
+    rows[y] = splice(&rows[y], x, row, inner + 2);
+    cursor
+}
+
 /// `row` with cells `x..x + width` replaced by `insert`. A wide char cut
 /// in half becomes spaces.
 fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
@@ -370,6 +448,7 @@ struct View<'a> {
     margin: Option<(&'a BTreeMap<usize, crate::editor::MarginText>, usize)>,
     folds: Folds<'a>,
     cursor_line: usize,
+    indent: usize,
     gutter: usize,
     text_width: usize,
     hscroll: usize,
@@ -396,8 +475,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     // In a closed fold the cursor shows at the start of the fold's line.
     let folded = folds.at(real_line).is_some();
     let cursor_line = folds.shown(real_line);
-    let gutter = gutter_width(e, buffer_id, buffer);
-    let text_width = rect.w.saturating_sub(gutter).max(1);
+    let (indent, gutter, text_width) = text_area(e, buffer_id, buffer, rect.w);
 
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
     // without.
@@ -405,7 +483,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     let (cursor_row, cursor_x) = if folded {
         (0, 0)
     } else {
-        cursor_position(&cursor_cells, cursor_col, e.wrap, text_width)
+        cursor_position(&cursor_cells, cursor_col, e.wrap, text_width, e.linebreak)
     };
 
     // Scroll just enough to keep the cursor in view.
@@ -428,6 +506,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 line_rows(
                     &layout_line(&buffer.line_text(prev), e.tab_width),
                     text_width,
+                    e.linebreak,
                 )
             };
             if used + rows > text_rows {
@@ -478,6 +557,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
             .map(|m| (m, margin_width(e, buffer_id))),
         folds,
         cursor_line,
+        indent,
         gutter,
         text_width,
         hscroll,
@@ -499,7 +579,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 push(&mut row, &note, e.face("fold"));
             }
             if first == cursor_line {
-                cursor_screen = (rect.x + gutter, rect.y + rows.len());
+                cursor_screen = (rect.x + indent + gutter, rect.y + rows.len());
             }
             rows.push(fill(row, rect.w, pad));
             line = last + 1;
@@ -508,7 +588,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         let line_rows = view.line_rows(line);
         if line == cursor_line {
             cursor_screen = (
-                rect.x + gutter + cursor_x.saturating_sub(hscroll).min(text_width - 1),
+                rect.x + indent + gutter + cursor_x.saturating_sub(hscroll).min(text_width - 1),
                 rect.y + rows.len() + cursor_row.min(line_rows.len() - 1),
             );
         }
@@ -570,38 +650,69 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
 
 /// With wrap, which row of the line each cell is on and its column there:
 /// a cell that doesn't fit moves to the next row whole.
-fn wrapped(cells: &[Cell], width: usize) -> Vec<(usize, usize)> {
-    let mut row = 0;
-    let mut col = 0;
-    cells
-        .iter()
-        .map(|c| {
-            if col + c.w > width && col > 0 {
-                row += 1;
-                col = 0;
-            }
-            let at = (row, col);
+///
+/// With `linebreak` (Vim's 'linebreak'), a row that would end inside a
+/// word ends after the last blank before it instead, so words aren't cut;
+/// a word longer than the row is still cut, and blanks where a row ends
+/// hang off it.
+fn wrapped(cells: &[Cell], width: usize, linebreak: bool) -> Vec<(usize, usize)> {
+    let blank = |c: &Cell| c.ch == ' ' || c.ch == '\t';
+    let mut at: Vec<(usize, usize)> = Vec::with_capacity(cells.len());
+    let (mut row, mut col, mut row_start) = (0, 0, 0);
+    let mut i = 0;
+    while i < cells.len() {
+        let c = &cells[i];
+        if linebreak && blank(c) && col + c.w > width && col > 0 {
+            // A blank where a row ends hangs off its end rather than
+            // starting the next row.
+            at.push((row, col));
             col += c.w;
-            at
-        })
-        .collect()
+            i += 1;
+            continue;
+        }
+        if col + c.w > width && col > 0 {
+            if linebreak && !blank(c) {
+                // Back to the start of the word that doesn't fit.
+                if let Some(word) = (row_start + 1..=i).rev().find(|&j| blank(&cells[j - 1])) {
+                    at.truncate(word);
+                    i = word;
+                }
+            }
+            row += 1;
+            col = 0;
+            row_start = i;
+        }
+        let c = &cells[i];
+        at.push((row, col));
+        col += c.w;
+        i += 1;
+    }
+    at
 }
 
 /// How many screen rows a line takes with wrap.
-fn line_rows(cells: &[Cell], width: usize) -> usize {
-    wrapped(cells, width).last().map_or(1, |(row, _)| row + 1)
+fn line_rows(cells: &[Cell], width: usize, linebreak: bool) -> usize {
+    wrapped(cells, width, linebreak)
+        .last()
+        .map_or(1, |(row, _)| row + 1)
 }
 
 /// The cursor's (row, x) in its line. Past the last char (insert mode),
 /// it sits just after it, on the next row if that row is full.
-fn cursor_position(cells: &[Cell], col: usize, wrap: bool, width: usize) -> (usize, usize) {
+fn cursor_position(
+    cells: &[Cell],
+    col: usize,
+    wrap: bool,
+    width: usize,
+    linebreak: bool,
+) -> (usize, usize) {
     if !wrap {
         let x = cells
             .get(col)
             .map_or_else(|| cells.last().map_or(0, |c| c.x + c.w), |c| c.x);
         return (0, x);
     }
-    let at = wrapped(cells, width);
+    let at = wrapped(cells, width, linebreak);
     match (at.get(col), at.last(), cells.last()) {
         (Some(&(row, x)), _, _) => (row, x),
         (None, Some(&(row, x)), Some(last)) => {
@@ -642,7 +753,7 @@ impl View<'_> {
 
         let mut rows: Vec<Row> = Vec::new();
         if e.wrap {
-            let at = wrapped(&cells, self.text_width);
+            let at = wrapped(&cells, self.text_width, e.linebreak);
             let count = at.last().map_or(1, |(r, _)| r + 1);
             rows.resize(count, Vec::new());
             for (cell, &(r, _)) in cells.iter().zip(&at) {
@@ -687,6 +798,9 @@ impl View<'_> {
             .enumerate()
             .map(|(i, text_row)| {
                 let mut row = Vec::new();
+                if self.indent > 0 {
+                    row.push(Span::new(" ".repeat(self.indent), Style::default()));
+                }
                 let mut numbers = self.gutter;
                 if let Some(signs) = self.signs {
                     numbers -= SIGN_WIDTH;
@@ -759,6 +873,19 @@ fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
 
 /// Cells of the sign column, when a buffer has signs.
 const SIGN_WIDTH: usize = 2;
+
+/// How a window `width` cells wide splits for a buffer: (indent, gutter,
+/// text). `indent` blank cells come first when the buffer has a body width
+/// narrower than the window, so its text is centred (olivetti); then the
+/// gutter, then the text.
+fn text_area(e: &Editor, buffer_id: usize, buffer: &Buffer, width: usize) -> (usize, usize, usize) {
+    let gutter = gutter_width(e, buffer_id, buffer);
+    let room = width.saturating_sub(gutter).max(1);
+    match e.body_widths.get(&buffer_id) {
+        Some(&body) if body < room => ((room - body) / 2, gutter, body),
+        _ => (0, gutter, room),
+    }
+}
 
 fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
     let signs = if e.signs.get(&buffer_id).is_some_and(|s| !s.is_empty()) {
@@ -948,9 +1075,7 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
 /// Columns for text in the current window: its width less the gutter.
 pub fn window_text_width(e: &Editor) -> usize {
     let rect = e.window_rect(e.current_window);
-    rect.w
-        .saturating_sub(gutter_width(e, e.current, &e.buffer))
-        .max(1)
+    text_area(e, e.current, &e.buffer, rect.w).2
 }
 
 /// Display width of a string.
@@ -1238,9 +1363,8 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         (w.buffer, w.scroll, w.hscroll)
     };
     let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
-    let gutter = gutter_width(e, buffer_id, buffer);
-    let width = rect.w.saturating_sub(gutter).max(1);
-    let dx = (x - rect.x).saturating_sub(gutter);
+    let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
+    let dx = (x - rect.x).saturating_sub(indent + gutter);
     let mut row = y - rect.y;
     let folds = Folds::of(e, buffer_id);
     let mut line = folds.shown(scroll);
@@ -1265,7 +1389,7 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
                 return Some((id, Some(start + col)));
             }
         } else {
-            let at = wrapped(&cells, width);
+            let at = wrapped(&cells, width, e.linebreak);
             let rows = at.last().map_or(1, |(r, _)| r + 1);
             if row < rows {
                 // The cell under the click, or the last one on that row.

@@ -387,6 +387,26 @@ pub fn register(engine: &mut Engine) {
             })
         },
     );
+    // A package that comes with imp: (source-name path text), path "" when
+    // it's the copy built into the binary; #f if there's none called that.
+    engine.register_fn("builtin-package", |name: String| {
+        crate::builtin_package(&name).map(|(source, path, text)| {
+            SteelVal::ListV(
+                vec![
+                    SteelVal::StringV(source.into()),
+                    SteelVal::StringV(path.unwrap_or_default().into()),
+                    SteelVal::StringV(text.into()),
+                ]
+                .into(),
+            )
+        })
+    });
+    engine.register_fn("builtin-package-names", || {
+        crate::PACKAGES
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .collect::<Vec<_>>()
+    });
     engine.register_fn("source-names", || {
         editor::with(|e| {
             e.sources
@@ -588,6 +608,9 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("set-wrap!", |on: bool| editor::with(|e| e.wrap = on));
+    engine.register_fn("set-linebreak!", |on: bool| {
+        editor::with(|e| e.linebreak = on)
+    });
     // Display columns, for motions over screen rows (gj, gk).
     engine.register_fn("line-display-col", |line: isize, col: isize| {
         editor::with(|e| crate::render::display_col(e, clamp(line), clamp(col)) as isize)
@@ -711,6 +734,7 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             if lines.is_empty() {
                 e.popup_at_cursor = None;
+                e.popup_center = None;
                 e.popup_title.clear();
             }
             e.popup = lines
@@ -723,6 +747,7 @@ pub fn register(engine: &mut Engine) {
         |place: String, dx: isize, title: String| {
             editor::with(|e| {
                 e.popup_at_cursor = (place == "cursor").then_some(dx);
+                e.popup_center = (place == "center").then_some(dx.clamp(20, 100) as usize);
                 e.popup_title = title;
             })
         },
@@ -868,6 +893,22 @@ pub fn register(engine: &mut Engine) {
                 e.margins.insert(id, map);
             }
         })
+    });
+
+    // The width the current buffer's text takes, centred in its windows
+    // with blank margins either side; 0 lets it fill the window again.
+    engine.register_fn("set-body-width!", |width: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            if width > 0 {
+                e.body_widths.insert(id, clamp(width));
+            } else {
+                e.body_widths.remove(&id);
+            }
+        })
+    });
+    engine.register_fn("body-width", || {
+        editor::with(|e| e.body_widths.get(&e.current).map_or(0, |w| *w as isize))
     });
 
     // (window offset) under screen cell (x, y), offset #f on a status
