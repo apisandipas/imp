@@ -167,3 +167,71 @@ fn a_rename_onto_an_existing_file_fails() {
     assert_eq!(read(&dir, "b.txt"), "bbb\n");
     assert!(s.status().contains("already exists"), "{}", s.status());
 }
+
+/// The screen row showing `name`, trimmed.
+fn row_with(s: &mut imp_server::Server, name: &str) -> String {
+    let rows = s.frame().text_rows();
+    rows.iter()
+        .find(|r| r.trim_end().ends_with(name))
+        .unwrap_or_else(|| panic!("{name} in {rows:#?}"))
+        .trim()
+        .to_string()
+}
+
+#[test]
+fn details_show_beside_each_entry_and_cannot_be_edited() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tree("dired-details");
+    std::fs::write(dir.join("b.txt"), vec![b'x'; 3000]).unwrap();
+    std::fs::set_permissions(dir.join("a.txt"), std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut s = browse(&dir);
+    s.set_size(100, 20);
+    let a = row_with(&mut s, "a.txt");
+    assert!(a.starts_with("-rw-------     4 "), "{a}");
+    let b = row_with(&mut s, "b.txt");
+    assert!(b.contains(" 2.9K "), "{b}");
+    assert!(row_with(&mut s, "sub/").starts_with("drwx"));
+    // Not text: the buffer holds only the names, and the cursor starts on
+    // the name.
+    assert_eq!(s.text(), "sub/\na.txt\nb.txt\n");
+    // They follow their entry: delete sub/'s line, and a.txt keeps its own.
+    type_keys(&mut s, "dd");
+    assert!(row_with(&mut s, "a.txt").starts_with("-rw-------"));
+    // A renamed line keeps its details; a new one has none.
+    type_keys(&mut s, "ciwrenamed<esc>");
+    assert!(row_with(&mut s, "renamed.txt").starts_with("-rw-------"));
+    type_keys(&mut s, "Gonew.txt<esc>");
+    assert_eq!(row_with(&mut s, "new.txt"), "new.txt");
+    // ( hides them.
+    type_keys(&mut s, "uuu(");
+    assert_eq!(row_with(&mut s, "a.txt"), "a.txt");
+    type_keys(&mut s, "(");
+    assert!(row_with(&mut s, "a.txt").starts_with("-rw-------"));
+}
+
+#[test]
+fn file_times_and_sizes_read_as_ls_shows_them() {
+    let mut s = server("");
+    let now = 1_760_000_000; // 2025-10-09
+    for (expr, want) in [
+        (
+            format!("(format-file-time {now} {now} 0)"),
+            "\"Oct  9 08:53\"",
+        ),
+        (
+            format!("(format-file-time {now} {now} 7200)"),
+            "\"Oct  9 10:53\"",
+        ),
+        (format!("(format-file-time 0 {now} 0)"), "\"Jan  1  1970\""),
+        (
+            format!("(format-file-time 951782400 {now} 0)"),
+            "\"Feb 29  2000\"",
+        ),
+        ("(format-file-size 512)".into(), "\"512\""),
+        ("(format-file-size 4096)".into(), "\"4.0K\""),
+        ("(format-file-size 12000)".into(), "\"12K\""),
+        ("(format-file-size 1572864)".into(), "\"1.5M\""),
+    ] {
+        assert_eq!(s.eval(&expr).unwrap(), want, "{expr}");
+    }
+}

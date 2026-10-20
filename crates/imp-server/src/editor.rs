@@ -13,6 +13,9 @@ use regex::Regex;
 
 use crate::layout::{Dir, Layout, Rect};
 
+/// One line's margin text: (text, face) parts.
+pub type MarginText = Vec<(String, String)>;
+
 #[derive(Debug, Default)]
 pub struct Editor {
     /// The current buffer. Every buffer primitive acts on this one; other
@@ -84,6 +87,10 @@ pub struct Editor {
     /// gets a two-cell column before its line numbers (diagnostics,
     /// breakpoints).
     pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
+    /// Display-only text before lines, by buffer id: line -> (text,
+    /// face) parts. It takes a column as wide as the widest, after the
+    /// line numbers, and can't be edited (the file browser's details).
+    pub margins: HashMap<usize, BTreeMap<usize, MarginText>>,
     /// Each buffer's closed folds as (first, last) lines: sorted, not
     /// nested. Scheme decides where folds are (runtime/fold.scm).
     pub folds: HashMap<usize, Vec<(usize, usize)>>,
@@ -259,6 +266,7 @@ impl Editor {
         self.buffer_layers.remove(&id);
         self.folds.remove(&id);
         self.signs.remove(&id);
+        self.margins.remove(&id);
         self.status_values.remove(&id);
         true
     }

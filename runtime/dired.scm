@@ -11,8 +11,14 @@
 ;;; Moving a line (dd then p) changes nothing. A line that reads exactly as
 ;;; an entry did is that entry, so swapping two names is no change: rename
 ;;; through a third name instead.
+;;;
+;;; Each entry's permissions, size and modification time show in the
+;;; margin, which isn't text in the buffer, so they can't be edited by
+;;; accident; they follow their entry as lines move. ( hides or shows them
+;;; (the dired-details option).
 
 (define-option! 'dired-show-hidden #f '())
+(define-option! 'dired-details #t '())
 
 ;; Each listed entry has a sticky mark at the start of its line: text
 ;; typed at the start of the line (cw, cc, I) goes after it, so a renamed
@@ -49,7 +55,105 @@
           (begin
             (mark-set-sticky! (dired-mark i) (line-start i))
             (loop (cdr es) (+ i 1) (cons (list i (car (car es)) (cadr (car es))) acc)))))
-    (set-buffer-unmodified!)))
+    (set-buffer-unmodified!)
+    (dired-read-details! dir)
+    (dired-show-details!)))
+
+;;; Details: permissions, size and modification time, in the margin
+
+;; Days since 1970-01-01 as (year month day): Howard Hinnant's
+;; civil_from_days.
+(define (civil-from-days days)
+  (let* ([z (+ days 719468)]
+         [era (quotient (if (>= z 0) z (- z 146096)) 146097)]
+         [doe (- z (* era 146097))]
+         [yoe (quotient (- (+ (- doe (quotient doe 1460)) (quotient doe 36524)) (quotient doe 146096)) 365)]
+         [doy (- doe (- (+ (* 365 yoe) (quotient yoe 4)) (quotient yoe 100)))]
+         [mp (quotient (+ (* 5 doy) 2) 153)]
+         [day (+ (- doy (quotient (+ (* 153 mp) 2) 5)) 1)]
+         [month (if (< mp 10) (+ mp 3) (- mp 9))])
+    (list (+ yoe (* era 400) (if (<= month 2) 1 0)) month day)))
+
+(define *month-names* (vector "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
+
+(define (two-digits n) (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
+
+;; `seconds` (since the epoch, UTC) as ls shows it, 12 columns: "Oct 19 14:02"
+;; within half a year of `now`, else "Oct 19  2024". `offset` is the local
+;; time zone's, in seconds.
+(define (format-file-time seconds now offset)
+  (let* ([local (+ seconds offset)]
+         [date (civil-from-days (quotient local 86400))]
+         [in-day (modulo local 86400)]
+         [day (number->string (caddr date))]
+         [head (string-append (vector-ref *month-names* (- (cadr date) 1)) " "
+                              (if (< (caddr date) 10) (string-append " " day) day))])
+    (if (< (abs (- now seconds)) (* 180 86400))
+        (string-append head " " (two-digits (quotient in-day 3600)) ":" (two-digits (quotient (modulo in-day 3600) 60)))
+        (string-append head "  " (number->string (car date))))))
+
+;; A size as ls -h shows it: 512, 4.0K, 12K, 1.5M.
+(define (format-file-size bytes)
+  (let loop ([n bytes] [units '("K" "M" "G" "T" "P")] [unit ""])
+    (cond [(< n 1024)
+           (cond [(equal? unit "") (number->string n)]
+                 [(< n 10) (let ([tenths (exact (round (* n 10)))])
+                             (if (>= tenths 100)
+                                 (string-append "10" unit)
+                                 (string-append (number->string (quotient tenths 10)) "."
+                                                (number->string (modulo tenths 10)) unit)))]
+                 [else (string-append (number->string (exact (ceiling n))) unit)])]
+          [(null? units) (string-append (number->string (exact (round n))) unit)]
+          [else (loop (/ n 1024.0) (cdr units) (car units))])))
+
+;; The current time and the local zone's offset from UTC, in seconds.
+(define (clock-now)
+  (let ([words (split-whitespace (cadr (run-shell "date '+%s %z'" "")))])
+    (if (= (length words) 2)
+        (let* ([z (cadr words)]
+               [sign (if (starts-with? z "-") -1 1)]
+               [hours (or (string->number (substring z 1 3)) 0)]
+               [minutes (or (string->number (substring z 3 5)) 0)])
+          (list (or (string->number (car words)) 0) (* sign (+ (* hours 3600) (* minutes 60)))))
+        (list 0 0))))
+
+;; Reads every entry's details into the buffer-local dired-details, a hash
+;; of entry index -> margin parts.
+(define (dired-read-details! dir)
+  (let* ([clock (clock-now)] [now (car clock)] [offset (cadr clock)])
+    (set-buffer-local! 'dired-details
+      (foldl (lambda (e h)
+               (let ([info (file-info (dired-join dir (cadr e)))])
+                 (if info
+                     (hash-insert h (car e)
+                                  (list (list (string-append (car info) " ") "dired.permissions")
+                                        (list (string-append (pad-left (format-file-size (cadr info)) 5) " ") "dired.size")
+                                        (list (format-file-time (caddr info) now offset) "dired.date")))
+                     h)))
+             (hash) (buffer-local 'dired-entries)))))
+
+;; Puts each entry's details beside the line it is on now.
+(define (dired-show-details!)
+  (let ([details (buffer-local 'dired-details)])
+    (set-buffer-local! 'dired-details-version (buffer-version))
+    (set-margin!
+     (if (and details (option 'dired-details))
+         (let ([lines (if (buffer-modified?)
+                          (hash->list (dired-survivors))
+                          (map (lambda (e) (cons (car e) e)) (buffer-local 'dired-entries)))])
+           (filter (lambda (x) x)
+                   (map (lambda (pair)
+                          (let ([parts (hash-try-get details (car (cdr pair)))])
+                            (and parts (list (car pair) parts))))
+                        lines)))
+         '()))))
+
+;; After an edit, in normal mode (not on every key typed in insert mode).
+(add-hook! 'post-command
+  (lambda ()
+    (when (and (eq? (major-mode) 'dired-mode) (eq? *mode* 'normal)
+               (not (equal? (buffer-local 'dired-details-version) (buffer-version))))
+      (dired-show-details!))))
 
 (define (dired-buffer-name dir) (if (equal? dir "/") "/" (string-append dir "/")))
 
@@ -205,6 +309,10 @@
 (define-mode-key! 'dired-mode 'normal "g." (lambda (n)
                                              (set-option! 'dired-show-hidden (not (option 'dired-show-hidden)))
                                              (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
+(define-mode-key! 'dired-mode 'normal "("
+  (lambda (n)
+    (set-option! 'dired-details (not (option 'dired-details)))
+    (dired-show-details!)))
 (define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
 
 (define (dired-explore! arg)

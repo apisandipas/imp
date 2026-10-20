@@ -366,6 +366,8 @@ struct View<'a> {
     buffer_layers: &'a [Layer],
     /// The buffer's gutter signs, if it has any.
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
+    /// The buffer's margin text, and the margin's width.
+    margin: Option<(&'a BTreeMap<usize, crate::editor::MarginText>, usize)>,
     folds: Folds<'a>,
     cursor_line: usize,
     gutter: usize,
@@ -470,6 +472,10 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: e.signs.get(&buffer_id).filter(|s| !s.is_empty()),
+        margin: e
+            .margins
+            .get(&buffer_id)
+            .map(|m| (m, margin_width(e, buffer_id))),
         folds,
         cursor_line,
         gutter,
@@ -696,6 +702,8 @@ impl View<'_> {
                         None => row.push(Span::new(" ".repeat(SIGN_WIDTH), e.face("sign-column"))),
                     }
                 }
+                let margin = self.margin.map_or(0, |(_, w)| w);
+                numbers -= margin;
                 if numbers > 0 {
                     row.push(if i == 0 {
                         Span::new(
@@ -711,6 +719,18 @@ impl View<'_> {
                     } else {
                         Span::new(" ".repeat(numbers), gutter_face)
                     });
+                }
+                if let Some((texts, width)) = self.margin {
+                    let mut used = 0;
+                    for (text, face) in texts.get(&line).filter(|_| i == 0).into_iter().flatten() {
+                        push(&mut row, text, e.face(face));
+                        used += text_width(text);
+                    }
+                    push(
+                        &mut row,
+                        &" ".repeat(width.saturating_sub(used)),
+                        Style::default(),
+                    );
                 }
                 let used: usize = text_row.iter().map(|s| text_width(&s.text)).sum();
                 row.extend(text_row);
@@ -745,12 +765,24 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
         SIGN_WIDTH
     } else {
         0
-    };
+    } + margin_width(e, buffer_id);
     if e.line_numbers == LineNumbers::Off {
         return signs;
     }
     let digits = buffer.line_count().to_string().len();
     signs + digits.max(3) + 1
+}
+
+/// Cells of a buffer's margin: its widest line's text and a space, or 0.
+fn margin_width(e: &Editor, buffer_id: usize) -> usize {
+    e.margins
+        .get(&buffer_id)
+        .and_then(|m| {
+            m.values()
+                .map(|parts| parts.iter().map(|(t, _)| text_width(t)).sum::<usize>())
+                .max()
+        })
+        .map_or(0, |w| w + 1)
 }
 
 /// `distance` is how far `line` is from the cursor's, counting a closed

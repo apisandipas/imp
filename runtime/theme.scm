@@ -84,6 +84,9 @@
      ;; The file browser
      (list "dired.directory" (fg 'blue "bold"))
      (list "dired.hidden" (fg 'dim))
+     (list "dired.permissions" (fg 'dim))
+     (list "dired.size" (fg 'cyan))
+     (list "dired.date" (fg 'comment))
      ;; Org
      (list "org.level1" (fg 'blue "bold"))
      (list "org.level2" (fg 'magenta "bold"))

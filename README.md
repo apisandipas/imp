@@ -101,7 +101,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   name another; deleting asks first, and the buffer follows a rename.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, agenda and capture, an editable file browser
-  (`:Ex`), projects with search into a quickfix list, and terminals
+  (`:Ex`, with permissions, size and time beside each name; `(` hides
+  them), projects with search into a quickfix list, and terminals
   (`:terminal`). Search results open along the bottom and git down the
   right, closing with `q`; `define-popup-rule!` changes where.
 - **Help.** `:help`, `SPC h k` (describe key), `SPC h f` (describe

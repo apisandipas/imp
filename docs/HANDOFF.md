@@ -194,7 +194,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `set-signs!` (gutter signs for the current buffer, a list of
   `(line text face)`); `status-text`. Scheme code should use
   `(set-sign-source! name priority signs)` (core.scm) instead, so sources
-  share the column.
+  share the column. `set-margin!` (display-only text before lines, a
+  list of `(line ((text face) ...))`); `file-info` (`(permissions size
+  mtime)`).
 - Look: `set-popup!` takes strings or rows of runs (`(text face)`
   lists); `set-popup-place!` ("bottom", or "cursor" with a column shift,
   and a title); `set-statusline!` (formats, see render.rs `status_line`),
@@ -291,6 +293,15 @@ needed. Details, and what each one leaves out, are in
   - `write-handler` and `revert-handler` for buffers that aren't files.
   - A buffer's mode keys now come before Vim's operators, motions and
     prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+  - Margins (`set-margin!`, `editor.margins`): display-only text before
+    lines, in the gutter after the line numbers, as wide as its widest
+    line. Not buffer text, so it can't be edited, yanked or searched,
+    and cursor, wrap and mouse math already count it (gutter_width).
+    The file browser puts each entry's permissions, size and time there
+    (`file-info`, a primitive for the mode bits; dates formatted in
+    Scheme with the zone offset from `date`), mapped to lines through
+    `dired-survivors` after each normal-mode edit so they follow their
+    entry. `(` toggles them (`dired-details`).
   - Window appearance (theme.scm options `font`, `font-size`,
     `window-padding`, `background-opacity`, `terminal-background`):
     `set-appearance!` stores them on the editor and every `Frame`

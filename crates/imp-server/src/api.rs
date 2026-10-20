@@ -277,6 +277,22 @@ pub fn register(engine: &mut Engine) {
         }
         imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(|e| e.to_string())
     });
+    // (permissions size mtime) for `path`, not following a symlink:
+    // permissions as ls shows them ("drwxr-xr-x"), size in bytes, mtime
+    // in seconds since the epoch. #f if it isn't there.
+    engine.register_fn("file-info", |path: String| {
+        let m = std::fs::symlink_metadata(&path).ok()?;
+        let mtime = m
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs() as isize);
+        Some(vec![
+            SteelVal::StringV(crate::files::permissions(&m).into()),
+            SteelVal::IntV(m.len() as isize),
+            SteelVal::IntV(mtime),
+        ])
+    });
     engine.register_fn("delete-file!", |path: String| {
         std::fs::remove_file(path).is_ok()
     });
@@ -811,6 +827,46 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let id = e.current;
             e.signs.insert(id, map);
+        })
+    });
+
+    // Display-only text before lines of the current buffer: a list of
+    // (line ((text face) ...)). The empty list removes the margin.
+    engine.register_fn("set-margin!", |lines: Vec<SteelVal>| {
+        let mut map = std::collections::BTreeMap::new();
+        for entry in lines {
+            let SteelVal::ListV(entry) = entry else {
+                continue;
+            };
+            let (Some(SteelVal::IntV(line)), Some(SteelVal::ListV(parts))) =
+                (entry.get(0), entry.get(1))
+            else {
+                continue;
+            };
+            let parts = parts
+                .iter()
+                .filter_map(|part| match part {
+                    SteelVal::ListV(p) => match (p.get(0), p.get(1)) {
+                        (Some(SteelVal::StringV(text)), Some(SteelVal::StringV(face))) => {
+                            Some((text.to_string(), face.to_string()))
+                        }
+                        (Some(SteelVal::StringV(text)), _) => {
+                            Some((text.to_string(), String::new()))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect();
+            map.insert(clamp(*line), parts);
+        }
+        editor::with(|e| {
+            let id = e.current;
+            if map.is_empty() {
+                e.margins.remove(&id);
+            } else {
+                e.margins.insert(id, map);
+            }
         })
     });
 
