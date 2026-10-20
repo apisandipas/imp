@@ -43,6 +43,7 @@
 ;; (use-package! 'posframe)                   ; M-x, find-file... in a centred box
 ;; (use-package! 'org-babel)                  ; C-c C-c runs Org source blocks
 ;; (use-package! 'move-lines)                 ; J and K move lines selected with V
+;; (use-package! 'nerd-icons)                 ; icons (needs a Nerd Font, set with 'font)
 
 ;;; Claude Code (M-a, SPC a): the program it runs, and where its window goes.
 ;; (set-option! 'claude-command "claude --model opus")

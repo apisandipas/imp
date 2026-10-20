@@ -64,6 +64,7 @@
 
 (define (project-find-file-in root)
   "Asks for a file anywhere under `root`, then opens it."
+  (set! *completion-category* 'file)
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
                    (lambda (file) (open-file! (string-append root "/" file)))))
@@ -88,7 +89,9 @@
     (let ([known (filter file-directory? (known-projects))])
       (if (null? known)
           (message "no projects yet: open a file in one")
-          (completing-read "Switch to project: " known project-find-file-in)))))
+          (begin
+            (set! *completion-category* 'project)
+            (completing-read "Switch to project: " known project-find-file-in))))))
 
 (define-command! 'project-switch-buffer
   (lambda (count)
@@ -99,6 +102,7 @@
                            (buffer-list))]
               [label (lambda (id) (substring (absolute (cadr (buffer-info id))) (+ (string-length root) 1)
                                              (string-length (absolute (cadr (buffer-info id))))))])
+         (set! *completion-category* 'file)
          (completing-read "Project buffer: " (map label ids)
                           (lambda (name)
                             (let ([hit (list-find (lambda (id) (equal? (label id) name)) ids)])

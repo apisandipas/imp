@@ -15,6 +15,13 @@
 (define *completion-index* 0)
 (define *completion-limit* 500)  ; matches kept per keystroke
 (define *completion-annotate* #f)  ; candidate -> text shown dimmed beside it, or #f
+;; What the open menu lists, for packages that decorate it: 'command,
+;; 'file, 'buffer, 'symbol, 'option, 'project, or #f. A caller sets it
+;; just before completing-read; closing the menu clears it.
+(define *completion-category* #f)
+;; (lambda (category candidate)) -> a short string (an icon) drawn before
+;; the candidate, or #f. The nerd-icons package sets it.
+(define *completion-icon* (lambda (category candidate) #f))
 ;; Where the menu is drawn, as set-popup-place! takes it: "bottom", or
 ;; "center" and a width in percent for a box in the middle of the screen
 ;; with the prompt inside (the posframe package sets that).
@@ -45,10 +52,11 @@
                      (map (lambda (c)
                             (let ([note (*completion-annotate* c)])
                               (if note
-                                  (list (string-append " " (pad-right c width)) (list note "popup.detail"))
-                                  (string-append " " c))))
+                                  (list (string-append " " (completion-icon-prefix c) (pad-right c width))
+                                        (list note "popup.detail"))
+                                  (string-append " " (completion-icon-prefix c) c))))
                           shown))]
-                  [else (map (lambda (c) (string-append " " c)) shown)]))
+                  [else (map (lambda (c) (string-append " " (completion-icon-prefix c) c)) shown)]))
     ;; Titled with the prompt, without its colon.
     (set-popup-place! (car *completion-place*) (cadr *completion-place*) (trim (let ([p (trim *cmdline-prompt*)])
                                          (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))
@@ -78,8 +86,14 @@
     [(equal? key "<pageup>") (move-selection! (- (completion-rows))) #t]
     [else #f]))
 
+(define (completion-icon-prefix candidate)
+  "The icon *completion-icon* gives `candidate` and a space, or \"\"."
+  (let ([icon (*completion-icon* *completion-category* candidate)])
+    (if icon (string-append icon " ") "")))
+
 (define (close-completions!)
   "Closes the completion menu."
+  (set! *completion-category* #f)
   (set-popup! '())
   (set-popup-selected! -1))
 
@@ -139,6 +153,7 @@
           [docs (doc-lines)]
           [labels (foldl (lambda (p h) (hash-insert h (symbol->string (car p)) (sentence-case (cadr p))))
                          (hash) (*command-labels*))])
+      (set! *completion-category* 'command)
       (completing-read "M-x " (sort (map symbol->string (command-names)) string<?)
                        (lambda (name) (run-command (string->symbol name)))
                        (lambda (name)
@@ -168,6 +183,7 @@
 (define-command! 'find-file
   (lambda (count)
     "Open a file under the current directory, skipping what .gitignore does."
+    (set! *completion-category* 'file)
     (completing-read "Find file: " (list-files (current-dir) 50000) open-file!)))
 
 (define-command! 'switch-buffer
@@ -179,6 +195,7 @@
                     ids)]
            [ids (filter (lambda (id) (memv id (buffer-list))) ids)]
            [names (map (lambda (id) (car (buffer-info id))) ids)])
+      (set! *completion-category* 'buffer)
       (completing-read "Switch to buffer: " names
                        (lambda (name)
                          (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])
@@ -193,11 +210,13 @@
 (define-command! 'describe-function
   (lambda (count)
     "Describe a function, chosen from every definition in the sources."
+    (set! *completion-category* 'symbol)
     (completing-read "Describe function: " (all-definitions) describe-function)))
 
 (define-command! 'describe-option
   (lambda (count)
     "Describe an option, chosen from a list: its value and documentation."
+    (set! *completion-category* 'option)
     (completing-read "Describe option: "
                      (sort (map symbol->string (hash-keys->list *options*)) string<?)
                      describe-option)))
@@ -205,11 +224,13 @@
 (define-command! 'find-definition
   (lambda (count)
     "Open the source of a definition chosen from a list."
+    (set! *completion-category* 'symbol)
     (completing-read "Find definition: " (all-definitions) find-definition)))
 
 (define-command! 'describe-command
   (lambda (count)
     "Describe a command, chosen from a list: its source and documentation."
+    (set! *completion-category* 'command)
     (completing-read "Describe command: " (sort (map symbol->string (command-names)) string<?)
                      describe-function)))
 

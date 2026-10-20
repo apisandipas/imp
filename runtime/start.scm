@@ -50,7 +50,9 @@
     (let ([files (filter file-exists? (recent-files))])
       (if (null? files)
           (message "no recent files yet")
-          (completing-read "Recent file: " (map abbreviate-path files) open-file!)))))
+          (begin
+            (set! *completion-category* 'file)
+            (completing-read "Recent file: " (map abbreviate-path files) open-file!))))))
 
 (define-leader! "fr" 'recent-files "recent files")
 

@@ -220,10 +220,16 @@
   "How many rows the completion menu shows: up to 10, to fit the window."
   (max 1 (min 10 (- (window-height) 2))))
 
+;; (lambda (source candidate)) -> a short string (an icon) drawn before a
+;; candidate from `source` (its name: 'lsp, 'file...), or #f. The
+;; nerd-icons package sets it.
+(define *menu-icon* (lambda (source candidate) #f))
+
 (define (menu-line c width)
-  "A menu row for candidate `c`: the label, then its detail dimmed."
-  (let ([detail (cadr c)])
-    (list (list (pad-right (car c) width) "")
+  "A menu row for candidate `c`: its icon if any, the label, then its
+   detail dimmed."
+  (let ([detail (cadr c)] [icon (*menu-icon* *menu-source* c)])
+    (list (list (string-append (if icon (string-append icon " ") "") (pad-right (car c) width)) "")
           (list (if (equal? detail "") "" (string-append "  " (clip detail 40))) "popup.detail"))))
 
 (define (draw-menu!)

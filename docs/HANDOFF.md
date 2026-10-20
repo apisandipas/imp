@@ -268,6 +268,9 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
     `org-babel-interpreters` as background jobs; `:dir`, `:results silent`.
   - `move-lines`: J/K move a visual line selection (other visual modes
     keep Vim's J and K).
+  - `nerd-icons`: Nerd Font icons through core hooks: `*completion-icon*`
+    (by `*completion-category*`, which pickers set), `*menu-icon*` (by
+    completion source; LSP item kinds), status values %{icon} %{branch}.
 - Background: `(run-after! ms thunk)`, `(run-every! ms thunk)`,
   `(start-job! command input on-output on-exit)` (input `#f` keeps stdin
   open for `job-send!`).

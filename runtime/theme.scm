@@ -291,6 +291,7 @@
 (define-command! 'load-theme
   (lambda (count)
     "Pick a theme by name and switch to it."
+    (set! *completion-category* 'theme)
     (completing-read "Theme: " (theme-names) (lambda (name) (load-theme! (string->symbol name))))))
 
 (define-ex! '("theme" "colo" "colorscheme")

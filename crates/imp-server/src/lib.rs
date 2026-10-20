@@ -100,6 +100,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "org-babel",
         include_str!("../../../packages/org-babel/org-babel.scm"),
     ),
+    (
+        "nerd-icons",
+        include_str!("../../../packages/nerd-icons/nerd-icons.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from
