@@ -377,7 +377,9 @@ needed. Details, and what each one leaves out, are in
     prefixes and insert typing are untouched.
 - **File browser** (`dired.scm`, `:Ex`, `SPC f d`, `:e DIR`): an oil-style
   editable listing; `:w` shows the renames, deletions and creations and
-  asks first.
+  asks first. One browser buffer, reused as you change directory unless
+  it has unsaved edits (`dired-reuse-buffer`); `q` goes back to the file
+  it was opened from.
 - **Projects** (`project.scm`):
   - roots from markers, `SPC p f/p/b`;
   - project search (`SPC s p`, `:grep` with rg) into a quickfix list

@@ -3,7 +3,10 @@
 ;;;
 ;;; :Explore [DIR] (SPC f d, or :e on a directory) lists a directory, one
 ;;; name per line, directories ending in /. <ret> opens the entry under the
-;;; cursor and - goes to the parent. g. shows or hides dotfiles, gr re-reads.
+;;; cursor and - goes to the parent. g. shows or hides dotfiles, gr re-reads,
+;;; q closes the browser. Going to another directory reuses the buffer
+;;; (unless it has unsaved edits) rather than leaving one behind per
+;;; directory, unless dired-reuse-buffer is off.
 ;;;
 ;;; The listing is text: rename a line to rename the file, delete a line to
 ;;; delete it, add a line to make a file (a directory if it ends in /, and
@@ -19,6 +22,9 @@
 
 (define-option! 'dired-show-hidden #f '())
 (define-option! 'dired-details #t '())
+;; Going to another directory replaces the browser buffer, as Emacs's
+;; dired-kill-when-opening-new-dired-buffer.
+(define-option! 'dired-reuse-buffer #t '())
 
 ;; Each listed entry has a sticky mark at the start of its line: text
 ;; typed at the start of the line (cw, cc, I) goes after it, so a renamed
@@ -200,8 +206,12 @@
   (let* ([dir (if (and (> (string-length dir) 1) (ends-with? dir "/")) (substring dir 0 (- (string-length dir) 1)) dir)]
          [name (dired-buffer-name dir)]
          [existing (list-find (lambda (id) (equal? (car (buffer-info id)) name)) (buffer-list))]
-         [id (or existing (buffer-new! name))])
+         [id (or existing (buffer-new! name))]
+         ;; The buffer that isn't a browser it came from, for q.
+         [from (let ([cur (current-buffer)])
+                 (if (eq? (major-mode) 'dired-mode) (buffer-local 'dired-return-to) cur))])
     (go-to-buffer! id)
+    (unless (equal? from id) (set-buffer-local! 'dired-return-to from))
     (unless existing
       (set-major-mode! 'dired-mode)
       (set-buffer-local! 'dired-dir dir)
@@ -224,14 +234,38 @@
    An entry typed but not saved yet only gets a message."
   (let ([path (dired-entry-path (current-line))])
     (cond [(not path) #f]
-          [(file-directory? path) (dired-open! path)]
+          [(file-directory? path) (dired-go! path)]
           [(file-exists? path) (open-file-buffer! path)]
           [else (message (string-append (trim (line-text (current-line))) " doesn't exist yet (:w makes it)"))])))
 
 (define (dired-up!)
   "-: lists the parent directory, the cursor on the one just left."
   (let ([dir (dired-dir)])
-    (unless (equal? dir "/") (dired-open! (directory-of dir) (file-name-of dir)))))
+    (unless (equal? dir "/") (dired-go! (directory-of dir) (file-name-of dir)))))
+
+(define (dired-go! dir . focus)
+  "Lists `dir` from a browser buffer, as dired-open! does, then closes
+   the browser it left if dired-reuse-buffer is on and that has no
+   unsaved edits or other window showing it."
+  (let ([old (current-buffer)] [alt *alternate-buffer*])
+    (apply dired-open! dir focus)
+    (when (and (option 'dired-reuse-buffer) (not (= old (current-buffer)))
+               (not (with-buffer old buffer-modified?))
+               (not (list-find (lambda (w) (and (not (= w (current-window))) (= (window-buffer w) old)))
+                               (window-list))))
+      (kill-buffer! old)
+      ;; C-^ goes back to where you were before the browser.
+      (when (and alt (memv alt (buffer-list)) (not (= alt (current-buffer))))
+        (set! *alternate-buffer* alt)))))
+
+(define (dired-quit!)
+  "q: closes the browser for the buffer you came from, unless it has
+   unsaved edits."
+  (if (buffer-modified?)
+      (message "unsaved changes: :w to make them or :e! to drop them")
+      (let ([id (current-buffer)] [back (buffer-local 'dired-return-to)])
+        (when (and back (memv back (buffer-list))) (go-to-buffer! back))
+        (kill-buffer! id))))
 
 ;;; Saving: working out the changes, then making them
 
@@ -354,6 +388,7 @@
 
 (define-mode-key! 'dired-mode 'normal "<ret>" (lambda (n) (dired-visit!)))
 (define-mode-key! 'dired-mode 'normal "-" (lambda (n) (dired-up!)))
+(define-mode-key! 'dired-mode 'normal "q" (lambda (n) (dired-quit!)))
 (define-mode-key! 'dired-mode 'normal "g." (lambda (n)
                                              (set-option! 'dired-show-hidden (not (option 'dired-show-hidden)))
                                              (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))

@@ -248,3 +248,42 @@ fn file_times_and_sizes_read_as_ls_shows_them() {
         assert_eq!(s.eval(&expr).unwrap(), want, "{expr}");
     }
 }
+
+fn dired_buffers(s: &mut imp_server::Server) -> usize {
+    s.eval("(length (filter (lambda (id) (with-buffer id (lambda () (eq? (major-mode) 'dired-mode)))) (buffer-list)))")
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[test]
+fn going_between_directories_reuses_the_buffer_and_q_closes_it() {
+    let dir = tree("dired-reuse");
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("a.txt").display()));
+    type_keys(&mut s, ":Explore<ret>");
+    type_keys(&mut s, "gg<ret>");
+    assert_eq!(s.text(), "inner.txt\n");
+    type_keys(&mut s, "-");
+    assert_eq!(s.text(), "sub/\na.txt\nb.txt\n");
+    assert_eq!(dired_buffers(&mut s), 1);
+    // A browser with unsaved edits stays.
+    type_keys(&mut s, "Gonew.txt<esc>gg<ret>");
+    assert_eq!(dired_buffers(&mut s), 2);
+    // q goes back to the file the browser was opened from.
+    type_keys(&mut s, "q");
+    assert_eq!(dired_buffers(&mut s), 1);
+    assert_eq!(s.text(), "aaa\n");
+    type_keys(&mut s, ":Explore<ret>");
+    assert_eq!(s.text(), "sub/\na.txt\nb.txt\nnew.txt\n");
+    type_keys(&mut s, "q");
+    assert_eq!(dired_buffers(&mut s), 1);
+    assert!(s.status().contains("unsaved"), "{}", s.status());
+    type_keys(&mut s, ":e!<ret>q");
+    assert_eq!(dired_buffers(&mut s), 0);
+    assert_eq!(s.text(), "aaa\n");
+    // With the option off, each directory keeps its buffer.
+    s.eval("(set-option! 'dired-reuse-buffer #f)").unwrap();
+    type_keys(&mut s, ":Explore<ret>gg<ret>");
+    assert_eq!(dired_buffers(&mut s), 2);
+}
