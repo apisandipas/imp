@@ -148,6 +148,8 @@ Packages load from `~/.config/imp/packages`, or from git with
 (use-package! 'olivetti                       ; a centred column of text
   'config (lambda () (set-option! 'olivetti-modes '(org-mode markdown-mode))))
 (use-package! 'posframe)                      ; M-x and friends in a centred box
+(use-package! 'org-babel)                     ; C-c C-c runs Org source blocks
+(use-package! 'move-lines)                    ; J and K move lines selected with V
 ```
 
 `:packages` lists what's loaded and what else comes with imp.

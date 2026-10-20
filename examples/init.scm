@@ -41,6 +41,8 @@
 ;;             (set-option! 'olivetti-body-width 80)
 ;;             (set-option! 'olivetti-modes '(org-mode markdown-mode))))
 ;; (use-package! 'posframe)                   ; M-x, find-file... in a centred box
+;; (use-package! 'org-babel)                  ; C-c C-c runs Org source blocks
+;; (use-package! 'move-lines)                 ; J and K move lines selected with V
 
 ;;; Claude Code (M-a, SPC a): the program it runs, and where its window goes.
 ;; (set-option! 'claude-command "claude --model opus")

@@ -88,6 +88,14 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "posframe",
         include_str!("../../../packages/posframe/posframe.scm"),
     ),
+    (
+        "move-lines",
+        include_str!("../../../packages/move-lines/move-lines.scm"),
+    ),
+    (
+        "org-babel",
+        include_str!("../../../packages/org-babel/org-babel.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from

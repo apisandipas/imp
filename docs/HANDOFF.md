@@ -261,6 +261,11 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
     width the renderer centres) that wraps between words (`linebreak`).
   - `posframe`: completion menus in a centred box with the prompt inside
     (`*completion-place*`, `set-popup-place! "center" percent`).
+  - `org-babel`: C-c C-c runs an Org source block, results in
+    `#+RESULTS:`; Scheme in imp's Steel, others through
+    `org-babel-interpreters` as background jobs; `:dir`, `:results silent`.
+  - `move-lines`: J/K move a visual line selection (other visual modes
+    keep Vim's J and K).
 - Background: `(run-after! ms thunk)`, `(run-every! ms thunk)`,
   `(start-job! command input on-output on-exit)` (input `#f` keeps stdin
   open for `job-send!`).
