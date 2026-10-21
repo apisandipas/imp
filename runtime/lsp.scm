@@ -2,7 +2,7 @@
 ;;; code actions, formatting and completion.
 ;;;
 ;;; A language server is a job (core.scm) with its stdin kept open. Rust
-;;; only frames and decodes the messages (lsp-frame, lsp-take-message,
+;;; only frames and decodes the messages (lsp-frame, lsp-read-messages,
 ;;; json-encode); everything here is Scheme, so any of it can be redefined.
 ;;;
 ;;; Servers are configured per major mode:
@@ -138,7 +138,7 @@
   (set! *lsp-runs* (+ *lsp-runs* 1))
   (set! *lsp-servers*
         (hash-insert *lsp-servers* key
-                     (hash 'command command 'root root 'input "" 'next-id 1 'pending (hash)
+                     (hash 'command command 'root root 'next-id 1 'pending (hash)
                            'ready #f 'queue '() 'capabilities (hash) 'encoding "utf-16"
                            'run *lsp-runs*)))
   (let* ([run *lsp-runs*]
@@ -261,22 +261,22 @@
 
 ;;; Receiving
 
+(define (lsp-stream key)
+  "The name Rust keeps server `key`'s output and completion replies
+   under: its key and run, so a restarted server starts afresh."
+  (string-append key "\t" (number->string (lsp-get key 'run))))
+
 (define (lsp-output! key text stream)
   "Handles output from server `key`'s job on `stream`.
    stdout carries LSP messages, dispatched as each completes; anything
    else (stderr) goes to the :lsp-log."
   (if (not (equal? stream "stdout"))
       (lsp-log! text)
-      (begin
-        (lsp-put! key 'input (string-append (or (lsp-get key 'input) "") text))
-        (let loop ()
-          (let* ([input (lsp-get key 'input)] [taken (and input (lsp-take-message input))])
-            (when taken
-              (lsp-put! key 'input (cadr taken))
-              (when (car taken)
-                (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
-                              (lsp-dispatch! key (car taken))))
-              (loop)))))))
+      ;; Rust collects the output into messages (lsp-read-messages).
+      (for-each (lambda (msg)
+                  (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
+                                (lsp-dispatch! key msg)))
+                (lsp-read-messages (lsp-stream key) text))))
 
 (define (lsp-dispatch! key msg)
   "Handles one message `msg` from server `key`.
@@ -1075,7 +1075,30 @@
 (define (completion-candidates result start encoding)
   "Menu candidates from completion reply `result`, in the server's order.
    `start` is where the typed word starts, for items without a textEdit;
-   snippets are reduced to plain text."
+   snippets are reduced to plain text. A reply Rust kept (see
+   lsp-expect-completion!) is read there."
+  (if (and (hash? result) (jget result "imp-completion"))
+      (lsp-completion-candidates (jget result "imp-completion") start encoding)
+      (completion-candidates-of result start encoding)))
+
+(define (kept-item? item)
+  "Whether `item` is a menu candidate's item from a reply Rust kept:
+   (imp-completion handle index kind)."
+  (and (pair? item) (equal? (car item) 'imp-completion)))
+
+(define (full-completion-item item)
+  "Completion item `item` whole: one from a reply Rust kept holds only
+   its kind, and where to find the rest."
+  (if (kept-item? item) (lsp-completion-item (cadr item) (caddr item)) item))
+
+(define (completion-item-kind item)
+  "The kind of completion item `item` (a CompletionItemKind number), or #f."
+  (cond [(kept-item? item) (cadddr item)]
+        [(hash? item) (jget item "kind")]
+        [else #f]))
+
+(define (completion-candidates-of result start encoding)
+  "completion-candidates for a reply decoded in Scheme."
   (let* ([items (cond [(not result) '()] [(hash? result) (or (jget result "items") '())] [else result])]
          ;; The server's order (sortText), which matching keeps for ties.
          [sort-key (lambda (item) (or (jget item "sortText") (jget item "label") ""))]
@@ -1104,15 +1127,24 @@
    applies the server's extra edits (imports, say)."
   (let ([key (lsp-key)] [start (word-start-before (cursor))])
     (and key
-         (let ([encoding (lsp-encoding)])
+         (let ([encoding (lsp-encoding)] [old (lsp-get key 'completion-request)])
            (lsp-sync!)
-           (lsp-request! key "textDocument/completion"
+           ;; Only the newest request's reply is wanted: a server may send
+           ;; megabytes for each.
+           (when old
+             (lsp-drop-completion! (lsp-stream key) old)
+             (lsp-notify! key "$/cancelRequest" (hash "id" old)))
+           (let ([id #f])
+             (set! id (lsp-request! key "textDocument/completion"
                          (hash-insert (lsp-here) "context" (hash "triggerKind" 1))
                          (lambda (result)
+                           (when (equal? (lsp-get key 'completion-request) id)
+                             (lsp-put! key 'completion-request #f))
                            (done start (completion-candidates result start encoding)
                                  'incomplete (and (hash? result) (jget result "isIncomplete"))
                                  'fuzzy #t
-                                 'on-accept (lambda (item)
+                                 'on-accept (lambda (stub)
+                                              (define item (full-completion-item stub))
                                               ;; The snippet went in as plain text: expand it.
                                               (when (and item (lsp-snippet? item))
                                                 (let* ([raw (lsp-item-text item)] [plain (strip-snippet raw)])
@@ -1121,7 +1153,9 @@
                                               (let ([extra (and item (jget item "additionalTextEdits"))])
                                                 (when (and extra (pair? extra))
                                                   (lsp-apply-text-edits! extra (lsp-get key 'encoding))))
-                                              (lsp-changed!)))))
+                                              (lsp-changed!))))))
+             (lsp-expect-completion! (lsp-stream key) id)
+             (lsp-put! key 'completion-request id))
            #t))))
 
 (define (lsp-auto-complete c)

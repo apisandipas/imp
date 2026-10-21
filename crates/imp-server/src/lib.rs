@@ -19,6 +19,7 @@ mod fuzzy;
 mod json;
 mod kdl;
 mod layout;
+mod lsp;
 mod render;
 mod scan;
 mod search;

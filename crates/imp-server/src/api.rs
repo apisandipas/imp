@@ -1132,6 +1132,33 @@ pub fn register(engine: &mut Engine) {
             vec![msg, SteelVal::StringV(rest.into())]
         })
     });
+    // The LSP client's hot paths (lsp.rs): server `key`'s output `text`
+    // added to what it sent, and the messages now whole, decoded.
+    engine.register_fn("lsp-read-messages", |key: String, text: String| {
+        crate::lsp::read_messages(&key, &text)
+    });
+    // The reply to completion request `id` to server `key` is kept in Rust:
+    // its result comes as (hash "imp-completion" handle "isIncomplete" b).
+    engine.register_fn("lsp-expect-completion!", |key: String, id: isize| {
+        crate::lsp::expect_completion(&key, id as i64)
+    });
+    // Completion request `id`, superseded: its reply comes with a null
+    // result, unread.
+    engine.register_fn("lsp-drop-completion!", |key: String, id: isize| {
+        crate::lsp::drop_completion(&key, id as i64)
+    });
+    // The menu candidates of completion reply `handle`, at `start` in the
+    // current buffer, positions counting in `encoding`.
+    engine.register_fn(
+        "lsp-completion-candidates",
+        |handle: isize, start: isize, encoding: String| {
+            editor::with(|e| crate::lsp::candidates(e, handle as i64, clamp(start), &encoding))
+        },
+    );
+    // Item `index` of completion reply `handle`, whole, or #f.
+    engine.register_fn("lsp-completion-item", |handle: isize, index: isize| {
+        crate::lsp::item(handle as i64, clamp(index))
+    });
     engine.register_fn("path->uri", |path: String| crate::json::path_to_uri(&path));
     engine.register_fn("uri->path", |uri: String| crate::json::uri_to_path(&uri));
     // The full path of an executable on $PATH, or #f.

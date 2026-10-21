@@ -1590,6 +1590,7 @@ dependencies = [
  "portable-pty",
  "regex",
  "ropey",
+ "serde",
  "serde_json",
  "steel-core",
  "tree-sitter",

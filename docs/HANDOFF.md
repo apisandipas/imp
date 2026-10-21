@@ -491,6 +491,15 @@ Phase 2 adds:
   completion menu (`snippet-choice` source). `define-snippet!`,
   `load-snippets!`, and a `snippets` source. lsp.scm expands snippet items
   on accept.
+- LSP output is collected into messages in Rust (`lsp.rs`:
+  `lsp-read-messages`), and completion replies stay there: TypeScript
+  sends ~16k items (5MB) per request, which took 1.4s to decode and turn
+  into candidates in Scheme. `lsp-expect-completion!` marks a request's
+  reply to keep; its result comes as a handle, `lsp-completion-candidates`
+  gives the menu's candidates (item = `(imp-completion handle index
+  kind)`), and `lsp-completion-item` the whole item on accept. A new
+  completion request cancels the previous one, whose reply is dropped
+  unread (`lsp-drop-completion!`).
 - Docstrings for M-x and completion are read in Rust (`docs.rs`:
   `source-doc-table`, `defined-names-containing`); help.scm's Scheme
   reader stays for describe-function.

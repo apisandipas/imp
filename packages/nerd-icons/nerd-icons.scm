@@ -121,7 +121,7 @@
         (case source
           [(file) (nerd-file-icon (car candidate))]
           [(lsp) (let ([item (car (cddddr candidate))])
-                   (or (and (hash? item) (nerd-icon 'lsp-kind (jget item "kind")))
+                   (or (let ([kind (completion-item-kind item)]) (and kind (nerd-icon 'lsp-kind kind)))
                        (nerd-icon 'lsp-kind 1)))]
           [(scheme) (nerd-icon 'category 'symbol)]
           [(snippets snippet-choice) (nerd-icon 'lsp-kind 15)]

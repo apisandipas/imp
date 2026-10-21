@@ -68,6 +68,13 @@ pub fn frame(body: &str) -> String {
 /// The first whole message in `buffer`, as (body, rest), or `None` if one
 /// hasn't fully arrived.
 pub fn take_message(buffer: &str) -> Option<(String, String)> {
+    let (start, end) = message_bounds(buffer)?;
+    Some((buffer[start..end].to_string(), buffer[end..].to_string()))
+}
+
+/// Where the body of the first whole message in `buffer` starts and ends
+/// (bytes), or `None` if one hasn't fully arrived.
+pub fn message_bounds(buffer: &str) -> Option<(usize, usize)> {
     let header_end = buffer.find("\r\n\r\n")?;
     let length: usize = buffer[..header_end].lines().find_map(|l| {
         let (name, value) = l.split_once(':')?;
@@ -80,7 +87,7 @@ pub fn take_message(buffer: &str) -> Option<(String, String)> {
     if buffer.len() < end || !buffer.is_char_boundary(end) {
         return None;
     }
-    Some((buffer[start..end].to_string(), buffer[end..].to_string()))
+    Some((start, end))
 }
 
 /// A `file://` URI for an absolute path, percent-encoding what URIs can't
