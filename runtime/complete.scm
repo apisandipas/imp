@@ -638,3 +638,156 @@
                (schedule-completion! #f))))
 
 (add-hook! 'insert-leave (lambda () (close-menu!)))
+
+;;; Completing on the command line
+;;;
+;;; On the : line, the same menu (above the line) completes the command's
+;;; name and then its argument, from the completions define-ex-completion!
+;;; gives (files for :e, buffers for :b, options for :set, with their
+;;; docs...); after / and ?, words from the buffer. It opens by itself as
+;;; you type (cmdline-completion-auto), or with <tab>. <tab> and C-n, or
+;;; <s-tab> and C-p, step through it putting each in the line; C-y keeps
+;;; the one chosen and closes it, C-e puts back what was typed. With
+;;; cmdline-completion off, <tab> is Vim's wildmenu instead.
+
+(define-option! 'cmdline-completion #t '())
+(define-option! 'cmdline-completion-auto #t '())
+
+(define *cmd-open* #f)
+(define *cmd-start* 0)          ; where the completed text starts in the line
+(define *cmd-labels* (vector))  ; the candidates, and their docs
+(define *cmd-details* (vector))
+(define *cmd-hits* '())         ; the matching candidates' indices, best first
+(define *cmd-index* -1)         ; the one put in the line, -1 for none
+(define *cmd-typed* "")         ; what was typed before stepping through them
+(define *cmd-manual* #f)        ; opened with <tab>: fuzzy matching
+(define *cmd-editing* #f)       ; the menu is editing the line itself
+
+(define (cmdline-context text)
+  "What the menu completes in `text`, the command line up to the cursor:
+   (start candidates details), or #f."
+  (cond
+    [(equal? *cmdline-prompt* ":")
+     (let ([ctx (ex-completion-context text)])
+       (and ctx (pair? (cadr ctx))
+            (let ([docs (doc-lines)])
+              (list (car ctx) (cadr ctx)
+                    (map (lambda (c)
+                           (or (hash-try-get docs c)
+                               (and (starts-with? c "no") (hash-try-get docs (substring c 2 (string-length c))))
+                               ""))
+                         (cadr ctx))))))]
+    [(member *cmdline-prompt* '("/" "?"))
+     (let* ([start (let loop ([i (string-length text)])
+                     (if (and (> i 0) (char-word? (string-ref text (- i 1)))) (loop (- i 1)) i))]
+            [word (substring text start (string-length text))]
+            [words (if (equal? word "") '() (buffer-words (list (current-buffer)) word "" (- -1 (cursor)) 200))])
+       (and (pair? words) (list start words (map (lambda (w) "") words))))]
+    [else #f]))
+
+(define (cmd-close!)
+  "Closes the command line's menu."
+  (when *cmd-open*
+    (set! *cmd-open* #f)
+    (set! *cmd-hits* '())
+    (set! *cmd-index* -1)
+    (set-popup! '())
+    (set-popup-selected! -1)))
+
+(define (cmd-refresh! manual?)
+  "Fills the command line's menu for what is typed before the cursor, or
+   closes it when nothing matches (or only what is already typed)."
+  (let* ([text (cmdline-before)] [ctx (cmdline-context text)])
+    (if (not ctx)
+        (cmd-close!)
+        (let* ([start (car ctx)] [typed (substring text start (string-length text))])
+          (cmdline-store-set! (cadr ctx))
+          (set! *cmd-labels* (list->vector (cadr ctx)))
+          (set! *cmd-details* (list->vector (caddr ctx)))
+          (set! *cmd-start* start)
+          (set! *cmd-manual* manual?)
+          (set! *cmd-typed* typed)
+          (set! *cmd-index* -1)
+          (set! *cmd-hits* (let loop ([f (cmdline-store-filter typed (not manual?) 200)])
+                             (if (null? f) '() (cons (cadr f) (loop (cddr f))))))
+          (if (or (null? *cmd-hits*)
+                  (and (null? (cdr *cmd-hits*)) (equal? (vector-ref *cmd-labels* (car *cmd-hits*)) typed)))
+              (cmd-close!)
+              (begin (set! *cmd-open* #t) (cmd-draw!)))))))
+
+(define (cmd-draw!)
+  "Draws the command line's menu above the line, scrolled to the one
+   chosen: a path's last part, then its doc dimmed."
+  (let* ([n (length *cmd-hits*)] [rows (min 10 n)]
+         [i (max *cmd-index* 0)]
+         [top (max 0 (min (- i (- rows 1)) (- n rows)))]
+         [shown (take (list-tail *cmd-hits* top) rows)]
+         [label (lambda (k) (wild-label (vector-ref *cmd-labels* k)))]
+         [width (min 40 (apply max (cons 1 (map (lambda (k) (string-length (label k))) shown))))]
+         [icon (lambda (k) (*menu-icon* (if (member *cmdline-prompt* '("/" "?")) 'words 'cmdline)
+                                        (list (vector-ref *cmd-labels* k) "" "" 0 #f)))])
+    (set-popup-place! "bottom" 0 "")
+    (set-popup! (map (lambda (k)
+                       (let ([detail (vector-ref *cmd-details* k)] [ic (icon k)])
+                         (list (list (string-append " " (if ic (string-append ic " ") "") (pad-right (label k) width)) "")
+                               (list (if (equal? detail "") "" (string-append "  " (clip detail 60))) "popup.detail"))))
+                     shown))
+    (set-popup-selected! (if (< *cmd-index* 0) -1 (- *cmd-index* top)))))
+
+(define (cmd-put! text)
+  "Puts `text` in the line in place of what the menu completes."
+  (set! *cmd-editing* #t)
+  (cmdline-edit! (string-append (substring *cmdline* 0 *cmd-start*) text (cmdline-after))
+                 (+ *cmd-start* (string-length text)))
+  (set! *cmd-editing* #f))
+
+(define (cmd-select! step)
+  "Steps `step` through the menu, putting the one chosen in the line."
+  (let ([n (length *cmd-hits*)])
+    (set! *cmd-index* (if (< *cmd-index* 0)
+                          (if (> step 0) 0 (- n 1))
+                          (modulo (+ *cmd-index* step) n)))
+    (cmd-put! (vector-ref *cmd-labels* (list-ref *cmd-hits* *cmd-index*)))
+    (cmd-draw!)))
+
+(define (cmd-auto?)
+  "Whether the menu should open by itself for what is typed: on the :
+   line once a command's name is begun, or at its argument; after / or ?
+   once 3 characters of a word are typed."
+  (let* ([text (cmdline-before)] [ctx (and (option 'cmdline-completion-auto) (cmdline-context text))])
+    (and ctx
+         (let ([typed (substring text (car ctx) (string-length text))])
+           (if (equal? *cmdline-prompt* ":")
+               (or (> (string-length typed) 0)
+                   (and (> (car ctx) 0) (char-whitespace? (string-ref text (- (car ctx) 1)))))
+               (>= (string-length typed) 3))))))
+
+(set! *cmdline-completer*
+      (lambda (event arg)
+        (and (option 'cmdline-completion)
+             (member *cmdline-prompt* '(":" "/" "?"))
+             (cond
+               [(eq? event 'close) (cmd-close!) #f]
+               [(eq? event 'edit)
+                (unless *cmd-editing*
+                  (cond [*cmd-open* (cmd-refresh! *cmd-manual*)]
+                        [(cmd-auto?) (cmd-refresh! #f)]))
+                #f]
+               [(not (eq? event 'key)) #f]
+               [*cmd-open*
+                (cond [(member arg '("<tab>" "C-n")) (cmd-select! 1) #t]
+                      [(member arg '("<s-tab>" "C-p")) (cmd-select! -1) #t]
+                      [(equal? arg "C-y") (cmd-close!) #t]
+                      [(equal? arg "C-e") (let ([typed *cmd-typed*]) (cmd-close!) (cmd-put! typed)) #t]
+                      [else #f])]
+               [(member arg '("<tab>" "<s-tab>"))
+                (cmd-refresh! #t)
+                (cond [(not *cmd-open*) (set-status! "no completions")]
+                      [(null? (cdr *cmd-hits*))
+                       ;; The only one: put it in, and go on into a directory.
+                       (cmd-put! (vector-ref *cmd-labels* (car *cmd-hits*)))
+                       (cmd-close!)
+                       (when (ends-with? (cmdline-before) "/") (cmd-refresh! #f))]
+                      [else (cmd-select! (if (equal? arg "<tab>") 1 -1))])
+                #t]
+               [else #f]))))

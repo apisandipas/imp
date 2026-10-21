@@ -79,13 +79,11 @@ fn tab_completes_files_and_steps_through_them() {
     // One match: completed whole; a directory gets its slash.
     type_keys(&mut s, &format!(":e {base}/s<tab>"));
     assert_eq!(last_row(&mut s), format!(":e {base}/sub/"));
-    // Several: as far as they agree, then each in turn, listed.
-    type_keys(&mut s, &format!("<esc>:e {base}/a<tab>"));
-    assert_eq!(last_row(&mut s), format!(":e {base}/alp"));
+    // Several: listed as you type; <tab> puts in each in turn.
+    type_keys(&mut s, &format!("<esc>:e {base}/a"));
     let rows = s.frame().text_rows();
     assert!(
-        rows.iter()
-            .any(|r| r.contains("alpha.txt") && r.contains("alps.txt")),
+        rows.iter().any(|r| r.contains("alpha.txt")) && rows.iter().any(|r| r.contains("alps.txt")),
         "{rows:?}"
     );
     type_keys(&mut s, "<tab>");
@@ -94,6 +92,16 @@ fn tab_completes_files_and_steps_through_them() {
     assert_eq!(last_row(&mut s), format!(":e {base}/alps.txt"));
     s.keys(&["<s-tab>"]);
     assert_eq!(last_row(&mut s), format!(":e {base}/alpha.txt"));
+    // C-e puts back what was typed.
+    s.keys(&["C-e"]);
+    assert_eq!(last_row(&mut s), format!(":e {base}/a"));
+    // Vim's wildmenu, with the menu off: as far as they agree first.
+    s.eval("(set-option! 'cmdline-completion #f)").unwrap();
+    type_keys(&mut s, &format!("<esc>:e {base}/a<tab>"));
+    assert_eq!(last_row(&mut s), format!(":e {base}/alp"));
+    type_keys(&mut s, "<tab>");
+    assert_eq!(last_row(&mut s), format!(":e {base}/alpha.txt"));
+    s.eval("(set-option! 'cmdline-completion #t)").unwrap();
     // Hidden files only when asked for.
     type_keys(&mut s, &format!("<esc>:e {base}/<tab>"));
     assert!(!s.frame().text_rows().iter().any(|r| r.contains(".hidden")));

@@ -479,6 +479,21 @@ Phase 2 adds:
   when the buffer's version changes; nearest the cursor first) and
   `completion-store-set!`/`-filter` (candidates live in Rust; each key
   filters and ranks them and returns the top 200 as indices).
+  The command line (`:`, `/`, `?`) has its own menu in complete.scm,
+  driven through vim.scm's `*cmdline-completer*` hook and a second Rust
+  store (`cmdline-store-set!`/`-filter`); `cmdline-completion #f` gives
+  back Vim's wildmenu (`cmdline-complete!`).
+- Snippets (`snippet.scm`, loaded after complete.scm): LSP/VS Code syntax
+  parsed in Scheme (`snippet-parse`), expanded by `snippet-insert!` with
+  marks per stop (sticky start, plain end, so typing grows a stop); a
+  `snippet-mode` minor mode binds `<tab>`/`<s-tab>` over a mode's own; a
+  selected placeholder is a one-key `*key-interceptor*`. Choices use the
+  completion menu (`snippet-choice` source). `define-snippet!`,
+  `load-snippets!`, and a `snippets` source. lsp.scm expands snippet items
+  on accept.
+- Docstrings for M-x and completion are read in Rust (`docs.rs`:
+  `source-doc-table`, `defined-names-containing`); help.scm's Scheme
+  reader stays for describe-function.
 - Docstrings, as in Emacs: a string first in a function's body, or in a
   command's lambda, is its documentation (help.scm's header; help.scm reads
   them from the source). Variables and options keep a comment above.

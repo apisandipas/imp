@@ -61,6 +61,10 @@
 (define *cmdline-return* 'normal) ; the mode to go back to
 (define *cmdline-pos* 0)       ; cursor position in *cmdline*
 (define *cmdline-key-handler* #f) ; sees keys first; #t from it means handled
+;; Completion on the command line, if set (complete.scm's menu):
+;; (lambda (event arg)) told 'edit after each edit, 'close, and 'key with
+;; each key before the line sees it, returning #t for a key it took.
+(define *cmdline-completer* #f)
 (define *history* (hash))      ; prompt -> entries, newest first
 (define *history-index* -1)    ; -1 while editing a fresh line
 (define *history-prefix* "")   ; what <up> and <down> match against
@@ -2616,6 +2620,7 @@
   "Closes the command line and returns to the mode it was opened from.
    Also drops any completion list and clears the status line."
   (wild-reset!)
+  (when *cmdline-completer* (*cmdline-completer* 'close #f))
   (set! *cmdline-key-handler* #f)
   (clear-cmdline!)
   (set-mode! *cmdline-return*)
@@ -2627,7 +2632,8 @@
   (set! *cmdline* text)
   (set! *cmdline-pos* (clamp pos 0 (string-length text)))
   (show-cmdline!)
-  (when *cmdline-change* (*cmdline-change* text)))
+  (when *cmdline-change* (*cmdline-change* text))
+  (when *cmdline-completer* (*cmdline-completer* 'edit #f)))
 
 (define (cmdline-before)
   "The command line's text before the cursor."
@@ -2703,6 +2709,7 @@
   (cond
     ;; Completion menus and the like take the keys they want first.
     [(and *cmdline-key-handler* (*cmdline-key-handler* key)) #t]
+    [(and *cmdline-completer* (*cmdline-completer* 'key key)) #t]
     ;; C-r {register} inserts a register; C-r C-w the word under the cursor.
     [*cmdline-pending*
      (set! *cmdline-pending* #f)

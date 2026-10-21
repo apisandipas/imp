@@ -235,3 +235,43 @@ fn menu_columns() {
     let rows = s.frame().text_rows().join("\n");
     assert!(rows.contains("alphabet  [words]"), "{rows}");
 }
+
+fn cmd_menu(s: &mut imp_server::Server) -> Vec<String> {
+    s.eval("(map (lambda (k) (vector-ref *cmd-labels* k)) *cmd-hits*)")
+        .unwrap()
+        .trim_matches(|c| c == '(' || c == ')')
+        .split_whitespace()
+        .map(|w| w.trim_matches('"').to_string())
+        .collect()
+}
+
+#[test]
+fn the_command_line_menu() {
+    let mut s = server("needle haystack needles\n");
+    s.set_size(100, 20);
+    // It opens as you type a command's argument, docs beside options.
+    type_keys(&mut s, ":set completion-auto-mo");
+    let rows = s.frame().text_rows().join("\n");
+    assert!(
+        rows.contains("completion-auto-modes  Major modes"),
+        "{rows}"
+    );
+    type_keys(&mut s, "<esc>:set relativen");
+    assert_eq!(cmd_menu(&mut s), ["relativenumber"]);
+    type_keys(&mut s, "<tab>");
+    assert_eq!(s.eval("*cmdline*").unwrap(), "\"set relativenumber\"");
+    // Typing narrows it; <ret> runs the line.
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.eval("(option 'relativenumber)").unwrap(), "#true");
+    // A command's name, once begun.
+    type_keys(&mut s, ":nohl");
+    assert_eq!(cmd_menu(&mut s), ["nohlsearch"]);
+    type_keys(&mut s, "<esc>");
+    assert!(cmd_menu(&mut s).is_empty());
+    // Searching: the buffer's words, after 3 characters, nearest the
+    // match incsearch went to first.
+    type_keys(&mut s, "/nee");
+    assert_eq!(cmd_menu(&mut s), ["needles", "needle"]);
+    type_keys(&mut s, "<tab><ret>");
+    assert_eq!(s.cursor(), "needle haystack ".len());
+}

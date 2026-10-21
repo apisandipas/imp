@@ -1145,10 +1145,17 @@ pub fn register(engine: &mut Engine) {
     // the menu's candidates filtered as you type.
     engine.register_fn(
         "buffer-words",
+        // A negative `near` is -1 - the offset, for words near it when
+        // nothing is being typed there (a search prompt's).
         |ids: Vec<isize>, prefix: String, extra: String, near: isize, limit: isize| {
             let ids: Vec<usize> = ids.into_iter().map(clamp).collect();
+            let (near, typing) = if near < 0 {
+                (clamp(-1 - near), false)
+            } else {
+                (clamp(near), true)
+            };
             editor::with(|e| {
-                complete::buffer_words(e, &ids, &prefix, &extra, clamp(near), clamp(limit))
+                complete::buffer_words(e, &ids, &prefix, &extra, near, typing, clamp(limit))
             })
         },
     );
@@ -1157,6 +1164,7 @@ pub fn register(engine: &mut Engine) {
         |source: isize, priority: isize, labels: Vec<String>, start: isize, starts: Vec<isize>| {
             let starts: Vec<usize> = starts.into_iter().map(clamp).collect();
             complete::set_candidates(
+                0,
                 clamp(source),
                 priority as i64,
                 labels,
@@ -1165,7 +1173,18 @@ pub fn register(engine: &mut Engine) {
             ) as isize
         },
     );
-    engine.register_fn("completion-store-clear!", complete::clear_candidates);
+    engine.register_fn("completion-store-clear!", || complete::clear_candidates(0));
+    // The command line's menu: one source, matched against `typed`.
+    engine.register_fn("cmdline-store-set!", |labels: Vec<String>| {
+        complete::clear_candidates(1);
+        complete::set_candidates(1, 0, 0, labels, 0, &[]) as isize
+    });
+    engine.register_fn(
+        "cmdline-store-filter",
+        |typed: String, prefix_only: bool, limit: isize| {
+            complete::filter_text(&typed, prefix_only, clamp(limit))
+        },
+    );
     engine.register_fn(
         "completion-store-filter",
         |prefix_only: bool, live: Vec<isize>, fuzzy: Vec<isize>, limit: isize| {

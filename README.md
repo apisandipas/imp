@@ -103,7 +103,13 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   as you type; `C-x C-f` completes file names. Sources per major mode
   (`set-completion-sources!`), key presets (`completion-keys`: `vim`,
   `tab`, `enter`), the menu's columns, and `define-completion-source!`
-  for your own.
+  for your own. The `:` line gets the same menu as you type (commands,
+  files, buffers, options with their docs), and `/` the buffer's words.
+- **Snippets.** Language servers' snippets expand with their tab stops:
+  `<tab>`/`<s-tab>` move between them, typing replaces a placeholder,
+  mirrors follow, choices come in a menu. Your own with
+  `(define-snippet! 'rust-mode "fn" "fn ${1:name}() {\n\t$0\n}")`, or
+  VS Code snippet files with `load-snippets!`.
 - **Files.** `SPC f D`, `SPC f R` and `SPC f C` (or `M-x delete-file`,
   `rename-file`, `copy-file`) act on the current buffer's file unless you
   name another; deleting asks first, and the buffer follows a rename.

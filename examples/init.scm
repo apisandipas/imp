@@ -54,6 +54,10 @@
 ;; (set-option! 'completion-auto-min 2)         ; open after this many chars
 ;; (set-option! 'completion-menu-columns '(icon label detail source))
 ;; (set-completion-sources! 'markdown-mode '(file words))  ; groups, tried in turn
+;; (set-option! 'cmdline-completion #f)         ; Vim's wildmenu on the : line instead
+;; Snippets: <tab> and <s-tab> move between their stops.
+;; (define-snippet! 'rust-mode "test" "#[test]\nfn ${1:name}() {\n\t$0\n}" "a test")
+;; (load-snippets! 'rust-mode "~/snippets/rust.json")   ; VS Code snippet files
 
 ;;; Keys
 (define-key! 'normal "C-s" 'save-buffer)

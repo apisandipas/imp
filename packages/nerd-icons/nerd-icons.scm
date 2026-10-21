@@ -124,6 +124,12 @@
                    (or (and (hash? item) (nerd-icon 'lsp-kind (jget item "kind")))
                        (nerd-icon 'lsp-kind 1)))]
           [(scheme) (nerd-icon 'category 'symbol)]
+          [(snippets snippet-choice) (nerd-icon 'lsp-kind 15)]
+          ;; The command line's menu: files by type, the rest as commands.
+          [(cmdline) (let ([l (car candidate)])
+                       (if (or (string-contains? l "/") (string-contains? l "."))
+                           (nerd-file-icon l)
+                           (nerd-icon 'category 'command)))]
           [else (nerd-icon 'lsp-kind 1)])))
 
 (set! *dired-icon* nerd-file-icon)

@@ -27,7 +27,8 @@ struct Candidate {
 
 thread_local! {
     static INDEXES: RefCell<HashMap<usize, Index>> = RefCell::new(HashMap::new());
-    static MENU: RefCell<Vec<Candidate>> = const { RefCell::new(Vec::new()) };
+    /// The menus' candidates: completion at point's, and the command line's.
+    static MENU: RefCell<[Vec<Candidate>; 2]> = const { RefCell::new([Vec::new(), Vec::new()]) };
 }
 
 /// Buffers longer than this have only this many chars around the cursor
@@ -84,18 +85,19 @@ fn completes(word: &str, prefix: &str, sensitive: bool) -> bool {
 
 /// The words completing `prefix` in buffers `ids`, at most `limit`: the
 /// first buffer's nearest `near` (the cursor) first, then the others' in
-/// the order they appear. The word being typed (ending at `near` in the
-/// first buffer) isn't one. Each buffer's index is kept until it changes.
+/// the order they appear. When `typing`, the word being typed (ending
+/// at `near` in the first buffer) isn't one. Each buffer's index is kept until it changes.
 pub fn buffer_words(
     e: &Editor,
     ids: &[usize],
     prefix: &str,
     extra: &str,
     near: usize,
+    typing: bool,
     limit: usize,
 ) -> Vec<String> {
     let sensitive = prefix.chars().any(char::is_uppercase);
-    let typed_at = near.saturating_sub(prefix.chars().count());
+    let typed_at = typing.then(|| near.saturating_sub(prefix.chars().count()));
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     INDEXES.with(|indexes| {
@@ -136,9 +138,12 @@ pub fn buffer_words(
                     let before = at[..i]
                         .iter()
                         .rev()
-                        .find(|&&o| o != typed_at)
+                        .find(|&&o| Some(o) != typed_at)
                         .map(|&o| near - o);
-                    let after = at[i..].iter().find(|&&o| o != typed_at).map(|&o| o - near);
+                    let after = at[i..]
+                        .iter()
+                        .find(|&&o| Some(o) != typed_at)
+                        .map(|&o| o - near);
                     before.into_iter().chain(after).min().map(|d| (d, w))
                 })
                 .collect();
@@ -159,6 +164,7 @@ pub fn buffer_words(
 /// those it had. Each completes the text from `starts[i]` (or `start`)
 /// to the cursor. Returns how many candidates the menu has.
 pub fn set_candidates(
+    store: usize,
     source: usize,
     priority: i64,
     labels: Vec<String>,
@@ -166,7 +172,7 @@ pub fn set_candidates(
     starts: &[usize],
 ) -> usize {
     MENU.with(|menu| {
-        let mut menu = menu.borrow_mut();
+        let menu = &mut menu.borrow_mut()[store.min(1)];
         menu.retain(|c| c.source != source);
         for (order, label) in labels.into_iter().enumerate() {
             let start = starts.get(order).copied().unwrap_or(start);
@@ -182,17 +188,17 @@ pub fn set_candidates(
     })
 }
 
-pub fn clear_candidates() {
-    MENU.with(|menu| menu.borrow_mut().clear());
+pub fn clear_candidates(store: usize) {
+    MENU.with(|menu| menu.borrow_mut()[store.min(1)].clear());
 }
 
 /// The menu's candidates matching what is typed before `cursor` in the
 /// current buffer, best first, at most `limit`, as (source, index) pairs
 /// flattened. Only those of `live` sources count; with `prefix_only`,
 /// only labels starting with the typed text (smartcase), except from
-/// `fuzzy` sources, else fuzzy matches too. Ranked by how well they match, then their source's
-/// priority, then the order their source gave. A label offered twice
-/// shows once.
+/// `fuzzy` sources, else fuzzy matches too. Ranked by how well they
+/// match, then their source's priority, then the order their source
+/// gave. A label offered twice shows once.
 pub fn filter_candidates(
     e: &Editor,
     cursor: usize,
@@ -201,8 +207,37 @@ pub fn filter_candidates(
     fuzzy: &[usize],
     limit: usize,
 ) -> Vec<isize> {
+    let typed = |start: usize| {
+        (start <= cursor)
+            .then(|| e.buffer.slice(start, cursor))
+            .filter(|t| !t.contains(char::is_whitespace))
+    };
+    filter(0, &typed, prefix_only, live, fuzzy, limit)
+}
+
+/// The command line's candidates matching `typed`, ranked as
+/// filter_candidates ranks them.
+pub fn filter_text(typed: &str, prefix_only: bool, limit: usize) -> Vec<isize> {
+    filter(
+        1,
+        &|_| Some(typed.to_string()),
+        prefix_only,
+        &[0],
+        &[],
+        limit,
+    )
+}
+
+fn filter(
+    store: usize,
+    typed_from: &dyn Fn(usize) -> Option<String>,
+    prefix_only: bool,
+    live: &[usize],
+    fuzzy: &[usize],
+    limit: usize,
+) -> Vec<isize> {
     MENU.with(|menu| {
-        let menu = menu.borrow();
+        let menu = &menu.borrow()[store];
         let mut typed: HashMap<usize, Option<String>> = HashMap::new();
         let mut hits: Vec<(i64, &Candidate)> = menu
             .iter()
@@ -210,11 +245,7 @@ pub fn filter_candidates(
             .filter_map(|c| {
                 let t = typed
                     .entry(c.start)
-                    .or_insert_with(|| {
-                        (c.start <= cursor)
-                            .then(|| e.buffer.slice(c.start, cursor))
-                            .filter(|t| !t.contains(char::is_whitespace))
-                    })
+                    .or_insert_with(|| typed_from(c.start))
                     .as_deref()?;
                 if t.is_empty() {
                     return Some((0, c));
