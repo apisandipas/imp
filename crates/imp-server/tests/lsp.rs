@@ -208,11 +208,11 @@ fn completion_from_the_server() {
     type_keys(&mut s, "ph<C-n><ret>");
     assert_eq!(text(&mut s), "alphabet\n");
     assert_eq!(s.eval("*menu-open*").unwrap(), "#false");
-    // Snippets lose their placeholders.
+    // Snippets expand: the placeholder is selected, <tab> moves on.
     type_keys(&mut s, " sn<C-x><C-o>");
     settle(&mut s);
-    type_keys(&mut s, "<C-y><esc>");
-    assert_eq!(text(&mut s), "alphabet snip(x, )\n");
+    type_keys(&mut s, "<C-y>y<tab>z<tab>!<esc>");
+    assert_eq!(text(&mut s), "alphabet snip(y, z)!\n");
 }
 
 #[test]

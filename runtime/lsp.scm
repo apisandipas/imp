@@ -1040,6 +1040,18 @@
       [else (loop (cdr cs) (cons (car cs) out) depth)])))
 
 
+(define (lsp-item-text item)
+  "What completion item `item` inserts: its edit's text, its insertText or
+   its label (a snippet's body, for a snippet)."
+  (let ([edit (jget item "textEdit")])
+    (cond [edit (or (jget edit "newText") "")]
+          [(jget item "insertText") => (lambda (t) t)]
+          [else (or (jget item "label") "")])))
+
+(define (lsp-snippet? item)
+  "Whether completion item `item` inserts a snippet."
+  (equal? (jget item "insertTextFormat") 2))
+
 (define (completion-candidates result start encoding)
   "Menu candidates from completion reply `result`, in the server's order.
    `start` is where the typed word starts, for items without a textEdit;
@@ -1051,10 +1063,8 @@
     (map (lambda (item)
            (let* ([edit (jget item "textEdit")]
                   [edit-range (and edit (or (jget edit "range") (jget edit "insert")))]
-                  [raw (cond [edit (or (jget edit "newText") "")]
-                             [(jget item "insertText") => (lambda (t) t)]
-                             [else (or (jget item "label") "")])]
-                  [text (if (equal? (jget item "insertTextFormat") 2) (strip-snippet raw) raw)])
+                  [raw (lsp-item-text item)]
+                  [text (if (lsp-snippet? item) (strip-snippet raw) raw)])
              (list (or (jget item "label") text)
                    (or (jget item "detail") "")
                    text
@@ -1083,6 +1093,11 @@
                                  'incomplete (and (hash? result) (jget result "isIncomplete"))
                                  'fuzzy #t
                                  'on-accept (lambda (item)
+                                              ;; The snippet went in as plain text: expand it.
+                                              (when (and item (lsp-snippet? item))
+                                                (let* ([raw (lsp-item-text item)] [plain (strip-snippet raw)])
+                                                  (unless (equal? raw plain)
+                                                    (snippet-insert! (- (cursor) (string-length plain)) (cursor) raw))))
                                               (let ([extra (and item (jget item "additionalTextEdits"))])
                                                 (when (and extra (pair? extra))
                                                   (lsp-apply-text-edits! extra (lsp-get key 'encoding))))

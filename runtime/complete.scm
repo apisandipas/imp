@@ -355,8 +355,10 @@
     (set! *menu-matches* (map car *menu-hits*))
     (cond
       [(null? *menu-hits*) (close-menu!)]
-      ;; Only the text already typed: nothing left to offer.
+      ;; Only the text already typed: nothing left to offer (unless its
+      ;; source does more on accepting it, as a snippet expands).
       [(and (null? (cdr *menu-hits*))
+            (not (menu-source-field (cdr (car *menu-hits*)) 5))
             (let ([c (car *menu-matches*)])
               (equal? (caddr c) (buffer-substring (min (cadddr c) (cursor)) (cursor)))))
        (close-menu!)]
