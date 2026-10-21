@@ -51,7 +51,10 @@
 
 (define-option! 'completion-auto #t '())
 (define-option! 'completion-auto-min 3 '())
-(define-option! 'completion-delay 150 '())
+;; Milliseconds of quiet before the menu opens by itself; 0 opens it
+;; as soon as the key is drawn, as blink.cmp and nvim-cmp's local
+;; sources do.
+(define-option! 'completion-delay 0 '())
 ;; Major modes (and their children) where the menu opens by itself.
 (define-option! 'completion-auto-modes '(prog-mode) '())
 ;; vim, tab or enter: see the top of complete.scm.
@@ -293,6 +296,7 @@
 (define *menu-select* #f)       ; 'first or 'last: select it when the menu opens
 (define *menu-request* 0)       ; answers to older requests are dropped
 (define *complete-timer* #f)
+(define *accepted-at* #f)  ; (buffer . cursor) just after accepting: don't reopen there
 
 (define (menu-source-field n i)
   "Field `i` of what source number `n` answered (see *menu-sources*)."
@@ -465,6 +469,8 @@
                                 (map (lambda (ch) "<bs>") (string->list old))
                                 *insert-keys*))
     (when on-accept (on-accept item))
+    ;; What went in ends in a word, which would open the menu again.
+    (set! *accepted-at* (cons (current-buffer) (cursor)))
     (when (and (eq? source 'file) (ends-with? text "/"))
       (complete-with! 'file #f))))
 
@@ -648,8 +654,10 @@
 (add-hook! 'after-change
            (lambda ()
              (when (and (eq? *mode* 'insert) (option 'completion-auto) (not *menu-open*) (> (cursor) 0)
+                        (not (equal? *accepted-at* (cons (current-buffer) (cursor))))
                         (auto-complete-char? (buffer-char-at (- (cursor) 1))))
-               (schedule-completion! #f))))
+               (schedule-completion! #f))
+             (set! *accepted-at* #f)))
 
 (add-hook! 'insert-leave (lambda () (close-menu!)))
 

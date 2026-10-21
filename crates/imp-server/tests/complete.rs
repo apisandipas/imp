@@ -310,3 +310,24 @@ fn the_menu_keeps_its_side_and_width_as_it_narrows() {
     s.eval("(complete-at-point! #f)").unwrap();
     assert!(!a_box(&mut s).0);
 }
+
+#[test]
+fn the_menu_opens_at_once_and_stays_shut_after_accepting() {
+    let (mut s, _) = project(
+        "complete-accept",
+        "main.rs",
+        "fn frobnicate() {}\nfn frobnicator() {}\n",
+    );
+    type_keys(&mut s, "Gofro");
+    // No pause: the next tick after the key.
+    s.pump(Duration::from_millis(5));
+    assert_eq!(menu(&mut s).len(), 2);
+    type_keys(&mut s, "<C-n><C-y>");
+    assert_eq!(s.eval("*menu-open*").unwrap(), "#false");
+    // What went in still starts frobnicator, but the menu doesn't reopen.
+    s.pump(Duration::from_millis(300));
+    assert_eq!(s.eval("*menu-open*").unwrap(), "#false");
+    // Typing on asks again.
+    type_keys(&mut s, "<bs>");
+    assert!(pump_until(&mut s, |s| s.eval("*menu-open*").unwrap() == "#true"));
+}
