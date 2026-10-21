@@ -95,6 +95,25 @@ fn line_numbers() {
 }
 
 #[test]
+fn signcolumn_keeps_the_column() {
+    let mut s = sized("a\nb\n", 20, 5);
+    // auto: the column comes and goes with the signs.
+    assert_eq!(s.frame().text_rows()[0], "a");
+    s.eval(r#"(set-signs! '((1 "E" "error")))"#).unwrap();
+    assert_eq!(s.frame().text_rows()[1], "E b");
+    s.eval("(set-signs! '())").unwrap();
+    assert_eq!(s.frame().text_rows()[0], "a");
+    // yes: it stays, empty.
+    s.eval(r#"(set-option! 'signcolumn "yes")"#).unwrap();
+    assert_eq!(s.frame().text_rows()[0], "  a");
+    assert_eq!(s.frame().cursor, (2, 0));
+    // no: never, even with signs.
+    s.eval(r#"(set-option! 'signcolumn "no") (set-signs! '((1 "E" "error")))"#)
+        .unwrap();
+    assert_eq!(s.frame().text_rows()[1], "b");
+}
+
+#[test]
 fn long_lines_scroll_sideways() {
     let mut s = sized("0123456789abcdefghij\nxy\n", 10, 4);
     s.eval("(set-option! 'wrap #f)").unwrap();

@@ -727,6 +727,20 @@ pub fn register(engine: &mut Engine) {
             }
         })
     });
+    // When the current buffer shows its sign column: "yes", "no" or
+    // "auto" (while it has signs).
+    engine.register_fn("set-sign-column!", |mode: String| {
+        use crate::render::SignColumn;
+        editor::with(|e| {
+            let id = e.current;
+            let mode = match mode.as_str() {
+                "yes" => SignColumn::Yes,
+                "no" => SignColumn::No,
+                _ => SignColumn::Auto,
+            };
+            e.sign_columns.insert(id, mode);
+        })
+    });
     engine.register_fn("set-cursorline!", |on: bool| {
         editor::with(|e| e.cursorline = on)
     });
@@ -777,6 +791,7 @@ pub fn register(engine: &mut Engine) {
                 e.popup_at_cursor = None;
                 e.popup_center = None;
                 e.popup_title.clear();
+                e.popup_under.set(None);
             }
             e.popup = lines
         })
@@ -787,6 +802,9 @@ pub fn register(engine: &mut Engine) {
         "set-popup-place!",
         |place: String, dx: isize, title: String| {
             editor::with(|e| {
+                if place != "cursor" {
+                    e.popup_under.set(None);
+                }
                 e.popup_at_cursor = (place == "cursor").then_some(dx);
                 e.popup_center = (place == "center").then_some(dx.clamp(20, 100) as usize);
                 e.popup_title = title;

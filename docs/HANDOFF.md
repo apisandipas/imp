@@ -509,7 +509,8 @@ Phase 2 adds:
 - An Emacs state (C-z) with mark/region, kill ring, C-u, isearch, C-x keys.
 - Packages via `use-package!` (local or git, pinned), `:packages`.
 - Line numbers (`number`, `relativenumber`, hybrid), `cursorline`,
-  horizontal scrolling for long lines.
+  `signcolumn` (auto/yes/no, as in Vim), horizontal scrolling for long
+  lines.
 
 Phase 3 adds:
 
@@ -529,7 +530,8 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
 - Tree-sitter (Rust, Scheme, TS/TSX, JS, Nix, Markdown): highlighting
   through `syntax.*` faces, `af if ac ic aa ia`, smartindent.
 - LSP: diagnostics (underline, gutter sign, status-line message, `]d [d
-  :diagnostics`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
+  :diagnostics`; held while you type until insert ends, as Neovim's
+  `update_in_insert = false`, unless `lsp-diagnostics-in-insert`), `K gd gr`, `SPC c r/a/f`, completion in insert mode
   (`C-x C-o`, `C-n C-p`, and as you type). Defaults for rust-analyzer,
   typescript-language-server, nil, marksman, pyright, used when installed.
   Pull diagnostics (`textDocument/diagnostic`, `workspace/diagnostic/refresh`)
@@ -693,7 +695,9 @@ Fix these when the roadmap item touching them comes up, not all at once.
 2. **Daemon clients share one cursor and layout**, like tmux sessions; each
    only has its own size. Scroll can differ per client size.
 3. **Diagnostics don't move with edits** until the server republishes them
-   (highlight ranges and signs are fixed offsets and lines).
+   (highlight ranges and signs are fixed offsets and lines). Since they
+   are held during insert, ones below a line you add sit a line off
+   until Esc.
 4. **Undo** is whole-text snapshots; no undo tree. Marks aren't restored by
    undo (they are clamped into the text).
 5. **Dot-repeat of inserts** replays the typed keys.

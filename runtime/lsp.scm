@@ -28,6 +28,11 @@
 ;; Milliseconds of quiet before changes are sent (completion-delay is
 ;; complete.scm's, before completing).
 (define-option! 'lsp-change-delay 200 '())
+;; Whether diagnostics that arrive while you type show at once. Off (as
+;; Neovim's update_in_insert), the current buffer keeps the ones it had
+;; until you leave insert, so signs and underlines don't flicker as each
+;; half-typed word is an error.
+(define-option! 'lsp-diagnostics-in-insert #f '())
 
 (define *language-servers* (hash))  ; major mode -> (command(s) markers language-id)
 (define *lsp-servers* (hash))       ; "command<tab>root" -> state (a hash, see lsp-start!)
@@ -35,6 +40,7 @@
 (define *lsp-change-timers* (hash)) ; buffer id -> timer of the pending didChange
 (define *lsp-log* '())              ; newest first: stderr and logMessage lines
 (define *lsp-line-message* #f)      ; the diagnostic shown on the status line
+(define *lsp-held-diagnostics* #f)  ; buffer id whose new diagnostics wait for insert to end
 (define *lsp-progress-message* #f)  ; the progress shown on the status line
 (define *lsp-runs* 0)               ; servers started so far: each one's 'run
 
@@ -561,9 +567,23 @@
    highlights and the status line too."
   (set! *lsp-diagnostics* (hash-insert *lsp-diagnostics* uri diagnostics))
   (let* ([path (uri->path uri)] [id (and path (buffer-for-path path))])
-    (when id
+    (cond [(not id) #f]
+          [(and (= id (current-buffer)) (memq *mode* '(insert replace))
+                (not (option 'lsp-diagnostics-in-insert)))
+           (set! *lsp-held-diagnostics* id)]
+          [else
+           (with-buffer id lsp-show-signs!)
+           (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))])))
+
+(define (lsp-show-held-diagnostics!)
+  "Shows the diagnostics that arrived while typing, after insert ends."
+  (let ([id *lsp-held-diagnostics*])
+    (set! *lsp-held-diagnostics* #f)
+    (when (and id (memv id (buffer-list)))
       (with-buffer id lsp-show-signs!)
       (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!)))))
+
+(add-hook! 'insert-leave lsp-show-held-diagnostics!)
 
 (define (buffer-diagnostics)
   "The current buffer's diagnostics as (start end diagnostic) lists.

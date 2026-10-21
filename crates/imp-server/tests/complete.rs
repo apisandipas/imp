@@ -275,3 +275,38 @@ fn the_command_line_menu() {
     type_keys(&mut s, "<tab><ret>");
     assert_eq!(s.cursor(), "needle haystack ".len());
 }
+
+#[test]
+fn the_menu_keeps_its_side_and_width_as_it_narrows() {
+    let filler = "x\n".repeat(14);
+    let mut s = server(&format!(
+        "alpha_short1 alpha_short2 alpha3 alpha4 alpha5 alpha6 alpha7 alphabetically_long\n{filler}"
+    ));
+    s.set_size(60, 24);
+    s.eval("(set-option! 'completion-auto-modes '(fundamental-mode))")
+        .unwrap();
+    type_keys(&mut s, "Goalp");
+    s.eval("(complete-at-point! #f)").unwrap();
+    // The box (its top corner's row and its width) for the open menu.
+    let a_box = |s: &mut imp_server::Server| {
+        let f = s.frame();
+        let rows = f.text_rows();
+        let top = rows.iter().position(|r| r.contains('╭')).expect("a menu");
+        let r: Vec<char> = rows[top].chars().collect();
+        let left = r.iter().position(|&c| c == '╭').unwrap();
+        let right = r.iter().position(|&c| c == '╮').unwrap();
+        (top < f.cursor.1 as usize, right - left)
+    };
+    assert_eq!(menu(&mut s).len(), 8);
+    let full = a_box(&mut s);
+    // Too long to go under the cursor, so over it.
+    assert!(full.0);
+    type_keys(&mut s, "ha_s");
+    assert_eq!(menu(&mut s).len(), 2);
+    // Two would fit under, but it stays where it was, as wide.
+    assert_eq!(a_box(&mut s), full);
+    // Opened again, it starts afresh.
+    type_keys(&mut s, "<C-e><esc>oalpha_s");
+    s.eval("(complete-at-point! #f)").unwrap();
+    assert!(!a_box(&mut s).0);
+}

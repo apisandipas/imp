@@ -24,6 +24,19 @@ pub enum LineNumbers {
     Hybrid,
 }
 
+/// When a buffer shows its sign column (the `signcolumn` option, as in
+/// Vim).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SignColumn {
+    /// Only while it has signs.
+    #[default]
+    Auto,
+    /// Always, so text doesn't shift as signs come and go.
+    Yes,
+    /// Never.
+    No,
+}
+
 pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
@@ -224,11 +237,15 @@ fn cursor_popup(
     let below = area.saturating_sub(cursor.1 + 1);
     let above = cursor.1;
     let fits_below = e.popup.len() + 2 <= below;
-    let (room, under) = if fits_below || below >= above {
-        (below, true)
-    } else {
-        (above, false)
+    let fits_above = e.popup.len() + 2 <= above;
+    // The side it took when it opened, while it still fits there.
+    let under = match e.popup_under.get() {
+        Some(true) if fits_below => true,
+        Some(false) if fits_above => false,
+        _ => fits_below || below >= above,
     };
+    e.popup_under.set(Some(under));
+    let room = if under { below } else { above };
     if room < 3 {
         return;
     }
@@ -550,7 +567,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         syntax: syntax.unwrap_or_default(),
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
-        signs: e.signs.get(&buffer_id).filter(|s| !s.is_empty()),
+        signs: shown_signs(e, buffer_id),
         margin: e
             .margins
             .get(&buffer_id)
@@ -874,6 +891,18 @@ fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
 /// Cells of the sign column, when a buffer has signs.
 const SIGN_WIDTH: usize = 2;
 
+static NO_SIGNS: BTreeMap<usize, (String, String)> = BTreeMap::new();
+
+/// A buffer's signs if it shows the sign column, else None.
+fn shown_signs(e: &Editor, buffer_id: usize) -> Option<&BTreeMap<usize, (String, String)>> {
+    let signs = e.signs.get(&buffer_id).filter(|s| !s.is_empty());
+    match e.sign_columns.get(&buffer_id).copied().unwrap_or_default() {
+        SignColumn::Auto => signs,
+        SignColumn::Yes => Some(signs.unwrap_or(&NO_SIGNS)),
+        SignColumn::No => None,
+    }
+}
+
 /// How a window `width` cells wide splits for a buffer: (indent, gutter,
 /// text). `indent` blank cells come first when the buffer has a body width
 /// narrower than the window, so its text is centred (olivetti); then the
@@ -888,7 +917,7 @@ fn text_area(e: &Editor, buffer_id: usize, buffer: &Buffer, width: usize) -> (us
 }
 
 fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
-    let signs = if e.signs.get(&buffer_id).is_some_and(|s| !s.is_empty()) {
+    let signs = if shown_signs(e, buffer_id).is_some() {
         SIGN_WIDTH
     } else {
         0

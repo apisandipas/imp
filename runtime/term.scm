@@ -160,7 +160,8 @@
     (set-buffer-read-only! #t)
     (set-local-option! 'number #f)
     (set-local-option! 'relativenumber #f)
-    (set-local-option! 'cursorline #f)))
+    (set-local-option! 'cursorline #f)
+    (set-local-option! 'signcolumn "no")))
 
 (define (term-resume! count)
   "Goes back to the terminal state, if the program is still running."

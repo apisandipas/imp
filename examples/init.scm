@@ -7,6 +7,7 @@
 (set-option! 'number #t)
 (set-option! 'relativenumber #t)
 (set-option! 'cursorline #t)
+(set-option! 'signcolumn "yes")   ; keep the sign column, so text doesn't shift
 (set-option! 'tabstop 4)
 (set-option! 'shiftwidth 4)
 (set-option! 'clipboard "unnamedplus")   ; y and p use the system clipboard

@@ -47,6 +47,10 @@ pub struct Editor {
     /// None puts the popup at the bottom; Some(dx) in a bordered box under
     /// (or over) the cursor, shifted `dx` columns.
     pub popup_at_cursor: Option<isize>,
+    /// Whether the box at the cursor went under it (Some(true)) or over
+    /// it, kept until the popup closes so it doesn't flip sides as it
+    /// shrinks.
+    pub popup_under: std::cell::Cell<Option<bool>>,
     /// Some(percent) puts the popup in a box in the middle of the screen,
     /// that percent of its width, with the command line's text in the box
     /// instead of at the bottom (the posframe package).
@@ -94,6 +98,9 @@ pub struct Editor {
     /// gets a two-cell column before its line numbers (diagnostics,
     /// breakpoints).
     pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
+    /// When each buffer shows its sign column (the `signcolumn` option);
+    /// a buffer not here shows it only while it has signs.
+    pub sign_columns: HashMap<usize, crate::render::SignColumn>,
     /// Display-only text before lines, by buffer id: line -> (text,
     /// face) parts. It takes a column as wide as the widest, after the
     /// line numbers, and can't be edited (the file browser's details).
@@ -277,6 +284,7 @@ impl Editor {
         self.buffer_layers.remove(&id);
         self.folds.remove(&id);
         self.signs.remove(&id);
+        self.sign_columns.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
         self.status_values.remove(&id);

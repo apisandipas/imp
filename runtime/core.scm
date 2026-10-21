@@ -633,6 +633,11 @@
 (watch-option! 'number update-line-numbers!)
 (watch-option! 'relativenumber update-line-numbers!)
 (watch-option! 'cursorline set-cursorline!)
+;; The sign column before the line numbers (diagnostics, breakpoints):
+;; "yes" always, so text doesn't shift as signs come and go while you
+;; type; "auto" only while the buffer has signs; "no" never.
+(define-option! 'signcolumn "auto" '(scl))
+(watch-option! 'signcolumn set-sign-column!)
 
 ;;; Faces and highlight layers
 ;;;

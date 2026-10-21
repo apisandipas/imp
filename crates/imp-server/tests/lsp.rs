@@ -93,6 +93,41 @@ fn diagnostics_are_shown_and_follow_edits() {
 }
 
 #[test]
+fn diagnostics_wait_for_insert_to_end() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached("hold.rs", "fine\n");
+    settle(&mut s);
+    // They arrive while typing but don't show: no sign comes and goes.
+    type_keys(&mut s, "obad");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    s.pump(Duration::from_millis(100));
+    assert!(
+        s.frame().text_rows()[1].starts_with("bad"),
+        "{:?}",
+        s.frame().text_rows()
+    );
+    type_keys(&mut s, "<esc>");
+    assert!(
+        s.frame().text_rows()[1].starts_with("E bad"),
+        "{:?}",
+        s.frame().text_rows()
+    );
+    // With lsp-diagnostics-in-insert they show at once.
+    s.eval("(set-option! 'lsp-diagnostics-in-insert #t)")
+        .unwrap();
+    type_keys(&mut s, "obad");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 2)");
+    s.pump(Duration::from_millis(100));
+    assert!(
+        s.frame().text_rows()[2].starts_with("E bad"),
+        "{:?}",
+        s.frame().text_rows()
+    );
+}
+
+#[test]
 fn diagnostics_are_pulled_from_a_server_that_does_not_push() {
     if !have_python() {
         return;

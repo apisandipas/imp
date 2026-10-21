@@ -397,6 +397,19 @@
                      [else #f]))
                  (option 'completion-menu-columns)))))
 
+(define *menu-width* 0)  ; the widest the open menu has been
+
+(define (pad-menu-lines lines)
+  "`lines` (menu rows, lists of (text face)) padded to the widest the
+   open menu has been, so it doesn't narrow and widen as you type."
+  (let* ([row-width (lambda (line) (apply + (map (lambda (part) (string-length (car part))) line)))]
+         [widest (apply max (cons *menu-width* (map row-width lines)))])
+    (set! *menu-width* widest)
+    (map (lambda (line)
+           (let ([pad (- widest (row-width line))])
+             (if (> pad 0) (append line (list (list (make-string pad #\space) ""))) line)))
+         lines)))
+
 (define (draw-menu!)
   "Draws the completion menu at the cursor, scrolled to the selection,
    its labels lined up with the text they complete."
@@ -409,7 +422,7 @@
          [start (cadddr (car (list-ref *menu-hits* i)))]
          [icon (and (eq? (car (option 'completion-menu-columns)) 'icon)
                     (*menu-icon* (menu-source-name (cdr (car shown))) (car (car shown))))])
-    (set-popup! (map (lambda (h) (menu-line h width)) shown))
+    (set-popup! (pad-menu-lines (map (lambda (h) (menu-line h width)) shown)))
     (set-popup-place! "cursor" (- -1 (- (cursor) start) (if icon (+ 1 (string-length icon)) 0)) "")
     (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
 
@@ -417,6 +430,7 @@
   "Closes the completion menu, if it is open, and gives the keys back."
   (when *menu-open*
     (set! *menu-open* #f)
+    (set! *menu-width* 0)
     (set! *menu-hits* '())
     (set! *menu-matches* '())
     (set! *menu-sources* (hash))
