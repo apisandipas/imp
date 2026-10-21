@@ -223,9 +223,9 @@
 (define *doc-lines-key* #f)  ; the sources (name . length) they were read from
 
 (define (sources-key)
-  "What the loaded sources are, to tell when one changes: (name . length)
-   for each."
-  (map (lambda (n) (cons n (string-length (or (source-text n) "")))) (source-names)))
+  "What the loaded sources are, to tell when one changes: their names and
+   lengths."
+  (list (source-names) (source-lengths)))
 
 (define (doc-lines)
   "A hash of name -> the first line of its documentation, from every
@@ -233,43 +233,27 @@
    init.scm's redefinition first). Read again when a source changes."
   (let ([key (sources-key)])
     (unless (equal? key *doc-lines-key*)
-      (set! *doc-lines* (foldl (lambda (name table) (source-doc-lines (source-lines name) table))
-                               (hash) (source-names)))
+      (set! *doc-lines* (foldl source-doc-lines (hash) (source-names)))
       (set! *doc-lines-key* key))
     *doc-lines*))
 
-;; Reading every docstring takes a moment (~0.3s), so do it shortly after
-;; startup, when init.scm has loaded, rather than on the first M-x.
+;; Built shortly after startup, when init.scm has loaded, rather than on
+;; the first M-x.
 (run-after! 1500 (lambda () (doc-lines)))
 
-(define (command-procedure-name line)
-  "The procedure a (define-command! 'name procedure) line names, or #f."
-  (and (starts-with? line "(define-command! '")
-       (let* ([lines (vector line)]
-              [after (skip-blank lines (skip-form lines (skip-blank lines (skip-form lines (cons 0 1)))))]
-              [c (source-char lines after)])
-         (and c (not (delimiter? c)) (not (equal? c #\()) (token-at lines after)))))
-
-(define (source-doc-lines lines table)
-  "`table` with the first doc line of each definition in `lines` added.
-   Only documented definitions are added. Commands go in as \"command
-   NAME\", apart from functions that share their name; a command defined
-   as a named procedure gets that procedure's line."
-  (let ([v (list->vector lines)])
-    (let loop ([i 0] [table table] [aliases '()])
-      (if (= i (vector-length v))
-          (foldl (lambda (a t) (let ([doc (hash-try-get t (cdr a))]) (if doc (hash-insert t (car a) doc) t)))
-                 table aliases)
-          (let* ([line (vector-ref v i)] [name (defined-name line)])
-            (if (not name)
-                (loop (+ i 1) table aliases)
-                (let* ([doc (definition-doc v i)]
-                       [first (and (pair? doc) (not (equal? (trim (car doc)) "")) (trim (car doc)))]
-                       [key (if (starts-with? line "(define-command! '") (string-append "command " name) name)]
-                       [proc (and (not first) (command-procedure-name line))])
-                  (loop (+ i 1)
-                        (if first (hash-insert table key first) table)
-                        (if proc (cons (cons key proc) aliases) aliases)))))))))
+(define (source-doc-lines name table)
+  "`table` with the first doc line of each definition in loaded source
+   `name` added (read by source-doc-table, in Rust). Only documented
+   definitions are added. Commands go in as \"command NAME\", apart from
+   functions that share their name; a command defined as a named
+   procedure gets that procedure's line."
+  (let* ([read (source-doc-table name)]
+         [table (let loop ([d (car read)] [t table])
+                  (if (null? d) t (loop (cddr d) (hash-insert t (car d) (cadr d)))))])
+    (let loop ([a (cadr read)] [t table])
+      (if (null? a)
+          t
+          (loop (cddr a) (let ([doc (hash-try-get t (cadr a))]) (if doc (hash-insert t (car a) doc) t)))))))
 
 ;;; describe-function, describe-option, apropos
 ;;;
@@ -305,19 +289,9 @@
                    (if site (cddr (site-description site)) '())))))))
 
 (define (apropos text)
-  "The names defined in the loaded sources that contain `text`, sorted."
-  (let ([hits '()] [seen (hash)])
-    (for-each
-     (lambda (src)
-       (for-each
-        (lambda (line)
-          (let ([name (defined-name line)])
-            (when (and name (not (hash-contains? seen name)) (string-contains? name text))
-              (set! seen (hash-insert seen name #t))
-              (set! hits (cons name hits)))))
-        (source-lines src)))
-     (source-names))
-    (sort hits string<?)))
+  "The names defined in the loaded sources that contain `text`, sorted
+   (defined-names-containing reads them, in Rust)."
+  (defined-names-containing text))
 
 (define (defined-name line)
   "The name a line defines, if it starts a definition."

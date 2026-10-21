@@ -416,6 +416,46 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
+    // The definitions in a loaded source and their docs' first lines,
+    // read in Rust (docs.rs): help.scm's doc-lines and apropos.
+    engine.register_fn("source-lengths", || {
+        editor::with(|e| {
+            e.sources
+                .iter()
+                .map(|(_, _, t)| t.len() as isize)
+                .collect::<Vec<_>>()
+        })
+    });
+    engine.register_fn("defined-names-containing", |text: String| {
+        editor::with(|e| {
+            let mut names: Vec<String> = e
+                .sources
+                .iter()
+                .flat_map(|(_, _, t)| crate::docs::defined_names(t))
+                .filter(|n| n.contains(&text))
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        })
+    });
+    engine.register_fn("source-doc-table", |name: String| {
+        editor::with(|e| {
+            let (docs, aliases) = e
+                .sources
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .map(|(_, _, t)| crate::docs::doc_lines(t))
+                .unwrap_or_default();
+            let flat = |pairs: Vec<(String, String)>| {
+                pairs
+                    .into_iter()
+                    .flat_map(|(a, b)| [a, b])
+                    .collect::<Vec<_>>()
+            };
+            vec![flat(docs), flat(aliases)]
+        })
+    });
     engine.register_fn("source-text", |name: String| {
         editor::with(|e| {
             e.sources
