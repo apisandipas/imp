@@ -65,14 +65,29 @@ fn file_names_complete_from_the_buffers_directory() {
 
 #[test]
 fn scheme_buffers_complete_imps_names_with_their_docs() {
-    let (mut s, _) = project("complete-scheme", "init.scm", "");
-    type_keys(&mut s, "i(define-leader-gr");
+    let (mut s, _) = project(
+        "complete-scheme",
+        "init.scm",
+        "(define-leader-group! \"x\")\n",
+    );
+    type_keys(&mut s, "Go(define-leader-gr");
     s.keys(&["C-n"]);
     assert_eq!(menu(&mut s)[0], "define-leader-group!");
+    // Once, though it's in imp's names and a word in the buffer too.
+    assert_eq!(
+        menu(&mut s)
+            .iter()
+            .filter(|w| *w == "define-leader-group!")
+            .count(),
+        1
+    );
     let detail = s.eval("(cadr (car *menu-matches*))").unwrap();
     assert!(detail.contains("leader"), "{detail}");
     type_keys(&mut s, "<C-y>");
-    assert_eq!(s.text(), "(define-leader-group!");
+    assert_eq!(
+        s.text(),
+        "(define-leader-group! \"x\")\n(define-leader-group!\n"
+    );
 }
 
 #[test]
@@ -134,4 +149,89 @@ fn a_source_of_your_own() {
     assert_eq!(menu(&mut s), ["hello"]);
     type_keys(&mut s, "<C-y>");
     assert_eq!(s.text(), "@hello");
+}
+
+#[test]
+fn words_nearest_the_cursor_come_first() {
+    let mut s = server("alpha_far\n\n\n\nalpha_near\n\n");
+    type_keys(&mut s, "5jialp");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s), ["alpha_near", "alpha_far"]);
+    // Smartcase: an uppercase letter matches case-sensitively.
+    let mut s = server("Alpha alpha\n");
+    type_keys(&mut s, "oal");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s).len(), 2);
+    type_keys(&mut s, "<C-e><esc>oAl");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s), ["Alpha"]);
+}
+
+#[test]
+fn sources_in_a_group_merge_by_priority() {
+    let mut s = server("hello_word\n");
+    s.eval(
+        r#"(define-completion-source! 'greeting
+             (lambda (manual? done)
+               (done (word-start-before (cursor)) (list (completion-candidate "hello_there"))) #t)
+             'priority 10)"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "ohel");
+    s.keys(&["C-n"]);
+    // Equally good matches: the higher priority first.
+    assert_eq!(menu(&mut s), ["hello_there", "hello_word"]);
+    type_keys(&mut s, "<C-e><esc>");
+    // A mode's own groups: greeting alone, words only if it has nothing.
+    s.eval("(set-completion-sources! 'fundamental-mode '(greeting words))")
+        .unwrap();
+    type_keys(&mut s, "ohel");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s), ["hello_there"]);
+    type_keys(&mut s, "<C-e><esc>");
+    s.eval("(set-completion-sources! 'fundamental-mode '((file) words))")
+        .unwrap();
+    type_keys(&mut s, "ohel");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s), ["hello_word"]);
+}
+
+#[test]
+fn key_presets() {
+    let mut s = server("alphabet alpine\n");
+    s.eval("(set-option! 'completion-keys 'tab)").unwrap();
+    type_keys(&mut s, "oalp");
+    s.keys(&["C-n"]);
+    // alpine is nearer, so first; C-n moves on and <tab> accepts.
+    assert_eq!(menu(&mut s), ["alpine", "alphabet"]);
+    type_keys(&mut s, "<C-n><tab>");
+    assert_eq!(s.text(), "alphabet alpine\nalphabet\n");
+    // enter: <ret> accepts the selected candidate.
+    s.eval("(set-option! 'completion-keys 'enter)").unwrap();
+    type_keys(&mut s, " alp");
+    s.keys(&["C-n"]);
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "alphabet alpine\nalphabet alphabet\n");
+    // vim: <ret> in a menu that opened by itself, nothing selected, is a
+    // new line.
+    s.eval("(set-option! 'completion-keys 'vim)").unwrap();
+    s.eval("(set-option! 'completion-auto-modes '(fundamental-mode))")
+        .unwrap();
+    type_keys(&mut s, " alp");
+    s.eval("(complete-at-point! #f)").unwrap();
+    assert_eq!(menu(&mut s), ["alphabet", "alpine"]);
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "alphabet alpine\nalphabet alphabet alp\n\n");
+}
+
+#[test]
+fn menu_columns() {
+    let mut s = server("alphabet\n");
+    s.set_size(80, 20);
+    s.eval("(set-option! 'completion-menu-columns '(label source))")
+        .unwrap();
+    type_keys(&mut s, "oalp");
+    s.keys(&["C-n"]);
+    let rows = s.frame().text_rows().join("\n");
+    assert!(rows.contains("alphabet  [words]"), "{rows}");
 }

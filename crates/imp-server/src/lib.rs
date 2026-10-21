@@ -7,6 +7,7 @@
 
 mod api;
 mod clipboard;
+mod complete;
 mod crdt;
 #[cfg(unix)]
 pub mod daemon;

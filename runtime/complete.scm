@@ -1,82 +1,73 @@
 ;;; complete.scm -- completion at point, in insert state.
 ;;;
-;;; A menu of candidates in a box at the cursor, filled by the first
-;;; completion source that has something for the text before the cursor
-;;; (as Emacs's completion-at-point-functions). The sources, in order:
+;;; A menu of candidates in a box at the cursor, gathered from completion
+;;; sources (as nvim-cmp's, or Emacs's completion-at-point-functions):
 ;;;
 ;;;   file     a path being typed (~/, ./, ../, /, or a word with a /)
 ;;;   lsp      the language server, when the buffer has one (lsp.scm)
 ;;;   scheme   in Scheme buffers, the names imp defines, with their docs
-;;;   words    words from this buffer, then from the other buffers
+;;;   words    words from this buffer, nearest first, then the others
+;;;
+;;; Sources come in groups, tried in turn: the menu shows what the first
+;;; group with anything to offer found, its sources' candidates merged and
+;;; ranked by how well they match, then by source priority. The default
+;;; groups are (file (lsp scheme words)): a path completes on its own,
+;;; anything else from the other three together. Per major mode:
+;;;
+;;;   (set-completion-sources! 'markdown-mode '(file words))   ; 2 groups
+;;;   (set-completion-sources! 'org-mode '((file words)))      ; 1 group
 ;;;
 ;;; C-n and C-p open it (C-p selecting the last candidate), as does C-x
 ;;; C-o; C-x C-f completes a file name and C-x C-n / C-x C-p words only, as
-;;; in Vim. With completion-auto it also opens by itself after a pause:
-;;; where a language server is attached, after a word character or one of
-;;; its trigger characters; elsewhere in programming modes once
-;;; completion-auto-min characters of a word are typed, or after a / in a
-;;; path. While it is open: C-n C-p <tab> <s-tab> <down> <up> move, C-y or
-;;; <ret> accepts (<ret> only once something is selected in a menu that
-;;; opened by itself), C-e closes it; other keys type as usual and narrow
-;;; it: to the candidates that start with what's typed in a menu that
-;;; opened by itself, to fuzzy matches in one you asked for.
+;;; in Vim. With completion-auto it also opens by itself after
+;;; completion-delay of quiet: in completion-auto-modes once
+;;; completion-auto-min characters of a word are typed (a source can ask
+;;; for fewer), or after a / in a path; where a language server is
+;;; attached, after a word character or one of its trigger characters.
+;;;
+;;; While it is open, other keys type as usual and narrow it: to the
+;;; candidates that start with what's typed in a menu that opened by
+;;; itself (language servers' excepted), to fuzzy matches in one you
+;;; asked for. completion-keys picks how it takes keys:
+;;;
+;;;   vim    C-n C-p <tab> <s-tab> move, C-y accepts, <ret> accepts only
+;;;          once something is selected, C-e closes (the default)
+;;;   tab    <tab> accepts (the selected candidate, else the first),
+;;;          C-n C-p <s-tab> move, <ret> is a new line
+;;;   enter  <ret> accepts (the selected candidate, else the first),
+;;;          <tab> <s-tab> C-n C-p move
+;;;
+;;; completion-menu-columns picks what each row shows, from icon, label,
+;;; detail and source. The hot loops, the word index and filtering and
+;;; ranking on each key, are Rust's (buffer-words, completion-store-*).
 ;;;
 ;;; A source of your own:
 ;;;
 ;;;   (define-completion-source! 'emoji
 ;;;     (lambda (manual? done)
 ;;;       (and (text-before-cursor-ends-with? ":")   ; does it apply here?
-;;;            (begin (done (cursor) (list (completion-candidate "🙂"))) #t))))
+;;;            (begin (done (cursor) (list (completion-candidate "🙂"))) #t)))
+;;;     'priority 10)
 
 (define-option! 'completion-auto #t '())
 (define-option! 'completion-auto-min 3 '())
 (define-option! 'completion-delay 150 '())
-
-;; Each candidate: (label detail text start item), `text` being what to
-;; insert from offset `start` to the cursor; `item` is the source's own.
-(define *menu-candidates* '())
-(define *menu-matches* '())
-(define *menu-index* -1)
-(define *menu-start* 0)        ; where the typed part starts
-(define *menu-open* #f)
-(define *menu-source* #f)      ; the source the candidates came from
-(define *menu-incomplete* #f)  ; the source has more: ask again as you type
-(define *menu-word-char?* char-word?) ; what the typed part is made of
-(define *menu-on-accept* #f)   ; (lambda (item)) after a candidate goes in
-(define *menu-auto* #f)        ; it opened by itself, as you typed
-(define *menu-fuzzy* #f)       ; the source wants fuzzy matching even then
-(define *complete-timer* #f)
-(define *complete-request* 0)  ; answers to older requests are dropped
-(define *completion-sources* '())  ; (name procedure), tried in order
+;; Major modes (and their children) where the menu opens by itself.
+(define-option! 'completion-auto-modes '(prog-mode) '())
+;; vim, tab or enter: see the top of complete.scm.
+(define-option! 'completion-keys 'vim '())
+;; What a menu row shows, in order, from: icon label detail source.
+(define-option! 'completion-menu-columns '(icon label detail) '())
+;; Where the words source looks: all (every file buffer) or current.
+(define-option! 'completion-words-scope 'all '())
+;; Characters besides letters, digits and _ that words are made of here
+;; (Scheme buffers set their own, for names like set-option!).
+(define-option! 'completion-word-chars "" '())
 
 (define (completion-candidate text . detail)
   "A menu candidate that inserts `text`, shown with `detail` (a string)
    beside it if given."
   (list text (if (null? detail) "" (car detail)) text #f #f))
-
-(define (define-completion-source! name proc . where)
-  "Adds completion source `name`, replacing one of that name. `proc` is
-   called as (proc manual? done): it returns #f if it has nothing for the
-   text before the cursor, else #t, calling (done start candidates)
-   then or later; `start` is where the text it completes begins. done
-   takes optional keywords after that: 'incomplete #t (ask again as more
-   is typed), 'word-char? PRED (what the typed part is made of; the menu
-   closes on anything else), 'on-accept PROC (called with the chosen
-   candidate's item), 'fuzzy #t (fuzzy matches as you type, even in a
-   menu that opened by itself, where otherwise only the candidates
-   starting with the typed text stay). `manual?` is #t when asked by a key rather than as
-   you type. It goes last, or (define-completion-source! name proc
-   'before 'words) before another."
-  (let* ([others (filter (lambda (s) (not (eq? (car s) name))) *completion-sources*)]
-         [before (and (pair? where) (eq? (car where) 'before) (cadr where))]
-         [entry (list name proc)])
-    (set! *completion-sources*
-          (if (and before (assq before others))
-              (let loop ([l others])
-                (cond [(null? l) (list entry)]
-                      [(eq? (car (car l)) before) (cons entry l)]
-                      [else (cons (car l) (loop (cdr l)))]))
-              (append others (list entry))))))
 
 (define (word-start-before p)
   "Where the word ending at `p` starts, on `p`'s line; `p` if none does."
@@ -95,47 +86,106 @@
   "The leading items of list `cs` that satisfy `pred`."
   (if (and (pair? cs) (pred (car cs))) (cons (car cs) (take-while pred (cdr cs))) '()))
 
+(define (keyword-option options key default)
+  "The value after `key` in the keyword list `options`, or `default`."
+  (let loop ([o options])
+    (cond [(or (null? o) (null? (cdr o))) default]
+          [(eq? (car o) key) (cadr o)]
+          [else (loop (cddr o))])))
+
+;;; Sources
+
+;; Each: (name procedure options), options a keyword list; in order.
+(define *completion-sources* '())
+;; Major mode -> its groups, as set-completion-sources! takes them.
+(define *mode-completion-sources* (hash))
+
+(define (define-completion-source! name proc . options)
+  "Adds completion source `name`, replacing one of that name. `proc` is
+   called as (proc manual? done): it returns #f if it has nothing for the
+   text before the cursor, else #t, calling (done start candidates)
+   then or later; `start` is where the text it completes begins.
+   `manual?` is #t when asked by a key rather than as you type.
+
+   done takes optional keywords after that: 'incomplete #t (ask again as
+   more is typed), 'word-char? PRED (what the typed part is made of; its
+   candidates go once something else is typed), 'on-accept PROC (called
+   with the chosen candidate's item), 'fuzzy #t (fuzzy matches as you
+   type, even in a menu that opened by itself).
+
+   `options` are keywords too: 'priority N (higher ranks first among
+   equally good matches; default 0), 'min-length N (characters of a word
+   typed before it is asked as you type; default completion-auto-min),
+   'auto PRED (called with the char just typed: #t asks it now whatever
+   the mode or length, 'never keeps the menu shut, #f leaves it to the
+   usual rules), 'exclusive #t (a group of its own, tried before the
+   others), 'before OTHER (placed before source OTHER)."
+  (let* ([others (filter (lambda (s) (not (eq? (car s) name))) *completion-sources*)]
+         [before (keyword-option options 'before #f)]
+         [entry (list name proc options)])
+    (set! *completion-sources*
+          (if (and before (assq before others))
+              (let loop ([l others])
+                (cond [(null? l) (list entry)]
+                      [(eq? (car (car l)) before) (cons entry l)]
+                      [else (cons (car l) (loop (cdr l)))]))
+              (append others (list entry))))))
+
+(define (source-option name key default)
+  "Option `key` source `name` was defined with, or `default`."
+  (let ([s (assq name *completion-sources*)])
+    (if s (keyword-option (caddr s) key default) default)))
+
+(define (default-completion-groups)
+  "The groups buffers complete from unless their mode has its own: each
+   'exclusive source alone, then all the others together."
+  (let ([alone? (lambda (s) (keyword-option (caddr s) 'exclusive #f))])
+    (append (map (lambda (s) (list (car s))) (filter alone? *completion-sources*))
+            (list (map car (filter (lambda (s) (not (alone? s))) *completion-sources*))))))
+
+(define (set-completion-sources! mode groups)
+  "Makes buffers of major mode `mode` (and its children) complete from
+   `groups`: a list whose items are source names or lists of them, each
+   a group, tried in turn until one has candidates. '(file words) tries
+   file then words; '((file words)) merges the two. #f restores the
+   default."
+  (set! *mode-completion-sources*
+        (if groups
+            (hash-insert *mode-completion-sources* mode groups)
+            (hash-remove *mode-completion-sources* mode))))
+
+(define (completion-groups-here)
+  "The groups of source names the current buffer completes from."
+  (let ([own (list-find (lambda (m) (hash-contains? *mode-completion-sources* m)) (mode-lineage (major-mode)))])
+    (if own
+        (map (lambda (g) (if (list? g) g (list g))) (hash-ref *mode-completion-sources* own))
+        (default-completion-groups))))
+
 ;;; The sources that come with imp
 
-(define (words-in-range prefix start lo hi seen)
-  "The words from offset `lo` to `hi` of the current buffer that start
-   with `prefix`, top to bottom, leaving out those in hash `seen` and the
-   one being typed at `start`; returns (words seen)."
-  (let loop ([p lo] [words '()] [seen seen])
-    (if (>= p hi)
-        (list (reverse words) seen)
-        (if (char-word? (buffer-char-at p))
-            (let* ([e (let run ([q p]) (if (and (< q hi) (char-word? (buffer-char-at q))) (run (+ q 1)) q))]
-                   [w (buffer-substring p e)])
-              (if (and (starts-with? w prefix) (not (hash-contains? seen w)) (not (= p start)))
-                  (loop e (cons w words) (hash-insert seen w #t))
-                  (loop e words seen)))
-            (loop (+ p 1) words seen)))))
+(define (word-char-here? c)
+  "Whether `c` is part of a word in this buffer: a letter, digit, _ or one
+   of completion-word-chars."
+  (or (char-word? c) (string-contains? (option 'completion-word-chars) (string c))))
 
-(define (buffer-word-candidates start . everywhere)
-  "Candidates for completing the word from `start` to the cursor: the
-   words that start with it in the 500 lines around the cursor, top to
-   bottom; with `everywhere` #t, then those in the other file buffers
-   (their first 2000 lines), which takes longer."
-  (let* ([prefix (buffer-substring start (cursor))]
-         [line (current-line)]
-         [here (words-in-range prefix start (line-start (max 0 (- line 500)))
-                               (line-end (min (last-line) (+ line 500))) (hash prefix #t))]
-         [buf (current-buffer)]
-         [others (foldl (lambda (id acc)
-                          (if (or (= id buf) (not (buffer-path-of id))
-                                  (not (and (pair? everywhere) (car everywhere))))
-                              acc
-                              (with-buffer id
-                                (lambda ()
-                                  (let ([r (words-in-range prefix -1 0 (line-end (min (last-line) 2000)) (cadr acc))])
-                                    (list (append (car acc) (car r)) (cadr r)))))))
-                        (list '() (cadr here)) (buffer-list))])
-    (map (lambda (w) (list w "" w start #f)) (append (car here) (car others)))))
+(define (word-buffers)
+  "The buffers the words source reads, current first: with
+   completion-words-scope all, then every other file buffer."
+  (let ([here (current-buffer)])
+    (cons here
+          (if (eq? (option 'completion-words-scope) 'all)
+              (filter (lambda (id) (and (not (= id here)) (cadr (buffer-info id)))) (buffer-list))
+              '()))))
 
-(define (buffer-path-of id)
-  "The file of buffer `id`, or #f: only file buffers lend their words."
-  (cadr (buffer-info id)))
+(define-completion-source! 'words
+  (lambda (manual? done)
+    "Words from this buffer, nearest the cursor first, then from the other
+     buffers, that complete the one before the cursor."
+    (let* ([start (start-before (cursor) word-char-here?)]
+           [words (buffer-words (word-buffers) (buffer-substring start (cursor))
+                                (option 'completion-word-chars) (cursor) 500)])
+      (done start (map (lambda (w) (list w "" w #f #f)) words) 'word-char? word-char-here?)
+      #t)))
 
 (define-completion-source! 'file
   (lambda (manual? done)
@@ -155,7 +205,12 @@
                                                        (starts-with? (substring typed (if slash (+ slash 1) 0) (string-length typed)) ".")))
                                        entries))
                           'word-char? file-name-char?)
-                    #t)))))))
+                    #t))))))
+  'exclusive #t
+  'before 'words
+  'auto (lambda (c)
+          (and (equal? c #\/) (auto-mode-here?)
+               (path-like? (buffer-substring (start-before (cursor) path-char?) (cursor))))))
 
 (define (completion-dir dir)
   "Directory `dir`, as typed, as a path to read: ~ expanded, and a
@@ -193,33 +248,129 @@
   "Whether `c` can be part of a Scheme name."
   (or (char-word? c) (memv c '(#\- #\! #\? #\* #\< #\> #\= #\/ #\+ #\: #\. #\%))))
 
+;; Scheme buffers' words are names like set-option!.
+(add-hook! 'major-mode
+  (lambda (mode)
+    (when (memq 'scheme-mode (mode-lineage mode))
+      (set-local-option! 'completion-word-chars "-!?*<>=+:.%"))))
+
+;; The scheme source's candidates, built again when the definitions
+;; change: (definitions candidates).
+(define *scheme-candidates* (list #f '()))
+
+(define (scheme-candidates)
+  "A candidate for every name imp defines, its docstring's first line
+   beside it."
+  (let ([names (all-definitions)])
+    (unless (eq? names (car *scheme-candidates*))
+      (let ([docs (doc-lines)])
+        (set! *scheme-candidates*
+              (list names (map (lambda (n) (list n (or (hash-try-get docs n) "") n #f #f)) names)))))
+    (cadr *scheme-candidates*)))
+
 (define-completion-source! 'scheme
   (lambda (manual? done)
     "In Scheme buffers: the names imp defines, with their docstrings'
-     first lines, then words from the buffers."
+     first lines."
     (and (memq 'scheme-mode (mode-lineage (major-mode)))
-         (let* ([start (start-before (cursor) scheme-symbol-char?)]
-                [typed (buffer-substring start (cursor))]
-                [docs (doc-lines)]
-                [names (filter (lambda (n) (starts-with? n typed)) (all-definitions))]
-                [seen (foldl (lambda (n h) (hash-insert h n #t)) (hash) names)]
-                [words (filter (lambda (c) (not (hash-contains? seen (car c))))
-                               (buffer-word-candidates (word-start-before (cursor)) manual?))])
-           (done start
-                 (append (map (lambda (n) (list n (or (hash-try-get docs n) "") n start #f)) names)
-                         (filter (lambda (c) (= (cadddr c) start)) words))
+         (begin
+           (done (start-before (cursor) scheme-symbol-char?) (scheme-candidates)
                  'word-char? scheme-symbol-char?)
-           #t))))
-
-(define-completion-source! 'words
-  (lambda (manual? done)
-    "Words from this buffer, then the other buffers, that complete the
-     one before the cursor."
-    (let ([start (word-start-before (cursor))])
-      (done start (buffer-word-candidates start manual?))
-      #t)))
+           #t)))
+  'priority 50
+  'before 'words)
 
 ;;; The menu
+
+;; Its sources' answers: source number -> (name start word-char? fuzzy?
+;; incomplete? on-accept candidates), candidates a vector.
+(define *menu-sources* (hash))
+(define *menu-hits* '())        ; the candidates shown, as (candidate . source number)
+(define *menu-matches* '())     ; the same candidates, without the numbers
+(define *menu-index* -1)
+(define *menu-open* #f)
+(define *menu-auto* #f)         ; it opened by itself, as you typed
+(define *menu-select* #f)       ; 'first or 'last: select it when the menu opens
+(define *menu-request* 0)       ; answers to older requests are dropped
+(define *complete-timer* #f)
+
+(define (menu-source-field n i)
+  "Field `i` of what source number `n` answered (see *menu-sources*)."
+  (list-ref (hash-ref *menu-sources* n) i))
+
+(define (menu-source-name n)
+  "The name of the menu's source number `n`."
+  (menu-source-field n 0))
+
+(define (menu-add! n name start candidates options)
+  "Puts source `name`'s `candidates` in the menu as its number `n`, for
+   the text from `start` to the cursor, replacing what it had; opens the
+   menu if it isn't open."
+  (let ([own-starts (if (list-find cadddr candidates)
+                        (map (lambda (c) (or (cadddr c) start)) candidates)
+                        '())])
+    (completion-store-set! n (source-option name 'priority 0) (map car candidates) start own-starts)
+    (set! *menu-sources*
+          (hash-insert *menu-sources* n
+                       (list name start
+                             (keyword-option options 'word-char? char-word?)
+                             (keyword-option options 'fuzzy #f)
+                             (keyword-option options 'incomplete #f)
+                             (keyword-option options 'on-accept #f)
+                             (list->vector candidates))))
+    (unless *menu-open*
+      (set! *menu-open* #t)
+      (set! *menu-index* -1)
+      (set! *key-interceptor* menu-key!))
+    (refilter-menu!)))
+
+(define (menu-live-sources)
+  "The menu's source numbers whose text still runs to the cursor: the
+   cursor not before its start, on its line, after one of its word chars."
+  (filter (lambda (n)
+            (let ([start (menu-source-field n 1)] [word-char? (menu-source-field n 2)])
+              (and (>= (cursor) start)
+                   (= (offset->line (cursor)) (offset->line start))
+                   (or (= (cursor) start) (word-char? (buffer-char-at (- (cursor) 1)))))))
+          (hash-keys->list *menu-sources*)))
+
+(define (menu-candidate n i)
+  "Candidate `i` of the menu's source number `n`, its start filled in."
+  (let ([c (vector-ref (menu-source-field n 6) i)])
+    (if (cadddr c) c (list (car c) (cadr c) (caddr c) (menu-source-field n 1) (car (cddddr c))))))
+
+(define (refilter-menu!)
+  "Narrows the menu to what has been typed (the filtering and ranking are
+   completion-store-filter's). Closes it when nothing matches, or only the
+   text already typed does."
+  (let* ([live (menu-live-sources)]
+         [selected (and (>= *menu-index* 0) (< *menu-index* (length *menu-matches*))
+                        (list-ref *menu-matches* *menu-index*))]
+         [flat (if (null? live)
+                   '()
+                   (completion-store-filter *menu-auto* live (filter (lambda (n) (menu-source-field n 3)) live) 200))])
+    (set! *menu-hits*
+          (let loop ([f flat])
+            (if (null? f) '() (cons (cons (menu-candidate (car f) (cadr f)) (car f)) (loop (cddr f))))))
+    (set! *menu-matches* (map car *menu-hits*))
+    (cond
+      [(null? *menu-hits*) (close-menu!)]
+      ;; Only the text already typed: nothing left to offer.
+      [(and (null? (cdr *menu-hits*))
+            (let ([c (car *menu-matches*)])
+              (equal? (caddr c) (buffer-substring (min (cadddr c) (cursor)) (cursor)))))
+       (close-menu!)]
+      [else
+       (set! *menu-index*
+             (cond [(eq? *menu-select* 'first) 0]
+                   [(eq? *menu-select* 'last) (- (length *menu-hits*) 1)]
+                   [selected (let loop ([h *menu-matches*] [i 0])
+                               (cond [(null? h) (min *menu-index* (- (length *menu-hits*) 1))]
+                                     [(equal? (car h) selected) i]
+                                     [else (loop (cdr h) (+ i 1))]))]
+                   [else -1]))
+       (set! *menu-select* #f)
+       (draw-menu!)])))
 
 (define (menu-rows)
   "How many rows the completion menu shows: up to 10, to fit the window."
@@ -230,72 +381,44 @@
 ;; nerd-icons package sets it.
 (define *menu-icon* (lambda (source candidate) #f))
 
-(define (menu-line c width)
-  "A menu row for candidate `c`: its icon if any, the label, then its
-   detail dimmed."
-  (let ([detail (cadr c)] [icon (*menu-icon* *menu-source* c)])
-    (list (list (string-append (if icon (string-append icon " ") "") (pad-right (car c) width)) "")
-          (list (if (equal? detail "") "" (string-append "  " (clip detail 40))) "popup.detail"))))
+(define (menu-line hit width)
+  "A menu row for `hit` (candidate . source number), its columns as
+   completion-menu-columns says, the label padded to `width`."
+  (let ([c (car hit)] [source (menu-source-name (cdr hit))])
+    (filter (lambda (part) part)
+            (map (lambda (column)
+                   (case column
+                     [(icon) (let ([icon (*menu-icon* source c)]) (and icon (list (string-append icon " ") "")))]
+                     [(label) (list (pad-right (car c) width) "")]
+                     [(detail) (and (not (equal? (cadr c) "")) (list (string-append "  " (clip (cadr c) 40)) "popup.detail"))]
+                     [(source) (list (string-append "  [" (symbol->string source) "]") "popup.detail")]
+                     [else #f]))
+                 (option 'completion-menu-columns)))))
 
 (define (draw-menu!)
-  "Draws the completion menu at the cursor, scrolled to the selection."
-  (let* ([n (length *menu-matches*)] [rows (menu-rows)]
+  "Draws the completion menu at the cursor, scrolled to the selection,
+   its labels lined up with the text they complete."
+  (let* ([n (length *menu-hits*)] [rows (menu-rows)]
          [i (max *menu-index* 0)]
          [top (max 0 (min (- i (- rows 1)) (- n rows)))]
          [top (max 0 (min top i))]
-         [shown (take (list-tail *menu-matches* top) (min rows (- n top)))])
-    (let ([width (min 30 (apply max (cons 1 (map (lambda (c) (string-length (car c))) shown))))])
-      (set-popup! (map (lambda (c) (menu-line c width)) shown)))
-    ;; In a box at the cursor, its labels lined up with the text typed.
-    (set-popup-place! "cursor" (- -1 (- (cursor) *menu-start*)) "")
+         [shown (take (list-tail *menu-hits* top) (min rows (- n top)))]
+         [width (min 30 (apply max (cons 1 (map (lambda (h) (string-length (car (car h)))) shown))))]
+         [start (cadddr (car (list-ref *menu-hits* i)))]
+         [icon (and (eq? (car (option 'completion-menu-columns)) 'icon)
+                    (*menu-icon* (menu-source-name (cdr (car shown))) (car (car shown))))])
+    (set-popup! (map (lambda (h) (menu-line h width)) shown))
+    (set-popup-place! "cursor" (- -1 (- (cursor) start) (if icon (+ 1 (string-length icon)) 0)) "")
     (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
-
-(define (refilter-menu!)
-  "Narrows the menu to what has been typed since it opened.
-   Closes it when nothing matches or the cursor left the text."
-  (if (or (< (cursor) *menu-start*)
-          (not (= (offset->line (cursor)) (offset->line *menu-start*)))
-          (and (> (cursor) *menu-start*) (not (*menu-word-char?* (buffer-char-at (- (cursor) 1))))))
-      (close-menu!)
-      (let* ([typed (buffer-substring *menu-start* (cursor))]
-             [prefix (string-downcase typed)]
-             [labels (if (and *menu-auto* (not *menu-fuzzy*))
-                         (filter (lambda (l) (starts-with? (string-downcase l) prefix))
-                                 (map car *menu-candidates*))
-                         (map car *menu-candidates*))]
-             [by-label (foldl (lambda (c h) (if (hash-contains? h (car c)) h (hash-insert h (car c) c)))
-                              (hash) *menu-candidates*)]
-             [hits (fuzzy-filter typed labels 200)])
-        (set! *menu-matches* (map (lambda (l) (hash-ref by-label l)) hits))
-        (cond [(null? *menu-matches*) (close-menu!)]
-              ;; Only the text already typed: nothing left to offer.
-              [(and (null? (cdr *menu-matches*)) (equal? (caddr (car *menu-matches*)) typed)
-                    (= (cadddr (car *menu-matches*)) *menu-start*))
-               (close-menu!)]
-              [else
-               (set! *menu-index* (if (< *menu-index* 0) -1 (min *menu-index* (- (length *menu-matches*) 1))))
-               (draw-menu!)]))))
-
-(define (open-menu! candidates start select?)
-  "Opens the completion menu on `candidates` for the text at `start`.
-   It takes the keys while open. `select?` selects the first candidate
-   and says so when there are none."
-  ;; A candidate without its own start replaces from `start`.
-  (set! *menu-candidates*
-        (map (lambda (c) (if (cadddr c) c (list (car c) (cadr c) (caddr c) start (car (cddddr c)))))
-             candidates))
-  (set! *menu-start* start)
-  (set! *menu-index* (if select? 0 -1))
-  (set! *menu-open* #t)
-  (set! *key-interceptor* menu-key!)
-  (refilter-menu!)
-  (when (and select? (not *menu-open*)) (message "no completions")))
 
 (define (close-menu!)
   "Closes the completion menu, if it is open, and gives the keys back."
   (when *menu-open*
     (set! *menu-open* #f)
+    (set! *menu-hits* '())
     (set! *menu-matches* '())
+    (set! *menu-sources* (hash))
+    (completion-store-clear!)
     (set-popup! '())
     (set-popup-selected! -1)
     (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f))))
@@ -304,19 +427,20 @@
   "Moves the menu's selection by `step`, wrapping around.
    With nothing selected, a step forward selects the first and one back
    the last."
-  (let ([n (length *menu-matches*)])
+  (let ([n (length *menu-hits*)])
     (when (> n 0)
       (set! *menu-index* (if (< *menu-index* 0)
                              (if (> step 0) 0 (- n 1))
                              (modulo (+ *menu-index* step) n)))
       (draw-menu!))))
 
-(define (accept-candidate! c)
-  "Replaces the typed text with candidate `c`, as if typed, so . repeats
-   it; then lets the source finish (a server's extra edits, say). A
-   directory's name ending in / asks again for what's in it."
-  (let* ([start (min (cadddr c) (cursor))] [old (buffer-substring start (cursor))] [text (caddr c)]
-         [item (car (cddddr c))] [on-accept *menu-on-accept*] [source *menu-source*])
+(define (accept-candidate! hit)
+  "Replaces the typed text with `hit`'s candidate, as if typed, so .
+   repeats it; then lets its source finish (a server's extra edits, say).
+   A directory's name ending in / asks again for what's in it."
+  (let* ([c (car hit)] [n (cdr hit)]
+         [start (min (cadddr c) (cursor))] [old (buffer-substring start (cursor))] [text (caddr c)]
+         [item (car (cddddr c))] [on-accept (menu-source-field n 5)] [source (menu-source-name n)])
     (close-menu!)
     (buffer-delete! start (cursor))
     (set-cursor! start)
@@ -328,72 +452,136 @@
     (when (and (eq? source 'file) (ends-with? text "/"))
       (complete-with! 'file #f))))
 
+(define (menu-key-action key)
+  "What `key` does in the open menu under completion-keys: 'next,
+   'previous, 'accept (the selected candidate or the first),
+   'accept-selected, 'close, or #f to type it."
+  (let ([preset (option 'completion-keys)])
+    (cond
+      [(member key '("C-n" "<down>")) 'next]
+      [(member key '("C-p" "<up>" "<s-tab>")) 'previous]
+      [(equal? key "C-y") 'accept]
+      [(equal? key "C-e") 'close]
+      [(equal? key "<tab>") (if (eq? preset 'tab) 'accept 'next)]
+      [(member key '("<ret>" "C-m"))
+       (case preset [(enter) 'accept] [(tab) #f] [else 'accept-selected])]
+      [else #f])))
+
 (define (menu-key! key)
-  "Handles `key` while the completion menu is open.
-   Moves, accepts or closes it; other keys type as usual and narrow the
-   menu (asking the source again if its list was incomplete, or for a
+  "Handles `key` while the completion menu is open: moves, accepts or
+   closes it as completion-keys says; other keys type as usual and narrow
+   the menu (asking sources again whose lists were incomplete, or for a
    new directory after a /). Leaving insert state closes it."
-  (cond
-    [(not (memq *mode* '(insert replace))) (close-menu!) (handle-key! key)]
-    [(member key '("C-n" "<down>" "<tab>")) (move-menu! 1)]
-    [(member key '("C-p" "<up>" "<s-tab>")) (move-menu! -1)]
-    [(equal? key "C-y") (accept-candidate! (list-ref *menu-matches* (max 0 *menu-index*)))]
-    [(and (member key '("<ret>" "C-m")) (>= *menu-index* 0))
-     (accept-candidate! (list-ref *menu-matches* *menu-index*))]
-    [(equal? key "C-e") (close-menu!)]
-    [(member key '("<esc>" "C-c" "<ret>" "C-m")) (close-menu!) (handle-key! key)]
-    [(and (equal? key "/") (eq? *menu-source* 'file))
-     (close-menu!) (handle-key! key) (complete-with! 'file #f)]
-    [else
-     (handle-key! key)
-     (when *menu-open* (refilter-menu!))
-     (when (and *menu-open* *menu-incomplete*) (schedule-completion! #t))]))
+  (let ([action (and (memq *mode* '(insert replace)) (menu-key-action key))])
+    (cond
+      [(not (memq *mode* '(insert replace))) (close-menu!) (handle-key! key)]
+      [(eq? action 'next) (move-menu! 1)]
+      [(eq? action 'previous) (move-menu! -1)]
+      [(eq? action 'accept) (accept-candidate! (list-ref *menu-hits* (max 0 *menu-index*)))]
+      [(and (eq? action 'accept-selected) (>= *menu-index* 0))
+       (accept-candidate! (list-ref *menu-hits* *menu-index*))]
+      [(eq? action 'close) (close-menu!)]
+      [(member key '("<esc>" "C-c" "<ret>" "C-m")) (close-menu!) (handle-key! key)]
+      [(and (equal? key "/") (memq 'file (map menu-source-name (menu-live-sources))))
+       (close-menu!) (handle-key! key) (complete-with! 'file #f)]
+      [else
+       (handle-key! key)
+       (when *menu-open* (refilter-menu!))
+       (when (and *menu-open* (list-find (lambda (n) (menu-source-field n 4)) (menu-live-sources)))
+         (schedule-completion! #t))])))
 
 ;;; Asking the sources
 
-(define (done-option options key default)
-  "The value after `key` in the keyword list `options`, or `default`."
-  (let loop ([o options])
-    (cond [(or (null? o) (null? (cdr o))) default]
-          [(eq? (car o) key) (cadr o)]
-          [else (loop (cddr o))])))
+(define (typed-word-length)
+  "How many characters of a word are typed before the cursor."
+  (- (cursor) (start-before (cursor) word-char-here?)))
 
-(define (run-source! entry manual? select-last?)
-  "Asks completion source `entry` (name procedure) for candidates at the
-   cursor; returns what it does (#f for nothing to offer). Its answer
-   opens the menu if the cursor is still where it asked."
-  (set! *complete-request* (+ *complete-request* 1))
-  (let ([request *complete-request*] [id (current-buffer)] [at (cursor)] [was-open *menu-open*]
-        [selected (and *menu-open* (>= *menu-index* 0))])
-    ((cadr entry) manual?
-                  (lambda (start candidates . options)
-                    (when (and (= request *complete-request*) (= id (current-buffer))
-                               (memq *mode* '(insert replace)) (>= (cursor) start))
-                      (set! *menu-source* (car entry))
-                      (set! *menu-incomplete* (done-option options 'incomplete #f))
-                      (set! *menu-word-char?* (done-option options 'word-char? char-word?))
-                      (set! *menu-on-accept* (done-option options 'on-accept #f))
-                      (set! *menu-fuzzy* (done-option options 'fuzzy #f))
-                      (set! *menu-auto* (if was-open *menu-auto* (not manual?)))
-                      (open-menu! candidates start (or manual? selected))
-                      (when (and *menu-open* select-last?)
-                        (set! *menu-index* (- (length *menu-matches*) 1))
-                        (draw-menu!)))))))
+(define (auto-mode-here?)
+  "Whether the current buffer's mode is one of completion-auto-modes."
+  (list-find (lambda (m) (memq m (option 'completion-auto-modes))) (mode-lineage (major-mode))))
+
+(define (source-auto name c)
+  "What source `name`'s 'auto rule says of char `c` just typed: #t,
+   'never or #f."
+  (let ([rule (source-option name 'auto #f)])
+    (and rule c (rule c))))
+
+(define (ask-now? name manual?)
+  "Whether to ask source `name` now: always when asked by a key; as you
+   type, if its 'auto rule says so, or in completion-auto-modes once its
+   min-length of a word is typed."
+  (or manual?
+      (let ([c (and (> (cursor) 0) (buffer-char-at (- (cursor) 1)))])
+        (or (eq? (source-auto name c) #t)
+            (and c (auto-mode-here?) (word-char-here? c)
+                 (>= (typed-word-length) (source-option name 'min-length (option 'completion-auto-min))))))))
+
+(define (source-number name)
+  "The number source `name` goes by in the menu: its place in
+   *completion-sources*."
+  (let loop ([s *completion-sources*] [i 0])
+    (cond [(null? s) 0] [(eq? (car (car s)) name) i] [else (loop (cdr s) (+ i 1))])))
+
+(define (run-source! name manual? request on-answer)
+  "Asks source `name` for candidates at the cursor and returns what it
+   does (#f for nothing to offer). Its answer goes in the menu if the
+   request is still current and the cursor where it can use it;
+   `on-answer` is called after."
+  (let ([entry (assq name *completion-sources*)] [id (current-buffer)])
+    (and entry
+         ((cadr entry) manual?
+                       (lambda (start candidates . options)
+                         (when (and (= request *menu-request*) (= id (current-buffer))
+                                    (memq *mode* '(insert replace)) (>= (cursor) start))
+                           (unless (null? candidates)
+                             (menu-add! (source-number name) name start candidates options))
+                           (on-answer)))))))
+
+(define (run-groups! groups manual? request)
+  "Asks the sources of the first of `groups` (lists of source names);
+   once they have all answered, if the menu is still shut, the next
+   group. Says so when none has anything and `manual?`."
+  (if (null? groups)
+      (when manual? (message "no completions"))
+      (let* ([names (filter (lambda (name) (ask-now? name manual?)) (car groups))]
+             [waiting names]
+             [answered! (lambda (name)
+                          (when (memq name waiting)
+                            (set! waiting (filter (lambda (w) (not (eq? w name))) waiting))
+                            (when (and (null? waiting) (not *menu-open*) (= request *menu-request*))
+                              (run-groups! (cdr groups) manual? request))))])
+        (if (null? names)
+            (run-groups! (cdr groups) manual? request)
+            (for-each (lambda (name)
+                        (unless (run-source! name manual? request (lambda () (answered! name)))
+                          (answered! name)))
+                      names)))))
+
+(define (complete-from! groups manual? select-last?)
+  "Opens the menu from `groups` of sources. `manual?` selects the first
+   candidate (the last with `select-last?`) and says so when there are
+   none; otherwise the menu opened by itself."
+  (close-menu!)
+  (set! *menu-request* (+ *menu-request* 1))
+  (set! *menu-auto* (not manual?))
+  (set! *menu-select* (and manual? (if select-last? 'last 'first)))
+  (run-groups! groups manual? *menu-request*))
 
 (define (complete-at-point! manual? . select-last)
-  "Opens the menu from the first completion source with something for
-   the text before the cursor. `manual?` selects the first candidate
-   (the last with select-last #t) and says so when there are none."
-  (let loop ([sources *completion-sources*])
-    (cond [(null? sources) (when manual? (message "no completions"))]
-          [(run-source! (car sources) manual? (and (pair? select-last) (car select-last))) #t]
-          [else (loop (cdr sources))])))
+  "Opens the menu from this buffer's completion sources."
+  (complete-from! (completion-groups-here) manual? (and (pair? select-last) (car select-last))))
 
 (define (complete-with! name manual? . select-last)
   "Opens the menu from completion source `name` only."
-  (let ([entry (assq name *completion-sources*)])
-    (unless (and entry (run-source! entry manual? (and (pair? select-last) (car select-last))))
-      (when manual? (message "no completions")))))
+  (complete-from! (list (list name)) manual? (and (pair? select-last) (car select-last))))
+
+(define (refresh-incomplete!)
+  "Asks the open menu's sources whose lists were incomplete again, for
+   what is typed now."
+  (for-each (lambda (n)
+              (when (menu-source-field n 4)
+                (run-source! (menu-source-name n) (not *menu-auto*) *menu-request* (lambda () #f))))
+            (menu-live-sources)))
 
 (define (complete-command step)
   "The insert key C-n (`step` 1) or C-p (-1): completes the text before
@@ -420,8 +608,8 @@
 
 (define (schedule-completion! refresh?)
   "Completes at point after completion-delay of quiet, if the cursor
-   hasn't moved and no menu is open; `refresh?` asks again for an open
-   menu whose list was incomplete."
+   hasn't moved and no menu is open; `refresh?` asks an open menu's
+   incomplete sources again instead."
   (when *complete-timer* (cancel-timer! *complete-timer*))
   (let ([id (current-buffer)] [at (cursor)])
     (set! *complete-timer*
@@ -431,28 +619,15 @@
                         (when (and (= id (current-buffer)) (= at (cursor)) (eq? *mode* 'insert)
                                    (if refresh? *menu-open* (not (or *menu-open* *key-interceptor*))))
                           (if refresh?
-                              (complete-with! *menu-source* #f)
+                              (refresh-incomplete!)
                               (complete-at-point! #f))))))))
 
-;; Whether typing char `c` should open the menu, decided first by a
-;; source with its own rules (lsp.scm's, with a server attached): #t,
-;; 'never, or #f to leave it to the rules below.
-(define *auto-complete-here?* (lambda (c) #f))
-
 (define (auto-complete-char? c)
-  "Whether `c`, just typed, should open the menu after a pause."
-  (let ([verdict (*auto-complete-here?* c)])
-    (cond [(eq? verdict 'never) #f]
-          [verdict #t]
-          [else (auto-complete-by-default? c)])))
-
-(define (auto-complete-by-default? c)
-  "Whether `c`, just typed, opens the menu in a programming mode: after a
-   / in a path, or once completion-auto-min chars of a word are typed."
-  (and (memq 'prog-mode (mode-lineage (major-mode)))
-       (or (equal? c #\/)
-           (and (char-word? c)
-                (>= (- (cursor) (word-start-before (cursor))) (option 'completion-auto-min))))))
+  "Whether `c`, just typed, should open the menu after a pause: when a
+   source here would be asked (see ask-now?), unless one says 'never."
+  (let ([names (apply append (completion-groups-here))])
+    (and (not (list-find (lambda (name) (eq? (source-auto name c) 'never)) names))
+         (list-find (lambda (name) (ask-now? name #f)) names))))
 
 (add-hook! 'after-change
            (lambda ()

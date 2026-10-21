@@ -12,6 +12,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
 use crate::clipboard;
+use crate::complete;
 use crate::editor::{self, Editor, Highlight};
 use crate::files;
 use crate::fuzzy;
@@ -1098,6 +1099,41 @@ pub fn register(engine: &mut Engine) {
         "fuzzy-filter",
         |query: String, candidates: Vec<String>, limit: isize| {
             fuzzy::filter(&query, &candidates, clamp(limit))
+        },
+    );
+    // Completion at point's hot loops (complete.rs): buffers' words, and
+    // the menu's candidates filtered as you type.
+    engine.register_fn(
+        "buffer-words",
+        |ids: Vec<isize>, prefix: String, extra: String, near: isize, limit: isize| {
+            let ids: Vec<usize> = ids.into_iter().map(clamp).collect();
+            editor::with(|e| {
+                complete::buffer_words(e, &ids, &prefix, &extra, clamp(near), clamp(limit))
+            })
+        },
+    );
+    engine.register_fn(
+        "completion-store-set!",
+        |source: isize, priority: isize, labels: Vec<String>, start: isize, starts: Vec<isize>| {
+            let starts: Vec<usize> = starts.into_iter().map(clamp).collect();
+            complete::set_candidates(
+                clamp(source),
+                priority as i64,
+                labels,
+                clamp(start),
+                &starts,
+            ) as isize
+        },
+    );
+    engine.register_fn("completion-store-clear!", complete::clear_candidates);
+    engine.register_fn(
+        "completion-store-filter",
+        |prefix_only: bool, live: Vec<isize>, fuzzy: Vec<isize>, limit: isize| {
+            let live: Vec<usize> = live.into_iter().map(clamp).collect();
+            let fuzzy: Vec<usize> = fuzzy.into_iter().map(clamp).collect();
+            editor::with(|e| {
+                complete::filter_candidates(e, e.cursor, prefix_only, &live, &fuzzy, clamp(limit))
+            })
         },
     );
     engine.register_fn("list-files", |root: String, limit: isize| {

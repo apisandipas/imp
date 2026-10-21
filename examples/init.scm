@@ -49,6 +49,12 @@
 ;; (set-option! 'claude-command "claude --model opus")
 ;; (define-popup-rule! "*claude" 'side 'right 'size 0.4)
 
+;;; Completion in insert state (C-n / C-p, or by itself as you type in code)
+;; (set-option! 'completion-keys 'tab)          ; vim (C-y), tab or enter accepts
+;; (set-option! 'completion-auto-min 2)         ; open after this many chars
+;; (set-option! 'completion-menu-columns '(icon label detail source))
+;; (set-completion-sources! 'markdown-mode '(file words))  ; groups, tried in turn
+
 ;;; Keys
 (define-key! 'normal "C-s" 'save-buffer)
 ;; Tab cycles buffers (it replaces C-i, which is the same key in a terminal).

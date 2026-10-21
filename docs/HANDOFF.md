@@ -466,12 +466,19 @@ Phase 2 adds:
 - Help from the source: `describe-key` (press keys, see the binding form and
   its documentation), `describe-function/option/command`, `apropos`,
   `find-definition`, `:help`; Scheme buffers have `K` and `gd`.
-- Completion at point (`complete.scm`): sources tried in order until one
-  applies, `(define-completion-source! name (lambda (manual? done) ...))`,
-  as Emacs's completion-at-point-functions; built in: file paths, the
-  language server (lsp.scm), Scheme names with their docs, buffer words
-  (other buffers on C-n). Opens as you type in prog modes
-  (`completion-auto`, `completion-auto-min`) and with a server.
+- Completion at point (`complete.scm`), after nvim-cmp: sources in
+  groups, the first group with candidates wins and its sources merge,
+  ranked by match then `'priority`. Default groups `(file (lsp scheme
+  words))`; per mode `(set-completion-sources! mode groups)`. Sources:
+  `(define-completion-source! name (lambda (manual? done) ...) 'priority
+  N 'min-length N 'auto PRED 'exclusive #t)`. Opens as you type in
+  `completion-auto-modes` (prog-mode) after `completion-auto-min` chars,
+  and with a server. `completion-keys` (vim/tab/enter),
+  `completion-menu-columns`, `completion-words-scope`. The hot loops are
+  Rust (`complete.rs`): `buffer-words` (a per-buffer word index, rebuilt
+  when the buffer's version changes; nearest the cursor first) and
+  `completion-store-set!`/`-filter` (candidates live in Rust; each key
+  filters and ranks them and returns the top 200 as indices).
 - Docstrings, as in Emacs: a string first in a function's body, or in a
   command's lambda, is its documentation (help.scm's header; help.scm reads
   them from the source). Variables and options keep a comment above.

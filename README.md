@@ -97,10 +97,13 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   marksman and pyright when they're on your `PATH`, and more with `define-language-server!`; debugging
   over DAP.
 - **Completion.** In insert state `C-n`/`C-p` complete what's before
-  the cursor: a file path, the language server's suggestions, imp's own
-  names (with their docs) in Scheme, or words from your buffers. In code
-  the menu opens by itself as you type; `C-x C-f` completes file names.
-  `define-completion-source!` adds your own.
+  the cursor: a file path, or the language server's suggestions, imp's
+  own names (with their docs) in Scheme and words from your buffers
+  (nearest first), merged and ranked. In code the menu opens by itself
+  as you type; `C-x C-f` completes file names. Sources per major mode
+  (`set-completion-sources!`), key presets (`completion-keys`: `vim`,
+  `tab`, `enter`), the menu's columns, and `define-completion-source!`
+  for your own.
 - **Files.** `SPC f D`, `SPC f R` and `SPC f C` (or `M-x delete-file`,
   `rename-file`, `copy-file`) act on the current buffer's file unless you
   name another; deleting asks first, and the buffer follows a rename.

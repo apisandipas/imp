@@ -38,7 +38,7 @@ pub fn filter(query: &str, candidates: &[String], limit: usize) -> Vec<String> {
 }
 
 /// How well `part` matches `candidate`, or `None` if it doesn't.
-fn score(part: &str, candidate: &str) -> Option<i64> {
+pub fn score(part: &str, candidate: &str) -> Option<i64> {
     let sensitive = part.chars().any(char::is_uppercase);
     let fold = |s: &str| {
         if sensitive {

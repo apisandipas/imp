@@ -1089,13 +1089,16 @@
                                               (lsp-changed!)))))
            #t))))
 
-(define-completion-source! 'lsp lsp-completion-source 'before 'scheme)
+(define (lsp-auto-complete c)
+  "Whether `c`, just typed, opens the menu by itself where a server is
+   attached: after a word character or one of its trigger characters;
+   'never with lsp-auto-complete off; #f without a server."
+  (let ([key (lsp-key)])
+    (cond [(not key) #f]
+          [(not (option 'lsp-auto-complete)) 'never]
+          [else (or (char-word? c) (and (trigger-char? key c) #t))])))
 
-;; As you type, with a server: after a word character or one of its
-;; trigger characters, unless lsp-auto-complete is off.
-(set! *auto-complete-here?*
-      (lambda (c)
-        (let ([key (lsp-key)])
-          (cond [(not key) #f]
-                [(not (option 'lsp-auto-complete)) 'never]
-                [else (or (char-word? c) (trigger-char? key c))]))))
+;; Ranked above the other sources; as you type, after a word character or
+;; one of the server's trigger characters (lsp-auto-complete).
+(define-completion-source! 'lsp lsp-completion-source
+  'before 'scheme 'priority 100 'auto lsp-auto-complete)
