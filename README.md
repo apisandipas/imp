@@ -5,6 +5,9 @@ core runs the buffers, rendering and parsing; the editor itself (every key,
 command, mode and package) is Scheme ([Steel](https://github.com/mattwparas/steel))
 that you can read, redefine and extend while it runs.
 
+**[apisandipas.github.io/imp](https://apisandipas.github.io/imp/)** has a
+tour, with screenshots.
+
 > **Alpha.** imp is young. It is usable day to day for Vim-style editing, but
 > expect rough edges, missing pieces and changes to the Scheme API. Bug
 > reports are welcome.
