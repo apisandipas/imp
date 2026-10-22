@@ -95,6 +95,7 @@ runtime/                   loaded in this order
   vim.scm                  everything Vim, buffers, ex commands (~3300 lines)
   help.scm                 describe-key/function/option, apropos, :help
   completion.scm           completing-read, M-x, find-file, switch-buffer
+  calendar.scm             date arithmetic, read-date (the date picker)
   leader.scm               SPC leader tree and which-key
   modes.scm                major/minor modes, gc commenting, the REPL
   emacs.scm                the Emacs state (holy bindings)
@@ -370,6 +371,12 @@ needed. Details, and what each one leaves out, are in
     goes through the file's buffer when it is open (saved if it had no
     other changes), else straight to the file. Relative
     `org-agenda-files` are under `org-directory`, as in Emacs.
+  - dates from a calendar (`calendar.scm`, `read-date`): three months
+    above the command line, moved with arrows and PageUp/PageDown or set
+    by typing (`fri`, `+3d`, `11-03`, `tom 3pm`). `C-c C-s`/`C-c C-d`
+    (`SPC m s`/`SPC m d`) set a heading's SCHEDULED/DEADLINE on its
+    planning line, `C-c .` puts or changes a timestamp; templates ask
+    with `%^t` (`%^u` inactive). Today comes from `date`, once per prompt.
   - Mode key sequences that start with a control or meta key (`C-c C-c`)
     work in normal, visual and insert state (`*local-prefix*` in
     vim.scm): when a key begins a longer binding in the buffer's mode

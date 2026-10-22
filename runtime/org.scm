@@ -17,6 +17,10 @@
 ;;; org-agenda-files (empty means every .org file under org-directory).
 ;;; SPC o c captures: a TODO, a note or a journal entry, from templates
 ;;; (see Capture below).
+;;;
+;;;   C-c C-s    schedule the heading (SCHEDULED:), from a calendar
+;;;   C-c C-d    give it a deadline (DEADLINE:)
+;;;   C-c .      put a timestamp at the cursor, or change the one there
 
 (define-option! 'org-directory "~/org" '())
 (define-option! 'org-agenda-files '() '())
@@ -640,6 +644,107 @@
       (when (open-file! (cadr item))
         (set-cursor! (line-start (min (caddr item) (last-line))))))))
 
+;;; Dates: scheduling, deadlines and timestamps
+;;;
+;;; C-c C-s and C-c C-d (SPC m s, SPC m d) set the heading's SCHEDULED or
+;;; DEADLINE date, picked from a calendar (calendar.scm), on the line
+;;; under it as Org keeps them. C-c . (SPC m .) puts a timestamp at the
+;;; cursor, or changes the one there.
+
+(define (org-planning-line? text)
+  "Whether `text` is a heading's planning line: SCHEDULED:, DEADLINE: or
+   CLOSED: dates."
+  (let ([t (trim-start text)])
+    (or (starts-with? t "SCHEDULED:") (starts-with? t "DEADLINE:") (starts-with? t "CLOSED:"))))
+
+(define (org-stamp-bounds text from)
+  "The (start end) of the timestamp starting at or after index `from` in
+   `text`, past spaces only, or #f."
+  (let ([n (string-length text)])
+    (let loop ([i from])
+      (cond [(>= i n) #f]
+            [(equal? (string-ref text i) #\space) (loop (+ i 1))]
+            [(member (string-ref text i) '(#\< #\[))
+             (let ([close (string-index-from text (if (equal? (string-ref text i) #\<) ">" "]") i)])
+               (and close (list i (+ close 1))))]
+            [else #f]))))
+
+(define (org-set-planning! heading key stamp)
+  "Sets `key` (\"SCHEDULED:\" or \"DEADLINE:\") of the heading on line
+   `heading` to timestamp `stamp`, on its planning line (made if there
+   isn't one)."
+  (let* ([next (+ heading 1)]
+         [planning? (and (<= next (last-line)) (org-planning-line? (line-text next)))])
+    (begin-change!)
+    (if planning?
+        (let* ([text (line-text next)]
+               [at (string-index-from text key 0)]
+               [bounds (and at (org-stamp-bounds text (+ at (string-length key))))])
+          (cond
+            [bounds (replace-range! (+ (line-start next) (car bounds)) (+ (line-start next) (cadr bounds)) stamp)]
+            [at (buffer-insert! (+ (line-start next) at (string-length key)) (string-append " " stamp))]
+            [else (buffer-insert! (line-end next) (string-append " " key " " stamp))]))
+        (buffer-insert! (line-end heading) (string-append "\n" key " " stamp)))))
+
+(define (org-planning-date heading key)
+  "The date `key` gives the heading on line `heading`, or #f."
+  (let ([next (+ heading 1)])
+    (and (<= next (last-line)) (org-planning-line? (line-text next))
+         (let ([d (org-date-after (line-text next) key)]) (and d (string->date d))))))
+
+(define (org-plan! key prompt)
+  "Asks for a date with `prompt` and sets the heading's `key` to it."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (read-date prompt (org-planning-date h key)
+                   (lambda (d)
+                     (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                       (org-set-planning! h key stamp)
+                       (message (string-append key " " stamp))))))))
+
+(define (org-schedule!)
+  "Sets the heading's SCHEDULED date, picked from a calendar."
+  (org-plan! "SCHEDULED:" "Schedule: "))
+
+(define (org-deadline!)
+  "Sets the heading's DEADLINE date, picked from a calendar."
+  (org-plan! "DEADLINE:" "Deadline: "))
+
+(define (org-stamp-at pos)
+  "The (start end) of the timestamp around buffer offset `pos`, or #f."
+  (let* ([line (offset->line pos)] [text (line-text line)] [col (- pos (line-start line))])
+    (let loop ([i 0])
+      (let ([b (org-stamp-bounds-anywhere text i)])
+        (cond [(not b) #f]
+              [(and (<= (car b) col) (< col (cadr b)))
+               (list (+ (line-start line) (car b)) (+ (line-start line) (cadr b)))]
+              [else (loop (cadr b))])))))
+
+(define (org-stamp-bounds-anywhere text from)
+  "The (start end) of the next timestamp in `text` at or after `from`: a
+   < or [ followed by a YYYY-MM-DD date. #f if there is none."
+  (let ([n (string-length text)])
+    (let loop ([i from])
+      (cond [(>= (+ i 11) n) #f]
+            [(and (member (string-ref text i) '(#\< #\[)) (string->date (substring text (+ i 1) (+ i 11))))
+             (or (org-stamp-bounds text i) (loop (+ i 1)))]
+            [else (loop (+ i 1))]))))
+
+(define (org-time-stamp!)
+  "Puts an active timestamp at the cursor, picked from a calendar. On a
+   timestamp, changes it instead."
+  (let* ([pos (cursor)] [old (org-stamp-at pos)]
+         [initial (and old (string->date (buffer-substring (+ (car old) 1) (+ (car old) 11))))])
+    (read-date "Date: " initial
+               (lambda (d)
+                 (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                   (begin-change!)
+                   (if old
+                       (replace-range! (car old) (cadr old) stamp)
+                       (buffer-insert! pos stamp))
+                   (set-cursor! (+ (if old (car old) pos) (string-length stamp))))))))
+
 ;;; Capture
 ;;;
 ;;; SPC o c asks which template (one template skips the question), then
@@ -662,7 +767,9 @@
 ;;; In the template: %? the cursor; %U and %u an inactive timestamp with
 ;;; and without the time, %T and %t active ones; %a a link to the line you
 ;;; were on; %i the text you had selected; %f that file's name; %^{Prompt}
-;;; asks for a value first; %% a %.
+;;; asks for a value first; %^t asks for a date from the calendar (%^u for
+;;; an inactive one); %% a %. In the capture buffer, C-c C-s and C-c C-d
+;;; schedule the entry or give it a deadline, as in any Org buffer.
 
 (define *capture-templates* '())  ; (key description target template), in order
 
@@ -708,15 +815,22 @@
   (cdr (assq key ctx)))
 
 (define (capture-prompts template)
-  "The %^{Prompt} prompts in `template`, in order."
-  (let loop ([i 0] [acc '()])
-    (let ([at (string-index-from template "%^{" i)])
-      (if (not at)
-          (reverse acc)
-          (let ([close (string-index-from template "}" (+ at 3))])
-            (if close
-                (loop (+ close 1) (cons (substring template (+ at 3) close) acc))
-                (reverse acc)))))))
+  "The questions `template` asks, in order: a %^{Prompt} as its prompt
+   text, a %^t %^T %^u or %^U (a date from the calendar) as the char."
+  (let ([n (string-length template)])
+    (let loop ([i 0] [acc '()])
+      (let ([at (string-index-from template "%^" i)])
+        (if (or (not at) (>= (+ at 2) n))
+            (reverse acc)
+            (let ([c (string-ref template (+ at 2))])
+              (cond
+                [(equal? c #\{)
+                 (let ([close (string-index-from template "}" (+ at 3))])
+                   (if close
+                       (loop (+ close 1) (cons (substring template (+ at 3) close) acc))
+                       (reverse acc)))]
+                [(memv c '(#\t #\T #\u #\U)) (loop (+ at 3) (cons c acc))]
+                [else (loop (+ at 2) acc)])))))))
 
 (define (string-index-from text needle from)
   "The first index of `needle` in `text` at or after `from`, or #f."
@@ -758,20 +872,34 @@
                    (loop (+ close 1)
                          (string-append out (trim (cadr (run-shell (string-append "date " (shell-quote (string-append "+" (substring template (+ i 2) close)))) ""))))
                          cursor answers))]
-             [(and (equal? c #\^) (string-index-from template "}" i))
-              => (lambda (close)
-                   (loop (+ close 1) (string-append out (if (pair? answers) (car answers) "")) cursor
+             [(and (equal? c #\^) (< (+ i 2) n)
+                   (let ([k (string-ref template (+ i 2))])
+                     (cond [(memv k '(#\t #\T #\u #\U)) (+ i 3)]
+                           [(equal? k #\{) (let ([close (string-index-from template "}" i)]) (and close (+ close 1)))]
+                           [else #f])))
+              ;; A prompt's answer, in order: %^{Prompt}, or a date for %^t.
+              => (lambda (next)
+                   (loop next (string-append out (if (pair? answers) (car answers) "")) cursor
                          (if (pair? answers) (cdr answers) '())))]
              [else (loop (+ i 1) (string-append out "%") cursor answers)]))]
         [else (loop (+ i 1) (string-append out (string (string-ref template i))) cursor answers)]))))
 
 (define (ask-all prompts done)
-  "Asks each prompt in turn, then calls `done` with the answers."
+  "Asks each of `prompts` in turn (see capture-prompts), then calls
+   `done` with the answers. A date is asked with the calendar and answered
+   as a timestamp: active for t and T, inactive for u and U, with a time
+   if one was typed."
   (let loop ([prompts prompts] [acc '()])
-    (if (null? prompts)
-        (done (reverse acc))
-        (ask (string-append (car prompts) ": ") ""
-             (lambda (answer) (loop (cdr prompts) (cons answer acc)))))))
+    (cond
+      [(null? prompts) (done (reverse acc))]
+      [(char? (car prompts))
+       (read-date "Date: " #f
+                  (lambda (d)
+                    (loop (cdr prompts)
+                          (cons (date-timestamp (take d 3) (cadddr d) (memv (car prompts) '(#\t #\T))) acc))))]
+      [else
+       (ask (string-append (car prompts) ": ") ""
+            (lambda (answer) (loop (cdr prompts) (cons answer acc))))])))
 
 (define (capture-placement lines target entry clock)
   "Where an entry goes in a file's `lines`: (index text), the text going
@@ -898,7 +1026,7 @@
   "Where the capture goes and its keys, on the message line."
   (let ([t (car (buffer-local 'capture))])
     (message (string-append (cadr t) " → " (capture-target-label (caddr t))
-                            ": C-c C-c to file, C-c C-k to cancel, C-c C-w to refile"))))
+                            ": C-c C-c file, C-c C-k cancel, C-c C-w refile, C-c C-s schedule, C-c C-d deadline"))))
 
 (add-hook! 'buffer-enter (lambda () (when (buffer-local 'capture) (capture-hint!))))
 
@@ -1046,6 +1174,12 @@
 (org-key! '(insert) "<tab>"
   (lambda () (if (org-table-line? (current-line)) (org-table-next-cell!) (insert-tab!))))
 
+(org-key! '(normal insert) "C-cC-s" (lambda args (org-schedule!)))
+(org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
+(org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
+(define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
+(define-mode-leader! 'org-mode "d" (lambda (n) (org-deadline!)) "deadline")
+(define-mode-leader! 'org-mode "." (lambda (n) (org-time-stamp!)) "timestamp")
 (define-mode-leader! 'org-mode "t" (lambda (n) (let ([h (org-heading-line (current-line))]) (if h (org-todo-cycle! h) (message "not under a heading")))) "cycle TODO")
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")

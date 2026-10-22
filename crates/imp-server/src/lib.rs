@@ -71,6 +71,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("mouse.scm", include_str!("../../../runtime/mouse.scm")),
     ("mcp.scm", include_str!("../../../runtime/mcp.scm")),
     ("git.scm", include_str!("../../../runtime/git.scm")),
+    (
+        "calendar.scm",
+        include_str!("../../../runtime/calendar.scm"),
+    ),
     ("org.scm", include_str!("../../../runtime/org.scm")),
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
     ("project.scm", include_str!("../../../runtime/project.scm")),
