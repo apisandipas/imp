@@ -8,6 +8,7 @@
 ;;; picks the selected candidate, or the typed text if nothing matches.
 ;;; Choosing a file, <tab> first completes the path typed, as in Emacs:
 ;;; "s<tab>" becomes "src/" when that is the only name starting with s.
+;;; A path starting with /, ~/, ./ or ../ lists that directory instead.
 ;;;
 ;;; M-x, find-file, switch-buffer and the describe commands are built on
 ;;; it.
@@ -36,9 +37,31 @@
 (define (refilter! text)
   "Narrows the menu to the candidates matching `text`, best first.
    Called as the prompt's text changes; selects the first match."
-  (set! *completion-matches* (fuzzy-filter text *completion-candidates* *completion-limit*))
+  (set! *completion-matches*
+        (if (and (eq? *completion-category* 'file) (outside-path? text))
+            (directory-matches text)
+            (fuzzy-filter text *completion-candidates* *completion-limit*)))
   (set! *completion-index* 0)
   (show-completions!))
+
+(define (outside-path? text)
+  "Whether `text`, typed for a file, is a path of its own rather than a
+   search of the candidates: it starts with /, ~/, ./ or ../."
+  (or (starts-with? text "/") (starts-with? text "~/")
+      (starts-with? text "./") (starts-with? text "../")))
+
+(define (directory-matches text)
+  "The entries of the directory `text` names that match its last part,
+   best first, each as `text`'s directory and the name (a directory with
+   a /). Names starting with . only once the last part does."
+  (let* ([slash (let loop ([i (- (string-length text) 1)])
+                  (if (equal? (string-ref text i) #\/) i (loop (- i 1))))]
+         [dir (substring text 0 (+ slash 1))]
+         [part (substring text (+ slash 1) (string-length text))]
+         [names (map (lambda (p) (substring p (string-length dir) (string-length p)))
+                     (complete-path (string-append dir (if (starts-with? part ".") "." ""))))])
+    (map (lambda (name) (string-append dir name))
+         (fuzzy-filter part (sort names string<?) *completion-limit*))))
 
 (define (show-completions!)
   "Draws the menu, scrolled so the selection is visible."
@@ -102,14 +125,12 @@
 (define (completed-path text candidates)
   "`text` with its last path part completed, or #f if it can't grow.
    The names come from `candidates` (paths under the directory searched),
-   or from the disk for a path starting with /, ~, ./ or ../. Text with a
+   or from the disk for a path starting with /, ~/, ./ or ../. Text with a
    space in it is a fuzzy search, not a path, and isn't completed."
   (let* ([n (string-length text)]
          [names (cond
                   [(string-contains? text " ") '()]
-                  [(or (starts-with? text "/") (starts-with? text "~")
-                       (starts-with? text "./") (starts-with? text "../"))
-                   (complete-path text)]
+                  [(outside-path? text) (complete-path text)]
                   [else
                    (let loop ([cs candidates] [acc '()])
                      (cond [(null? cs) acc]

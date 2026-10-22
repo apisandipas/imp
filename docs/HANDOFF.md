@@ -511,8 +511,9 @@ Phase 2 adds:
 - Hooks, advice, named commands.
 - Completion (orderless fuzzy) for M-x, find-file (gitignore-aware),
   switch-buffer, describe-*. Choosing a file, <tab> completes the typed
-  path a part at a time as Emacs does (/ and ~ paths from the disk), and
-  moves down the menu when there's nothing to add.
+  path a part at a time as Emacs does, and moves down the menu when
+  there's nothing to add. A path starting with /, ~/, ./ or ../ lists
+  that directory (fuzzy on the last part) instead of the project's files.
 - SPC leader with which-key (Doom-like tree: files, buffers, eval, help,
   search, toggles, quit, SPC m for the major mode).
 - Major modes for ~20 languages (indentation, commentstring), minor modes,

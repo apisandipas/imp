@@ -184,3 +184,26 @@ fn tab_completes_a_file_path_then_moves() {
     type_keys(&mut s, "a<tab><ret>");
     assert_eq!(s.status(), "ab2");
 }
+
+#[test]
+fn a_path_outside_lists_that_directory() {
+    let dir = temp_path("elsewhere");
+    std::fs::create_dir_all(dir.join("notes")).unwrap();
+    std::fs::write(dir.join("notes/todo.org"), "x\n").unwrap();
+    std::fs::write(dir.join("readme.md"), "x\n").unwrap();
+    std::fs::write(dir.join(".hidden"), "x\n").unwrap();
+    let mut s = server("");
+    s.eval(r#"(run-command 'find-file)"#).unwrap();
+    let base = dir.to_str().unwrap();
+    type_keys(&mut s, &format!("{base}/"));
+    let r = rows(&mut s);
+    assert!(r.iter().any(|l| l.ends_with("/notes/")), "{r:?}");
+    assert!(r.iter().any(|l| l.ends_with("/readme.md")), "{r:?}");
+    assert!(!r.iter().any(|l| l.ends_with("/.hidden")), "{r:?}");
+    // <tab> goes into the only match, which lists its files.
+    type_keys(&mut s, "n<tab>");
+    let r = rows(&mut s);
+    assert!(r.iter().any(|l| l.ends_with("/notes/todo.org")), "{r:?}");
+    type_keys(&mut s, "<ret>");
+    assert!(s.eval("(buffer-path)").unwrap().contains("todo.org"));
+}

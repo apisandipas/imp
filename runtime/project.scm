@@ -68,7 +68,7 @@
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
                    (lambda (file)
-                     (open-file! (if (or (starts-with? file "/") (starts-with? file "~"))
+                     (open-file! (if (outside-path? file)
                                      file
                                      (string-append root "/" file))))))
 
