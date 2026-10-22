@@ -193,6 +193,8 @@ fn a_path_outside_lists_that_directory() {
     std::fs::write(dir.join("readme.md"), "x\n").unwrap();
     std::fs::write(dir.join(".hidden"), "x\n").unwrap();
     let mut s = server("");
+    // Wide enough for CI's long temporary paths.
+    s.set_size(200, 24);
     s.eval(r#"(run-command 'find-file)"#).unwrap();
     let base = dir.to_str().unwrap();
     type_keys(&mut s, &format!("{base}/"));

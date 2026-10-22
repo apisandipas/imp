@@ -16,6 +16,8 @@ fn dir(name: &str) -> PathBuf {
 
 fn open(path: &Path) -> imp_server::Server {
     let mut s = server("scratch\n");
+    // Wide enough that a prompt holding CI's long temporary paths fits.
+    s.set_size(200, 24);
     type_keys(&mut s, &format!(":e {}<ret>", path.display()));
     s
 }
