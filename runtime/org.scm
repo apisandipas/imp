@@ -45,6 +45,10 @@
 ;; file. org-indent-per-level is the columns a level adds.
 (define-option! 'org-indent #f '())
 (define-option! 'org-indent-per-level 2 '())
+;; How much bigger headings are drawn, from level 1 down: 1.4 is 1.4
+;; times the font. Levels past the list are the font's size; '() makes
+;; them all so. Window clients only: a terminal draws one size.
+(define-option! 'org-heading-heights '(1.4 1.25 1.1) '())
 
 ;;; Headings and subtrees
 
@@ -1202,6 +1206,10 @@
                     (list "org-2" "^\\*\\* .*" "org.level2")
                     (list "org-3" "^\\*\\*\\* .*" "org.level3")
                     (list "org-4" "^\\*\\*\\*\\*\\+ .*" "org.level4")
+                    (list "org-h1" "^\\* .*" "org.height1")
+                    (list "org-h2" "^\\*\\* .*" "org.height2")
+                    (list "org-h3" "^\\*\\*\\* .*" "org.height3")
+                    (list "org-h4" "^\\*\\*\\*\\*\\+ .*" "org.height4")
                     (list "org-todo" (org-keyword-pattern (filter (lambda (k) (not (member k (org-done-keywords))))
                                                                   (org-keywords)))
                           "org.todo")
@@ -1230,6 +1238,17 @@
     "Indent each section under its heading in this buffer, or stop."
     (org-set-indent! (not (buffer-local 'org-indented)))
     (message (if (buffer-local 'org-indented) "org-indent on" "org-indent off"))))
+
+(define (org-set-heading-heights! heights)
+  "Sets the faces that size headings, org.height1 to org.height4, from
+   `heights` (see org-heading-heights)."
+  (for-each (lambda (level)
+              (let ([h (and (list? heights) (> (length heights) (- level 1)) (list-ref heights (- level 1)))])
+                (set-face! (string-append "org.height" (number->string level))
+                           (if (and (number? h) (not (= h 1))) (string-append "height=" (number->string h)) ""))))
+            '(1 2 3 4)))
+
+(watch-option! 'org-heading-heights org-set-heading-heights!)
 
 ;; What a link hides when it shows just its description: its brackets,
 ;; and the target when there is a description.

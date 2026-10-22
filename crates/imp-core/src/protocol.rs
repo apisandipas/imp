@@ -12,6 +12,12 @@ use serde::{Deserialize, Serialize};
 /// Client -> server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClientMsg {
+    /// What the client can draw, sent first: `heights` when it draws text
+    /// at other sizes (a window client), so frames carry them. Without it a
+    /// client gets every row one cell tall.
+    Hello {
+        heights: bool,
+    },
     /// A key in imp's notation: `"j"`, `"<esc>"`, `"<ret>"`, `"C-c"`.
     Key(String),
     Resize {
@@ -136,6 +142,15 @@ pub struct Style {
     pub italic: bool,
     pub underline: bool,
     pub reverse: bool,
+    /// The text's size in percent of the font's (130 is 1.3 times), for
+    /// clients that draw sizes (`ClientMsg::Hello`); 0 is unset, the font's
+    /// own size. A line is as tall as its tallest text.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub height: u16,
+}
+
+fn is_zero(n: &u16) -> bool {
+    *n == 0
 }
 
 impl Style {
@@ -148,6 +163,20 @@ impl Style {
             italic: self.italic || under.italic,
             underline: self.underline || under.underline,
             reverse: self.reverse || under.reverse,
+            height: if self.height != 0 {
+                self.height
+            } else {
+                under.height
+            },
+        }
+    }
+
+    /// How many times the font's size this text is drawn: 1.0 unset.
+    pub fn scale(&self) -> f32 {
+        if self.height == 0 {
+            1.0
+        } else {
+            self.height as f32 / 100.0
         }
     }
 
@@ -167,6 +196,16 @@ impl Style {
                     let (key, value) = word
                         .split_once('=')
                         .ok_or_else(|| format!("unknown face attribute {word:?}"))?;
+                    if key == "height" {
+                        // A multiple of the font's size: height=1.3.
+                        let h: f32 = value
+                            .parse()
+                            .ok()
+                            .filter(|h: &f32| (0.5..=4.0).contains(h))
+                            .ok_or_else(|| format!("bad height {value:?} (0.5 to 4)"))?;
+                        style.height = (h * 100.0).round() as u16;
+                        continue;
+                    }
                     let color = Color::parse(value)?;
                     match key {
                         "fg" => style.fg = Some(color),
@@ -193,7 +232,12 @@ impl Style {
         .into_iter()
         .filter(|(_, on)| *on)
         .map(|(name, _)| name.to_string());
-        colors.chain(attrs).collect::<Vec<_>>().join(" ")
+        let height = (self.height != 0).then(|| format!("height={}", self.height as f32 / 100.0));
+        colors
+            .chain(attrs)
+            .chain(height)
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -340,6 +384,23 @@ mod tests {
         assert_eq!(s.spec(), "fg=#ff8000 bg=12 bold italic");
         assert_eq!(Style::parse(&s.spec()).unwrap(), s);
         assert_eq!(Style::default().spec(), "");
+    }
+
+    #[test]
+    fn heights() {
+        let s = Style::parse("bold height=1.3").unwrap();
+        assert_eq!(s.height, 130);
+        assert_eq!(s.scale(), 1.3);
+        assert_eq!(s.spec(), "bold height=1.3");
+        assert_eq!(Style::default().scale(), 1.0);
+        assert!(Style::parse("height=9").is_err());
+        assert!(Style::parse("height=big").is_err());
+        // Set over unset wins; unset leaves what is under it.
+        let plain = Style::parse("fg=red").unwrap();
+        assert_eq!(plain.over(s).height, 130);
+        assert_eq!(Style::parse("height=2").unwrap().over(s).height, 200);
+        // Unset, it stays out of the JSON clients get.
+        assert!(!to_line(&Style::default()).contains("height"));
     }
 }
 

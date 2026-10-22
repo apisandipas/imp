@@ -342,7 +342,14 @@ impl Server {
                 e.width = width;
                 e.height = height;
             }),
+            ClientMsg::Hello { heights } => self.set_heights(heights),
         }
+    }
+
+    /// Whether the next frame is for a client that draws text heights
+    /// (each daemon client says for itself).
+    pub fn set_heights(&mut self, on: bool) {
+        editor::with(|e| e.draw_heights = on);
     }
 
     /// Runs Scheme source in the editor and returns the printed value of the

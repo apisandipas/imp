@@ -90,6 +90,9 @@ pub struct Editor {
     pub cursorline: bool,
     pub width: u16,
     pub height: u16,
+    /// Whether the frame being drawn is for a client that draws text
+    /// heights (`ClientMsg::Hello`); otherwise every row is one cell.
+    pub draw_heights: bool,
     /// Display columns between tab stops.
     pub tab_width: usize,
     /// Parse trees, by buffer id, for buffers with a language.

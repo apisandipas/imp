@@ -178,6 +178,8 @@ fn connect(
 ) -> Result<Connection, String> {
     let (to_server, from_client) = mpsc::channel::<ClientMsg>();
     let (to_client, from_server) = mpsc::channel::<ServerMsg>();
+    // A window client draws text at other sizes (org headings).
+    let _ = to_server.send(ClientMsg::Hello { heights: true });
     if args.connect {
         let socket = args.socket.clone().unwrap_or_else(|| {
             imp_server::daemon::socket_path(args.name.as_deref().unwrap_or("default"))

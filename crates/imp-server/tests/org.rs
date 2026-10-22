@@ -466,3 +466,30 @@ fn org_indent_draws_sections_under_their_headings() {
     s.eval("(run-command 'org-indent-mode)").unwrap();
     assert_eq!(s.frame().text_rows()[2].trim_end(), "Text one");
 }
+
+#[test]
+fn heading_heights_come_from_the_option() {
+    let mut s = server("* One\n** Two\nText\n");
+    s.eval("(set-major-mode! 'org-mode)").unwrap();
+    assert_eq!(
+        s.eval(r#"(face-spec "org.height1")"#).unwrap(),
+        "\"height=1.4\""
+    );
+    assert_eq!(
+        s.eval(r#"(face-spec "org.height3")"#).unwrap(),
+        "\"height=1.1\""
+    );
+    assert_eq!(s.eval(r#"(face-spec "org.height4")"#).unwrap(), "\"\"");
+    // For a client that draws heights, a heading's text carries its
+    // height; a theme change keeps it.
+    s.eval("(load-theme! 'gruvbox-dark)").unwrap();
+    assert_eq!(s.frame().rows[0][0].style.height, 0);
+    s.set_heights(true);
+    let style = |s: &mut imp_server::Server, row: usize| s.frame().rows[row][0].style;
+    assert_eq!(style(&mut s, 0).height, 140);
+    assert_eq!(style(&mut s, 1).height, 125);
+    assert_eq!(style(&mut s, 2).height, 0);
+    s.eval("(set-option! 'org-heading-heights '(2))").unwrap();
+    assert_eq!(style(&mut s, 0).height, 200);
+    assert_eq!(style(&mut s, 1).height, 0);
+}

@@ -131,6 +131,13 @@ pub fn frame(e: &mut Editor) -> Frame {
         None => rows.push(vec![Span::new(clip(&e.status, width), Style::default())]),
     }
 
+    // A client that draws one size gets no heights.
+    if !e.draw_heights {
+        for span in rows.iter_mut().flatten() {
+            span.style.height = 0;
+        }
+    }
+
     // The theme's "normal" face is under everything; with a background,
     // rows are padded so it reaches the right edge.
     let normal = e.face("normal");

@@ -32,6 +32,8 @@ pub fn socket_path(name: &str) -> PathBuf {
 struct Client {
     out: Sender<ServerMsg>,
     size: (u16, u16),
+    /// Whether it draws text heights (it said so in its Hello).
+    heights: bool,
     /// The last frame sent, to send only what changed.
     last: Option<Frame>,
 }
@@ -93,12 +95,19 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
                     Client {
                         out,
                         size: (80, 24),
+                        heights: false,
                         last: None,
                     },
                 );
             }
             Event::Disconnected(id) => {
                 clients.remove(&id);
+            }
+            Event::FromClient(id, ClientMsg::Hello { heights }) => {
+                if let Some(c) = clients.get_mut(&id) {
+                    c.heights = heights;
+                    c.last = None;
+                }
             }
             Event::FromClient(id, ClientMsg::Resize { width, height }) => {
                 if let Some(c) = clients.get_mut(&id) {
@@ -111,6 +120,7 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
                 // scrolling suits the screen it is looking at.
                 if let Some(c) = clients.get(&id) {
                     server.set_size(c.size.0, c.size.1);
+                    server.set_heights(c.heights);
                 }
                 server.handle(msg);
             }
@@ -131,6 +141,7 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
         }
         for c in clients.values_mut() {
             server.set_size(c.size.0, c.size.1);
+            server.set_heights(c.heights);
             let next = server.frame();
             let update = match c.last.as_ref().and_then(|last| last.diff(&next)) {
                 Some(patch)

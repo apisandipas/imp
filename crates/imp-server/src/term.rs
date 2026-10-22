@@ -198,6 +198,7 @@ fn cell_style(cell: &vt100::Cell) -> Style {
         italic: cell.italic(),
         underline: cell.underline(),
         reverse: cell.inverse(),
+        height: 0,
     }
 }
 
