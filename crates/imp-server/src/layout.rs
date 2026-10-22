@@ -2,7 +2,8 @@
 //!
 //! A split lays its children out in a row (side by side) or a column (one
 //! above another), sized by weight. Side-by-side windows are separated by
-//! a one-column border; every window's area includes its own status line.
+//! a border `gap` columns wide; every window's area includes its own
+//! status line.
 
 /// How a split arranges its children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,52 +42,34 @@ impl Rect {
 }
 
 impl Layout {
-    /// Every window with its rectangle inside `area`.
-    pub fn rects(&self, area: Rect) -> Vec<(usize, Rect)> {
+    /// Every window with its rectangle inside `area`, with borders `gap`
+    /// columns wide between side-by-side windows.
+    pub fn rects(&self, area: Rect, gap: usize) -> Vec<(usize, Rect)> {
         let mut out = Vec::new();
-        self.place(area, &mut out);
+        self.place(area, gap, &mut out);
         out
     }
 
-    fn place(&self, area: Rect, out: &mut Vec<(usize, Rect)>) {
+    fn place(&self, area: Rect, gap: usize, out: &mut Vec<(usize, Rect)>) {
         match self {
             Layout::Window(id) => out.push((*id, area)),
-            Layout::Split(dir, children) => {
-                let n = children.len();
-                // Borders between side-by-side windows take a column each.
-                let borders = if *dir == Dir::Row { n - 1 } else { 0 };
-                let total = match dir {
-                    Dir::Row => area.w.saturating_sub(borders),
-                    Dir::Column => area.h,
-                };
-                let sizes = share(total, children.iter().map(|(_, w)| *w));
-                let mut at = 0;
-                for ((child, _), size) in children.iter().zip(sizes) {
-                    let rect = match dir {
-                        Dir::Row => Rect {
-                            x: area.x + at,
-                            w: size,
-                            ..area
-                        },
-                        Dir::Column => Rect {
-                            y: area.y + at,
-                            h: size,
-                            ..area
-                        },
-                    };
-                    child.place(rect, out);
-                    at += size + usize::from(*dir == Dir::Row);
+            Layout::Split(_, children) => {
+                for ((child, _), rect) in children.iter().zip(self.child_rects(area, gap)) {
+                    child.place(rect, gap, out);
                 }
             }
         }
     }
 
     pub fn windows(&self) -> Vec<usize> {
-        self.rects(Rect {
-            w: 1000,
-            h: 1000,
-            ..Rect::default()
-        })
+        self.rects(
+            Rect {
+                w: 1000,
+                h: 1000,
+                ..Rect::default()
+            },
+            1,
+        )
         .into_iter()
         .map(|(id, _)| id)
         .collect()
@@ -184,7 +167,14 @@ impl Layout {
     /// Grows (or with a negative `delta`, shrinks) window `target` by
     /// `delta` rows or columns in direction `dir`, taking the space from
     /// its neighbor. `size` is the space the split has to share.
-    pub fn resize(&mut self, target: usize, dir: Dir, delta: isize, area: Rect) -> bool {
+    pub fn resize(
+        &mut self,
+        target: usize,
+        dir: Dir,
+        delta: isize,
+        area: Rect,
+        gap: usize,
+    ) -> bool {
         let Layout::Split(d, children) = self else {
             return false;
         };
@@ -208,17 +198,79 @@ impl Layout {
             children[j].1 -= change;
             return true;
         }
-        let rects = Layout::Split(*d, children.clone()).child_rects(area);
-        children[i].0.resize(target, dir, delta, rects[i])
+        let rects = Layout::Split(*d, children.clone()).child_rects(area, gap);
+        children[i].0.resize(target, dir, delta, rects[i], gap)
+    }
+
+    /// The border at screen cell (`x`, `y`) inside `area`: `Dir::Row` for
+    /// one between side-by-side windows, `Dir::Column` for a status line
+    /// with a window below it.
+    pub fn border_at(&self, area: Rect, gap: usize, x: usize, y: usize) -> Option<Dir> {
+        self.find_border(area, gap, x, y).map(|(dir, _)| dir)
+    }
+
+    /// Moves the border at (`x`, `y`) by `delta` columns or rows, keeping
+    /// both windows at least two wide. Returns where it is now: the first
+    /// column of a border between side-by-side windows, or the status
+    /// line's row.
+    pub fn move_border(
+        &mut self,
+        area: Rect,
+        gap: usize,
+        x: usize,
+        y: usize,
+        delta: isize,
+    ) -> Option<usize> {
+        let Layout::Split(dir, children) = self else {
+            return None;
+        };
+        let dir = *dir;
+        let rects = Layout::Split(dir, children.clone()).child_rects(area, gap);
+        let Some(k) = border_between(dir, &rects, x, y) else {
+            let i = rects.iter().position(|r| r.contains(x, y))?;
+            return children[i].0.move_border(rects[i], gap, x, y, delta);
+        };
+        // Weights in cells, so the border lands exactly where it is put.
+        let size = |r: &Rect| match dir {
+            Dir::Row => r.w,
+            Dir::Column => r.h,
+        } as isize;
+        for ((_, weight), r) in children.iter_mut().zip(&rects) {
+            *weight = size(r) as f64;
+        }
+        let delta = delta.clamp(
+            (2 - size(&rects[k])).min(0),
+            (size(&rects[k + 1]) - 2).max(0),
+        );
+        children[k].1 += delta as f64;
+        children[k + 1].1 -= delta as f64;
+        let r = Layout::Split(dir, children.clone()).child_rects(area, gap)[k];
+        Some(match dir {
+            Dir::Row => r.x + r.w,
+            Dir::Column => r.y + r.h - 1,
+        })
+    }
+
+    fn find_border(&self, area: Rect, gap: usize, x: usize, y: usize) -> Option<(Dir, usize)> {
+        let Layout::Split(dir, children) = self else {
+            return None;
+        };
+        let rects = self.child_rects(area, gap);
+        if let Some(k) = border_between(*dir, &rects, x, y) {
+            return Some((*dir, k));
+        }
+        let i = rects.iter().position(|r| r.contains(x, y))?;
+        children[i].0.find_border(rects[i], gap, x, y)
     }
 
     /// The rectangle of each direct child of a split.
-    fn child_rects(&self, area: Rect) -> Vec<Rect> {
+    fn child_rects(&self, area: Rect, gap: usize) -> Vec<Rect> {
         match self {
             Layout::Window(_) => vec![area],
             Layout::Split(dir, children) => {
                 let n = children.len();
-                let borders = if *dir == Dir::Row { n - 1 } else { 0 };
+                // Borders between side-by-side windows take `gap` columns.
+                let borders = if *dir == Dir::Row { (n - 1) * gap } else { 0 };
                 let total = match dir {
                     Dir::Row => area.w.saturating_sub(borders),
                     Dir::Column => area.h,
@@ -240,13 +292,26 @@ impl Layout {
                                 ..area
                             },
                         };
-                        at += size + usize::from(*dir == Dir::Row);
+                        at += size + if *dir == Dir::Row { gap } else { 0 };
                         r
                     })
                     .collect()
             }
         }
     }
+}
+
+/// Which border of a split's children `rects` (cell, `x`, `y`) is on: k
+/// for the one between child k and k + 1. Side by side, that is the gap
+/// between them; one above another, child k's status line.
+fn border_between(dir: Dir, rects: &[Rect], x: usize, y: usize) -> Option<usize> {
+    rects.windows(2).position(|pair| {
+        let (a, b) = (pair[0], pair[1]);
+        match dir {
+            Dir::Row => x >= a.x + a.w && x < b.x && y >= a.y && y < a.y + a.h,
+            Dir::Column => a.contains(x, y) && y + 1 == a.y + a.h,
+        }
+    })
 }
 
 /// Splits `total` cells by weight, giving any remainder to the last.
@@ -281,7 +346,7 @@ mod tests {
     fn splits_and_rects() {
         let mut l = Layout::Window(1);
         assert!(l.split(1, 2, Dir::Row, false));
-        let r = l.rects(area());
+        let r = l.rects(area(), 1);
         assert_eq!(
             r[0],
             (
@@ -307,7 +372,7 @@ mod tests {
             )
         );
         assert!(l.split(2, 3, Dir::Column, true));
-        let r = l.rects(area());
+        let r = l.rects(area(), 1);
         assert_eq!(
             r[1],
             (
@@ -339,7 +404,7 @@ mod tests {
         let mut l = Layout::Window(1);
         l.split(1, 2, Dir::Column, false);
         l.split(2, 3, Dir::Column, false);
-        let r = l.rects(Rect { h: 21, ..area() });
+        let r = l.rects(Rect { h: 21, ..area() }, 1);
         assert_eq!(r.iter().map(|(_, r)| r.h).collect::<Vec<_>>(), [7, 7, 7]);
     }
 
@@ -359,11 +424,11 @@ mod tests {
     fn resize_moves_space_to_a_neighbor() {
         let mut l = Layout::Window(1);
         l.split(1, 2, Dir::Column, false);
-        assert!(l.resize(1, Dir::Column, 4, area()));
-        let r = l.rects(area());
+        assert!(l.resize(1, Dir::Column, 4, area(), 1));
+        let r = l.rects(area(), 1);
         assert_eq!((r[0].1.h, r[1].1.h), (14, 6));
         l.equalize();
-        assert_eq!(l.rects(area())[0].1.h, 10);
+        assert_eq!(l.rects(area(), 1)[0].1.h, 10);
     }
 
     #[test]
@@ -371,17 +436,37 @@ mod tests {
         let mut l = Layout::default();
         l.split(1, 2, Dir::Column, false);
         l.split_edge(3, Dir::Row, false, 0.25);
-        let rects = l.rects(area());
+        let rects = l.rects(area(), 1);
         let edge = rects.iter().find(|(id, _)| *id == 3).unwrap().1;
         // 80 columns after the border: a quarter of them, the full height.
         assert_eq!((edge.x, edge.w, edge.h), (61, 20, 20));
         l.split_edge(4, Dir::Row, true, 0.25);
         let left = l
-            .rects(area())
+            .rects(area(), 1)
             .into_iter()
             .find(|(id, _)| *id == 4)
             .unwrap()
             .1;
         assert_eq!((left.x, left.h), (0, 20));
+    }
+
+    #[test]
+    fn borders_are_gap_wide_and_move_where_dragged() {
+        let mut l = Layout::Window(1);
+        l.split(1, 2, Dir::Row, false);
+        l.split(2, 3, Dir::Column, false);
+        let r = l.rects(area(), 3);
+        assert_eq!((r[0].1.w, r[1].1.x), (39, 42));
+        assert_eq!(l.border_at(area(), 3, 40, 5), Some(Dir::Row));
+        assert_eq!(l.border_at(area(), 3, 38, 5), None);
+        // Window 2's status line, with window 3 below it.
+        assert_eq!(l.border_at(area(), 3, 50, 9), Some(Dir::Column));
+        assert_eq!(l.border_at(area(), 3, 50, 19), None);
+        assert_eq!(l.move_border(area(), 3, 40, 5, 5), Some(44));
+        assert_eq!(l.rects(area(), 3)[0].1.w, 44);
+        assert_eq!(l.move_border(area(), 3, 50, 9, -3), Some(6));
+        assert_eq!(l.rects(area(), 3)[1].1.h, 7);
+        // Never smaller than two.
+        assert_eq!(l.move_border(area(), 3, 45, 5, 100), Some(76));
     }
 }

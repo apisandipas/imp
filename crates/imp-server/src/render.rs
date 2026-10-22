@@ -40,7 +40,7 @@ pub enum SignColumn {
 pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
-    let screen = e.layout.rects(e.windows_area());
+    let screen = e.window_rects();
     // Parse what changed in every buffer on screen before drawing.
     let shown: Vec<usize> = screen
         .iter()
@@ -102,7 +102,11 @@ pub fn frame(e: &mut Editor) -> Frame {
             let mut at = 0;
             for (x, seg) in segs {
                 if x > at {
-                    push(&mut row, &"│".repeat(x - at), separator);
+                    // A wide border is blank with its line in the middle.
+                    let gap = x - at;
+                    let side = (gap - 1) / 2;
+                    let line = format!("{}│{}", " ".repeat(side), " ".repeat(gap - 1 - side));
+                    push(&mut row, &line, separator);
                 }
                 at = x + seg.iter().map(|s| text_width(&s.text)).sum::<usize>();
                 for span in seg {
@@ -1667,8 +1671,7 @@ fn clip_row(row: &Row, width: usize) -> Row {
 /// sent one (rows of other heights).
 pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<usize>)> {
     let (id, rect) = e
-        .layout
-        .rects(e.windows_area())
+        .window_rects()
         .into_iter()
         .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
     if y + 1 == rect.y + rect.h {

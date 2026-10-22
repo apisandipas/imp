@@ -613,16 +613,16 @@ pub fn register(engine: &mut Engine) {
             Dir::Column
         };
         editor::with(|e| {
-            let area = e.windows_area();
+            let (area, gap) = (e.windows_area(), e.divider());
             let id = e.current_window;
-            e.layout.resize(id, dir, delta, area)
+            e.layout.resize(id, dir, delta, area, gap)
         })
     });
     engine.register_fn("equalize-windows!", || {
         editor::with(|e| e.layout.equalize())
     });
     // What clients do beyond the grid: "font" (a family, "" for the
-    // client's), "font-size" and "padding" (logical pixels),
+    // client's), "font-size", "padding" and "divider" (logical pixels),
     // "transparency" (percent) and "clear-terminal-background".
     engine.register_fn("set-appearance!", |what: String, value: SteelVal| {
         let int = |v: &SteelVal| match v {
@@ -639,6 +639,7 @@ pub fn register(engine: &mut Engine) {
                 },
                 "font-size" => a.font_size = int(&value)?.clamp(0, 400) as u16,
                 "padding" => a.padding = int(&value)?.clamp(0, 1000) as u16,
+                "divider" => e.divider_px = int(&value)?.clamp(0, 1000) as u16,
                 "transparency" => a.transparency = int(&value)?.clamp(0, 100) as u8,
                 "clear-terminal-background" => {
                     a.clear_terminal_background = matches!(value, SteelVal::BoolV(true))
@@ -992,6 +993,34 @@ pub fn register(engine: &mut Engine) {
                     at.map_or(SteelVal::BoolV(false), |p| SteelVal::IntV(p as isize)),
                 ]
             })
+        })
+    });
+
+    // The border at screen cell (x, y): "width" between side-by-side
+    // windows (dragging it changes their widths), "height" on a status
+    // line with a window below it; #f elsewhere.
+    engine.register_fn("border-at", |x: isize, y: isize| {
+        use crate::layout::Dir;
+        editor::with(|e| {
+            let at = e
+                .layout
+                .border_at(e.windows_area(), e.divider(), clamp(x), clamp(y));
+            match at {
+                Some(Dir::Row) => SteelVal::StringV("width".into()),
+                Some(Dir::Column) => SteelVal::StringV("height".into()),
+                None => SteelVal::BoolV(false),
+            }
+        })
+    });
+    // Moves the border at screen cell (x, y) by `delta` columns or rows;
+    // where it is now (its first column, or the status line's row), or
+    // #f if there is no border there.
+    engine.register_fn("move-border!", |x: isize, y: isize, delta: isize| {
+        editor::with(|e| {
+            let (area, gap) = (e.windows_area(), e.divider());
+            e.layout
+                .move_border(area, gap, clamp(x), clamp(y), delta)
+                .map(|at| at as isize)
         })
     });
 

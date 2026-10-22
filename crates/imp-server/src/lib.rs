@@ -349,6 +349,7 @@ impl Server {
                 e.height = height;
             }),
             ClientMsg::Hello { heights } => self.set_heights(heights),
+            ClientMsg::Cell { width } => self.set_cell_width(width),
         }
     }
 
@@ -356,6 +357,12 @@ impl Server {
     /// (each daemon client says for itself).
     pub fn set_heights(&mut self, on: bool) {
         editor::with(|e| e.draw_heights = on);
+    }
+
+    /// The width of the next frame's client's cells, in hundredths of a
+    /// logical pixel; 0 for a terminal.
+    pub fn set_cell_width(&mut self, width: u16) {
+        editor::with(|e| e.cell_width = width);
     }
 
     /// Runs Scheme source in the editor and returns the printed value of the

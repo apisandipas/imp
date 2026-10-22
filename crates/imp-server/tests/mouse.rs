@@ -127,3 +127,56 @@ fn nomouse_ignores_it() {
     click(&mut s, 6, 0);
     assert_eq!(s.cursor(), 0);
 }
+
+#[test]
+fn dragging_the_border_between_windows_resizes_them() {
+    let mut s = server("ab\n");
+    s.handle(ClientMsg::Resize {
+        width: 21,
+        height: 6,
+    });
+    s.keys(&["C-w", "v"]);
+    mouse(&mut s, "press", 10, 1);
+    mouse(&mut s, "drag", 14, 1);
+    mouse(&mut s, "release", 14, 1);
+    assert_eq!(s.frame().text_rows()[0], "ab            │ab");
+    // The window there didn't take the click.
+    assert_eq!(s.eval("(current-col)").unwrap(), "0");
+}
+
+#[test]
+fn dragging_a_status_line_resizes_the_windows_above_and_below() {
+    let mut s = server("ab\n");
+    s.handle(ClientMsg::Resize {
+        width: 20,
+        height: 11,
+    });
+    s.keys(&["C-w", "s"]);
+    // Two windows of five rows; the first's status line is row 4.
+    mouse(&mut s, "press", 3, 4);
+    mouse(&mut s, "drag", 3, 2);
+    mouse(&mut s, "release", 3, 2);
+    let r = s.frame().text_rows();
+    assert!(r[2].starts_with(" NORMAL"), "{r:?}");
+}
+
+#[test]
+fn window_divider_width_is_in_the_clients_pixels() {
+    let mut s = server("ab\n");
+    s.handle(ClientMsg::Resize {
+        width: 23,
+        height: 6,
+    });
+    // Cells 10 pixels wide: a 30 pixel divider is three columns.
+    s.handle(ClientMsg::Cell { width: 1000 });
+    s.eval("(set-option! 'window-divider-width 30)").unwrap();
+    s.keys(&["C-w", "v"]);
+    assert_eq!(s.frame().text_rows()[0], "ab         │ ab");
+    // Grabbed anywhere in it.
+    mouse(&mut s, "press", 12, 1);
+    mouse(&mut s, "drag", 8, 1);
+    assert_eq!(s.frame().text_rows()[0], "ab     │ ab");
+    // A terminal (no cell width) gets one column.
+    s.set_cell_width(0);
+    assert_eq!(s.frame().text_rows()[0], "ab    │ab");
+}

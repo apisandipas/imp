@@ -27,6 +27,8 @@
 ;; (set-option! 'font "JetBrains Mono")
 ;; (set-option! 'font-size 16)
 (set-option! 'window-padding 40)
+;; Pixels between side-by-side windows, an easier grab for resizing.
+;; (set-option! 'window-divider-width 40)
 ;; (set-option! 'background-opacity 0.9)
 ;; In a terminal, leave the background to the terminal (and its opacity).
 ;; (set-option! 'terminal-background #f)

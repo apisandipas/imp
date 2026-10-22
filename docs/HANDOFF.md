@@ -224,7 +224,16 @@ All positions are **char offsets**; integers are `isize` (negatives clamp).
   `set-mode-face!`, `set-status-value!` (`%{name}` values).
 - Mouse: `screen-position` (`(window offset)` under a screen cell, offset
   #f on a status line); the server calls `(imp-handle-mouse action button
-  x y)` for `ClientMsg::Mouse`.
+  x y)` for `ClientMsg::Mouse`. `border-at` ("width" between side-by-side
+  windows, "height" on a status line with a window below) and
+  `move-border!` (by cells; returns where the border landed) drag borders.
+- Window borders: side-by-side windows are `Editor::divider()` columns
+  apart: the `window-divider-width` option (logical pixels, set-appearance!
+  "divider") divided by the client's cell width, which a window client
+  sends as `ClientMsg::Cell` (hundredths of a logical pixel, again on font
+  or zoom changes; the daemon keeps it per client like heights). Terminals
+  never send it and get one column. A wide border is blank with `│` in
+  its middle. Use `e.window_rects()`, not `layout.rects`, for the gap.
 - Tree-sitter: `set-buffer-language! buffer-language syntax-ancestors
   syntax-children syntax-tree` (see syntax.rs / api.rs).
 - JSON/LSP: `json-decode json-encode lsp-frame lsp-take-message path->uri
@@ -610,7 +619,7 @@ Phase 4 adds (details in `docs/design/phase-4.md`):
   rule with colored keys; LSP completion and hover in a bordered box at
   the cursor.
 - The mouse: click to move (focusing the window), drag to select, wheel to
-  scroll; `:set nomouse` turns it off (shift-drag still selects in most
+  scroll, drag a window border or status line to resize; `:set nomouse` turns it off (shift-drag still selects in most
   terminals while imp captures the mouse).
 - The second polish pass (after Phase 6, asked for by the owner):
   - `<tab>` on the `:` line completes arguments too: files for `:e`, `:w`,

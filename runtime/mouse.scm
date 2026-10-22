@@ -7,6 +7,9 @@
 ;;; - a left click focuses the window under it and moves the cursor there,
 ;;;   ending visual mode; insert mode stays in insert mode;
 ;;; - dragging selects, in visual mode, from where the button went down;
+;;; - dragging the border between side-by-side windows, or a status line
+;;;   with a window below it, resizes the windows (window-divider-width
+;;;   makes that border wider, so easier to grab);
 ;;; - the wheel scrolls the window under the mouse by mouse-scroll lines.
 ;;;
 ;;; :set nomouse ignores the mouse. While the terminal reports it, most
@@ -16,6 +19,10 @@
 (define-option! 'mouse-scroll 3 '())
 
 (define *mouse-press* #f)  ; (window offset) where the left button went down
+;; The border being dragged: (what at other grab), where `what` is "width"
+;; or "height", `at` the border's column or row, `other` the row or column
+;; it was grabbed at, and `grab` how far into the border.
+(define *mouse-border* #f)
 
 (define (imp-handle-mouse action button x y)
   "Handles a mouse event from the client, `action` with `button` at
@@ -27,16 +34,42 @@
              ;; owns the next input, except the completion menu.
              (or (not *key-interceptor*) *menu-open*))
     (let ([at (screen-position x y)])
-      (when at
-        (cond
+      (cond
+        [(and (equal? action "press") (equal? button "left") (border-at x y))
+         (mouse-grab-border! x y)
+         ;; A status line's press focuses its window too.
+         (when at (mouse-click! (car at) (cadr at)))]
+        [(and *mouse-border* (equal? action "drag")) (mouse-drag-border! x y)]
+        [(equal? action "release") (set! *mouse-press* #f) (set! *mouse-border* #f)]
+        [at
+         (cond
           [(and (equal? action "press") (equal? button "left")) (mouse-click! (car at) (cadr at))]
           [(and (equal? action "drag") (equal? button "left")) (mouse-drag! (car at) (cadr at))]
           [(equal? action "release") (set! *mouse-press* #f)]
           [(equal? action "scroll-up") (mouse-scroll! (car at) -1)]
           [(equal? action "scroll-down") (mouse-scroll! (car at) 1)]
-          [else #f]))
+          [else #f])]
+        [else #f])
       (update-visual-highlight!)
       (run-hooks 'post-command))))
+
+(define (mouse-grab-border! x y)
+  "Starts dragging the border at screen cell `x`, `y`."
+  (let ([what (border-at x y)])
+    (set! *mouse-border*
+          (if (equal? what "width")
+              (let ([at (move-border! x y 0)]) (list what at y (- x at)))
+              (list what y x 0)))))
+
+(define (mouse-drag-border! x y)
+  "Moves the border being dragged to follow the mouse at `x`, `y`."
+  (let* ([what (car *mouse-border*)] [at (cadr *mouse-border*)]
+         [other (caddr *mouse-border*)] [grab (cadddr *mouse-border*)]
+         [width? (equal? what "width")]
+         [delta (- (if width? (- x grab) y) at)])
+    (unless (= delta 0)
+      (let ([now (if width? (move-border! at other delta) (move-border! other at delta))])
+        (when now (set! *mouse-border* (list what now other grab)))))))
 
 (define (mouse-click! window offset)
   "Focuses `window` and moves the cursor to `offset` there.

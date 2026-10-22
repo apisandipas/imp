@@ -34,6 +34,8 @@ struct Client {
     size: (u16, u16),
     /// Whether it draws text heights (it said so in its Hello).
     heights: bool,
+    /// Its cell width (`ClientMsg::Cell`), 0 until it says.
+    cell_width: u16,
     /// The last frame sent, to send only what changed.
     last: Option<Frame>,
 }
@@ -96,6 +98,7 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
                         out,
                         size: (80, 24),
                         heights: false,
+                        cell_width: 0,
                         last: None,
                     },
                 );
@@ -106,6 +109,12 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
             Event::FromClient(id, ClientMsg::Hello { heights }) => {
                 if let Some(c) = clients.get_mut(&id) {
                     c.heights = heights;
+                    c.last = None;
+                }
+            }
+            Event::FromClient(id, ClientMsg::Cell { width }) => {
+                if let Some(c) = clients.get_mut(&id) {
+                    c.cell_width = width;
                     c.last = None;
                 }
             }
@@ -121,6 +130,8 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
                 if let Some(c) = clients.get(&id) {
                     server.set_size(c.size.0, c.size.1);
                     server.set_heights(c.heights);
+                    server.set_cell_width(c.cell_width);
+                    server.set_cell_width(c.cell_width);
                 }
                 server.handle(msg);
             }
@@ -142,6 +153,7 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
         for c in clients.values_mut() {
             server.set_size(c.size.0, c.size.1);
             server.set_heights(c.heights);
+            server.set_cell_width(c.cell_width);
             let next = server.frame();
             let update = match c.last.as_ref().and_then(|last| last.diff(&next)) {
                 Some(patch)

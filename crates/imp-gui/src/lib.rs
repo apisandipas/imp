@@ -275,6 +275,15 @@ async fn device(
     Ok((adapter, device, queue))
 }
 
+/// The width of `renderer`'s cells for the server, in hundredths of a
+/// logical pixel; `scale` is physical pixels per logical one.
+fn cell_width(renderer: &Renderer, scale: f32) -> ClientMsg {
+    let logical = renderer.cell.0 / scale.max(0.01);
+    ClientMsg::Cell {
+        width: (logical * 100.0).round().clamp(1.0, u16::MAX as f32) as u16,
+    }
+}
+
 /// Runs the editor off-screen: sends `--keys`, waits for the screen to
 /// settle, draws it and saves a PNG.
 fn screenshot(args: &Args) -> Result<(), String> {
@@ -312,6 +321,9 @@ fn screenshot(args: &Args) -> Result<(), String> {
         opacity(appearance),
         appearance.padding as f32 * args.scale,
     );
+    // Pixel options (window-divider-width) need the cell's width.
+    let _ = conn.to_server.send(cell_width(&renderer, args.scale));
+    settle(&mut screen, Duration::from_millis(300));
     let (width, height) = renderer.size_for((cols, rows));
     let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("screenshot"),
@@ -503,6 +515,10 @@ impl App {
             width: grid.0,
             height: grid.1,
         });
+        self.send(cell_width(
+            &renderer,
+            window.scale_factor() as f32 * self.args.scale,
+        ));
         self.state = Some(WindowState {
             surface,
             config,
@@ -570,6 +586,9 @@ impl App {
                 width: grid.0,
                 height: grid.1,
             });
+            // The cell may have changed too (a new font or zoom).
+            let scale = state.window.scale_factor() as f32 * self.args.scale;
+            let _ = self.conn.to_server.send(cell_width(&state.renderer, scale));
         }
     }
 

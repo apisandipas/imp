@@ -339,6 +339,7 @@
 ;;;   (set-option! 'font "VictorMono Nerd Font Mono")
 ;;;   (set-option! 'font-size 16)
 ;;;   (set-option! 'window-padding 40)        ; pixels, in the background color
+;;;   (set-option! 'window-divider-width 40)  ; pixels between side-by-side windows
 ;;;   (set-option! 'background-opacity 0.9)   ; 1 is opaque
 ;;;
 ;;; --font and --font-size on the command line win over these. In a
@@ -371,6 +372,10 @@
   (lambda (v) (check-number 'font-size v 0 400) (set-appearance! "font-size" v)))
 (define-appearance-option! 'window-padding 0
   (lambda (v) (check-number 'window-padding v 0 1000) (set-appearance! "padding" v)))
+;; Pixels between side-by-side windows, rounded to whole columns (0: one
+;; column, as in a terminal, which always gets one).
+(define-appearance-option! 'window-divider-width 0
+  (lambda (v) (check-number 'window-divider-width v 0 1000) (set-appearance! "divider" v)))
 (define-appearance-option! 'background-opacity 1
   (lambda (v) (check-number 'background-opacity v 0 1)
               (set-appearance! "transparency" (* 100 (- 1 v)))))

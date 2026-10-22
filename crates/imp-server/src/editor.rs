@@ -93,6 +93,12 @@ pub struct Editor {
     /// Whether the frame being drawn is for a client that draws text
     /// heights (`ClientMsg::Hello`); otherwise every row is one cell.
     pub draw_heights: bool,
+    /// The width of that client's cells in hundredths of a logical pixel
+    /// (`ClientMsg::Cell`), 0 for a terminal.
+    pub cell_width: u16,
+    /// How wide the divider between side-by-side windows is, in logical
+    /// pixels for a window client (0: one column). Terminals get one.
+    pub divider_px: u16,
     /// The last mouse event's exact position, in cells, when its client
     /// sent one (`ClientMsg::Mouse`'s `fine`).
     pub mouse_fine: Option<(f32, f32)>,
@@ -336,9 +342,23 @@ impl Editor {
         }
     }
 
+    /// How many columns the border between side-by-side windows takes:
+    /// `divider_px` in this client's cells, or one.
+    pub fn divider(&self) -> usize {
+        if self.cell_width == 0 || self.divider_px == 0 {
+            return 1;
+        }
+        let cells = self.divider_px as f64 * 100.0 / self.cell_width as f64;
+        (cells.round() as usize).max(1)
+    }
+
+    /// Every window with its rectangle on screen.
+    pub fn window_rects(&self) -> Vec<(usize, Rect)> {
+        self.layout.rects(self.windows_area(), self.divider())
+    }
+
     pub fn window_rect(&self, id: usize) -> Rect {
-        self.layout
-            .rects(self.windows_area())
+        self.window_rects()
             .into_iter()
             .find(|(w, _)| *w == id)
             .map(|(_, r)| r)
@@ -482,12 +502,12 @@ impl Editor {
         dy: isize,
         cursor_screen: (usize, usize),
     ) -> Option<usize> {
-        let rects = self.layout.rects(self.windows_area());
+        let rects = self.window_rects();
         let here = self.window_rect(self.current_window);
         let (cx, cy) = cursor_screen;
         let (x, y) = match (dx, dy) {
-            (-1, _) => (here.x.checked_sub(2)?, cy),
-            (1, _) => (here.x + here.w + 1, cy),
+            (-1, _) => (here.x.checked_sub(self.divider() + 1)?, cy),
+            (1, _) => (here.x + here.w + self.divider(), cy),
             (_, -1) => (cx, here.y.checked_sub(1)?),
             _ => (cx, here.y + here.h),
         };

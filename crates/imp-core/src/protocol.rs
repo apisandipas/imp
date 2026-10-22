@@ -24,6 +24,12 @@ pub enum ClientMsg {
         width: u16,
         height: u16,
     },
+    /// For a window client, how wide a cell is, in hundredths of a logical
+    /// pixel, sent again when its font changes: options given in pixels,
+    /// like `window-divider-width`, become columns with it.
+    Cell {
+        width: u16,
+    },
     /// Open these files (absolute paths) in the editor, as `imp --connect
     /// FILE...` asks the daemon to.
     Open(Vec<String>),
