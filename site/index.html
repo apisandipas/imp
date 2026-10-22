@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>imp: the editor you can rewrite while it runs</title>
+  <meta name="description" content="imp is a free, open source text editor with Vim editing, Emacs-deep extensibility and a fast Rust core. Every key, command and mode is Scheme you can change while it runs.">
+  <meta name="theme-color" content="#1b2023">
+  <meta property="og:title" content="imp: the editor you can rewrite while it runs">
+  <meta property="og:description" content="Vim editing, Emacs depth, one fast binary. Git, Org, LSP, debugging and Claude Code built in.">
+  <meta property="og:image" content="img/split.webp">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="#tour">Tour</a></li>
+          <li><a href="#scheme">Make it yours</a></li>
+          <li><a href="#install">Install</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="#install">Get imp</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" id="top">
+      <div class="wrap">
+        <p class="kicker"><span class="dot" aria-hidden="true"></span>Free and open source · Linux and macOS</p>
+        <h1>The editor you can rewrite <em>while it runs.</em></h1>
+        <p class="lede">Vim's editing. Emacs's depth. One fast binary. In imp, every key, command and mode is a few lines of Scheme you can open, change and reload without restarting.</p>
+        <div class="cta-row">
+          <a class="btn" href="#install">Install imp</a>
+          <a class="btn btn-ghost" href="https://github.com/apisandipas/imp">View the source</a>
+        </div>
+      </div>
+
+      <div class="wrap wrap-wide">
+        <figure class="demo" aria-label="A recorded imp session: adding a command, then using it">
+          <div class="demo-window" id="demo" data-state="idle">
+            <div class="pane" data-pane="left">
+              <ol class="code" id="pane-left" aria-hidden="true"></ol>
+              <div class="status" id="status-left"></div>
+            </div>
+            <div class="divider" aria-hidden="true"></div>
+            <div class="pane" data-pane="right">
+              <ol class="code" id="pane-right" aria-hidden="true"></ol>
+              <div class="status" id="status-right"></div>
+            </div>
+            <div class="leader" id="leader" hidden></div>
+            <div class="keys" id="keys" aria-hidden="true"></div>
+          </div>
+          <figcaption class="demo-caption">
+            <ol class="steps" id="steps">
+              <li data-step="1"><span class="step-n">1</span>Write a command in <code>init.scm</code></li>
+              <li data-step="2"><span class="step-n">2</span><kbd>SPC</kbd> <kbd>e</kbd> <kbd>b</kbd> evaluates it, live</li>
+              <li data-step="3"><span class="step-n">3</span><kbd>SPC</kbd> <kbd>i</kbd> <kbd>d</kbd> runs it anywhere</li>
+            </ol>
+            <button class="replay" id="replay" type="button">Replay</button>
+          </figcaption>
+        </figure>
+        <p class="demo-note">No restart, no plugin manifest, no build step. It's in <kbd>M-x</kbd> too, with its key beside it, and <kbd>SPC h f</kbd> shows its docstring.</p>
+      </div>
+    </section>
+
+    <!-- Muscle memory -->
+    <section class="section habits" aria-labelledby="habits-h">
+      <div class="wrap">
+        <h2 id="habits-h">Keep your muscle memory.</h2>
+        <p class="section-lede">Switching editors usually costs you a month of fumbling. imp starts out speaking the dialects you already know.</p>
+        <div class="habit-grid">
+          <article class="habit">
+            <h3>From Vim or Neovim</h3>
+            <p>Motions, operators, text objects, counts, <code>.</code>, registers, macros, marks, visual modes, <code>:s</code>, <code>:g</code>, folds and splits. Each is tested against what real Vim does.</p>
+            <p class="habit-keys"><kbd>ciw</kbd> <kbd>dap</kbd> <kbd>qa</kbd> <kbd>:%s</kbd> <kbd>C-w v</kbd></p>
+          </article>
+          <article class="habit">
+            <h3>From Doom or Spacemacs</h3>
+            <p>Press <kbd>SPC</kbd> and a menu shows what comes next: files, buffers, windows, projects, search, git, code, Org, help. <kbd>M-x</kbd> runs any command by name, with its keys and docs beside it.</p>
+            <p class="habit-keys"><kbd>SPC f f</kbd> <kbd>SPC p p</kbd> <kbd>SPC g g</kbd> <kbd>M-x</kbd></p>
+          </article>
+          <article class="habit">
+            <h3>From Emacs</h3>
+            <p><kbd>C-z</kbd> switches to an Emacs state, with <kbd>C-x C-f</kbd>, <kbd>C-x C-s</kbd> and friends. Describe any key, function, option or face, then redefine it from the same window.</p>
+            <p class="habit-keys"><kbd>C-x C-f</kbd> <kbd>SPC h k</kbd> <kbd>SPC h f</kbd> <kbd>C-c C-c</kbd></p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tour -->
+    <section class="section tour" id="tour" aria-labelledby="tour-h">
+      <div class="wrap">
+        <h2 id="tour-h">Everything you'd install twenty plugins for. Already here.</h2>
+        <p class="section-lede">These are real screenshots of imp, not mockups. Git, Org, a file browser and a command palette all come in the box.</p>
+      </div>
+      <div class="wrap wrap-wide">
+        <div class="tour-shell">
+          <div class="tabs" role="tablist" aria-label="Features">
+            <button role="tab" id="tab-git" aria-controls="panel-git" aria-selected="true">Git</button>
+            <button role="tab" id="tab-org" aria-controls="panel-org" aria-selected="false" tabindex="-1">Org</button>
+            <button role="tab" id="tab-mx" aria-controls="panel-mx" aria-selected="false" tabindex="-1">M-x</button>
+            <button role="tab" id="tab-leader" aria-controls="panel-leader" aria-selected="false" tabindex="-1">Leader keys</button>
+            <button role="tab" id="tab-dired" aria-controls="panel-dired" aria-selected="false" tabindex="-1">Files</button>
+            <button role="tab" id="tab-split" aria-controls="panel-split" aria-selected="false" tabindex="-1">Splits</button>
+          </div>
+
+          <div class="panel" role="tabpanel" id="panel-git" aria-labelledby="tab-git">
+            <div class="panel-text">
+              <h3>Git, Magit-style</h3>
+              <p><kbd>SPC g g</kbd> opens status down the right: stage, unstage, commit and browse history from the keyboard, beside the code you're working on. <kbd>q</kbd> puts it away.</p>
+            </div>
+            <img src="img/git.webp" width="1600" height="1014" alt="imp with a README on the left and a git status window on the right listing unstaged changes and recent commits" loading="lazy">
+          </div>
+          <div class="panel" role="tabpanel" id="panel-org" aria-labelledby="tab-org" hidden>
+            <div class="panel-text">
+              <h3>Org mode, for real</h3>
+              <p>Outlines, TODO states, schedules and deadlines with a date picker, an agenda, capture templates, refiling, and tables that align themselves. Headings get larger type in the window, and links show only their text until the cursor reaches them.</p>
+            </div>
+            <img src="img/org.webp" width="1475" height="932" alt="An Org file in imp: large headings, TODO and DONE states, scheduled and deadline dates, and an aligned table" loading="lazy">
+          </div>
+          <div class="panel" role="tabpanel" id="panel-mx" aria-labelledby="tab-mx" hidden>
+            <div class="panel-text">
+              <h3>Every command, by name</h3>
+              <p><kbd>M-x</kbd> fuzzy-matches every command and lists its key binding and the first line of its docs. The ones you write in <code>init.scm</code> show up the same way.</p>
+            </div>
+            <img src="img/mx.webp" width="1600" height="983" alt="The M-x command palette in imp filtered to org, listing org-agenda and org-capture with their keys and descriptions" loading="lazy">
+          </div>
+          <div class="panel" role="tabpanel" id="panel-leader" aria-labelledby="tab-leader" hidden>
+            <div class="panel-text">
+              <h3>A leader key that teaches itself</h3>
+              <p>Press <kbd>SPC</kbd> and pause: imp lists what each next key does. You'll stop needing the menu in about a week, and <code>define-leader!</code> adds your own entries.</p>
+            </div>
+            <img src="img/leader.webp" width="1600" height="983" alt="The space leader menu in imp, listing groups like buffer, code, debug, file, git, help, org, project and search" loading="lazy">
+          </div>
+          <div class="panel" role="tabpanel" id="panel-dired" aria-labelledby="tab-dired" hidden>
+            <div class="panel-text">
+              <h3>A file browser you edit like text</h3>
+              <p><code>:Ex</code> lists a directory with permissions, sizes and times. Rename by editing names, delete by deleting lines, and <kbd>(</kbd> hides the details.</p>
+            </div>
+            <img src="img/dired.webp" width="1600" height="983" alt="imp's file browser listing Scheme files with their permissions, sizes and modification times" loading="lazy">
+          </div>
+          <div class="panel" role="tabpanel" id="panel-split" aria-labelledby="tab-split" hidden>
+            <div class="panel-text">
+              <h3>Splits, highlighting, language servers</h3>
+              <p>Tree-sitter highlighting and text objects. Language servers give diagnostics, go-to-definition, references, rename, code actions, formatting and completion. Debugging works over DAP. Drag the divider to resize.</p>
+            </div>
+            <img src="img/split.webp" width="1600" height="1014" alt="Two side-by-side windows in imp: Scheme source on the left and Rust source on the right, both syntax highlighted" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scheme -->
+    <section class="section scheme" id="scheme" aria-labelledby="scheme-h">
+      <div class="wrap scheme-grid">
+        <div class="scheme-copy">
+          <h2 id="scheme-h">It's Scheme all the way down.</h2>
+          <p class="section-lede">imp's Rust core handles buffers, rendering and parsing. Everything else, from Vim's motions to the git interface, is Scheme in <code>runtime/</code>. You can read it, and redefine any piece from your config.</p>
+          <ul class="checks">
+            <li><strong>Change it live.</strong> Edit <code>init.scm</code> and <kbd>SPC e b</kbd>. No restart.</li>
+            <li><strong>Find anything.</strong> <kbd>SPC h k</kbd> tells you what a key runs. <kbd>SPC h f</kbd> shows a function's docs.</li>
+            <li><strong>Mistakes don't lock you out.</strong> An error in your config shows on the status line, and the editor still starts.</li>
+            <li><strong>Packages, without a package manager.</strong> <code>use-package!</code> loads one from disk or from git.</li>
+          </ul>
+        </div>
+        <div class="code-card" aria-label="Example init.scm">
+          <div class="code-card-head"><span>~/.config/imp/init.scm</span></div>
+<pre><code><span class="c">;; Options, a theme and a key.</span>
+(<span class="f">set-option!</span> <span class="q">'relativenumber</span> <span class="b">#t</span>)
+(<span class="f">load-theme!</span> <span class="q">'gruvbox-dark</span>)
+(<span class="f">define-key!</span> <span class="q">'normal</span> <span class="s">"C-s"</span> <span class="q">'save-buffer</span>)
+
+<span class="c">;; Packages that come with imp.</span>
+(<span class="f">use-package!</span> <span class="q">'olivetti</span>)     <span class="c">; a centred column</span>
+(<span class="f">use-package!</span> <span class="q">'org-babel</span>)    <span class="c">; run source blocks</span>
+
+<span class="c">;; Your own command, on SPC and in M-x.</span>
+(<span class="f">define-command!</span> <span class="q">'insert-date</span>
+  (<span class="f">lambda</span> (count)
+    <span class="s">"Insert today's date at the cursor."</span>
+    (<span class="f">begin-change!</span>)
+    (<span class="f">buffer-insert!</span> (cursor)
+      (<span class="f">without-final-newline</span>
+        (cadr (<span class="f">run-shell</span> <span class="s">"date +%F"</span> <span class="s">""</span>))))))
+(<span class="f">define-leader!</span> <span class="s">"id"</span> <span class="q">'insert-date</span> <span class="s">"insert date"</span>)</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Built in -->
+    <section class="section built" aria-labelledby="built-h">
+      <div class="wrap">
+        <h2 id="built-h">Built for how you actually work.</h2>
+        <div class="built-grid">
+          <article>
+            <h3>A window, or your terminal</h3>
+            <p>imp opens in a GPU-drawn window, with zoom, padding and see-through backgrounds. Over SSH, on a console, or with <code>--tui</code>, the same binary runs in your terminal.</p>
+          </article>
+          <article>
+            <h3>A daemon that keeps your place</h3>
+            <p><code>imp --daemon</code> keeps your editor running. Attach to it from any terminal with <code>--connect</code>, even from another machine over SSH.</p>
+          </article>
+          <article>
+            <h3>Claude Code built in</h3>
+            <p><kbd>M-a</kbd> opens Claude Code for the current project in a side window. Hiding it keeps it running. Send it the selection, the buffer or a file reference, already labelled with lines.</p>
+          </article>
+          <article>
+            <h3>Completion that merges sources</h3>
+            <p>Language server suggestions, file paths, imp's own names with their docs, and words from your open buffers, ranked together. Snippets expand with tab stops, and VS Code snippet files load as they are.</p>
+          </article>
+          <article>
+            <h3>Help you can trust</h3>
+            <p>Every command and function carries Emacs-style documentation. <kbd>SPC h F</kbd> names the faces under the cursor, so you know exactly what to restyle.</p>
+          </article>
+          <article>
+            <h3>One file to install</h3>
+            <p>A single self-contained binary for Linux (x86_64 and aarch64) and macOS on Apple silicon, with the Scheme runtime built in. Nix users get a flake.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section install" id="install" aria-labelledby="install-h">
+      <div class="wrap install-grid">
+        <div>
+          <h2 id="install-h">Try it in under a minute.</h2>
+          <p class="section-lede">Download, put it on your <code>PATH</code>, run <code>imp</code>. The start screen links straight to your config.</p>
+          <p class="alpha"><strong>imp is alpha.</strong> It's good enough for daily Vim-style editing, but expect rough edges and changes to the Scheme API. Bug reports are very welcome.</p>
+        </div>
+        <div class="install-card">
+          <div class="tabs tabs-small" role="tablist" aria-label="Install method">
+            <button role="tab" id="itab-bin" aria-controls="ipanel-bin" aria-selected="true">Binary</button>
+            <button role="tab" id="itab-src" aria-controls="ipanel-src" aria-selected="false" tabindex="-1">From source</button>
+            <button role="tab" id="itab-nix" aria-controls="ipanel-nix" aria-selected="false" tabindex="-1">Nix</button>
+            <button role="tab" id="itab-cargo" aria-controls="ipanel-cargo" aria-selected="false" tabindex="-1">Cargo</button>
+          </div>
+          <div class="ipanel" role="tabpanel" id="ipanel-bin" aria-labelledby="itab-bin">
+            <p>Grab the archive for your platform from the <a href="https://github.com/apisandipas/imp/releases">releases page</a>, then:</p>
+            <div class="cmd"><pre><code>tar xzf imp-*.tar.gz
+install -m 755 imp-*/imp ~/.local/bin/
+imp</code></pre><button class="copy" type="button">Copy</button></div>
+            <p class="fine">On macOS, clear the quarantine flag first: <code>xattr -d com.apple.quarantine ~/.local/bin/imp</code></p>
+          </div>
+          <div class="ipanel" role="tabpanel" id="ipanel-src" aria-labelledby="itab-src" hidden>
+            <p>Needs recent stable Rust and a C compiler. No other libraries.</p>
+            <div class="cmd"><pre><code>git clone https://github.com/apisandipas/imp && cd imp
+make install</code></pre><button class="copy" type="button">Copy</button></div>
+            <p class="fine"><code>make install-tui</code> builds a terminal-only imp. <code>make upgrade</code> pulls and rebuilds.</p>
+          </div>
+          <div class="ipanel" role="tabpanel" id="ipanel-nix" aria-labelledby="itab-nix" hidden>
+            <p>The right choice on NixOS, where the window needs Nix's graphics libraries.</p>
+            <div class="cmd"><pre><code>nix profile install github:apisandipas/imp</code></pre><button class="copy" type="button">Copy</button></div>
+          </div>
+          <div class="ipanel" role="tabpanel" id="ipanel-cargo" aria-labelledby="itab-cargo" hidden>
+            <p>Installs into <code>~/.cargo/bin</code>.</p>
+            <div class="cmd"><pre><code>cargo install --git https://github.com/apisandipas/imp imp-editor</code></pre><button class="copy" type="button">Copy</button></div>
+            <p class="fine">Add <code>--no-default-features</code> for a terminal-only build.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Close -->
+    <section class="close" aria-labelledby="close-h">
+      <div class="wrap">
+        <h2 id="close-h">Stop configuring around your editor.<br>Start changing it.</h2>
+        <div class="cta-row cta-center">
+          <a class="btn" href="#install">Install imp</a>
+          <a class="btn btn-ghost" href="https://github.com/apisandipas/imp">Star it on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later. Built with Rust and <a href="https://github.com/mattwparas/steel">Steel Scheme</a>.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+        <li><a href="https://github.com/apisandipas/imp/blob/main/docs/HANDOFF.md">Docs</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
