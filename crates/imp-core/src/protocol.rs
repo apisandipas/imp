@@ -35,6 +35,10 @@ pub enum ClientMsg {
         button: String,
         x: u16,
         y: u16,
+        /// Where exactly, in hundredths of a cell from the screen's corner,
+        /// for a client that draws heights: rows there aren't one cell tall.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fine: Option<(u32, u32)>,
     },
 }
 

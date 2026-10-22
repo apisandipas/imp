@@ -329,15 +329,21 @@ impl Server {
                 button,
                 x,
                 y,
-            } => self.call(
-                "imp-handle-mouse",
-                vec![
-                    SteelVal::StringV(action.into()),
-                    SteelVal::StringV(button.into()),
-                    SteelVal::IntV(x as isize),
-                    SteelVal::IntV(y as isize),
-                ],
-            ),
+                fine,
+            } => {
+                editor::with(|e| {
+                    e.mouse_fine = fine.map(|(fx, fy)| (fx as f32 / 100.0, fy as f32 / 100.0))
+                });
+                self.call(
+                    "imp-handle-mouse",
+                    vec![
+                        SteelVal::StringV(action.into()),
+                        SteelVal::StringV(button.into()),
+                        SteelVal::IntV(x as isize),
+                        SteelVal::IntV(y as isize),
+                    ],
+                )
+            }
             ClientMsg::Resize { width, height } => editor::with(|e| {
                 e.width = width;
                 e.height = height;

@@ -443,6 +443,7 @@ fn mouse_msg(mouse: MouseEvent) -> Option<ClientMsg> {
         button: button.into(),
         x: mouse.column,
         y: mouse.row,
+        fine: None,
     })
 }
 

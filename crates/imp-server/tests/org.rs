@@ -381,6 +381,7 @@ fn links_show_their_description_off_the_cursor_line() {
             button: "left".into(),
             x: 8,
             y: 0,
+            fine: None,
         });
     }
     assert_eq!(s.cursor(), 25);
@@ -458,6 +459,7 @@ fn org_indent_draws_sections_under_their_headings() {
             button: "left".into(),
             x: 9,
             y: 6,
+            fine: None,
         });
     }
     assert_eq!(s.eval("(current-col)").unwrap(), "3");

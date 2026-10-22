@@ -93,6 +93,9 @@ pub struct Editor {
     /// Whether the frame being drawn is for a client that draws text
     /// heights (`ClientMsg::Hello`); otherwise every row is one cell.
     pub draw_heights: bool,
+    /// The last mouse event's exact position, in cells, when its client
+    /// sent one (`ClientMsg::Mouse`'s `fine`).
+    pub mouse_fine: Option<(f32, f32)>,
     /// Display columns between tab stops.
     pub tab_width: usize,
     /// Parse trees, by buffer id, for buffers with a language.

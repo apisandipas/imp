@@ -18,6 +18,7 @@ fn mouse(s: &mut imp_server::Server, action: &str, x: u16, y: u16) {
         button: button.into(),
         x,
         y,
+        fine: None,
     });
     assert!(!s.status().starts_with("error"), "{}", s.status());
 }

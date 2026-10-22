@@ -53,6 +53,7 @@ fn text_is_a_centred_column_that_wraps_and_takes_clicks() {
             button: "left".into(),
             x: 35,
             y: 1,
+            fine: None,
         });
     }
     assert_eq!(s.eval("(cursor)").unwrap(), "25"); // the i of "six"

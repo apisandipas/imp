@@ -400,6 +400,7 @@ fn window(args: &Args) -> Result<(), Error> {
         zoom: 1.0,
         modifiers: Modifiers::default(),
         mouse: (0, 0),
+        mouse_fine: (0, 0),
         pressed: None,
         scroll: 0.0,
         error: None,
@@ -431,8 +432,10 @@ struct App {
     /// C-= and C-- change this; the font size is multiplied by it.
     zoom: f32,
     modifiers: Modifiers,
-    /// The mouse's cell, and the button held down.
+    /// The mouse's cell, exactly where in hundredths of a cell (for rows
+    /// of other heights), and the button held down.
     mouse: (u16, u16),
+    mouse_fine: (u32, u32),
     pressed: Option<&'static str>,
     /// Pixel scrolling not yet a whole line.
     scroll: f64,
@@ -601,6 +604,7 @@ impl App {
             button: button.into(),
             x: self.mouse.0,
             y: self.mouse.1,
+            fine: Some(self.mouse_fine),
         });
     }
 }
@@ -654,6 +658,7 @@ impl ApplicationHandler<ServerMsg> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 let Some(state) = &self.state else { return };
                 let cell = state.renderer.cell_at(position.x, position.y);
+                self.mouse_fine = state.renderer.fine_at(position.x, position.y);
                 if cell != self.mouse {
                     self.mouse = cell;
                     if let Some(button) = self.pressed {

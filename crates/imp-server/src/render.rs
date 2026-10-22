@@ -712,8 +712,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     );
     let (mut rows, block) = if e.draw_heights {
         // Blank cells over the window, which its block fills.
-        let mut rows: Vec<Row> = vec![Vec::new(); text_rows];
-        rows.truncate(text_rows);
+        let rows: Vec<Row> = vec![vec![Span::new(" ".repeat(rect.w), Style::default())]; text_rows];
         let block = WindowBlock {
             x: rect.x as u16,
             y: rect.y as u16,
@@ -1664,7 +1663,8 @@ fn clip_row(row: &Row, width: usize) -> Row {
 /// What is at screen cell (`x`, `y`): the window there, and the buffer
 /// offset under the cell, or `None` on its status line. Clicking past a
 /// line's end gives the end of that screen row. Uses the scroll positions
-/// of the last frame drawn.
+/// of the last frame drawn, and the mouse's exact position when its client
+/// sent one (rows of other heights).
 pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<usize>)> {
     let (id, rect) = e
         .layout
@@ -1674,6 +1674,11 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
     }
+    // Where in the cell: exactly, or its middle.
+    let (fx, fy) = e
+        .mouse_fine
+        .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
+        .unwrap_or((x as f32 + 0.5, y as f32 + 0.5));
     let (buffer_id, scroll, hscroll) = if id == e.current_window {
         (e.current, e.scroll, e.hscroll)
     } else {
@@ -1682,7 +1687,7 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
     };
     let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
-    let dx = (x - rect.x).saturating_sub(indent + gutter);
+    let dx = (fx - (rect.x + indent + gutter) as f32).max(0.0);
     let cursor_line = buffer.offset_to_line(
         if id == e.current_window {
             e.cursor
@@ -1691,24 +1696,26 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         }
         .min(buffer.len()),
     );
-    let mut row = y - rect.y;
+    // How far down the window, in rows of one cell.
+    let mut down = fy - rect.y as f32;
     let folds = Folds::of(e, buffer_id);
     let mut line = folds.shown(scroll);
     while line < buffer.line_count() {
         let start = buffer.line_col_to_offset(line, 0);
-        if let Some((_, last)) = folds.at(line) {
-            if row == 0 {
+        if let Some((first, last)) = folds.at(line) {
+            let scale = line_scale(e, buffer_id, buffer, first);
+            if down < scale {
                 return Some((id, Some(start)));
             }
-            row -= 1;
+            down -= scale;
             line = last + 1;
             continue;
         }
+        let scale = line_scale(e, buffer_id, buffer, line);
         let prefix = outline_prefix(e, buffer_id, buffer, line);
-        let (dx, width) = (
-            dx.saturating_sub(prefix),
-            width.saturating_sub(prefix).max(1),
-        );
+        // The column across the line's text, in cells of its size.
+        let across = ((dx - prefix as f32).max(0.0) / scale) as usize;
+        let width = scaled_width(width.saturating_sub(prefix), scale);
         let text = buffer.line_text(line);
         let cells = line_cells(
             &text,
@@ -1719,9 +1726,15 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         // A cell's char column, or the line's end past the last cell.
         let end = text.chars().count();
         let col_of = |i: usize| cells.get(i).map_or(end, |c| c.index);
-        if !e.wrap {
-            if row == 0 {
-                let at = dx + hscroll;
+        let rows = if e.wrap {
+            line_rows(&cells, width, e.linebreak)
+        } else {
+            1
+        };
+        if down < rows as f32 * scale {
+            let row = ((down / scale) as usize).min(rows - 1);
+            if !e.wrap {
+                let at = across + hscroll;
                 let col = col_of(
                     cells
                         .iter()
@@ -1730,25 +1743,18 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
                 );
                 return Some((id, Some(start + col)));
             }
-        } else {
             let at = wrapped(&cells, width, e.linebreak);
-            let rows = at.last().map_or(1, |(r, _)| r + 1);
-            if row < rows {
-                // The cell under the click, or the last one on that row.
-                let on_row: Vec<usize> = (0..cells.len()).filter(|&i| at[i].0 == row).collect();
-                let col = on_row
-                    .iter()
-                    .copied()
-                    .find(|&i| dx < at[i].1 + cells[i].w.max(1))
-                    .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
-                    .unwrap_or(cells.len());
-                return Some((id, Some(start + col_of(col))));
-            }
-            row -= rows;
-            line += 1;
-            continue;
+            // The cell under the click, or the last one on that row.
+            let on_row: Vec<usize> = (0..cells.len()).filter(|&i| at[i].0 == row).collect();
+            let col = on_row
+                .iter()
+                .copied()
+                .find(|&i| across < at[i].1 + cells[i].w.max(1))
+                .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
+                .unwrap_or(cells.len());
+            return Some((id, Some(start + col_of(col))));
         }
-        row -= 1;
+        down -= rows as f32 * scale;
         line += 1;
     }
     Some((id, Some(buffer.len())))

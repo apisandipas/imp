@@ -5,13 +5,17 @@
 //! the spans before it reach, so text stays on its cells even where a
 //! fallback font's glyphs are wider. Rows are shaped again only when they
 //! change.
+//!
+//! Windows come as blocks of rows of their own heights (org headings
+//! drawn bigger), each in its rectangle; they are drawn first, and the
+//! frame's rows (status lines, popups, the command line) over them.
 
 use glyphon::cosmic_text::fontdb;
 use glyphon::{
     Attrs, Buffer, Cache, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
-use imp_core::{Color, CursorShape, Frame, Row, Style};
+use imp_core::{Color, CursorShape, Frame, Row, Style, WindowBlock};
 use unicode_width::UnicodeWidthStr;
 
 /// Colors for spans that leave them unset (the theme usually sets them).
@@ -33,10 +37,29 @@ struct Quad {
     color: [f32; 4],
 }
 
+/// What a row is laid out from, to tell when it must be again: its
+/// spans, the cursor on it (hundredths of a cell across), and where it
+/// goes (left, top, height and clip, as f32 bits).
+#[derive(PartialEq)]
+struct RowKey {
+    spans: Row,
+    cursor: Option<(u32, CursorShape)>,
+    place: [u32; 7],
+}
+
+/// Shaped text and where it goes, in pixels inside the padding, with the
+/// rectangle it is clipped to (left, top, right, bottom).
+struct TextItem {
+    left: f32,
+    top: f32,
+    buffer: Buffer,
+    clip: [f32; 4],
+}
+
 /// A row as last drawn, and what it was drawn from.
 struct RowCache {
-    key: (Row, Option<(u16, CursorShape)>),
-    texts: Vec<(f32, Buffer)>,
+    key: RowKey,
+    texts: Vec<TextItem>,
     quads: Vec<Quad>,
 }
 
@@ -47,7 +70,9 @@ pub struct Renderer {
     swash: SwashCache,
     viewport: Viewport,
     atlas: TextAtlas,
+    /// The frame's rows, drawn over `under`, the windows' text.
     text: TextRenderer,
+    under: TextRenderer,
     pipeline: wgpu::RenderPipeline,
     screen: wgpu::Buffer,
     screen_group: wgpu::BindGroup,
@@ -57,6 +82,8 @@ pub struct Renderer {
     /// Cell width and height in pixels.
     pub cell: (f32, f32),
     rows: Vec<Option<RowCache>>,
+    /// Each window block's rows.
+    blocks: Vec<Vec<Option<RowCache>>>,
     /// The theme's background: cells in it aren't drawn, so the clear
     /// color (with `opacity`) shows, padding included.
     background: (u8, u8, u8),
@@ -114,6 +141,7 @@ impl Renderer {
         let viewport = Viewport::new(&device, &cache);
         let mut atlas = TextAtlas::new(&device, &queue, &cache, format);
         let text = TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
+        let under = TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("quads"),
@@ -191,6 +219,7 @@ impl Renderer {
             viewport,
             atlas,
             text,
+            under,
             pipeline,
             screen,
             screen_group,
@@ -199,6 +228,7 @@ impl Renderer {
             metrics,
             cell: (0.0, metrics.line_height),
             rows: Vec::new(),
+            blocks: Vec::new(),
             background: DEFAULT_BG,
             opacity: 1.0,
             padding: 0.0,
@@ -245,6 +275,7 @@ impl Renderer {
         self.metrics = Metrics::new(size, (size * 1.3).round());
         self.cell = (self.measure_cell(), self.metrics.line_height);
         self.rows.clear();
+        self.blocks.clear();
     }
 
     /// Changes the font family ("monospace" for the system's).
@@ -253,6 +284,8 @@ impl Renderer {
             self.family = family.to_string();
             self.cell = (self.measure_cell(), self.metrics.line_height);
             self.rows.clear();
+            self.blocks.clear();
+            self.blocks.clear();
         }
     }
 
@@ -263,6 +296,8 @@ impl Renderer {
         if background != self.background {
             self.background = background;
             self.rows.clear();
+            self.blocks.clear();
+            self.blocks.clear();
         }
         self.opacity = opacity.clamp(0.0, 1.0);
         self.padding = padding.max(0.0);
@@ -285,6 +320,16 @@ impl Renderer {
         )
     }
 
+    /// Where pixel (`x`, `y`) is, in hundredths of a cell from the grid's
+    /// corner.
+    pub fn fine_at(&self, x: f64, y: f64) -> (u32, u32) {
+        let pad = self.padding as f64;
+        (
+            ((x - pad) / self.cell.0 as f64 * 100.0).max(0.0) as u32,
+            ((y - pad) / self.cell.1 as f64 * 100.0).max(0.0) as u32,
+        )
+    }
+
     /// The cell under pixel (`x`, `y`).
     pub fn cell_at(&self, x: f64, y: f64) -> (u16, u16) {
         let pad = self.padding as f64;
@@ -296,24 +341,34 @@ impl Renderer {
 
     /// Draws `frame` into `target`, a `width` x `height` texture.
     pub fn draw(&mut self, frame: &Frame, target: &wgpu::TextureView, width: u32, height: u32) {
+        let (cw, ch) = self.cell;
+        let screen = [0.0, 0.0, width as f32, height as f32];
+        // A window block with the cursor draws it; else the grid's cursor.
+        let in_block = frame.windows.iter().any(|w| w.cursor.is_some());
         self.rows.resize_with(frame.rows.len(), || None);
         for (i, row) in frame.rows.iter().enumerate() {
-            let cursor =
-                (frame.cursor.1 as usize == i).then_some((frame.cursor.0, frame.cursor_shape));
-            let fresh = match &self.rows[i] {
-                Some(cache) => cache.key.0 != *row || cache.key.1 != cursor,
-                None => true,
+            let cursor = (!in_block && frame.cursor.1 as usize == i)
+                .then_some((frame.cursor.0 as u32 * 100, frame.cursor_shape));
+            let top = i as f32 * ch;
+            let key = RowKey {
+                spans: row.clone(),
+                cursor,
+                place: place(0.0, top, ch, screen),
             };
-            if fresh {
-                self.rows[i] = Some(self.layout_row(row, cursor, i));
+            if self.rows[i].as_ref().is_none_or(|c| c.key != key) {
+                self.rows[i] = Some(self.layout(key, 0.0, top, ch, screen));
             }
+        }
+        self.blocks.resize_with(frame.windows.len(), Vec::new);
+        for (b, block) in frame.windows.iter().enumerate() {
+            self.layout_block(b, block, frame.cursor_shape, (cw, ch));
         }
 
         let pad = self.padding;
-        let quads: Vec<Quad> = self
-            .rows
-            .iter()
-            .flatten()
+        let under_rows = self.blocks.iter().flatten().flatten();
+        let quads: Vec<Quad> = under_rows
+            .clone()
+            .chain(self.rows.iter().flatten())
             .flat_map(|r| r.quads.iter().copied())
             .map(|mut q| {
                 q.rect[0] += pad;
@@ -321,6 +376,7 @@ impl Renderer {
                 q
             })
             .collect();
+        let under_quads = under_rows.clone().map(|r| r.quads.len()).sum::<usize>() as u32;
         if quads.len() as u64 * 32 > self.quads.size() {
             self.quads = quad_buffer(&self.device, quads.len() * 2);
         }
@@ -337,35 +393,20 @@ impl Renderer {
 
         self.viewport
             .update(&self.queue, Resolution { width, height });
-        let areas = self.rows.iter().enumerate().flat_map(|(i, row)| {
-            let top = i as f32 * self.cell.1 + pad;
-            row.iter().flat_map(move |r| {
-                r.texts.iter().map(move |(left, buffer)| TextArea {
-                    buffer,
-                    left: *left + pad,
-                    top,
-                    scale: 1.0,
-                    bounds: TextBounds {
-                        left: 0,
-                        top: 0,
-                        right: width as i32,
-                        bottom: height as i32,
-                    },
-                    default_color: glyphon::Color::rgb(DEFAULT_FG.0, DEFAULT_FG.1, DEFAULT_FG.2),
-                    custom_glyphs: &[],
-                })
-            })
-        });
-        if let Err(e) = self.text.prepare(
-            &self.device,
-            &self.queue,
-            &mut self.font_system,
-            &mut self.atlas,
-            &self.viewport,
-            areas,
-            &mut self.swash,
-        ) {
-            eprintln!("imp: {e}");
+        let over = text_areas(self.rows.iter().flatten(), pad);
+        let below = text_areas(self.blocks.iter().flatten().flatten(), pad);
+        for (renderer, areas) in [(&mut self.under, below), (&mut self.text, over)] {
+            if let Err(e) = renderer.prepare(
+                &self.device,
+                &self.queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &self.viewport,
+                areas,
+                &mut self.swash,
+            ) {
+                eprintln!("imp: {e}");
+            }
         }
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -393,45 +434,112 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if !quads.is_empty() {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(0, &self.screen_group, &[]);
-                pass.set_vertex_buffer(0, self.quads.slice(..));
-                pass.draw(0..6, 0..quads.len() as u32);
-            }
-            if let Err(e) = self.text.render(&self.atlas, &self.viewport, &mut pass) {
-                eprintln!("imp: {e}");
+            // The windows' quads and text, then the frame's over them.
+            let quad_ranges = [0..under_quads, under_quads..quads.len() as u32];
+            for (range, text) in quad_ranges.into_iter().zip([&self.under, &self.text]) {
+                if !range.is_empty() {
+                    pass.set_pipeline(&self.pipeline);
+                    pass.set_bind_group(0, &self.screen_group, &[]);
+                    pass.set_vertex_buffer(0, self.quads.slice(..));
+                    pass.draw(0..6, range);
+                }
+                if let Err(e) = text.render(&self.atlas, &self.viewport, &mut pass) {
+                    eprintln!("imp: {e}");
+                }
             }
         }
         self.queue.submit(Some(encoder.finish()));
         self.atlas.trim();
     }
 
-    /// Lays out screen row `y`: its quads and shaped text.
-    fn layout_row(&mut self, row: &Row, cursor: Option<(u16, CursorShape)>, y: usize) -> RowCache {
+    /// Lays out window block `b`'s rows, stacked by their heights inside
+    /// its rectangle, again only where they changed.
+    fn layout_block(
+        &mut self,
+        b: usize,
+        block: &WindowBlock,
+        shape: CursorShape,
+        (cw, ch): (f32, f32),
+    ) {
+        let (left, mut top) = (block.x as f32 * cw, block.y as f32 * ch);
+        let clip = [
+            left,
+            top,
+            left + block.w as f32 * cw,
+            top + block.h as f32 * ch,
+        ];
+        self.blocks[b].resize_with(block.rows.len(), || None);
+        for (r, row) in block.rows.iter().enumerate() {
+            let height = row.height as f32 / 100.0 * ch;
+            let cursor = block
+                .cursor
+                .filter(|c| c.0 as usize == r)
+                .map(|c| (c.1, shape));
+            let key = RowKey {
+                spans: row.spans.clone(),
+                cursor,
+                place: place(left, top, height, clip),
+            };
+            if self.blocks[b][r].as_ref().is_none_or(|c| c.key != key) {
+                let laid = self.layout(key, left, top, height, clip);
+                self.blocks[b][r] = Some(laid);
+            }
+            top += height;
+        }
+    }
+
+    /// Lays out a row of text from pixel (`left`, `top`), `height` tall,
+    /// clipped to `clip`: its quads and shaped text. A span whose style has
+    /// a height is that much bigger and wider; text sits on the row's
+    /// bottom, so smaller text beside it (line numbers) shares its line.
+    fn layout(
+        &mut self,
+        key: RowKey,
+        left: f32,
+        top: f32,
+        height: f32,
+        clip: [f32; 4],
+    ) -> RowCache {
         let (cw, ch) = self.cell;
-        let top = y as f32 * ch;
+        let row_scale = height / ch;
+        // The cursor's cell among the row's, and a style for cells past
+        // its text, as tall as the row.
+        let fill = Style {
+            height: if row_scale > 1.001 {
+                (row_scale * 100.0).round() as u16
+            } else {
+                0
+            },
+            ..Style::default()
+        };
+        let cursor = key
+            .cursor
+            .map(|(x, shape)| (cursor_cell(&key.spans, x as f32 / 100.0, row_scale), shape));
         let mut quads = Vec::new();
         let mut texts = Vec::new();
-        let mut col = 0usize;
-        for (text, style) in cells_with_cursor(row, cursor) {
-            let width = text.width();
+        let mut x = left;
+        for (text, style) in cells_with_cursor(&key.spans, cursor, fill) {
+            let scale = style.scale();
+            let w = text.width() as f32 * cw * scale;
             let (fg, bg) = colors(style);
-            let left = col as f32 * cw;
             if bg != self.background || style.reverse {
                 quads.push(Quad {
-                    rect: [left, top, width as f32 * cw, ch],
+                    rect: [x, top, w, height],
                     color: rgba(bg),
                 });
             }
             if style.underline {
                 quads.push(Quad {
-                    rect: [left, top + ch - 2.0, width as f32 * cw, 1.0],
+                    rect: [x, top + height - 2.0, w, 1.0],
                     color: rgba(fg),
                 });
             }
             if !text.trim().is_empty() {
-                let mut buffer = Buffer::new(&mut self.font_system, self.metrics);
+                let metrics = Metrics::new(
+                    self.metrics.font_size * scale,
+                    self.metrics.line_height * scale,
+                );
+                let mut buffer = Buffer::new(&mut self.font_system, metrics);
                 let mut attrs = self.attrs().color(glyphon::Color::rgb(fg.0, fg.1, fg.2));
                 if style.bold {
                     attrs = attrs.weight(Weight::BOLD);
@@ -439,34 +547,82 @@ impl Renderer {
                 if style.italic {
                     attrs = attrs.style(glyphon::Style::Italic);
                 }
-                buffer.set_size(None, Some(ch));
+                buffer.set_size(None, Some(metrics.line_height));
                 buffer.set_text(&text, &attrs, Shaping::Advanced, None);
                 buffer.shape_until_scroll(&mut self.font_system, false);
-                texts.push((left, buffer));
+                texts.push(TextItem {
+                    left: x,
+                    top: top + height - metrics.line_height,
+                    buffer,
+                    clip,
+                });
             }
-            col += width;
+            x += w;
         }
-        if let Some((x, shape)) = cursor {
-            let left = x as f32 * cw;
-            let fg = rgba(cursor_color(row, x));
+        if let Some((x, shape)) = key.cursor {
+            let at = left + x as f32 / 100.0 * cw;
+            let fg = rgba(cursor_color(&key.spans, cursor.map_or(0, |c| c.0)));
             match shape {
                 CursorShape::Block => {}
                 CursorShape::Bar => quads.push(Quad {
-                    rect: [left, top, 2.0, ch],
+                    rect: [at, top, 2.0, height],
                     color: fg,
                 }),
                 CursorShape::Underline => quads.push(Quad {
-                    rect: [left, top + ch - 2.0, cw, 2.0],
+                    rect: [at, top + height - 2.0, cw * row_scale, 2.0],
                     color: fg,
                 }),
             }
         }
-        RowCache {
-            key: (row.clone(), cursor),
-            texts,
-            quads,
+        RowCache { key, texts, quads }
+    }
+}
+
+/// The text of `rows` for glyphon, inside `pad` pixels of padding.
+fn text_areas<'a>(rows: impl Iterator<Item = &'a RowCache>, pad: f32) -> Vec<TextArea<'a>> {
+    rows.flat_map(|r| r.texts.iter())
+        .map(|t| TextArea {
+            buffer: &t.buffer,
+            left: t.left + pad,
+            top: t.top + pad,
+            scale: 1.0,
+            bounds: TextBounds {
+                left: (t.clip[0] + pad) as i32,
+                top: (t.clip[1] + pad) as i32,
+                right: (t.clip[2] + pad) as i32,
+                bottom: (t.clip[3] + pad) as i32,
+            },
+            default_color: glyphon::Color::rgb(DEFAULT_FG.0, DEFAULT_FG.1, DEFAULT_FG.2),
+            custom_glyphs: &[],
+        })
+        .collect()
+}
+
+/// A row's place as `RowKey` keeps it.
+fn place(left: f32, top: f32, height: f32, clip: [f32; 4]) -> [u32; 7] {
+    [left, top, height, clip[0], clip[1], clip[2], clip[3]].map(f32::to_bits)
+}
+
+/// The cell of `row` (counting its spans' cells) that is `x` cells of the
+/// font across, spans with a height being that many times wider; past its
+/// text, cells of `row_scale` times the font.
+fn cursor_cell(row: &Row, x: f32, row_scale: f32) -> u16 {
+    let (mut at, mut col) = (0.0, 0usize);
+    for span in row {
+        let scale = span.style.scale();
+        for ch in span.text.chars() {
+            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if w == 0 {
+                continue;
+            }
+            if x < at + w as f32 * scale - 0.01 {
+                return col as u16;
+            }
+            at += w as f32 * scale;
+            col += w;
         }
     }
+    (col + ((x - at) / row_scale).round().max(0.0) as usize) as u16
 }
 
 fn quad_buffer(device: &wgpu::Device, quads: usize) -> wgpu::Buffer {
@@ -480,7 +636,12 @@ fn quad_buffer(device: &wgpu::Device, quads: usize) -> wgpu::Buffer {
 
 /// The spans of `row`, with a block cursor's cell split out and its
 /// colors swapped (the cell under a block cursor is drawn inverted).
-fn cells_with_cursor(row: &Row, cursor: Option<(u16, CursorShape)>) -> Vec<(String, Style)> {
+/// Cells past the row's text take `fill`'s height.
+fn cells_with_cursor(
+    row: &Row,
+    cursor: Option<(u16, CursorShape)>,
+    fill: Style,
+) -> Vec<(String, Style)> {
     let block = match cursor {
         Some((x, CursorShape::Block)) => Some(x as usize),
         _ => None,
@@ -525,13 +686,13 @@ fn cells_with_cursor(row: &Row, cursor: Option<(u16, CursorShape)>) -> Vec<(Stri
     if let Some(x) = block {
         if !drawn_cursor {
             if x > col {
-                out.push((" ".repeat(x - col), Style::default()));
+                out.push((" ".repeat(x - col), fill));
             }
             out.push((
                 " ".into(),
                 Style {
                     reverse: true,
-                    ..Style::default()
+                    ..fill
                 },
             ));
         }
@@ -664,18 +825,18 @@ mod tests {
     #[test]
     fn a_block_cursor_inverts_its_cell() {
         let row = vec![Span::new("héllo", Style::default())];
-        let cells = cells_with_cursor(&row, Some((1, CursorShape::Block)));
+        let cells = cells_with_cursor(&row, Some((1, CursorShape::Block)), Style::default());
         let texts: Vec<&str> = cells.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(texts, ["h", "é", "llo"]);
         assert!(cells[1].1.reverse && !cells[0].1.reverse);
         // Past the end of the text, a cell is added for it.
-        let cells = cells_with_cursor(&row, Some((7, CursorShape::Block)));
+        let cells = cells_with_cursor(&row, Some((7, CursorShape::Block)), Style::default());
         assert_eq!(cells.len(), 3);
         assert_eq!(cells[1].0, "  ");
         assert!(cells[2].1.reverse);
         // Other shapes leave the text alone.
         assert_eq!(
-            cells_with_cursor(&row, Some((1, CursorShape::Bar))).len(),
+            cells_with_cursor(&row, Some((1, CursorShape::Bar)), Style::default()).len(),
             1
         );
     }
@@ -683,7 +844,7 @@ mod tests {
     #[test]
     fn wide_chars_take_their_cells() {
         let row = vec![Span::new("日本x", Style::default())];
-        let cells = cells_with_cursor(&row, Some((2, CursorShape::Block)));
+        let cells = cells_with_cursor(&row, Some((2, CursorShape::Block)), Style::default());
         let texts: Vec<&str> = cells.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(texts, ["日", "本", "x"]);
     }

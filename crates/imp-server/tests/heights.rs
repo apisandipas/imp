@@ -126,6 +126,9 @@ fn a_window_beside_it_keeps_its_rows() {
     assert!(heights.contains(&vec![100, 100]), "{heights:?}");
     assert!(heights.contains(&vec![140, 100]), "{heights:?}");
     assert_ne!(f.windows[0].x, f.windows[1].x);
+    // The screen's rows leave both blank, with the separator between.
+    let row = &f.text_rows()[0];
+    assert_eq!(row.trim(), "│", "{row:?}");
     // Only the focused window has the cursor.
     assert_eq!(f.windows.iter().filter(|b| b.cursor.is_some()).count(), 1);
 }
@@ -142,4 +145,36 @@ fn a_client_that_draws_one_size_gets_rows_as_before() {
     s.set_heights(true);
     type_keys(&mut s, ":");
     assert_eq!(s.frame().windows[0].cursor, None);
+}
+
+fn click(s: &mut imp_server::Server, fx: f32, fy: f32) {
+    s.frame();
+    for action in ["press", "release"] {
+        s.handle(imp_core::ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x: fx as u16,
+            y: fy as u16,
+            fine: Some(((fx * 100.0) as u32, (fy * 100.0) as u32)),
+        });
+    }
+}
+
+#[test]
+fn clicks_find_the_char_on_rows_of_other_heights() {
+    let mut s = setup("* Heading one\nline 0\nline 1\n");
+    type_keys(&mut s, "G");
+    // Screen row 1 holds the end of the heading (to 1.4) and the start
+    // of the line under it.
+    click(&mut s, 0.5, 1.2);
+    assert_eq!(s.eval("(current-line)").unwrap(), "0");
+    click(&mut s, 0.5, 1.6);
+    assert_eq!(s.eval("(current-line)").unwrap(), "1");
+    // Across the heading, cells are 1.4 wide: 4.3 cells in is its 4th char.
+    click(&mut s, 4.3, 0.5);
+    assert_eq!(s.cursor(), 3);
+    // Line 1 starts at 2.4 rows down.
+    click(&mut s, 2.5, 2.5);
+    assert_eq!(s.eval("(current-line)").unwrap(), "2");
+    assert_eq!(s.eval("(current-col)").unwrap(), "2");
 }
