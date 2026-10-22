@@ -1407,6 +1407,20 @@ pub fn register(engine: &mut Engine) {
             Ok::<(), String>(())
         },
     );
+    // Hides what `pattern`'s groups match in the current buffer (all of a
+    // match without groups), except on the cursor's line; "" stops.
+    engine.register_fn(
+        "buffer-conceal-pattern!",
+        |layer: String, pattern: String| {
+            let re = if pattern.is_empty() {
+                None
+            } else {
+                Some(search::compile(&pattern)?)
+            };
+            editor::with(|e| e.buffer_layer_mut(&layer).conceal = re);
+            Ok::<(), String>(())
+        },
+    );
     engine.register_fn(
         "highlight-add!",
         |layer: String, start: isize, end: isize, face: String| {

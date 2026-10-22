@@ -521,7 +521,12 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 1
             } else {
                 line_rows(
-                    &layout_line(&buffer.line_text(prev), e.tab_width),
+                    &line_cells(
+                        &buffer.line_text(prev),
+                        e.tab_width,
+                        layers_of(e, buffer_id),
+                        prev != cursor_line,
+                    ),
                     text_width,
                     e.linebreak,
                 )
@@ -665,6 +670,57 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
         .collect()
 }
 
+/// The chars of `text` that buffer layers' conceal patterns hide, or None
+/// when there are none: each match's groups, or the whole match.
+fn concealed(layers: &[Layer], text: &str) -> Option<Vec<bool>> {
+    let mut hidden: Option<Vec<bool>> = None;
+    for re in layers.iter().filter_map(|l| l.conceal.as_ref()) {
+        for caps in re.captures_iter(text) {
+            let groups: Vec<_> = if caps.len() > 1 {
+                caps.iter().skip(1).flatten().collect()
+            } else {
+                caps.get(0).into_iter().collect()
+            };
+            for m in groups.into_iter().filter(|m| !m.is_empty()) {
+                let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
+                let from = text[..m.start()].chars().count();
+                let to = from + m.as_str().chars().count();
+                h[from..to].fill(true);
+            }
+        }
+    }
+    hidden
+}
+
+/// Line text `text` laid out as drawn: without the chars the `layers`'
+/// conceal patterns hide, when `hide` (every line but the cursor's).
+/// Each cell keeps its char's index in the line.
+fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec<Cell> {
+    let Some(hidden) = hide.then(|| concealed(layers, text)).flatten() else {
+        return layout_line(text, tab_width);
+    };
+    let mut x = 0;
+    text.chars()
+        .enumerate()
+        .filter(|(i, _)| !hidden[*i])
+        .map(|(index, ch)| {
+            let w = if ch == '\t' {
+                tab_width - x % tab_width
+            } else {
+                ch.width().unwrap_or(0)
+            };
+            let cell = Cell { index, ch, x, w };
+            x += w;
+            cell
+        })
+        .collect()
+}
+
+/// Buffer `buffer_id`'s own highlight layers.
+fn layers_of(e: &Editor, buffer_id: usize) -> &[Layer] {
+    e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice)
+}
+
 /// With wrap, which row of the line each cell is on and its column there:
 /// a cell that doesn't fit moves to the next row whole.
 ///
@@ -750,7 +806,12 @@ impl View<'_> {
         let e = self.e;
         let start = self.buffer.line_col_to_offset(line, 0);
         let text = self.buffer.line_text(line);
-        let cells = layout_line(&text, e.tab_width);
+        let cells = line_cells(
+            &text,
+            e.tab_width,
+            self.buffer_layers,
+            line != self.cursor_line,
+        );
         let mut styles = char_styles(
             e,
             start,
@@ -766,7 +827,7 @@ impl View<'_> {
                 *s = s.over(face);
             }
         }
-        let eol_style = styles[cells.len()];
+        let eol_style = styles[styles.len() - 1];
 
         let mut rows: Vec<Row> = Vec::new();
         if e.wrap {
@@ -1394,6 +1455,14 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
     let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
     let dx = (x - rect.x).saturating_sub(indent + gutter);
+    let cursor_line = buffer.offset_to_line(
+        if id == e.current_window {
+            e.cursor
+        } else {
+            buffer.mark(&window_mark(id)).unwrap_or(0)
+        }
+        .min(buffer.len()),
+    );
     let mut row = y - rect.y;
     let folds = Folds::of(e, buffer_id);
     let mut line = folds.shown(scroll);
@@ -1407,14 +1476,25 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
             line = last + 1;
             continue;
         }
-        let cells = layout_line(&buffer.line_text(line), e.tab_width);
+        let text = buffer.line_text(line);
+        let cells = line_cells(
+            &text,
+            e.tab_width,
+            layers_of(e, buffer_id),
+            line != cursor_line,
+        );
+        // A cell's char column, or the line's end past the last cell.
+        let end = text.chars().count();
+        let col_of = |i: usize| cells.get(i).map_or(end, |c| c.index);
         if !e.wrap {
             if row == 0 {
                 let at = dx + hscroll;
-                let col = cells
-                    .iter()
-                    .position(|c| at < c.x + c.w.max(1))
-                    .unwrap_or(cells.len());
+                let col = col_of(
+                    cells
+                        .iter()
+                        .position(|c| at < c.x + c.w.max(1))
+                        .unwrap_or(cells.len()),
+                );
                 return Some((id, Some(start + col)));
             }
         } else {
@@ -1429,7 +1509,7 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
                     .find(|&i| dx < at[i].1 + cells[i].w.max(1))
                     .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
                     .unwrap_or(cells.len());
-                return Some((id, Some(start + col)));
+                return Some((id, Some(start + col_of(col))));
             }
             row -= rows;
             line += 1;

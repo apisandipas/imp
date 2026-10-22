@@ -30,6 +30,10 @@
 ;; them into not done and done, as in '("TODO" "NEXT" "|" "DONE"
 ;; "CANCELLED"); with no "|" only the last is done.
 (define-option! 'org-todo-keywords '("TODO" "DONE") '())
+;; Links show just their description, [[target][like this]] as "like
+;; this" and [[target]] as "target", except on the cursor's line, where
+;; they show whole to edit (as org-appear does). #f shows them as written.
+(define-option! 'org-link-descriptive #t '())
 
 ;;; Headings and subtrees
 
@@ -1153,7 +1157,24 @@
                     (list "org-cookie" "\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]" "org.checkbox")
                     (list "org-code" "=[^= ][^=]*=" "org.code")
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
-                    (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))))
+                    (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))
+    (org-show-links! (not (option 'org-link-descriptive)))))
+
+;; What a link hides when it shows just its description: its brackets,
+;; and the target when there is a description.
+(define *org-link-conceal* "\\(\\[\\[\\([^\\]]*\\]\\[\\)\\?\\)[^\\]]*\\(\\]\\]\\)")
+
+(define (org-show-links! whole?)
+  "Shows the buffer's links as written when `whole?`, else just their
+   descriptions (whole on the cursor's line)."
+  (set-buffer-local! 'org-links-whole whole?)
+  (buffer-conceal-pattern! "org-link-conceal" (if whole? "" *org-link-conceal*)))
+
+(define-command! 'org-toggle-link-display
+  (lambda (count)
+    "Show links as written, or just their descriptions, in this buffer."
+    (org-show-links! (not (buffer-local 'org-links-whole)))
+    (message (if (buffer-local 'org-links-whole) "links shown whole" "links show their descriptions"))))
 
 (define (org-key! states key proc)
   "Binds `key` to `proc` in Org buffers, in each of `states`."
@@ -1177,6 +1198,7 @@
 (org-key! '(normal insert) "C-cC-s" (lambda args (org-schedule!)))
 (org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
+(define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
 (define-mode-leader! 'org-mode "d" (lambda (n) (org-deadline!)) "deadline")
 (define-mode-leader! 'org-mode "." (lambda (n) (org-time-stamp!)) "timestamp")

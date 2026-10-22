@@ -377,6 +377,12 @@ needed. Details, and what each one leaves out, are in
     (`SPC m s`/`SPC m d`) set a heading's SCHEDULED/DEADLINE on its
     planning line, `C-c .` puts or changes a timestamp; templates ask
     with `%^t` (`%^u` inactive). Today comes from `date`, once per prompt.
+  - links show just their description off the cursor's line, as with
+    org-appear (`org-link-descriptive`, `org-toggle-link-display`, `SPC m
+    l`). Done with `buffer-conceal-pattern!`: a buffer layer whose
+    pattern's groups are hidden on every line but the window's cursor
+    line, so the cursor is never inside hidden text. Drawing, wrap
+    scrolling and clicks use the same layout (`line_cells` in render.rs).
   - Mode key sequences that start with a control or meta key (`C-c C-c`)
     work in normal, visual and insert state (`*local-prefix*` in
     vim.scm): when a key begins a longer binding in the buffer's mode

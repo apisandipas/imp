@@ -351,3 +351,43 @@ fn the_agenda_leaves_out_every_done_keyword() {
     );
     assert!(!text.contains("Old") && !text.contains("Dropped"), "{text}");
 }
+
+#[test]
+fn links_show_their_description_off_the_cursor_line() {
+    let mut s = server("See [[https://x.org][the site]] now\nand [[notes.org]] here\n");
+    s.eval("(set-major-mode! 'org-mode)").unwrap();
+    let rows = |s: &mut imp_server::Server| {
+        let r = s.frame().text_rows();
+        (r[0].trim_end().to_string(), r[1].trim_end().to_string())
+    };
+    // The cursor's line shows whole, to edit.
+    assert_eq!(
+        rows(&mut s),
+        (
+            "See [[https://x.org][the site]] now".into(),
+            "and notes.org here".into()
+        )
+    );
+    type_keys(&mut s, "j");
+    assert_eq!(
+        rows(&mut s),
+        ("See the site now".into(), "and [[notes.org]] here".into())
+    );
+    // A click lands on the char drawn there: "s" of "site".
+    s.frame();
+    for action in ["press", "release"] {
+        s.handle(imp_core::ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x: 8,
+            y: 0,
+        });
+    }
+    assert_eq!(s.cursor(), 25);
+    // Shown as written, everywhere.
+    s.eval("(run-command 'org-toggle-link-display)").unwrap();
+    type_keys(&mut s, "j");
+    assert_eq!(rows(&mut s).0, "See [[https://x.org][the site]] now");
+    s.eval("(run-command 'org-toggle-link-display)").unwrap();
+    assert_eq!(rows(&mut s).0, "See the site now");
+}

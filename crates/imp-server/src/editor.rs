@@ -158,6 +158,9 @@ pub struct Layer {
     /// Every match of this pattern is drawn with the face. Matches are found
     /// when drawing, on visible lines only, so they follow edits for free.
     pub pattern: Option<(Regex, String)>,
+    /// What this pattern's groups match (all of a match without groups)
+    /// is hidden, on every line but the cursor's. Buffer layers only.
+    pub conceal: Option<Regex>,
 }
 
 /// Chars `start..end` drawn with face `face`.
