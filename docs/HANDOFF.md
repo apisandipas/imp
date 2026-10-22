@@ -135,6 +135,22 @@ matching, regex). Every key's meaning is in Scheme.
   Clients send `ClientMsg::Key("j")` / `Resize` / `Open`; the server replies
   with a `Frame` (rows of styled spans + cursor), then `Patch`es of changed
   rows, or `Quit`.
+- **Text heights.** A face can say `height=1.3` (`Style::height`, in
+  percent). A client that draws sizes says so first (`ClientMsg::Hello {
+  heights: true }`; the GUI does, the terminal doesn't; the daemon keeps it
+  per client, like the size). For it the server lays each window out by
+  height (`line_scale`: a line is as tall as the highest face its buffer
+  highlights give it, syntax faces aside; its text gets width / scale
+  cells), and sends the window's text as a `WindowBlock` of `BlockRow`s
+  (height in hundredths of a row), leaving those cells of `Frame::rows`
+  blank. The GUI stacks a block's rows in its rectangle and draws the
+  frame's rows (status lines, popups, the command line) over them in a
+  second pass; window blocks never share rows, so a split beside a tall
+  line is untouched. Mouse events carry `fine` (hundredths of a cell) and
+  `screen_position` walks line heights. Other clients get every height
+  stripped and the same frames as before; `tests/heights.rs` covers the
+  layout. Popups opening at the cursor are placed on the grid row its row
+  ends in.
 - The server's loop reads one channel of events: client messages, timers,
   job output. Only that thread touches the editor and the Steel VM.
 - For every key the server calls the Scheme function `(imp-handle-key key)`.
@@ -393,6 +409,10 @@ needed. Details, and what each one leaves out, are in
     finds each line's heading (looking back at most 5000 lines) and
     draws the prefix beside the gutter, on every wrapped row; cursor,
     scrolling and clicks take it off the width (`outline_prefix`).
+  - headings drawn bigger in the GUI (`org-heading-heights`, default
+    `'(1.4 1.25 1.1)` for levels 1-3; `'()` for none), through the faces
+    `org.height1`..`org.height4`, which themes don't set, layered over the
+    level colors. See "Text heights" above.
   - Mode key sequences that start with a control or meta key (`C-c C-c`)
     work in normal, visual and insert state (`*local-prefix*` in
     vim.scm): when a key begins a longer binding in the buffer's mode

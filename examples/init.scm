@@ -49,6 +49,7 @@
 ;;; Org
 ;; (set-option! 'org-directory "~/org")
 ;; (set-option! 'org-indent #t)              ; sections indented under headings
+;; (set-option! 'org-heading-heights '(1.6 1.3 1.1))  ; bigger headings ('() for none)
 ;; (set-option! 'org-link-descriptive #f)    ; links shown as written
 ;; (set-option! 'calendar-week-start 1)      ; the date picker's weeks start Monday
 
