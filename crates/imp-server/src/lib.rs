@@ -503,7 +503,12 @@ pub fn run(
         // Only what changed, unless the screen size did; background events
         // that changed nothing send nothing.
         let update = match last.diff(&next) {
-            Some(patch) if patch.rows.is_empty() && next.cursor == last.cursor && !from_client => {
+            Some(patch)
+                if patch.rows.is_empty()
+                    && patch.windows.is_none()
+                    && next.cursor == last.cursor
+                    && !from_client =>
+            {
                 None
             }
             Some(patch) => Some(ServerMsg::Patch(patch)),

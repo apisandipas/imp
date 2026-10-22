@@ -146,6 +146,7 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
             let update = match c.last.as_ref().and_then(|last| last.diff(&next)) {
                 Some(patch)
                     if patch.rows.is_empty()
+                        && patch.windows.is_none()
                         && c.last.as_ref().is_some_and(|l| l.cursor == next.cursor) =>
                 {
                     None

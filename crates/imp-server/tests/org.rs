@@ -485,7 +485,8 @@ fn heading_heights_come_from_the_option() {
     s.eval("(load-theme! 'gruvbox-dark)").unwrap();
     assert_eq!(s.frame().rows[0][0].style.height, 0);
     s.set_heights(true);
-    let style = |s: &mut imp_server::Server, row: usize| s.frame().rows[row][0].style;
+    let style =
+        |s: &mut imp_server::Server, row: usize| s.frame().windows[0].rows[row].spans[0].style;
     assert_eq!(style(&mut s, 0).height, 140);
     assert_eq!(style(&mut s, 1).height, 125);
     assert_eq!(style(&mut s, 2).height, 0);

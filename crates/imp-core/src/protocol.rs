@@ -64,6 +64,9 @@ pub struct Patch {
     pub rows: Vec<(u16, Row)>,
     pub cursor: (u16, u16),
     pub cursor_shape: CursorShape,
+    /// Every window block, when any changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<Vec<WindowBlock>>,
 }
 
 impl Patch {
@@ -75,6 +78,9 @@ impl Patch {
         }
         frame.cursor = self.cursor;
         frame.cursor_shape = self.cursor_shape;
+        if let Some(windows) = &self.windows {
+            frame.windows = windows.clone();
+        }
     }
 }
 
@@ -92,6 +98,38 @@ pub struct Frame {
     /// How clients should present it; a change sends a whole frame.
     #[serde(default)]
     pub appearance: Appearance,
+    /// For a client that draws heights (`ClientMsg::Hello`): each window's
+    /// text, drawn under `rows`, whose cells over it are left blank. Empty
+    /// for other clients, whose `rows` hold everything.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<WindowBlock>,
+}
+
+/// A window's text area for a client that draws heights: a rectangle of
+/// screen cells and the rows in it, top down, each as tall as its height
+/// says. Rows that don't fill the rectangle leave the rest blank.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WindowBlock {
+    /// The rectangle, in cells: left, top, width, height.
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+    pub rows: Vec<BlockRow>,
+    /// The cursor, when it is in this window: the row, and how far across
+    /// in hundredths of a cell (text on a taller row is wider).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<(u16, u32)>,
+}
+
+/// One row of a `WindowBlock`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BlockRow {
+    /// How tall, in hundredths of a cell (100 is one row).
+    pub height: u16,
+    /// Its runs; one whose style has a height takes that many times its
+    /// cells' width.
+    pub spans: Row,
 }
 
 /// Settings for the client rather than the grid, set from Scheme (the
@@ -303,6 +341,7 @@ impl Frame {
             rows,
             cursor: next.cursor,
             cursor_shape: next.cursor_shape,
+            windows: (self.windows != next.windows).then(|| next.windows.clone()),
         })
     }
 
@@ -335,6 +374,16 @@ mod tests {
                 padding: 40,
                 ..Appearance::default()
             },
+            windows: vec![WindowBlock {
+                w: 10,
+                h: 3,
+                rows: vec![BlockRow {
+                    height: 140,
+                    spans: vec![Span::new("* Big", Style::parse("height=1.4").unwrap())],
+                }],
+                cursor: Some((0, 250)),
+                ..WindowBlock::default()
+            }],
         });
         let line = to_line(&msg);
         assert!(!line.contains('\n'));
@@ -354,9 +403,17 @@ mod tests {
         b.cursor = (1, 1);
         let patch = a.diff(&b).unwrap();
         assert_eq!(patch.rows.len(), 1);
+        assert!(patch.windows.is_none());
         let mut c = a.clone();
         patch.apply(&mut c);
         assert_eq!(c, b);
+        // Window blocks go whole when any changed.
+        let mut d = b.clone();
+        d.windows = vec![WindowBlock::default()];
+        let patch = b.diff(&d).unwrap();
+        assert!(patch.rows.is_empty() && patch.windows.is_some());
+        patch.apply(&mut c);
+        assert_eq!(c, d);
         assert!(a.diff(&Frame::default()).is_none());
         // A new appearance needs the whole frame.
         let mut d = a.clone();

@@ -7,5 +7,6 @@ pub mod protocol;
 
 pub use buffer::Buffer;
 pub use protocol::{
-    Appearance, ClientMsg, Color, CursorShape, Frame, Patch, Row, ServerMsg, Span, Style,
+    Appearance, BlockRow, ClientMsg, Color, CursorShape, Frame, Patch, Row, ServerMsg, Span, Style,
+    WindowBlock,
 };
