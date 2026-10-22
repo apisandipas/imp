@@ -452,6 +452,7 @@ impl Folds<'_> {
 struct View<'a> {
     e: &'a Editor,
     buffer: &'a Buffer,
+    buffer_id: usize,
     /// Syntax highlights near the visible rows: (start, end, faces to try).
     syntax: Vec<(usize, usize, &'static [String])>,
     /// Whether this window shows the current buffer, whose highlight
@@ -497,10 +498,13 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
     // without.
     let cursor_cells = layout_line(&buffer.line_text(cursor_line), e.tab_width);
+    // The cursor line's outline indent, and the width left beside it.
+    let cursor_prefix = outline_prefix(e, buffer_id, buffer, cursor_line);
+    let cursor_width = text_width.saturating_sub(cursor_prefix).max(1);
     let (cursor_row, cursor_x) = if folded {
         (0, 0)
     } else {
-        cursor_position(&cursor_cells, cursor_col, e.wrap, text_width, e.linebreak)
+        cursor_position(&cursor_cells, cursor_col, e.wrap, cursor_width, e.linebreak)
     };
 
     // Scroll just enough to keep the cursor in view.
@@ -527,7 +531,9 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                         layers_of(e, buffer_id),
                         prev != cursor_line,
                     ),
-                    text_width,
+                    text_width
+                        .saturating_sub(outline_prefix(e, buffer_id, buffer, prev))
+                        .max(1),
                     e.linebreak,
                 )
             };
@@ -550,8 +556,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         }
         if cursor_x < hscroll {
             hscroll = cursor_x;
-        } else if cursor_x >= hscroll + text_width {
-            hscroll = cursor_x + 1 - text_width;
+        } else if cursor_x >= hscroll + cursor_width {
+            hscroll = cursor_x + 1 - cursor_width;
         }
     }
 
@@ -569,6 +575,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     let view = View {
         e,
         buffer,
+        buffer_id,
         syntax: syntax.unwrap_or_default(),
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
@@ -601,7 +608,10 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 push(&mut row, &note, e.face("fold"));
             }
             if first == cursor_line {
-                cursor_screen = (rect.x + indent + gutter, rect.y + rows.len());
+                cursor_screen = (
+                    rect.x + indent + gutter + cursor_prefix,
+                    rect.y + rows.len(),
+                );
             }
             rows.push(fill(row, rect.w, pad));
             line = last + 1;
@@ -610,7 +620,11 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         let line_rows = view.line_rows(line);
         if line == cursor_line {
             cursor_screen = (
-                rect.x + indent + gutter + cursor_x.saturating_sub(hscroll).min(text_width - 1),
+                rect.x
+                    + indent
+                    + gutter
+                    + cursor_prefix
+                    + cursor_x.saturating_sub(hscroll).min(cursor_width - 1),
                 rect.y + rows.len() + cursor_row.min(line_rows.len() - 1),
             );
         }
@@ -714,6 +728,51 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
             cell
         })
         .collect()
+}
+
+/// The level of the outline heading on `line` (how many stars before a
+/// space), or None.
+fn heading_level(buffer: &Buffer, line: usize) -> Option<usize> {
+    let mut stars = 0;
+    for c in buffer.rope().line(line).chars() {
+        match c {
+            '*' => stars += 1,
+            ' ' if stars > 0 => return Some(stars),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The blank columns drawn before `line` when its buffer is indented by
+/// outline level, as Org's org-indent-mode does: with `p` columns a
+/// level, text under a level-L heading gets L*p, so it lines up under the
+/// heading's title, and the heading (L-1)*(p-1), its leading stars but
+/// the last drawn blank (`outline_hidden_stars`). 0 when not indented.
+fn outline_prefix(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
+    let Some(&p) = e.outline_indents.get(&buffer_id) else {
+        return 0;
+    };
+    if line >= buffer.line_count() {
+        return 0;
+    }
+    if let Some(level) = heading_level(buffer, line) {
+        return (level - 1) * (p - 1);
+    }
+    // The heading above, not looking back without end.
+    (line.saturating_sub(5000)..line)
+        .rev()
+        .find_map(|l| heading_level(buffer, l))
+        .map_or(0, |level| level * p)
+}
+
+/// How many of `line`'s leading stars are drawn blank when indented by
+/// outline level: all of a heading's but the last.
+fn outline_hidden_stars(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
+    if !e.outline_indents.contains_key(&buffer_id) {
+        return 0;
+    }
+    heading_level(buffer, line).map_or(0, |level| level - 1)
 }
 
 /// Buffer `buffer_id`'s own highlight layers.
@@ -827,22 +886,31 @@ impl View<'_> {
                 *s = s.over(face);
             }
         }
+        for s in styles
+            .iter_mut()
+            .take(outline_hidden_stars(e, self.buffer_id, self.buffer, line))
+        {
+            *s = s.over(e.face("org.hide"));
+        }
         let eol_style = styles[styles.len() - 1];
+        // The outline indent before every row of it, and the width left.
+        let prefix = outline_prefix(e, self.buffer_id, self.buffer, line);
+        let width = self.text_width.saturating_sub(prefix).max(1);
 
         let mut rows: Vec<Row> = Vec::new();
         if e.wrap {
-            let at = wrapped(&cells, self.text_width, e.linebreak);
+            let at = wrapped(&cells, width, e.linebreak);
             let count = at.last().map_or(1, |(r, _)| r + 1);
             rows.resize(count, Vec::new());
             for (cell, &(r, _)) in cells.iter().zip(&at) {
                 push_cell(&mut rows[r], cell, cell.w, &styles);
             }
             let end = at.last().map_or(0, |&(_, x)| x) + cells.last().map_or(0, |c| c.w);
-            if eol_style != Style::default() && end < self.text_width {
+            if eol_style != Style::default() && end < width {
                 push(rows.last_mut().expect("one row"), " ", eol_style);
             }
         } else {
-            let (left, right) = (self.hscroll, self.hscroll + self.text_width);
+            let (left, right) = (self.hscroll, self.hscroll + width);
             let mut row: Row = Vec::new();
             let mut x_end = 0;
             for cell in &cells {
@@ -924,7 +992,14 @@ impl View<'_> {
                         Style::default(),
                     );
                 }
-                let used: usize = text_row.iter().map(|s| text_width(&s.text)).sum();
+                if prefix > 0 {
+                    push(&mut row, &" ".repeat(prefix), Style::default());
+                }
+                let used: usize = prefix
+                    + text_row
+                        .iter()
+                        .map(|s| self::text_width(&s.text))
+                        .sum::<usize>();
                 row.extend(text_row);
                 // The cursor line's face runs to the window's edge.
                 if cursorline && used < self.text_width {
@@ -1476,6 +1551,11 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
             line = last + 1;
             continue;
         }
+        let prefix = outline_prefix(e, buffer_id, buffer, line);
+        let (dx, width) = (
+            dx.saturating_sub(prefix),
+            width.saturating_sub(prefix).max(1),
+        );
         let text = buffer.line_text(line);
         let cells = line_cells(
             &text,

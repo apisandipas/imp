@@ -102,6 +102,8 @@
      (list "calendar.selected" (string-append "fg=" (c 'bg) " bg=" (c 'blue) " bold"))
      (list "calendar.today" (fg 'yellow "bold underline"))
      (list "calendar.weekend" (fg 'comment))
+     ;; A heading's leading stars, drawn blank by org-indent
+     (list "org.hide" (fg 'bg))
      (list "org.level1" (fg 'blue "bold"))
      (list "org.level2" (fg 'magenta "bold"))
      (list "org.level3" (fg 'cyan "bold"))

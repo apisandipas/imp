@@ -388,6 +388,11 @@ needed. Details, and what each one leaves out, are in
     pattern's groups are hidden on every line but the window's cursor
     line, so the cursor is never inside hidden text. Drawing, wrap
     scrolling and clicks use the same layout (`line_cells` in render.rs).
+  - `org-indent` (`org-indent-mode`, `SPC m i`): sections drawn indented
+    under their headings by `set-outline-indent!`, display only. Rust
+    finds each line's heading (looking back at most 5000 lines) and
+    draws the prefix beside the gutter, on every wrapped row; cursor,
+    scrolling and clicks take it off the width (`outline_prefix`).
   - Mode key sequences that start with a control or meta key (`C-c C-c`)
     work in normal, visual and insert state (`*local-prefix*` in
     vim.scm): when a key begins a longer binding in the buffer's mode

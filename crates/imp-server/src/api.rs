@@ -741,6 +741,18 @@ pub fn register(engine: &mut Engine) {
             e.sign_columns.insert(id, mode);
         })
     });
+    // Draws the current buffer indented by outline level, `per-level`
+    // columns a level, as Org's org-indent-mode does; 0 stops.
+    engine.register_fn("set-outline-indent!", |per_level: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            if per_level > 0 {
+                e.outline_indents.insert(id, per_level as usize);
+            } else {
+                e.outline_indents.remove(&id);
+            }
+        })
+    });
     engine.register_fn("set-cursorline!", |on: bool| {
         editor::with(|e| e.cursorline = on)
     });

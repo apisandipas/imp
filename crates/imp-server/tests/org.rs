@@ -425,3 +425,44 @@ fn drawers_start_closed_and_tab_toggles_them() {
     type_keys(&mut s, "<tab>");
     assert_eq!(s.status(), "FOLDED");
 }
+
+#[test]
+fn org_indent_draws_sections_under_their_headings() {
+    let mut s = server("Intro\n* One\nText one\n** Two\nText two\n*** Three\nText three\n");
+    s.eval("(set-option! 'org-indent #t) (set-major-mode! 'org-mode)")
+        .unwrap();
+    let rows: Vec<String> = s.frame().text_rows()[..7]
+        .iter()
+        .map(|r| r.trim_end().to_string())
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "Intro",
+            "* One",
+            "  Text one",
+            " ** Two",
+            "    Text two",
+            "  *** Three",
+            "      Text three",
+        ]
+    );
+    // The cursor sits on the char, past the indent: "Text two"'s "x".
+    type_keys(&mut s, "5G2l");
+    assert_eq!(s.frame().cursor, (6, 4));
+    // A click finds the char drawn there.
+    s.frame();
+    for action in ["press", "release"] {
+        s.handle(imp_core::ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x: 9,
+            y: 6,
+        });
+    }
+    assert_eq!(s.eval("(current-col)").unwrap(), "3");
+    // The file is unchanged; the command turns it off.
+    assert!(s.text().starts_with("Intro\n* One\nText one\n"));
+    s.eval("(run-command 'org-indent-mode)").unwrap();
+    assert_eq!(s.frame().text_rows()[2].trim_end(), "Text one");
+}

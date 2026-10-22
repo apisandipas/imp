@@ -101,6 +101,9 @@ pub struct Editor {
     /// When each buffer shows its sign column (the `signcolumn` option);
     /// a buffer not here shows it only while it has signs.
     pub sign_columns: HashMap<usize, crate::render::SignColumn>,
+    /// Buffers drawn indented by outline level (org-indent): buffer ->
+    /// columns per level. See `render::outline_prefix`.
+    pub outline_indents: HashMap<usize, usize>,
     /// Display-only text before lines, by buffer id: line -> (text,
     /// face) parts. It takes a column as wide as the widest, after the
     /// line numbers, and can't be edited (the file browser's details).
@@ -288,6 +291,7 @@ impl Editor {
         self.folds.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
+        self.outline_indents.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
         self.status_values.remove(&id);

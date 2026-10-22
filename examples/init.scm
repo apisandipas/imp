@@ -46,6 +46,12 @@
 ;; (use-package! 'move-lines)                 ; J and K move lines selected with V
 ;; (use-package! 'nerd-icons)                 ; icons (needs a Nerd Font, set with 'font)
 
+;;; Org
+;; (set-option! 'org-directory "~/org")
+;; (set-option! 'org-indent #t)              ; sections indented under headings
+;; (set-option! 'org-link-descriptive #f)    ; links shown as written
+;; (set-option! 'calendar-week-start 1)      ; the date picker's weeks start Monday
+
 ;;; Claude Code (M-a, SPC a): the program it runs, and where its window goes.
 ;; (set-option! 'claude-command "claude --model opus")
 ;; (define-popup-rule! "*claude" 'side 'right 'size 0.4)

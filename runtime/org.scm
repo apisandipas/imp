@@ -39,6 +39,12 @@
 ;; when a file opens and close again as headings cycle open, as in Org.
 ;; <tab> on one opens or closes it.
 (define-option! 'org-fold-drawers #t '())
+;; Draw each section indented under its heading, as Org's org-indent-mode
+;; does: text lines up with its heading's title, and a heading's leading
+;; stars but the last are drawn blank. Only the display changes, not the
+;; file. org-indent-per-level is the columns a level adds.
+(define-option! 'org-indent #f '())
+(define-option! 'org-indent-per-level 2 '())
 
 ;;; Headings and subtrees
 
@@ -1211,7 +1217,19 @@
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
                     (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))
     (org-show-links! (not (option 'org-link-descriptive)))
-    (org-close-drawers! 0 (last-line))))
+    (org-close-drawers! 0 (last-line))
+    (org-set-indent! (option 'org-indent))))
+
+(define (org-set-indent! on?)
+  "Draws this buffer indented by outline level when `on?`, else as written."
+  (set-buffer-local! 'org-indented on?)
+  (set-outline-indent! (if on? (max 1 (option 'org-indent-per-level)) 0)))
+
+(define-command! 'org-indent-mode
+  (lambda (count)
+    "Indent each section under its heading in this buffer, or stop."
+    (org-set-indent! (not (buffer-local 'org-indented)))
+    (message (if (buffer-local 'org-indented) "org-indent on" "org-indent off"))))
 
 ;; What a link hides when it shows just its description: its brackets,
 ;; and the target when there is a description.
@@ -1251,6 +1269,7 @@
 (org-key! '(normal insert) "C-cC-s" (lambda args (org-schedule!)))
 (org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
+(define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
 (define-mode-leader! 'org-mode "d" (lambda (n) (org-deadline!)) "deadline")
