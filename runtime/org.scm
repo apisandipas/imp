@@ -4,7 +4,8 @@
 ;;; In a .org buffer (normal state; SPC m has the same under the leader):
 ;;;
 ;;;   <tab>      on a heading, cycle its subtree: folded, children, all;
-;;;              in a table, align it and go to the next cell
+;;;              in a table, align it and go to the next cell; on a
+;;;              drawer (:PROPERTIES:), open or close it
 ;;;   <s-tab>    cycle the whole buffer: overview, contents, all
 ;;;   <ret>      do what the line means: follow a link, toggle a checkbox,
 ;;;              cycle a heading's TODO keyword, align a table
@@ -34,6 +35,10 @@
 ;; this" and [[target]] as "target", except on the cursor's line, where
 ;; they show whole to edit (as org-appear does). #f shows them as written.
 (define-option! 'org-link-descriptive #t '())
+;; Drawers (:PROPERTIES: to :END:, :LOGBOOK: and the like) start closed
+;; when a file opens and close again as headings cycle open, as in Org.
+;; <tab> on one opens or closes it.
+(define-option! 'org-fold-drawers #t '())
 
 ;;; Headings and subtrees
 
@@ -98,6 +103,50 @@
   "Folds lines `first` to `last` closed, unless that is a single line."
   (when (> last first) (fold-create! first last #t)))
 
+(define (org-drawer-start? text)
+  "Whether `text` opens a drawer: a line that is just :NAME:, not :END:."
+  (let* ([t (trim text)] [n (string-length t)])
+    (and (> n 2) (starts-with? t ":") (ends-with? t ":") (not (equal? (string-upcase t) ":END:"))
+         (let loop ([i 1])
+           (cond [(= i (- n 1)) #t]
+                 [(let ([c (string-ref t i)]) (or (char-word? c) (equal? c #\-))) (loop (+ i 1))]
+                 [else #f])))))
+
+(define (org-drawer-end line)
+  "The :END: line of the drawer opening on `line`, or #f when a heading
+   or the end of the buffer comes first."
+  (let loop ([l (+ line 1)])
+    (cond [(> l (last-line)) #f]
+          [(org-level l) #f]
+          [(equal? (string-upcase (trim (line-text l))) ":END:") l]
+          [else (loop (+ l 1))])))
+
+(define (org-drawer-fold? f)
+  "Whether fold `f` is a drawer's."
+  (org-drawer-start? (line-text (fold-first f))))
+
+(define (org-close-drawers! first last)
+  "Closes every drawer opening between lines `first` and `last`, when
+   org-fold-drawers is on."
+  (when (option 'org-fold-drawers)
+    (let loop ([l first])
+      (when (<= l last)
+        (let ([end (and (org-drawer-start? (line-text l)) (org-drawer-end l))])
+          (if end
+              (begin
+                (unless (list-find (lambda (f) (= (fold-first f) l)) (buffer-folds))
+                  (fold-create! l end #t))
+                (loop (+ end 1)))
+              (loop (+ l 1))))))))
+
+(define (org-toggle-drawer! line)
+  "Opens or closes the drawer opening on `line`."
+  (let ([fold (list-find (lambda (f) (= (fold-first f) line)) (buffer-folds))]
+        [end (org-drawer-end line)])
+    (cond [fold (fold-delete! (fold-id fold))]
+          [end (fold-create! line end #t)]
+          [else (message "no :END: for this drawer")])))
+
 (define (org-cycle! line)
   "Cycles the subtree under the heading on `line`: FOLDED, CHILDREN (the
    child headings, their text hidden), SUBTREE (everything)."
@@ -107,13 +156,14 @@
       [(list-find (lambda (f) (and (= (fold-first f) line) (= (fold-last f) end) (fold-closed? f))) (buffer-folds))
        (org-unfold! line end)
        (if (null? children)
-           (message "SUBTREE")
+           (begin (org-close-drawers! line end) (message "SUBTREE"))
            (begin
              (org-fold! line (- (car children) 1))
              (for-each (lambda (c) (org-fold! c (org-subtree-end c))) children)
              (message "CHILDREN")))]
-      [(pair? (org-folds-from line end)) (org-unfold! line end) (message "SUBTREE")]
-      [else (org-fold! line end) (message "FOLDED")])
+      [(pair? (filter (lambda (f) (not (org-drawer-fold? f))) (org-folds-from line end)))
+       (org-unfold! line end) (org-close-drawers! line end) (message "SUBTREE")]
+      [else (org-unfold! line end) (org-fold! line end) (message "FOLDED")])
     (set-cursor! (line-start line))))
 
 (define (org-global-cycle!)
@@ -132,7 +182,7 @@
        (for-each (lambda (h) (org-fold! h (org-body-end h))) headings)
        (set-buffer-local! 'org-visibility 'contents)
        (message "CONTENTS")]
-      [else (set-buffer-local! 'org-visibility 'all) (message "SHOW ALL")])
+      [else (org-close-drawers! 0 (last-line)) (set-buffer-local! 'org-visibility 'all) (message "SHOW ALL")])
     (let ([line (current-line)]) (set-cursor! (line-start (shown-line line))))))
 
 ;;; Editing lines
@@ -521,12 +571,14 @@
               (when target (set-cursor! target)))])))
 
 (define (org-tab! count)
-  "<tab> in Org: next table cell, or cycle the heading's subtree.
+  "<tab> in Org: next table cell, cycle the heading's subtree, or open
+   or close the drawer.
    Elsewhere it does whatever <tab> does in normal state."
   (let ([line (current-line)])
     (cond
       [(org-table-line? line) (org-table-next-cell!)]
       [(org-level line) (org-cycle! line)]
+      [(org-drawer-start? (line-text line)) (org-toggle-drawer! line)]
       [else (let ([b (hash-try-get (keymap 'normal) "<tab>")])
               (when b ((if (symbol? b) (command-proc b) b) count)))])))
 
@@ -1158,7 +1210,8 @@
                     (list "org-code" "=[^= ][^=]*=" "org.code")
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
                     (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))
-    (org-show-links! (not (option 'org-link-descriptive)))))
+    (org-show-links! (not (option 'org-link-descriptive)))
+    (org-close-drawers! 0 (last-line))))
 
 ;; What a link hides when it shows just its description: its brackets,
 ;; and the target when there is a description.

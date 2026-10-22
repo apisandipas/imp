@@ -391,3 +391,37 @@ fn links_show_their_description_off_the_cursor_line() {
     s.eval("(run-command 'org-toggle-link-display)").unwrap();
     assert_eq!(rows(&mut s).0, "See the site now");
 }
+
+#[test]
+fn drawers_start_closed_and_tab_toggles_them() {
+    let mut s = server("* Task\n:PROPERTIES:\n:ID: 1\n:END:\nBody\n** Child\nMore\n");
+    s.eval("(set-major-mode! 'org-mode)").unwrap();
+    let shown = |s: &mut imp_server::Server| {
+        s.frame()
+            .text_rows()
+            .iter()
+            .take(6)
+            .map(|r| r.trim_end().to_string())
+            .collect::<Vec<_>>()
+    };
+    let rows = shown(&mut s);
+    assert!(rows[1].starts_with(":PROPERTIES:"), "{rows:?}");
+    assert_eq!(rows[2], "Body", "{rows:?}");
+    // <tab> on it opens it, and again closes it.
+    type_keys(&mut s, "j<tab>");
+    assert_eq!(shown(&mut s)[2], ":ID: 1");
+    type_keys(&mut s, "<tab>");
+    assert_eq!(shown(&mut s)[2], "Body");
+    // The heading still cycles, its drawer closed when it opens.
+    type_keys(&mut s, "gg<tab>");
+    assert_eq!(s.status(), "FOLDED");
+    type_keys(&mut s, "<tab>");
+    assert_eq!(s.status(), "CHILDREN");
+    type_keys(&mut s, "<tab>");
+    assert_eq!(s.status(), "SUBTREE");
+    let rows = shown(&mut s);
+    assert_eq!(rows[2], "Body", "{rows:?}");
+    assert_eq!(rows[3], "** Child", "{rows:?}");
+    type_keys(&mut s, "<tab>");
+    assert_eq!(s.status(), "FOLDED");
+}

@@ -360,6 +360,11 @@ needed. Details, and what each one leaves out, are in
   - fetch, pull and push in the background.
 - **Org** (`org.scm`):
   - outline cycling on folds, TODO keywords, checkboxes with cookies;
+  - drawers (`:PROPERTIES:` … `:END:`) start closed, close again as
+    headings cycle open, and `<tab>` on one toggles it
+    (`org-fold-drawers`). Folds don't nest, so folding a subtree first
+    drops the drawer folds inside it, and the cycle's state checks
+    ignore drawer folds;
   - links, aligned tables, new headings with `M-<ret>`, and promote,
     demote and move subtrees;
   - an agenda (`SPC o a`) and capture (`SPC o c`): templates
