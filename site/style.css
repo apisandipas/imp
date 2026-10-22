@@ -284,6 +284,8 @@ h3 { margin: 0 0 10px; font-size: 19px; letter-spacing: -0.01em; font-weight: 60
 .panel img {
   width: 100%; border-radius: var(--radius); border: 1px solid var(--line);
   background: var(--editor);
+  /* While it loads, an editor-coloured box rather than the alt text. */
+  color: transparent;
   box-shadow: 0 30px 60px -30px rgba(0,0,0,.7);
   animation: fadein .3s ease-out;
 }

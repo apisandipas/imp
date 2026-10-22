@@ -314,6 +314,15 @@
     });
   });
 
+  // Lazy images in hidden tab panels never load until their tab opens, so
+  // fetch them once the page has loaded: switching tabs is then instant.
+  window.addEventListener("load", () => {
+    document.querySelectorAll(".panel img").forEach((img) => {
+      img.loading = "eager";
+      new Image().src = img.currentSrc || img.src;
+    });
+  });
+
   // ------------------------------------------------------------------
   // Copy buttons
   // ------------------------------------------------------------------
