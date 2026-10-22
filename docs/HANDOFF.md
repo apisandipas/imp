@@ -701,8 +701,10 @@ Conventions:
   `nix develop`, as `tools/check.sh` does; the `nix-*` targets build the flake.
   The owner wants installs to work for people without Nix: keep the README
   leading with the binaries and `make install`.
-- Release state (2026-10-19): `v0.1.0-alpha.3` is the latest prerelease, CI
-  is green on `main`, and the owner is about to make the repo public. To
+- Release state (2026-10-22): `v0.1.0-alpha.4` is the latest prerelease.
+  The repo is public, and the website (`site/`) deploys to
+  https://apisandipas.github.io/imp/ through `.github/workflows/pages.yml`
+  on pushes to `main` that change it. To
   release: `make bump VERSION=x.y.z`, commit, `git tag -a vx.y.z -m 'imp
   x.y.z'`, push `main` and the tag; confirm with the owner first. The
   release workflow takes about 15 minutes; CI's check job about 55.
