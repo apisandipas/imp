@@ -161,3 +161,26 @@ fn every_command_has_a_description() {
         .unwrap();
     assert_eq!(missing, "()", "commands M-x can't describe");
 }
+
+#[test]
+fn tab_completes_a_file_path_then_moves() {
+    let mut s = server("");
+    s.eval(
+        r#"(set! *completion-category* 'file)
+           (completing-read "Find file: " (list "src/main.rs" "src/lib.rs" "scripts/build.sh" "README")
+                            (lambda (x) (message (string-append "got " x))))"#,
+    )
+    .unwrap();
+    // "s" could be src/ or scripts/: nothing to add, so <tab> moves down.
+    type_keys(&mut s, "s<tab>");
+    assert!(rows(&mut s).last().unwrap().starts_with("Find file: s "));
+    type_keys(&mut s, "r<tab>");
+    assert!(rows(&mut s).last().unwrap().starts_with("Find file: src/ "));
+    type_keys(&mut s, "m<tab><ret>");
+    assert_eq!(s.status(), "got src/main.rs");
+    // Not choosing a file, <tab> only moves.
+    s.eval(r#"(completing-read "Pick: " (list "ab1" "ab2") (lambda (x) (message x)))"#)
+        .unwrap();
+    type_keys(&mut s, "a<tab><ret>");
+    assert_eq!(s.status(), "ab2");
+}

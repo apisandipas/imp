@@ -6,6 +6,8 @@
 ;;; fuzzy subsequence (fuzzy-filter, in Rust, does the matching and ranks
 ;;; the results). C-n/C-p, <down>/<up> and <tab>/<s-tab> move; <ret>
 ;;; picks the selected candidate, or the typed text if nothing matches.
+;;; Choosing a file, <tab> first completes the path typed, as in Emacs:
+;;; "s<tab>" becomes "src/" when that is the only name starting with s.
 ;;;
 ;;; M-x, find-file, switch-buffer and the describe commands are built on
 ;;; it.
@@ -80,11 +82,51 @@
   "Handles `key` if it moves the menu's selection, returning #t.
    #f for any other key, which the prompt then handles itself."
   (cond
-    [(member key '("C-n" "<down>" "<tab>" "C-j")) (move-selection! 1) #t]
+    [(equal? key "<tab>") (unless (complete-typed-path!) (move-selection! 1)) #t]
+    [(member key '("C-n" "<down>" "C-j")) (move-selection! 1) #t]
     [(member key '("C-p" "<up>" "<s-tab>" "C-k")) (move-selection! -1) #t]
     [(equal? key "<pagedown>") (move-selection! (completion-rows)) #t]
     [(equal? key "<pageup>") (move-selection! (- (completion-rows))) #t]
     [else #f]))
+
+(define (complete-typed-path!)
+  "Completes the file path typed in the prompt, returning #t if it did.
+   Only while choosing a file with the cursor at the end: the last part
+   of the path is extended as far as the names it could be agree, and a
+   directory that is the only one gets its /. #f leaves it to <tab>."
+  (and (eq? *completion-category* 'file)
+       (= *cmdline-pos* (string-length *cmdline*))
+       (let ([done (completed-path *cmdline* *completion-candidates*)])
+         (and done (begin (cmdline-edit! done (string-length done)) #t)))))
+
+(define (completed-path text candidates)
+  "`text` with its last path part completed, or #f if it can't grow.
+   The names come from `candidates` (paths under the directory searched),
+   or from the disk for a path starting with /, ~, ./ or ../. Text with a
+   space in it is a fuzzy search, not a path, and isn't completed."
+  (let* ([n (string-length text)]
+         [names (cond
+                  [(string-contains? text " ") '()]
+                  [(or (starts-with? text "/") (starts-with? text "~")
+                       (starts-with? text "./") (starts-with? text "../"))
+                   (complete-path text)]
+                  [else
+                   (let loop ([cs candidates] [acc '()])
+                     (cond [(null? cs) acc]
+                           [(starts-with? (car cs) text)
+                            (loop (cdr cs) (cons (path-part-after (car cs) n) acc))]
+                           [else (loop (cdr cs) acc)]))])])
+    (and (pair? names)
+         (let ([common (foldl (lambda (c acc) (common-prefix acc c)) (car names) (cdr names))])
+           (and (> (string-length common) n) common)))))
+
+(define (path-part-after path from)
+  "`path` up to and including the first / at or after index `from`, or
+   all of it: \"src/a/b.rs\" from 1 is \"src/\"."
+  (let loop ([i from])
+    (cond [(>= i (string-length path)) path]
+          [(equal? (string-ref path i) #\/) (substring path 0 (+ i 1))]
+          [else (loop (+ i 1))])))
 
 (define (completion-icon-prefix candidate)
   "The icon *completion-icon* gives `candidate` and a space, or \"\"."

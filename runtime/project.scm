@@ -67,7 +67,10 @@
   (set! *completion-category* 'file)
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
-                   (lambda (file) (open-file! (string-append root "/" file)))))
+                   (lambda (file)
+                     (open-file! (if (or (starts-with? file "/") (starts-with? file "~"))
+                                     file
+                                     (string-append root "/" file))))))
 
 (define (with-project proc)
   "Calls `proc` with the current project's root, or says there is none."

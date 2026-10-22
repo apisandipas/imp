@@ -510,7 +510,9 @@ Phase 2 adds:
   `tools/docstrings.py missing` lists them and `insert` adds them.
 - Hooks, advice, named commands.
 - Completion (orderless fuzzy) for M-x, find-file (gitignore-aware),
-  switch-buffer, describe-*.
+  switch-buffer, describe-*. Choosing a file, <tab> completes the typed
+  path a part at a time as Emacs does (/ and ~ paths from the disk), and
+  moves down the menu when there's nothing to add.
 - SPC leader with which-key (Doom-like tree: files, buffers, eval, help,
   search, toggles, quit, SPC m for the major mode).
 - Major modes for ~20 languages (indentation, commentstring), minor modes,
