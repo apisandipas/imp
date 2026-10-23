@@ -7,6 +7,10 @@ the architecture, known limitations and the roadmap.
 restart. Before committing, run `cargo test`, `cargo clippy --all-targets` and
 `cargo fmt --check`.
 
+Work happens on a `type/slug` branch (`feat/…`, `fix/…`, `docs/…`) from
+`develop`, merged back into it with `--no-ff`. `main` changes only for
+releases and website updates; `docs/HANDOFF.md` has the rules.
+
 New editing behavior goes in Scheme, not Rust. Add a primitive to
 `crates/imp-server/src/api.rs` only when Scheme can't do it or is measurably
 too slow. Test Vim behavior by feeding keys (see `crates/imp-server/tests/vim.rs`)

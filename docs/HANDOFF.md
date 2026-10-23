@@ -687,14 +687,25 @@ Conventions:
   saves the screen as a PNG, colors and all, for checking how things look.
   Tests clear the theme's `normal` background (tests/common) so rows hold
   only what was drawn; tests/theme.rs covers the theme.
-- Git: all six phases are on `main` (pushed to origin); the phase branches
-  are gone. Ask the owner how to branch new work.
+- Branches (since 2026-10-23). Work is tracked in GitHub Issues, not
+  WISHLIST.org.
+  - `develop` is where work lands. Each issue gets a branch from it named
+    `type/slug`, such as `feat/org-ui-enhancements` or
+    `fix/mvp-security-issue`. The types are `feat`, `fix`, `docs`,
+    `refactor`, `test`, `chore` and `site`. When `tools/check.sh` passes,
+    merge it into `develop` with `git merge --no-ff`.
+  - `main` changes only for a release (merge `develop` into it) or a
+    website update. A `site/` branch starts from `main` and merges back
+    into `main`, so no unreleased code comes along; then merge `main`
+    into `develop`.
+  - Nothing is committed straight to `main` or `develop` except the
+    release commit.
 - Releases: GPL-3.0-or-later (`LICENSE`). The version is in `Cargo.toml`
   (workspace) and `flake.nix`; `imp --version` prints it. Pushing a `v*` tag
   runs `.github/workflows/release.yml`: a GitHub release (a prerelease for
   tags with a `-`, like `v0.1.0-alpha.1`) with binaries for x86_64 and
   aarch64 Linux and Apple-silicon macOS. `ci.yml` runs `tools/check.sh` and
-  `nix build` on pushes to main and on pull requests.
+  `nix build` on pushes to `main` and `develop` and on pull requests.
 - Building: the `Makefile` has every build, install and test target (`make`
   lists them). It uses plain cargo, so users need no Nix: `make install`
   puts imp in `~/.local/bin`. With Nix installed it runs cargo inside
@@ -705,8 +716,9 @@ Conventions:
   The repo is public, and the website (`site/`) deploys to
   https://apisandipas.github.io/imp/ through `.github/workflows/pages.yml`
   on pushes to `main` that change it. To
-  release: `make bump VERSION=x.y.z`, commit, `git tag -a vx.y.z -m 'imp
-  x.y.z'`, push `main` and the tag; confirm with the owner first. The
+  release: merge `develop` into `main`, `make bump VERSION=x.y.z`, commit,
+  `git tag -a vx.y.z -m 'imp x.y.z'`, push `main` and the tag, then merge
+  `main` into `develop`; confirm with the owner first. The
   release workflow takes about 15 minutes; CI's check job about 55.
 - CI paths are long (`TMPDIR=/home/runner/work/_temp`), so a test that reads
   a status line, `:ls` or a menu at 80 columns can pass locally and fail on
