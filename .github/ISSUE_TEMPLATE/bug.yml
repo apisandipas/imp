@@ -1,0 +1,44 @@
+name: Bug report
+description: Something imp does wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What imp did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The keys you pressed and the kind of file, starting from `imp FILE`.
+      placeholder: |
+        1. imp notes.org
+        2. Press `SPC g g`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `imp --version`.
+      placeholder: imp 0.1.0-alpha.4
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Your OS, and whether imp ran in its GUI or a terminal (which one).
+      placeholder: Linux x86_64, GUI
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: The parts of your `init.scm` and the packages that might matter. Leave empty if you use the defaults.
+      render: scheme
