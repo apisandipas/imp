@@ -10,7 +10,7 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 ## Behaviour
 
 - **Motions**: `h j k l w b e ge W B E gE 0 ^ $ | + - _ <ret> gg G N% { } % H M L f F t T ; , n N * # g* g#`, arrows, `<home> <end>`, marks `'x` and `` `x``, `gj gk` by screen rows. Vim's rules for exclusive motions and the `dw`/`cw` special cases. A motion can fail: that cancels an operator, stops a macro, and lets `h j k l` fail at edges.
-- **Text objects**: `iw aw iW aW`, quotes (on the cursor's line only), every bracket kind, `it at`, `ip ap`; tree-sitter adds `af if ac ic aa ia`. `aw` takes trailing white space, else leading; `i{` on braces on their own lines is linewise over the inner lines.
+- **Text objects**: `iw aw iW aW`, quotes (on the cursor's line only), every bracket kind, `it at`, `ip ap`; tree-sitter adds `af if ac ic aa ia` ([[tree-sitter]]). `aw` takes trailing white space, else leading; `i{` on braces on their own lines is linewise over the inner lines.
 - **Operators**: `d c y > < gu gU g~ g? gc`, doubled forms, counts that multiply. A linewise range is always whole lines; only `d` knows the final-newline case.
 - **Commands**: `x X D C s S Y p P gp gP r R J gJ ~ C-a C-x u C-r U . & ZZ ZQ C-g i a I A o O gi gI`, counts on inserts and pastes.
 - **Visual**: `v V C-v`, `o O gv`, operators and text objects, `I A c r J p u U ~ > <`, block `$`, and `.` over the same size of region. `:` from visual uses the `<` and `>` marks.
