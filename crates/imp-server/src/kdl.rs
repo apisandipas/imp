@@ -1,4 +1,4 @@
-//! KDL config (feature `kdl`; docs/design/phase-5.md).
+//! KDL config (feature `kdl`; see lore:spec/kdl-config).
 //!
 //! `(kdl-parse TEXT)` turns a KDL document into lists Scheme can walk;
 //! runtime/config.scm gives the nodes their meaning. Each node is

@@ -204,9 +204,12 @@ runtime/       the editor, in Scheme
 packages/      opt-in packages that come with imp (use-package!)
 ```
 
-[`docs/HANDOFF.md`](docs/HANDOFF.md) has the design decisions, the
-architecture, the Scheme API, known limitations and the roadmap;
-`docs/design/` has notes per phase.
+The project's notes are [lore](https://github.com/apisandipas/lore) notes:
+[`CONTEXT.md`](CONTEXT.md) at the root and in each directory says what it
+holds and the rules for it, [`docs/decisions`](docs/decisions) has the design
+decisions and [`docs/specs`](docs/specs) what each area of imp does.
+[`.lore/WORKFLOW.md`](.lore/WORKFLOW.md) is how work gets done, and known gaps
+are [issues](https://github.com/apisandipas/imp/issues).
 
 ## License
 

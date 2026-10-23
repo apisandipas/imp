@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 # The window client, a library the imp binary runs (crates/imp, feature
-# "gui"). Started as the Phase 5 prototype (docs/design/phase-5.md).
+# "gui"). Started as the Phase 5 prototype.
 
 [dependencies]
 imp-core.workspace = true

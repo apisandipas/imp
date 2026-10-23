@@ -1,4 +1,4 @@
-//! WASM plugins (feature `wasm`; docs/design/phase-5.md).
+//! WASM plugins (feature `wasm`; see lore:spec/wasm-plugins).
 //!
 //! A plugin is a core WebAssembly module with a string ABI: it exports
 //! `memory` and `imp_alloc(len) -> ptr`, and each function it offers takes

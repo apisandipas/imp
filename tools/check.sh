@@ -12,7 +12,7 @@ fi
   echo "$out" | grep -E "test result|^error"
   # A panic message is on the lines after "panicked at".
   echo "$out" | grep -A2 -E "^---- |panicked"
-  # The Phase 5 prototypes, behind features (docs/design/phase-5.md).
+  # The Phase 5 prototypes, behind features.
   out=$(cargo test -q -p imp-server --all-features 2>&1) || t=1
   echo "$out" | grep -A2 -E "FAILED|panicked|^error"
   # And imp built terminal-only, without the window client.
