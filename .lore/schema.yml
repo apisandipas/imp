@@ -1,7 +1,7 @@
 # lore's note types. `lore check` enforces these fields; `lore new` creates
 # notes in each type's dir, starting at the first status listed.
 notes: docs
-ignore: [target/**, site/**]
+ignore: [target/**]
 types:
   Spec:
     dir: docs/specs
