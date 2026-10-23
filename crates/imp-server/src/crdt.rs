@@ -1,4 +1,4 @@
-//! Shared buffers (feature `crdt`; docs/design/phase-5.md).
+//! Shared buffers (feature `crdt`; see lore:spec/shared-buffers).
 //!
 //! A shared buffer keeps a yrs (Yjs) text document beside it as a mirror.
 //! The buffer is still the rope and is edited as always. Syncing compares

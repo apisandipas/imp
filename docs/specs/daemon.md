@@ -16,4 +16,4 @@ Buffers that survive closing the window, as with `emacs --daemon` ([[0004-client
 
 ## Known gaps
 
-- Clients share one cursor and layout, like tmux sessions; only their sizes are their own, so scrolling can differ per size.
+- Clients share one cursor and layout, like tmux sessions; only their sizes are their own, so scrolling can differ per size. [#3](https://github.com/apisandipas/imp/issues/3)

@@ -20,4 +20,4 @@ How packages load; the packages shipped with imp are listed in `packages/CONTEXT
 
 ## Known gaps
 
-- Cloning a `'git` package blocks the editor at startup.
+- Cloning a `'git` package blocks the editor at startup. [#13](https://github.com/apisandipas/imp/issues/13)

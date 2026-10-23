@@ -19,4 +19,4 @@ anchors: [runtime/dired.scm, crates/imp-server/tests/dired.rs]
 
 ## Known gaps
 
-- Swapping two names in one save reads as no change.
+- Swapping two names in one save reads as no change. [#17](https://github.com/apisandipas/imp/issues/17)

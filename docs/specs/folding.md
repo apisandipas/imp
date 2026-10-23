@@ -16,5 +16,5 @@ anchors: [runtime/fold.scm, crates/imp-server/tests/folds.rs]
 
 ## Known gaps
 
-- Manual folds only: no 'foldmethod' by syntax, indent or expression.
+- Manual folds only: no 'foldmethod' by syntax, indent or expression. [#11](https://github.com/apisandipas/imp/issues/11)
 - Folds don't nest.

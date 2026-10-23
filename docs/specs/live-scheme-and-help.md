@@ -22,5 +22,5 @@ The defining Emacs capability: change the editor while it runs, and ask it how i
 
 ## Known gaps
 
-- The REPL has no input history.
-- The `after-change` hook runs once per key, without the changed range.
+- The REPL has no input history. [#14](https://github.com/apisandipas/imp/issues/14)
+- The `after-change` hook runs once per key, without the changed range. [#6](https://github.com/apisandipas/imp/issues/6)

@@ -20,4 +20,4 @@ anchors: [crates/imp-core/src/fileio.rs, crates/imp-server/src/files.rs, runtime
 
 ## Known gaps
 
-- File times are compared in whole seconds for autosave.
+- File times are compared in whole seconds for autosave. [#7](https://github.com/apisandipas/imp/issues/7)

@@ -23,4 +23,4 @@ A vertico/orderless-style menu at the prompt, one of the packages a new editor n
 
 ## Known gaps
 
-- Long paths in menus are cut at the screen edge rather than shortened from the start.
+- Long paths in menus are cut at the screen edge rather than shortened from the start. [#18](https://github.com/apisandipas/imp/issues/18)

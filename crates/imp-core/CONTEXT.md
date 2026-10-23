@@ -14,4 +14,4 @@ Types the server and every client share. Clients depend on this crate, never on 
 
 ## Limits
 
-- Undo stores whole-text snapshots, and marks aren't restored by undo (they're clamped into the text).
+- Undo stores whole-text snapshots, and marks aren't restored by undo (they're clamped into the text). [#5](https://github.com/apisandipas/imp/issues/5)

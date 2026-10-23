@@ -29,7 +29,7 @@ base64 = { workspace = true, optional = true }
 kdl = { workspace = true, optional = true }
 
 [features]
-# Prototypes from Phase 5, off by default (docs/design/phase-5.md).
+# Prototypes from Phase 5, off by default.
 wasm = ["dep:wasmtime"]
 crdt = ["dep:yrs", "dep:base64"]
 kdl = ["dep:kdl"]

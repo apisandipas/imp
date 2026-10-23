@@ -12,4 +12,4 @@ The rules of `runtime/` apply here too: docstrings on every function, and core g
 
 ## Limits
 
-- Loading a `'git` package runs `git clone` at startup and blocks the editor while it does.
+- Loading a `'git` package runs `git clone` at startup and blocks the editor while it does. [#13](https://github.com/apisandipas/imp/issues/13)

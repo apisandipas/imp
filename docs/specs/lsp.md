@@ -29,6 +29,6 @@ Framing and JSON are Rust; the protocol and the features are Scheme. Servers run
 
 ## Known gaps
 
-- Diagnostics don't move with edits until the server sends them again; since they are held during insert, ones below a line you add sit a line off until Esc.
-- Document sync sends the full text, because `after-change` doesn't report the changed range.
+- Diagnostics don't move with edits until the server sends them again; since they are held during insert, ones below a line you add sit a line off until Esc. [#4](https://github.com/apisandipas/imp/issues/4)
+- Document sync sends the full text, because `after-change` doesn't report the changed range. [#6](https://github.com/apisandipas/imp/issues/6)
 - Dot-repeat of a completion replays it as backspaces plus the typed word.

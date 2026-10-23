@@ -21,4 +21,4 @@ anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runt
 
 ## Known gaps
 
-- `:ls` and menus cut long paths at the screen edge instead of shortening them from the start, as the status line does.
+- `:ls` and menus cut long paths at the screen edge instead of shortening them from the start, as the status line does. [#18](https://github.com/apisandipas/imp/issues/18)

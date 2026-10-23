@@ -22,5 +22,5 @@ anchors: [runtime/git.scm, crates/imp-server/tests/git.rs]
 
 ## Known gaps
 
-- Nothing on screen says which keys exist; `?` has to be known.
+- Nothing on screen says which keys exist; `?` has to be known. [#2](https://github.com/apisandipas/imp/issues/2)
 - No staging of selected lines, rebase, merge or blame, and no refresh on save.

@@ -27,5 +27,5 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 
 ## Known gaps
 
-- No repeating timestamps, priorities or export, and properties aren't read.
-- Typing in a table cell doesn't keep the table aligned; `<tab>` or `<ret>` realigns.
+- No repeating timestamps, priorities or export, and properties aren't read. [#15](https://github.com/apisandipas/imp/issues/15)
+- Typing in a table cell doesn't keep the table aligned; `<tab>` or `<ret>` realigns. [#15](https://github.com/apisandipas/imp/issues/15)

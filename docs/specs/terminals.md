@@ -14,5 +14,5 @@ anchors: [runtime/term.scm, crates/imp-server/src/term.rs, crates/imp-server/tes
 
 ## Known gaps
 
-- Only the current window's terminal resizes to fit.
-- Mouse events and bracketed paste aren't passed to the program.
+- Only the current window's terminal resizes to fit. [#16](https://github.com/apisandipas/imp/issues/16)
+- Mouse events and bracketed paste aren't passed to the program. [#16](https://github.com/apisandipas/imp/issues/16)
