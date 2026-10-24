@@ -1,7 +1,7 @@
 //! winit keys in imp's notation (the terminal client's `key_name`).
 
 use winit::event::{KeyEvent, Modifiers};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 pub fn key_name(event: &KeyEvent, mods: &Modifiers) -> Option<String> {
     let state = mods.state();
@@ -56,6 +56,17 @@ pub fn key_name(event: &KeyEvent, mods: &Modifiers) -> Option<String> {
     }
 }
 
+/// Whether a key pastes the clipboard: `S-<insert>`, `C-S-v`, or
+/// `Cmd-v` on macOS. `C-v` stays a key, for Vim.
+pub fn is_paste(key: &Key, state: ModifiersState) -> bool {
+    let v = matches!(key, Key::Character(s) if s.eq_ignore_ascii_case("v"));
+    match key {
+        Key::Named(NamedKey::Insert) => state == ModifiersState::SHIFT,
+        _ if v && state == ModifiersState::CONTROL | ModifiersState::SHIFT => true,
+        _ => v && cfg!(target_os = "macos") && state == ModifiersState::SUPER,
+    }
+}
+
 /// Splits "ihello<esc>:w<ret>" into keys, as the tests' notation does:
 /// `<name>` is one key ("<C-x>" the key "C-x"), anything else a char.
 pub fn parse_keys(input: &str) -> Vec<String> {
@@ -92,5 +103,23 @@ mod tests {
             ["i", "x", "<esc>", "C-x", "a", "<", "b"]
         );
         assert_eq!(parse_keys("<s-tab>"), ["<s-tab>"]);
+    }
+
+    #[test]
+    fn paste_keys() {
+        let (ctrl, shift) = (ModifiersState::CONTROL, ModifiersState::SHIFT);
+        let v = |s: &str| Key::Character(s.into());
+        assert!(is_paste(&Key::Named(NamedKey::Insert), shift));
+        assert!(is_paste(&v("V"), ctrl | shift));
+        assert!(!is_paste(&v("v"), ctrl));
+        assert!(!is_paste(
+            &Key::Named(NamedKey::Insert),
+            ModifiersState::empty()
+        ));
+        assert!(!is_paste(&v("V"), shift));
+        assert_eq!(
+            is_paste(&v("v"), ModifiersState::SUPER),
+            cfg!(target_os = "macos")
+        );
     }
 }
