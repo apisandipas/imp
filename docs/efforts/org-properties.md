@@ -1,0 +1,22 @@
+---
+type: Effort
+status: active
+specs: ["[[spec/org]]"]
+issue: https://github.com/apisandipas/imp/issues/15
+frozen:
+  docs/specs/org.md: d0618263bb39
+---
+# Org properties
+
+Headings' properties can be read and set, and the agenda shows each entry's category.
+
+## Approach
+
+Scheme in `runtime/org.scm`. Properties are read from a list of lines, not the buffer, because the agenda reads files that aren't open; the buffer reader passes the buffer's lines. The drawer is the one directly under the heading and its planning line, as Org requires; a `:PROPERTIES:` drawer further down the body isn't a property drawer. Setting a property goes through the buffer, as one undo step.
+
+## Tasks
+
+- [ ] `org-entry-property` reads a heading's property, ignoring case, with inheritance through ancestors and `#+PROPERTY:`, with tests.
+- [ ] `C-c C-x p` (`SPC m P`) sets a property, completing names from the buffer, making the drawer after the planning line if needed; an empty value removes it, with tests.
+- [ ] The agenda shows each entry's category, from `CATEGORY` (inherited), `#+CATEGORY:` or the file name without `.org`, with a test.
+- [ ] The file's header comment lists `C-c C-x p`; the owner has tried properties by hand.
