@@ -444,3 +444,49 @@ fn restarting_keeps_the_new_server_when_the_old_one_exits() {
         "#true"
     );
 }
+
+/// The fake server's copy of the current buffer, once it has the latest
+/// changes.
+fn server_text(s: &mut imp_server::Server) -> String {
+    s.eval(
+        r#"(begin (lsp-sync!)
+                  (set! *fake-text* #f)
+                  (lsp-request! (lsp-key) "fake/text" (hash "uri" (lsp-uri))
+                                (lambda (r) (set! *fake-text* r))))"#,
+    )
+    .unwrap();
+    wait_for(s, "(string? *fake-text*)");
+    s.eval("*fake-text*").unwrap()
+}
+
+#[test]
+fn changes_are_sent_as_ranges() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, log) = attached("ranges.rs", "let a = 1;\nfine\n");
+    s.eval("(define *fake-text* #f)").unwrap();
+    type_keys(&mut s, "ggOnew line<esc>jddAé!<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+    assert!(std::fs::read_to_string(&log)
+        .unwrap()
+        .contains(r#""contentChanges": [{"range""#));
+    // After an undo the whole text goes.
+    type_keys(&mut s, "u");
+    type_keys(&mut s, "ggix<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+}
+
+#[test]
+fn whole_text_for_a_server_that_wants_it() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, log) = attached_with("whole.rs", "let a = 1;\n", "FAKE_LSP_FULL=1");
+    s.eval("(define *fake-text* #f)").unwrap();
+    type_keys(&mut s, "Ax<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+    let sent = std::fs::read_to_string(&log).unwrap();
+    assert!(sent.contains(r#""contentChanges": [{"text""#));
+    assert!(!sent.contains(r#""contentChanges": [{"range""#));
+}
