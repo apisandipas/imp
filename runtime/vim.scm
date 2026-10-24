@@ -4314,6 +4314,31 @@
     (set! *last-version* now))
   (run-hooks 'post-command))
 
+(define (after-change-range)
+  "In an after-change hook, what the key changed as one (start old-end
+   new-end): old-end where the changed text ended before, new-end where
+   it ends now, as Emacs's after-change-functions get. #f when that
+   isn't known (an undo, redo or reload) or outside the hook."
+  (let ([changes (and *last-version* (equal? (car *last-version*) (current-buffer))
+                      (buffer-changes-since (cdr *last-version*)))])
+    (and (pair? changes) (merge-changes changes))))
+
+(define (merge-changes changes)
+  "One (start old-end new-end) covering `changes`, edits made one after
+   another as buffer-changes-since lists them."
+  (let loop ([cs (cdr changes)]
+             [start (car (car changes))] [old-end (cadr (car changes))] [new-end (caddr (car changes))])
+    (if (null? cs)
+        (list start old-end new-end)
+        (let* ([c (car cs)] [s (car c)] [oe (cadr c)] [ne (caddr c)]
+               ;; How much longer the range so far made the text.
+               [grown (- new-end old-end)])
+          (loop (cdr cs)
+                (min start s)
+                ;; An end past the range so far, in the text before it.
+                (max old-end (- oe grown))
+                (+ (max new-end oe) (- ne oe)))))))
+
 (define (handle-top-level-key! key)
   "Handles a key, closing the popup first if one is up.
    The key that closes a popup also runs, unless it is <ret>, <esc>,
