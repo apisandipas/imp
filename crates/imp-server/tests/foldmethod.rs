@@ -4,6 +4,14 @@ mod common;
 
 use common::*;
 
+/// A server without the fold column, so rows start with their text; the
+/// column's own tests are in fold_column.rs.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'foldcolumn \"no\")").unwrap();
+    s
+}
+
 /// The folds as "first-last" with + for closed, sorted.
 fn folds(s: &mut imp_server::Server) -> String {
     s.eval(
@@ -24,33 +32,45 @@ const CODE: &str =
 #[test]
 fn indent_folds_nest_and_start_closed() {
     let mut s = server(CODE);
-    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    s.eval("(set-option! 'shiftwidth 4) (set-option! 'foldlevel 0)")
+        .unwrap();
     type_keys(&mut s, ":setlocal foldmethod=indent<ret>");
-    // The block under each header, the nested if body, and the blank line
-    // inside the first block belongs to it; foldlevel 0 closes them all.
-    assert_eq!(folds(&mut s), r#""1-6+ 3-4+ 8-9+""#);
-    // Closed folds show as one line each.
+    // Each block with the header that opens it, the nested if with its
+    // line, and the blank line inside the first block belongs to it;
+    // foldlevel 0 closes them all.
+    assert_eq!(folds(&mut s), r#""0-6+ 2-4+ 7-9+""#);
+    // A closed block shows as its header line and a note.
     let rows = s.frame().text_rows();
-    assert_eq!(rows[0], "fn a");
-    assert!(rows[1].starts_with("    one"), "{rows:?}");
-    assert!(rows[1].contains("··· 6 lines"), "{rows:?}");
-    assert_eq!(rows[2], "fn b");
+    assert!(rows[0].starts_with("fn a"), "{rows:?}");
+    assert!(rows[0].contains("··· 7 lines"), "{rows:?}");
+    assert!(rows[1].starts_with("fn b"), "{rows:?}");
+    assert!(rows[1].contains("··· 3 lines"), "{rows:?}");
+}
+
+#[test]
+fn a_block_at_the_top_has_no_header() {
+    let mut s = server("    one\n    two\nthree\n    four\n");
+    s.eval("(set-option! 'shiftwidth 4) (set-option! 'foldlevel 0)")
+        .unwrap();
+    type_keys(&mut s, ":setlocal fdm=indent<ret>");
+    assert_eq!(folds(&mut s), r#""0-1+ 2-3+""#);
 }
 
 #[test]
 fn edits_keep_a_fold_s_state() {
     let mut s = server(CODE);
-    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    s.eval("(set-option! 'shiftwidth 4) (set-option! 'foldlevel 0)")
+        .unwrap();
     type_keys(&mut s, ":setlocal fdm=indent<ret>");
-    // Open the first block, then add a line to the second one.
-    type_keys(&mut s, "jzo");
-    assert_eq!(folds(&mut s), r#""1-6 3-4+ 8-9+""#);
-    // yy on a closed fold takes it whole: two lines more in that block.
-    type_keys(&mut s, "Gyyp");
-    assert_eq!(folds(&mut s), r#""1-6 3-4+ 8-11+""#);
+    // Open the first block, then add a line inside the second one.
+    type_keys(&mut s, "zo");
+    assert_eq!(folds(&mut s), r#""0-6 2-4+ 7-9+""#);
+    type_keys(&mut s, "Gzoyyp");
+    assert_eq!(folds(&mut s), r#""0-6 2-4+ 7-10""#);
+    type_keys(&mut s, "zc");
     // A new block appears open.
     type_keys(&mut s, "ggOfn z<ret>    p<ret>q<esc>");
-    assert_eq!(folds(&mut s), r#""1-2 4-9 6-7+ 11-14+""#);
+    assert_eq!(folds(&mut s), r#""0-2 3-9 5-7+ 10-13+""#);
 }
 
 #[test]
@@ -58,9 +78,9 @@ fn foldlevel_closes_deeper_folds_only() {
     let mut s = server(CODE);
     s.eval("(set-option! 'shiftwidth 4)").unwrap();
     type_keys(&mut s, ":setlocal fdl=1<ret>:setlocal fdm=indent<ret>");
-    assert_eq!(folds(&mut s), r#""1-6 3-4+ 8-9""#);
+    assert_eq!(folds(&mut s), r#""0-6 2-4+ 7-9""#);
     type_keys(&mut s, ":setlocal fdl=0<ret>");
-    assert_eq!(folds(&mut s), r#""1-6+ 3-4+ 8-9+""#);
+    assert_eq!(folds(&mut s), r#""0-6+ 2-4+ 7-9+""#);
 }
 
 #[test]
@@ -87,7 +107,7 @@ fn open(s: &mut imp_server::Server, name: &str, text: &str) {
 fn syntax_folds_functions_and_classes() {
     let mut s = server("");
     open(&mut s, "folds.rs", RUST);
-    type_keys(&mut s, ":setlocal fdm=syntax<ret>");
+    type_keys(&mut s, ":setlocal fdl=0<ret>:setlocal fdm=syntax<ret>");
     // Functions and the struct and impl, nested, all closed.
     assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
     // A language's own fold kinds.
@@ -98,17 +118,52 @@ fn syntax_folds_functions_and_classes() {
 }
 
 #[test]
-fn a_file_opened_with_foldmethod_set_starts_folded() {
+fn a_file_opened_with_foldmethod_set_gets_its_folds() {
     let mut s = server("");
     s.eval("(set-option! 'foldmethod \"syntax\")").unwrap();
     open(&mut s, "folded.rs", RUST);
-    assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
+    // Open, as foldlevel is 99.
+    assert_eq!(folds(&mut s), r#""0-2 4-6 7-11 8-10""#);
+}
+
+#[test]
+fn a_file_folds_by_indent_and_starts_open() {
+    let mut s = server("");
+    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    open(&mut s, "indented.txt", CODE);
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""indent""#);
+    assert_eq!(folds(&mut s), r#""0-6 2-4 7-9""#);
+}
+
+#[test]
+fn other_buffers_and_long_files_stay_manual() {
+    // A buffer not visiting a file.
+    let mut s = server(CODE);
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""manual""#);
+    assert_eq!(folds(&mut s), r#""""#);
+    // A file over 10,000 lines.
+    open(&mut s, "long.txt", &"a\n    b\n".repeat(5001));
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""manual""#);
+    assert_eq!(folds(&mut s), r#""""#);
+    // Org's outline.
+    open(&mut s, "notes.org", "* a\n  b\n");
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""manual""#);
+}
+
+#[test]
+fn a_global_foldmethod_wins_over_the_default() {
+    let mut s = server("");
+    s.eval("(set-option! 'foldmethod \"manual\")").unwrap();
+    open(&mut s, "vim-style.txt", CODE);
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""manual""#);
+    assert_eq!(folds(&mut s), r#""""#);
 }
 
 #[test]
 fn hand_made_folds_are_for_manual() {
     let mut s = server(CODE);
-    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    s.eval("(set-option! 'shiftwidth 4) (set-option! 'foldlevel 0)")
+        .unwrap();
     type_keys(&mut s, ":setlocal fdm=indent<ret>");
     for keys in ["zfj", "zE", "jzd"] {
         type_keys(&mut s, keys);
@@ -117,10 +172,10 @@ fn hand_made_folds_are_for_manual() {
             "can't make or delete folds with foldmethod=indent",
             "{keys}"
         );
-        assert_eq!(folds(&mut s), r#""1-6+ 3-4+ 8-9+""#, "{keys}");
+        assert_eq!(folds(&mut s), r#""0-6+ 2-4+ 7-9+""#, "{keys}");
         type_keys(&mut s, "gg");
     }
     // Back to manual: the folds stay, and can be deleted by hand.
-    type_keys(&mut s, ":setlocal fdm=manual<ret>jzd");
-    assert_eq!(folds(&mut s), r#""3-4+ 8-9+""#);
+    type_keys(&mut s, ":setlocal fdm=manual<ret>zd");
+    assert_eq!(folds(&mut s), r#""2-4+ 7-9+""#);
 }

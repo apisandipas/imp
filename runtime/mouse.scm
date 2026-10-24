@@ -48,6 +48,8 @@
         [(equal? action "release") (set! *mouse-press* #f) (set! *mouse-border* #f)]
         [at
          (cond
+          [(and (equal? action "press") (equal? button "left") (fold-column-at x y))
+           => (lambda (line) (mouse-toggle-fold! (car at) line))]
           [(and (equal? action "press") (equal? button "left")) (mouse-click! (car at) (cadr at))]
           [(and (equal? action "drag") (equal? button "left")) (mouse-drag! (car at) (cadr at))]
           [(equal? action "release") (set! *mouse-press* #f)]
@@ -96,6 +98,27 @@
       (unless typing? (normal-clamp!))
       (set! *goal-col* (current-col)))
     (set! *mouse-press* (and offset (list window (cursor)))))
+  void)
+
+(define (mouse-toggle-fold! window line)
+  "Opens or closes the fold whose chevron is on `line` in `window`, the
+   outermost starting there, focusing the window. The cursor stays,
+   unless the fold closes over it: then it goes to the fold's first line."
+  (close-menu!)
+  (when *popup-shown* (close-popup!))
+  (reset-pending!)
+  (unless (= window (current-window))
+    (if (typing-mode?) (begin (focus-window! window) (run-hooks 'buffer-enter)) (go-to-window! window)))
+  (let ([f (foldl (lambda (f best) (if (and (= (fold-first f) line) (or (not best) (> (fold-size f) (fold-size best)))) f best))
+                  #f (buffer-folds))])
+    (when f
+      (let ([close? (not (fold-closed? f))] [at (current-line)])
+        (fold-set-closed! (fold-id f) close?)
+        (when (and close? (<= (fold-first f) at) (<= at (fold-last f)))
+          (set-cursor! (line-start line))
+          (unless (typing-mode?) (normal-clamp!))
+          (set! *goal-col* (current-col))))))
+  (set! *mouse-press* #f)
   void)
 
 (define (mouse-drag! window offset)

@@ -48,6 +48,7 @@
      (list "line-number-current" (fg 'yellow "bold"))
      (list "cursorline" (string-append "bg=" (c 'bg-hl)))
      (list "sign-column" "")
+     (list "fold-column" (fg 'dim))
      (list "separator" (fg 'border))
      (list "visual" (string-append "bg=" (c 'selection)))
      (list "search" (string-append "fg=" (c 'bg) " bg=" (c 'yellow)))

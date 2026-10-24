@@ -552,6 +552,8 @@
 ;;; when its value changes, for settings Rust needs to know about (tabstop).
 
 (define *options* (hash))
+;; The options set globally (set-option!, :set) since the editor started.
+(define *options-set* (hash))
 (define *option-watchers* (hash))
 (define *option-aliases* (hash))
 
@@ -627,9 +629,15 @@
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
     (set! *options* (hash-insert *options* name value))
+    (set! *options-set* (hash-insert *options-set* name #t))
     (let ([watch (hash-try-get *option-watchers* name)])
       (when watch (watch (option name))))
     (run-hooks 'option-change name value)))
+
+(define (option-set? name)
+  "Whether option `name` was set globally, with set-option! or :set,
+   rather than left at its default."
+  (hash-contains? *options-set* (known-option-name name)))
 
 (define (watch-option! name proc)
   "Makes `proc` the watcher of option `name`, and calls it now.

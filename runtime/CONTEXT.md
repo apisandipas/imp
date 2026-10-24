@@ -20,7 +20,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Modes: `define-major-mode!`, `define-minor-mode!`, `define-mode-key!`, `define-file-name-mode!`, `set-local-option!`, `buffer-local`.
 - Changes: `(buffer-changes-since version)` lists a buffer's edits since a version (keep your own version; nothing is used up), and `(after-change-range)` is what the key changed, inside `after-change`.
 - Hooks: `startup after-change before-save after-save post-command insert-enter insert-leave mode-change major-mode buffer-enter buffer-open buffer-kill buffer-renamed option-change`; advice with `advice-add!` (`'before`, `'after`, `'around`).
-- Options: `define-option!`, `define-computed-option!`, `option`, `set-option!`, `watch-option!`.
+- Options: `define-option!`, `define-computed-option!`, `option`, `set-option!`, `watch-option!`, `option-set?` (whether it was set globally, so a per-buffer default can give way to the user's choice).
 - Background: `run-after!`, `run-every!`, `start-job!`.
 - Completion: `completing-read`, `define-completion-source!`, `set-completion-sources!`, `define-snippet!`.
 - Languages: `define-mode-language!`, `define-syntax-objects!`, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.

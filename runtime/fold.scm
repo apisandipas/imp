@@ -2,11 +2,17 @@
 ;;;
 ;;; A fold is a pair of buffer marks, so it follows edits; a fold whose
 ;;; lines are all deleted goes away. Folds nest. Rust draws closed folds
-;;; (set-closed-folds!); vim.scm has the keys (zf zo zc za zR zM zE zd) and
+;;; (set-folds!); vim.scm has the keys (zf zo zc za zR zM zE zd) and
 ;;; makes j, k and linewise operators treat a closed fold as one line.
 ;;; Packages make folds too: Org folds headings with them.
 
 (define *fold-next* 0)
+
+;; The fold column between the line numbers and the text, a chevron on
+;; each fold's first line: "auto" while the buffer has folds, "yes"
+;; always, "no" never.
+(define-option! 'foldcolumn "auto" '(fdc))
+(watch-option! 'foldcolumn set-fold-column!)
 
 (define (fold-entries)
   "The current buffer's folds, as (id closed?)."
@@ -55,9 +61,10 @@
   (cadddr f))
 
 (define (folds-changed!)
-  "Tells the renderer which lines closed folds hide."
-  (set-closed-folds! (map (lambda (f) (list (fold-first f) (fold-last f)))
-                          (filter fold-closed? (buffer-folds))))
+  "Tells the renderer the folds: the lines closed ones hide, and the
+   fold column's chevrons."
+  (set-folds! (map (lambda (f) (list (fold-first f) (fold-last f) (fold-closed? f)))
+                   (buffer-folds)))
   (set-buffer-local! 'folds-version (buffer-version)))
 
 (define (fold-create! first last closed?)
