@@ -64,6 +64,7 @@
 (define *cmdline-return* 'normal) ; the mode to go back to
 (define *cmdline-pos* 0)       ; cursor position in *cmdline*
 (define *cmdline-key-handler* #f) ; sees keys first; #t from it means handled
+(define *insert-key-handler* #f)  ; sees typed insert keys first (map.scm); #t means handled
 ;; Completion on the command line, if set (complete.scm's menu):
 ;; (lambda (event arg)) told 'edit after each edit, 'close, and 'key with
 ;; each key before the line sees it, returning #t for a key it took.
@@ -2714,6 +2715,7 @@
     [(equal? key "C-o")
      (set! *insert-return* *mode*)
      (set-mode! 'normal)]
+    [(and *insert-key-handler* (*insert-key-handler* key)) #t]
     [else
      (set! *insert-keys* (cons key *insert-keys*))
      (insert-key! key)])

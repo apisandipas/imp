@@ -4,7 +4,7 @@ The editor, in Steel Scheme: every command, keymap and mode, the Vim engine incl
 
 ## Load order
 
-The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
+The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
 
 ## Rules
 
@@ -16,7 +16,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 ## Extension points
 
 - Keys and commands: `define-command!`, `define-key!` (takes a command name, looked up when pressed, and an optional which-key label, as `define-motion!`, `define-operator!` and `define-mode-key!` do), `run-command`, `define-leader!`, `define-leader-group!`, `define-mode-leader!` (under `SPC m`), `document-command!`.
-- Vim (`vim.scm`): `define-motion!` (type `'exclusive`, `'inclusive` or `'linewise`), `define-char-motion!`, `define-text-object!`, `define-operator!`, `define-char-command!`, `define-prefix!`, `define-ex!`, `define-ex-completion!`, `define-state!`. Call `(begin-change!)` before a change; `with-undo-group` makes several changes one undo step. Motions work with every operator, visual mode, counts and `.`.
+- Vim (`vim.scm`): `define-motion!` (type `'exclusive`, `'inclusive` or `'linewise`), `define-char-motion!`, `define-text-object!`, `define-operator!`, `define-char-command!`, `define-prefix!`, `define-ex!`, the `:map` family (`map.scm`, its keymaps `map:normal`, `map:visual`, `map:insert`), `define-ex-completion!`, `define-state!`. Call `(begin-change!)` before a change; `with-undo-group` makes several changes one undo step. Motions work with every operator, visual mode, counts and `.`.
 - Modes: `define-major-mode!`, `define-minor-mode!`, `define-mode-key!`, `define-file-name-mode!`, `set-local-option!`, `buffer-local`.
 - Hooks: `startup after-change before-save after-save post-command insert-enter insert-leave mode-change major-mode buffer-enter buffer-open buffer-kill buffer-renamed option-change`; advice with `advice-add!` (`'before`, `'after`, `'around`).
 - Options: `define-option!`, `define-computed-option!`, `option`, `set-option!`, `watch-option!`.
