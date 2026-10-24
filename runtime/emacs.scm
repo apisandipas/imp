@@ -52,11 +52,11 @@
       [(and (equal? *emacs-prefix* "") (equal? key "C-u"))
        (set! *emacs-arg* (* 4 (or *emacs-arg* 1)))
        (set! *emacs-arg-digits* #f)
-       (message (string-append "C-u " (number->string *emacs-arg*)))]
+       (set-status! (string-append "C-u " (number->string *emacs-arg*)))]
       [(and *emacs-arg* (equal? *emacs-prefix* "") (digit? key))
        (set! *emacs-arg-digits* (string-append (or *emacs-arg-digits* "") key))
        (set! *emacs-arg* (string->number *emacs-arg-digits*))
-       (message (string-append "C-u " *emacs-arg-digits*))]
+       (set-status! (string-append "C-u " *emacs-arg-digits*))]
       [(and (equal? *emacs-prefix* "") (= (string-length key) 3) (starts-with? key "M-")
             (digit? (substring key 2 3)))
        (set! *emacs-arg* (string->number (substring key 2 3)))]
@@ -69,7 +69,7 @@
             (run-emacs-command! binding))]
       [(emacs-prefix? keys)
        (set! *emacs-prefix* keys)
-       (message (string-append keys "-"))
+       (set-status! (string-append keys "-"))
        (if (<= (option 'which-key-delay) 0)
            (show-which-key-popup! (emacs-which-key keys) keys)
            (run-after! (option 'which-key-delay)

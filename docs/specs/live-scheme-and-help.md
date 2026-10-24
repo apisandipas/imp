@@ -9,7 +9,7 @@ The defining Emacs capability: change the editor while it runs, and ask it how i
 
 ## Behaviour
 
-- **Evaluation**: `:eval EXPR`, `:source`, eval the form before the cursor, the top-level form, a region or the buffer, `M-:`, and `:messages`. A `define` of an existing name redefines it for every caller ([[steel]]). A definition shows the name it defines; code with no value (a function called for its effect) shows nothing, leaving any message it showed.
+- **Evaluation**: `:eval EXPR`, `:source`, eval the form before the cursor, the top-level form, a region or the buffer, `M-:`, and `:messages` (the last 200 messages; echoes of keys being typed aren't kept). A `define` of an existing name redefines it for every caller ([[steel]]). A definition shows the name it defines; code with no value (a function called for its effect) shows nothing, leaving any message it showed.
 - **REPL**: a `*scheme*` buffer (`:repl`, `SPC e i`).
 - **Hooks and advice**: `add-hook!`, `remove-hook!`, `run-hooks`; `advice-add!` with `'before`, `'after` or `'around`, and `advice-remove!`. Every caller sees advice.
 - **Named commands**: a key bound to a command name looks it up when pressed, so redefining the command changes every key bound to it.

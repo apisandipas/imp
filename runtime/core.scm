@@ -105,9 +105,12 @@
 
 (define (message text)
   "Shows `text` in the status line and adds it to :messages.
-   The history keeps the last 200."
+   The history keeps the last 200. An empty `text` clears the status
+   line without being kept; echoes of keys being typed use set-status!,
+   which isn't kept either."
   (set-status! text)
-  (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*)))
+  (unless (equal? text "")
+    (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
   void)
 
 ;;; Evaluating code while the editor runs
