@@ -96,10 +96,73 @@ fn clones_a_git_package_at_a_revision() {
     let mut s = server("");
     use_dir(&mut s, &dir);
     s.eval(&format!(
-        "(use-package! 'versioned 'git \"{}\" 'rev \"{first}\")",
+        "(define configured #f)
+         (use-package! 'versioned 'git \"{}\" 'rev \"{first}\"
+           'config (lambda () (set! configured (pkg-version))))",
         repo.display()
     ))
     .unwrap();
+    // The clone runs in the background; the editor goes on meanwhile.
+    assert_eq!(
+        s.eval("(package-status 'versioned)").unwrap(),
+        r#""cloning""#
+    );
+    assert_eq!(s.status(), "cloning versioned...");
+    wait_until_loaded(&mut s, "versioned");
     assert_eq!(s.eval("(pkg-version)").unwrap(), "1");
+    // Its 'config ran once it loaded.
+    assert_eq!(s.eval("configured").unwrap(), "1");
+    assert_eq!(s.status(), "installed versioned");
     assert!(dir.join("versioned/init.scm").exists());
+}
+
+/// Pumps the server until package `name` is no longer cloning.
+fn wait_until_loaded(s: &mut imp_server::Server, name: &str) {
+    for _ in 0..200 {
+        if s.eval(&format!("(package-status '{name})")).unwrap() != r#""cloning""# {
+            return;
+        }
+        s.pump(std::time::Duration::from_millis(50));
+    }
+    panic!("{name} still cloning");
+}
+
+#[test]
+fn a_failed_clone_is_reported_and_leaves_nothing() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let repo = packages_dir("pkg-repo-bad-rev");
+    git(&repo, &["init", "--quiet"]);
+    std::fs::write(repo.join("init.scm"), "(define (bad-rev-pkg) 1)").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "one"]);
+    let dir = packages_dir("pkgs-git-fail");
+    let mut s = server("");
+    use_dir(&mut s, &dir);
+    // A revision that doesn't exist: the clone is removed.
+    s.eval(&format!(
+        "(use-package! 'badrev 'git \"{}\" 'rev \"no-such-rev\")",
+        repo.display()
+    ))
+    .unwrap();
+    wait_until_loaded(&mut s, "badrev");
+    assert_eq!(
+        s.eval("(package-status 'badrev)").unwrap(),
+        r#""clone failed""#
+    );
+    assert!(
+        s.status().starts_with("package badrev: clone failed"),
+        "{}",
+        s.status()
+    );
+    assert!(!dir.join("badrev").exists());
+    // A URL that isn't a repository.
+    s.eval("(use-package! 'nowhere 'git \"/no/such/repo\")")
+        .unwrap();
+    wait_until_loaded(&mut s, "nowhere");
+    assert_eq!(
+        s.eval("(package-status 'nowhere)").unwrap(),
+        r#""clone failed""#
+    );
 }

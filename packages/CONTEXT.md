@@ -9,7 +9,3 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `nerd-icons`: Nerd Font icons in completion, menus and the status line.
 
 The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.
-
-## Limits
-
-- Loading a `'git` package runs `git clone` at startup and blocks the editor while it does. [#13](https://github.com/apisandipas/imp/issues/13)

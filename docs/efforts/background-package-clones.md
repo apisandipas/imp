@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/packages]]"]
 issue: https://github.com/apisandipas/imp/issues/13
 frozen:
@@ -18,4 +18,4 @@ Decisions made while the owner was away (issue #13 had no answers yet): progress
 
 ## Tasks
 
-- [ ] Clone in the background with status messages, load and run `'config` on success, report and clean up on failure. `packages.rs` tests a clone (pumping until it loads), the editor answering while it runs, and a failed clone.
+- [x] Clone in the background with status messages, load and run `'config` on success, report and clean up on failure. `packages.rs` tests a clone (pumping until it loads), the editor answering while it runs, and a failed clone.
