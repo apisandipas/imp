@@ -320,8 +320,12 @@ fn agenda_and_capture() {
     let report = text.find("Scheduled:  TODO Write report").expect(&text);
     let trip = text.find("TODO Plan trip").expect(&text);
     assert!(overdue < report && report < todo && todo < trip, "{text}");
-    // A date after the week isn't shown.
-    assert!(!text.contains("Future"), "{text}");
+    // A date after the week is under Later, before To do.
+    let later = text.find("Later").expect(&text);
+    let future = text
+        .find("2999-01-01  Deadline:   TODO Future")
+        .expect(&text);
+    assert!(report < later && later < future && future < todo, "{text}");
     assert!(
         !text.contains("Old thing"),
         "DONE items are left out: {text}"

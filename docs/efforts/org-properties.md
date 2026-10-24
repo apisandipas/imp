@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/15
 frozen:
-  docs/specs/org.md: d0618263bb39
+  docs/specs/org.md: ac578a071195
 ---
 # Org properties
 
@@ -19,4 +19,5 @@ Scheme in `runtime/org.scm`. Properties are read from a list of lines, not the b
 - [x] `org-entry-property` reads a heading's property, ignoring case, with inheritance through ancestors and `#+PROPERTY:`, with tests.
 - [x] `C-c C-x p` (`SPC m P`) sets a property, completing names from the buffer, making the drawer after the planning line if needed; an empty value removes it, with tests.
 - [x] The agenda shows each entry's category, from `CATEGORY` (inherited), `#+CATEGORY:` or the file name without `.org`, with a test.
+- [x] The agenda lists entries dated after its span under `Later`, by date, once each, with a test.
 - [ ] The file's header comment lists `C-c C-x p`; the owner has tried properties by hand.

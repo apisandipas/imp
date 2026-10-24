@@ -954,6 +954,15 @@
                   [(date<? d first) (loop (+ k 1) acc)]
                   [else (loop (+ k 1) (cons d acc))]))))))
 
+(define (org-stamp-after-day stamp day)
+  "The first day after `day` that timestamp `stamp` falls on, or #f: its
+   date, or with a repeater the first repeat after `day`."
+  (let ([date (cadr stamp)] [r (cadddr stamp)])
+    (cond [(date<? day date) date]
+          [(not r) #f]
+          [else (let loop ([k 1])
+                  (let ([d (org-shift-date date r k)]) (if (date<? day d) d (loop (+ k 1)))))])))
+
 (define (org-sort-entries items rank)
   "`items` sorted by `rank` (a number, lowest first), keeping their order
    where ranks are equal."
@@ -965,8 +974,8 @@
 (define (org-render-agenda!)
   "Redraws the agenda from the agenda files, as Org's week view: the
    undone entries dated before today, then org-agenda-span days with what
-   is scheduled or due on each (repeats included), then the TODOs with no
-   date. Done entries are left out; entries on the same day sort by
+   is scheduled or due on each (repeats included), then those dated
+   after the span, then the TODOs with no date. Done entries are left out; entries on the same day sort by
    priority."
   (let* ([today (calendar-today)]
          [first (org-agenda-first-day)]
@@ -987,6 +996,11 @@
          [shown (apply append (map (lambda (d) (map (lambda (day) (list day (cadr d) (caddr d)))
                                                     (org-stamp-days (car d) first last)))
                                    dated))]
+         ;; (day what entry) for each date an entry next has after the span.
+         [later (org-sort-entries
+                 (filter (lambda (d) (car d))
+                         (map (lambda (d) (list (org-stamp-after-day (car d) last) (cadr d) (caddr d))) dated))
+                 (lambda (d) (+ (* 100 (date->days (car d))) (rank (caddr d)))))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)
                                   rank)])
     (draw-begin!)
@@ -1008,6 +1022,10 @@
                   (for-each (lambda (d) (when (equal? (car d) day) (org-agenda-line! (caddr d) #f (cadr d))))
                             shown)))
               (range 0 span))
+    (when (pair? later)
+      (draw-line! '() #f)
+      (draw-line! (list (list "Later" "git.section")) #f)
+      (for-each (lambda (d) (org-agenda-line! (caddr d) (date->string (car d)) (cadr d))) later))
     (draw-line! '() #f)
     (draw-line! (list (list "To do" "git.section")) #f)
     (for-each (lambda (e) (org-agenda-line! e #f #f)) todos)

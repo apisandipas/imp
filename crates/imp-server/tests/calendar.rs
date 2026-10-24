@@ -258,6 +258,10 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
             "  Deadline:   TODO Ship  a",
             "Saturday  24 October 2026",
             "",
+            "Later",
+            "  2026-10-29  Scheduled:  TODO Water  a",
+            "  2026-12-01  Deadline:   TODO Later  a",
+            "",
             "To do",
             "  TODO Someday  a",
         ]
