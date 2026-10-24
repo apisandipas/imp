@@ -123,6 +123,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "git-blame",
         include_str!("../../../packages/git-blame/git-blame.scm"),
     ),
+    (
+        "git-gutter",
+        include_str!("../../../packages/git-gutter/git-gutter.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from
