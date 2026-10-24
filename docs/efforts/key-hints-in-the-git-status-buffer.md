@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/git]]", "[[spec/buffers-and-windows]]"]
 issue: https://github.com/apisandipas/imp/issues/2
 frozen:
@@ -17,7 +17,7 @@ The key lines sit at the bottom of the window, as Magit's transients do, so they
 
 ## Tasks
 
-- [ ] `set-footer!` gives the current buffer footer lines; each window showing it draws them above its status line, cut to its width, with fewer rows for text (scrolling, the cursor and clicks account for it), and leaves them out with fewer than two text rows beside them; `'()` removes them. Tests in `tests/windows.rs`: drawn at the bottom while scrolled, the cursor kept above them, a short window without them.
+- [x] `set-footer!` gives the current buffer footer lines; each window showing it draws them above its status line, cut to its width, with fewer rows for text (scrolling, the cursor and clicks account for it), and leaves them out with fewer than two text rows beside them; `'()` removes them. Tests in `tests/windows.rs`: drawn at the bottom while scrolled, the cursor kept above them, a short window without them.
 - [ ] The status keys are one table of (key label action) that `git-keys!` binds, labels going to which-key; `?` opens a `menu!` of every key in it but `?`, and the key pressed runs on the item at the cursor; `git-help-lines` goes. Tests in `tests/git.rs`: `?` then `s` stages a file, `?` then `c` opens the commit menu.
 - [ ] The status buffer's footer: the two key lines, labels from the table, keys in a new `git.key` face; `git-status-hints` (#t) leaves them out. Tests: the lines are at the bottom of the window, and the option hides them.
 - [ ] Checked by hand by the owner: add, commit and push, and pull, using only the keys shown.

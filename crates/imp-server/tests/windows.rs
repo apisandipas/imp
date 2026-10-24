@@ -142,3 +142,64 @@ fn search_highlights_in_every_window_but_selection_only_in_its_own() {
     assert_eq!(f.rows[0].len(), 3);
     assert_eq!(f.rows[4].len(), 3);
 }
+
+/// Two footer lines for the current buffer.
+const FOOTER: &str = r#"(set-footer! (list (list (list "s" "git.key") (list " stage" #f))
+                         (list (list "? all keys" #f))))"#;
+
+#[test]
+fn a_footer_stays_at_the_bottom_while_the_window_scrolls() {
+    let text: String = (0..100).map(|i| format!("line {i}\n")).collect();
+    let mut s = sized(&text, 40, 10);
+    s.eval(FOOTER).unwrap();
+    // 10 rows: 6 of text, the footer's 2, the status line, the message line.
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[5].trim_end(), "line 5");
+    assert_eq!(rows[6].trim_end(), "s stage");
+    assert_eq!(rows[7].trim_end(), "? all keys");
+    assert_eq!(s.eval("(window-height)").unwrap(), "6");
+    // The cursor stays above it.
+    type_keys(&mut s, "G");
+    let frame = s.frame();
+    let rows = frame.text_rows();
+    assert_eq!(rows[5].trim_end(), "line 99", "{rows:?}");
+    assert_eq!(rows[6].trim_end(), "s stage");
+    assert_eq!(frame.cursor.1, 5);
+}
+
+#[test]
+fn a_footer_is_cut_to_the_window_and_left_out_of_short_ones() {
+    let mut s = sized("a\n", 6, 10);
+    s.eval(r#"(set-footer! (list (list (list "abcdefghij" #f))))"#)
+        .unwrap();
+    assert_eq!(s.frame().text_rows()[7].trim_end(), "abcdef");
+    // Fewer than two rows of text beside it: no footer.
+    let mut s = sized("a\n", 40, 4);
+    s.eval(FOOTER).unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0].trim_end(), "a");
+    assert!(!rows.iter().any(|r| r.contains("stage")), "{rows:?}");
+    // '() removes it.
+    let mut s = sized("a\n", 40, 10);
+    s.eval(FOOTER).unwrap();
+    s.eval("(set-footer! '())").unwrap();
+    assert!(!s.frame().text_rows().iter().any(|r| r.contains("stage")));
+}
+
+#[test]
+fn a_click_on_a_footer_does_nothing() {
+    let mut s = sized("one\ntwo\n", 40, 10);
+    s.eval(FOOTER).unwrap();
+    s.frame();
+    for action in ["press", "release"] {
+        s.handle(imp_core::ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x: 2,
+            y: 6,
+            fine: None,
+        });
+    }
+    // A click below the text would go to the last line.
+    assert_eq!(s.eval("(current-line)").unwrap(), "0");
+}

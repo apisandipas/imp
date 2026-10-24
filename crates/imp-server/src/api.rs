@@ -1082,6 +1082,37 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // The current buffer's footer: a list of lines, each a list of (text
+    // face) parts, face #f for none; '() removes it.
+    engine.register_fn("set-footer!", |lines: Vec<Vec<Vec<SteelVal>>>| {
+        let lines: Vec<editor::FooterLine> = lines
+            .into_iter()
+            .map(|parts| {
+                parts
+                    .into_iter()
+                    .filter_map(|part| match part.as_slice() {
+                        [SteelVal::StringV(text), face] => Some((
+                            text.to_string(),
+                            match face {
+                                SteelVal::StringV(f) => Some(f.to_string()),
+                                _ => None,
+                            },
+                        )),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        editor::with(|e| {
+            let id = e.current;
+            if lines.is_empty() {
+                e.footers.remove(&id);
+            } else {
+                e.footers.insert(id, lines);
+            }
+        })
+    });
+
     // The line whose fold chevron is at screen cell (x, y), or #f.
     engine.register_fn("fold-column-at", |x: isize, y: isize| {
         editor::with(|e| crate::render::fold_column_at(e, clamp(x), clamp(y)).map(|l| l as isize))

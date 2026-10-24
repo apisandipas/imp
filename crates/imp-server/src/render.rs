@@ -527,7 +527,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer.mark(&window_mark(id)).unwrap_or(0)
     }
     .min(buffer.len());
-    let text_rows = rect.h.saturating_sub(1).max(1);
+    let footer = e.footer_rows(buffer_id, rect.h);
+    let text_rows = rect.h.saturating_sub(1 + footer).max(1);
     let folds = Folds::of(e, buffer_id);
     let real_line = buffer.offset_to_line(cursor);
     let cursor_col = buffer.offset_to_col(cursor);
@@ -758,6 +759,19 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
             .collect();
         (rows, None)
     };
+    if footer > 0 {
+        for line in &e.footers[&buffer_id] {
+            let mut row = Vec::new();
+            for (text, face) in line {
+                push(
+                    &mut row,
+                    text,
+                    face.as_deref().map_or(Style::default(), |f| e.face(f)),
+                );
+            }
+            rows.push(fill(clip_row(&row, rect.w), rect.w, pad));
+        }
+    }
     rows.push(status_line(
         e, buffer_id, buffer, focused, real_line, cursor_col, rect.w,
     ));
@@ -1488,6 +1502,9 @@ pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usiz
         let w = &e.windows[&id];
         (w.buffer, w.scroll, w.hscroll)
     };
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
+        return None;
+    }
     let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
     let left = rect.x + indent + gutter;
@@ -1504,7 +1521,10 @@ pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
     };
     let rect = e.window_rects().into_iter().find(|(w, _)| *w == id)?.1;
     let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
-    let rows = rect.h.saturating_sub(1).max(1);
+    let rows = rect
+        .h
+        .saturating_sub(1 + e.footer_rows(buffer_id, rect.h))
+        .max(1);
     Some((rows, text_area(e, buffer_id, buffer, rect.w).2))
 }
 
@@ -1779,7 +1799,8 @@ fn clip_row(row: &Row, width: usize) -> Row {
 }
 
 /// What is at screen cell (`x`, `y`): the window there, and the buffer
-/// offset under the cell, or `None` on its status line. Clicking past a
+/// offset under the cell, or `None` on its status line; nothing at all on
+/// its footer. Clicking past a
 /// line's end gives the end of that screen row. Uses the scroll positions
 /// of the last frame drawn, and the mouse's exact position when its client
 /// sent one (rows of other heights).
@@ -1790,6 +1811,15 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
+    }
+    let footer_buffer = if id == e.current_window {
+        e.current
+    } else {
+        e.windows[&id].buffer
+    };
+    // A click on the footer does nothing.
+    if y + 1 + e.footer_rows(footer_buffer, rect.h) >= rect.y + rect.h {
+        return None;
     }
     // Where in the cell: exactly, or its middle.
     let (fx, fy) = e
