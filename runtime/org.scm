@@ -24,6 +24,7 @@
 ;;;   C-c C-s    schedule the heading (SCHEDULED:), from a calendar
 ;;;   C-c C-d    give it a deadline (DEADLINE:)
 ;;;   C-c .      put a timestamp at the cursor, or change the one there
+;;;   C-c C-x p  set a property of the heading (SPC m P); empty removes it
 ;;;
 ;;; A timestamp ending in a repeater, <2026-10-24 Sat +1w> (or ++1w, .+1w),
 ;;; moves on when its heading is marked done, and the heading goes back
@@ -676,6 +677,174 @@
       [else (let ([b (hash-try-get (keymap 'normal) "<tab>")])
               (when b ((if (symbol? b) (command-proc b) b) count)))])))
 
+;;; Properties
+;;;
+;;; A heading's properties are the :NAME: value lines of the :PROPERTIES:
+;;; drawer right under it (after its planning line, if any), as in Org.
+;;; They are read from lines of text, a vector, so the agenda can read
+;;; files that aren't open; (org-entry-property line name) reads the
+;;; current buffer.
+
+(define (org-property-line text)
+  "The (NAME . value) a drawer line such as \":Effort: 2h\" holds, the
+   name upper-cased, or #f."
+  (let ([t (trim text)])
+    (and (> (string-length t) 2) (starts-with? t ":")
+         (let ([close (string-index-from t ":" 1)])
+           (and close (> close 1)
+                (cons (string-upcase (substring t 1 close))
+                      (trim (substring t (+ close 1) (string-length t)))))))))
+
+(define (org-drawer-at lines heading)
+  "The (first last) lines of the property drawer of the heading at index
+   `heading` of `lines`, from :PROPERTIES: to :END:, or #f."
+  (let* ([n (vector-length lines)]
+         [at (+ heading 1)]
+         [at (if (and (< at n) (org-planning-line? (vector-ref lines at))) (+ at 1) at)])
+    (and (< at n) (equal? (string-upcase (trim (vector-ref lines at))) ":PROPERTIES:")
+         (let loop ([l (+ at 1)])
+           (cond [(or (>= l n) (org-level-of (vector-ref lines l))) #f]
+                 [(equal? (string-upcase (trim (vector-ref lines l))) ":END:") (list at l)]
+                 [else (loop (+ l 1))])))))
+
+(define (org-heading-properties lines heading)
+  "The (NAME . value) properties of the heading at index `heading`."
+  (let ([d (org-drawer-at lines heading)])
+    (if d
+        (filter (lambda (p) p) (map (lambda (l) (org-property-line (vector-ref lines l)))
+                                    (range (+ (car d) 1) (cadr d))))
+        '())))
+
+(define (org-heading-above lines index)
+  "The heading at or above index `index` of `lines`, or #f."
+  (let loop ([l index]) (cond [(< l 0) #f] [(org-level-of (vector-ref lines l)) l] [else (loop (- l 1))])))
+
+(define (org-parent-heading lines heading)
+  "The heading the one at index `heading` is under, or #f."
+  (let ([level (org-level-of (vector-ref lines heading))])
+    (let loop ([l (- heading 1)])
+      (cond [(< l 0) #f]
+            [(let ([lv (org-level-of (vector-ref lines l))]) (and lv (< lv level))) l]
+            [else (loop (- l 1))]))))
+
+(define (org-file-setting lines key)
+  "The value of the first `key` line in `lines`, as \"#+CATEGORY:\" (any
+   case) gives \"work\" from \"#+category: work\", or #f."
+  (let ([n (vector-length lines)] [k (string-upcase key)])
+    (let loop ([l 0])
+      (cond [(>= l n) #f]
+            [(let ([t (vector-ref lines l)])
+               (and (starts-with? (string-upcase t) k) (trim (substring t (string-length k) (string-length t)))))
+             => (lambda (v) v)]
+            [else (loop (+ l 1))]))))
+
+(define (org-file-property lines name)
+  "The value `#+PROPERTY: NAME value` lines give `name`, or #f."
+  (let ([n (vector-length lines)] [name (string-upcase name)])
+    (let loop ([l 0])
+      (if (>= l n)
+          #f
+          (let ([t (vector-ref lines l)])
+            (if (starts-with? (string-upcase t) "#+PROPERTY:")
+                (let* ([rest (trim (substring t 11 (string-length t)))]
+                       [parts (split-once rest " ")])
+                  (if (and (pair? parts) (equal? (string-upcase (car parts)) name))
+                      (if (pair? (cdr parts)) (trim (cadr parts)) "")
+                      (loop (+ l 1))))
+                (loop (+ l 1))))))))
+
+(define (org-lines-property lines index name inherit?)
+  "The value of property `name` for the entry at index `index` of
+   `lines`, or #f. With `inherit?`, a heading without it takes its
+   ancestors', then the file's #+PROPERTY:."
+  (let ([name (string-upcase name)])
+    (let loop ([h (org-heading-above lines index)])
+      (let ([found (and h (assoc name (org-heading-properties lines h)))])
+        (cond [found (cdr found)]
+              [(not inherit?) #f]
+              [h (loop (org-parent-heading lines h))]
+              [else (org-file-property lines name)])))))
+
+(define (org-buffer-lines)
+  "The current buffer's lines, as a vector."
+  (list->vector (map line-text (range 0 (buffer-line-count)))))
+
+(define (org-entry-property line name . inherit)
+  "The value of property `name` (any case) of the heading `line` is
+   under, or #f. With a third argument #t, a heading without it takes
+   its ancestors', then the file's #+PROPERTY: lines, as Org's
+   inheritance does."
+  (org-lines-property (org-buffer-lines) line name (and (pair? inherit) (car inherit))))
+
+;;; Setting properties: C-c C-x p (SPC m P).
+
+(define (org-property-name-in text)
+  "The name of a drawer line such as \":Effort: 2h\", as written, or #f."
+  (let ([t (trim text)])
+    (and (starts-with? t ":")
+         (let ([close (string-index-from t ":" 1)])
+           (and close (> close 1) (substring t 1 close))))))
+
+(define (org-property-names lines)
+  "The names of the properties in any property drawer of `lines`, each
+   once, as first written."
+  (let loop ([hs (filter (lambda (l) (org-level-of (vector-ref lines l))) (range 0 (vector-length lines)))]
+             [seen (hash)] [acc '()])
+    (if (null? hs)
+        (reverse acc)
+        (let* ([d (org-drawer-at lines (car hs))]
+               [names (if d
+                          (filter (lambda (n) n) (map (lambda (l) (org-property-name-in (vector-ref lines l)))
+                                                      (range (+ (car d) 1) (cadr d))))
+                          '())]
+               [new (filter (lambda (n) (not (hash-contains? seen (string-upcase n)))) names)])
+          (loop (cdr hs)
+                (foldl (lambda (n h) (hash-insert h (string-upcase n) #t)) seen new)
+                (append (reverse new) acc))))))
+
+(define (org-set-property! heading name value)
+  "Sets property `name` of the heading on line `heading` to `value`, or
+   removes it when `value` is \"\". The drawer is made, after the
+   planning line, if the heading has none."
+  (let* ([lines (org-buffer-lines)]
+         [d (org-drawer-at lines heading)]
+         [key (string-upcase name)]
+         [at (and d (let loop ([l (+ (car d) 1)])
+                      (cond [(>= l (cadr d)) #f]
+                            [(let ([p (org-property-line (vector-ref lines l))]) (and p (equal? (car p) key))) l]
+                            [else (loop (+ l 1))])))]
+         [entry (lambda (n) (string-append ":" n ": " value))])
+    (begin-change!)
+    (cond
+      [(equal? value "")
+       (when at
+         ;; The last property goes with its drawer.
+         (if (= (- (cadr d) (car d)) 2)
+             (replace-range! (line-start (car d)) (+ (line-end (cadr d)) (if (< (line-end (cadr d)) (buffer-length)) 1 0)) "")
+             (replace-range! (line-start at) (+ (line-end at) 1) "")))]
+      [at (org-set-line! at (entry (org-property-name-in (vector-ref lines at))))]
+      [d (buffer-insert! (line-start (cadr d)) (string-append (entry name) "\n"))]
+      [else
+       (let ([after (if (and (<= (+ heading 1) (last-line)) (org-planning-line? (line-text (+ heading 1))))
+                        (+ heading 1)
+                        heading)])
+         (buffer-insert! (line-end after) (string-append "\n:PROPERTIES:\n" (entry name) "\n:END:")))])
+    (message (if (equal? value "") (string-append "removed " name) (string-append name ": " value)))))
+
+(define (org-property-prompt!)
+  "C-c C-x p: asks for a property name, completing from the buffer's,
+   then its value for the heading the cursor is under. An empty value
+   removes it."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (completing-read "Property: " (org-property-names (org-buffer-lines))
+                         (lambda (name)
+                           (if (or (string-index-from name ":" 0) (string-index-from name " " 0))
+                               (message "a property name has no spaces or colons")
+                               (open-cmdline! (string-append name ": ") (or (org-entry-property h name) "")
+                                              (lambda (v) (org-set-property! h name (trim v))) #f #f)))))))
+
 ;;; The agenda
 
 (define (org-notes-file)
@@ -716,31 +885,40 @@
 
 (define (org-file-entries file)
   "Agenda entries in `file`: (file line keyword title scheduled deadline
-   priority), the dates as org-parse-stamp gives them."
-  (let loop ([lines (text-lines (read-file file))] [n 0] [acc '()] [current #f])
-    (let ([finish (lambda (acc) (if current (cons current acc) acc))])
-      (if (null? lines)
-          (reverse (finish acc))
-          (let* ([text (car lines)] [level (org-level-of text)])
-            (cond
-              [level
-               (let* ([rest (substring text (+ level 1) (string-length text))]
-                      [kw (org-keyword-in rest)]
-                      [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)])
-                 (loop (cdr lines) (+ n 1) (finish acc) (list file n kw title #f #f (org-priority-in title))))]
-              [current
-               (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
-                      [current (list (car current) (cadr current) (caddr current) (cadddr current)
-                                     (or s (list-ref current 4)) (or d (list-ref current 5)) (list-ref current 6))])
-                 (loop (cdr lines) (+ n 1) acc current))]
-              [else (loop (cdr lines) (+ n 1) acc current)]))))))
+   priority category), the dates as org-parse-stamp gives them."
+  (let* ([all (text-lines (read-file file))]
+         [vec (list->vector all)]
+         [base (file-name-of file)]
+         [base (if (ends-with? base ".org") (substring base 0 (- (string-length base) 4)) base)]
+         [file-category (or (org-file-setting vec "#+CATEGORY:") base)])
+    (let loop ([lines all] [n 0] [acc '()] [current #f])
+      (let ([finish (lambda (acc) (if current (cons current acc) acc))])
+        (if (null? lines)
+            (reverse (finish acc))
+            (let* ([text (car lines)] [level (org-level-of text)])
+              (cond
+                [level
+                 (let* ([rest (substring text (+ level 1) (string-length text))]
+                        [kw (org-keyword-in rest)]
+                        [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)])
+                   (loop (cdr lines) (+ n 1) (finish acc)
+                         (list file n kw title #f #f (org-priority-in title)
+                               (or (org-lines-property vec n "CATEGORY" #t) file-category))))]
+                [current
+                 (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
+                        [current (list (car current) (cadr current) (caddr current) (cadddr current)
+                                       (or s (list-ref current 4)) (or d (list-ref current 5)) (list-ref current 6)
+                                       (list-ref current 7))])
+                   (loop (cdr lines) (+ n 1) acc current))]
+                [else (loop (cdr lines) (+ n 1) acc current)])))))))
 
 (define (org-entry-done? e)
   "Whether agenda entry `e` has a done keyword (see `org-done-keywords`)."
   (and (caddr e) (member (caddr e) (org-done-keywords)) #t))
 
 (define (org-agenda-line! e date what)
-  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...).
+  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...),
+   and its category.
    Either may be #f. The line remembers the entry's file and line, so
    <ret> on it goes there."
   (draw-line! (list (list "  " #f)
@@ -748,7 +926,7 @@
                    (list (if what (pad-right what 12) "") "org.special")
                    (list (if (caddr e) (string-append (caddr e) " ") "") (if (org-entry-done? e) "org.done" "org.todo"))
                    (list (cadddr e) #f)
-                   (list (string-append "  " (file-name-of (car e))) "git.count"))
+                   (list (string-append "  " (list-ref e 7)) "git.count"))
              (list 'org (car e) (cadr e))))
 
 ;; The first day the agenda shows, or #f for this week's.
@@ -776,6 +954,15 @@
                   [(date<? d first) (loop (+ k 1) acc)]
                   [else (loop (+ k 1) (cons d acc))]))))))
 
+(define (org-stamp-after-day stamp day)
+  "The first day after `day` that timestamp `stamp` falls on, or #f: its
+   date, or with a repeater the first repeat after `day`."
+  (let ([date (cadr stamp)] [r (cadddr stamp)])
+    (cond [(date<? day date) date]
+          [(not r) #f]
+          [else (let loop ([k 1])
+                  (let ([d (org-shift-date date r k)]) (if (date<? day d) d (loop (+ k 1)))))])))
+
 (define (org-sort-entries items rank)
   "`items` sorted by `rank` (a number, lowest first), keeping their order
    where ranks are equal."
@@ -787,8 +974,8 @@
 (define (org-render-agenda!)
   "Redraws the agenda from the agenda files, as Org's week view: the
    undone entries dated before today, then org-agenda-span days with what
-   is scheduled or due on each (repeats included), then the TODOs with no
-   date. Done entries are left out; entries on the same day sort by
+   is scheduled or due on each (repeats included), then those dated
+   after the span, then the TODOs with no date. Done entries are left out; entries on the same day sort by
    priority."
   (let* ([today (calendar-today)]
          [first (org-agenda-first-day)]
@@ -809,6 +996,11 @@
          [shown (apply append (map (lambda (d) (map (lambda (day) (list day (cadr d) (caddr d)))
                                                     (org-stamp-days (car d) first last)))
                                    dated))]
+         ;; (day what entry) for each date an entry next has after the span.
+         [later (org-sort-entries
+                 (filter (lambda (d) (car d))
+                         (map (lambda (d) (list (org-stamp-after-day (car d) last) (cadr d) (caddr d))) dated))
+                 (lambda (d) (+ (* 100 (date->days (car d))) (rank (caddr d)))))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)
                                   rank)])
     (draw-begin!)
@@ -830,6 +1022,10 @@
                   (for-each (lambda (d) (when (equal? (car d) day) (org-agenda-line! (caddr d) #f (cadr d))))
                             shown)))
               (range 0 span))
+    (when (pair? later)
+      (draw-line! '() #f)
+      (draw-line! (list (list "Later" "git.section")) #f)
+      (for-each (lambda (d) (org-agenda-line! (caddr d) (date->string (car d)) (cadr d))) later))
     (draw-line! '() #f)
     (draw-line! (list (list "To do" "git.section")) #f)
     (for-each (lambda (e) (org-agenda-line! e #f #f)) todos)
@@ -1570,6 +1766,7 @@
 (org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
+(org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1578,6 +1775,7 @@
 (define-mode-leader! 'org-mode "t" (lambda (n) (let ([h (org-heading-line (current-line))]) (if h (org-todo-cycle! h) (message "not under a heading")))) "cycle TODO")
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
+(define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 
