@@ -169,6 +169,18 @@ pub fn window_mark(id: usize) -> String {
     format!("window:{id}")
 }
 
+/// One daemon client's windows: its layout, its current window, and each
+/// window's buffer and scroll, swapped into the editor while the client's
+/// input is handled and its frame drawn (see lore:decision/0015). Every
+/// window's cursor, the current one's too, waits in its window mark, so
+/// edits through other clients move it.
+#[derive(Debug, Clone)]
+pub struct ClientView {
+    windows: BTreeMap<usize, Window>,
+    layout: Layout,
+    current_window: usize,
+}
+
 /// A buffer that isn't current, with where its cursor and window were.
 #[derive(Debug)]
 pub struct Parked {
@@ -416,6 +428,78 @@ impl Editor {
             },
         );
         self.layout = Layout::Window(1);
+    }
+
+    /// Takes the current windows out as a client's view, leaving them in
+    /// place until another view is put.
+    pub fn take_view(&mut self) -> ClientView {
+        let id = self.current_window;
+        self.buffer.set_mark(&window_mark(id), self.cursor);
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.scroll = self.scroll;
+            w.hscroll = self.hscroll;
+        }
+        ClientView {
+            windows: self.windows.clone(),
+            layout: self.layout.clone(),
+            current_window: id,
+        }
+    }
+
+    /// Makes `view` the current windows, bringing its current window's
+    /// buffer, cursor and scroll. A window whose buffer has gone shows the
+    /// current buffer instead.
+    pub fn put_view(&mut self, view: ClientView) {
+        let fallback = self.current;
+        self.windows = view.windows;
+        self.layout = view.layout;
+        self.current_window = view.current_window;
+        let ids = self.buffer_ids();
+        for w in self.windows.values_mut() {
+            if !ids.contains(&w.buffer) {
+                *w = Window {
+                    buffer: fallback,
+                    scroll: 0,
+                    hscroll: 0,
+                };
+            }
+        }
+        let Some(target) = self.windows.get(&self.current_window).cloned() else {
+            return;
+        };
+        self.switch_to(target.buffer);
+        let mark = window_mark(self.current_window);
+        self.cursor = self.buffer.mark(&mark).unwrap_or(0).min(self.buffer.len());
+        self.buffer.delete_mark(&mark);
+        self.scroll = target.scroll;
+        self.hscroll = target.hscroll;
+    }
+
+    /// A view for a new client: one window on the current buffer, where
+    /// the current window is. The current windows stay as they are.
+    pub fn new_view(&mut self) -> ClientView {
+        self.next_window_id += 1;
+        let id = self.next_window_id;
+        self.buffer.set_mark(&window_mark(id), self.cursor);
+        let window = Window {
+            buffer: self.current,
+            scroll: self.scroll,
+            hscroll: self.hscroll,
+        };
+        ClientView {
+            windows: BTreeMap::from([(id, window)]),
+            layout: Layout::Window(id),
+            current_window: id,
+        }
+    }
+
+    /// Forgets `view`'s window marks, when its client has gone.
+    pub fn drop_view(&mut self, view: &ClientView) {
+        for (&id, w) in &view.windows {
+            if let Some(b) = self.buffer_by_id_mut(w.buffer) {
+                b.delete_mark(&window_mark(id));
+            }
+        }
     }
 
     /// Makes window `id` current, bringing its buffer, cursor and scroll.
