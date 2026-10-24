@@ -1,4 +1,5 @@
-//! Pasted text arriving whole (the terminal client's bracketed paste).
+//! Pasted text arriving whole (the terminal client's bracketed paste, the
+//! window client's paste keys).
 
 mod common;
 
@@ -50,4 +51,13 @@ fn after_change_runs_for_a_paste() {
     type_keys(&mut s, "i");
     paste(&mut s, "abc");
     assert_eq!(s.eval("changes").unwrap(), "1");
+}
+
+#[test]
+fn an_empty_paste_says_so() {
+    let mut s = server("ab\n");
+    type_keys(&mut s, "i");
+    paste(&mut s, "");
+    assert_eq!(s.text(), "ab\n");
+    assert_eq!(s.status(), "Nothing to paste");
 }

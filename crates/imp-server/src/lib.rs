@@ -6,7 +6,7 @@
 //! user's `init.scm` may redefine.
 
 mod api;
-mod clipboard;
+pub mod clipboard;
 mod complete;
 mod crdt;
 #[cfg(unix)]
