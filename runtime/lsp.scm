@@ -41,6 +41,7 @@
 (define *lsp-log* '())              ; newest first: stderr and logMessage lines
 (define *lsp-line-message* #f)      ; the diagnostic shown on the status line
 (define *lsp-held-diagnostics* #f)  ; buffer id whose new diagnostics wait for insert to end
+(define *lsp-diagnostic-marks* 0)   ; makes each set of diagnostic marks' names new
 (define *lsp-progress-message* #f)  ; the progress shown on the status line
 (define *lsp-runs* 0)               ; servers started so far: each one's 'run
 
@@ -213,6 +214,7 @@
                 (with-buffer id
                   (lambda ()
                     (when (lsp-uri) (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri))))
+                    (lsp-forget-diagnostics!)
                     (lsp-show-signs!)
                     (minor-mode-off! 'lsp-mode))))
               ids)
@@ -488,6 +490,7 @@
                (when key
                  (lsp-notify! key "textDocument/didClose" (hash "textDocument" (lsp-text-document)))
                  (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri)))
+                 (lsp-forget-diagnostics!)
                  (set-buffer-local! 'lsp-server #f)
                  (set-buffer-local! 'lsp-uri #f)
                  (minor-mode-off! 'lsp-mode)))))
@@ -566,6 +569,40 @@
   "The severity of diagnostic `d` as a letter: E, W, I or H."
   (let ([s (severity d)]) (cond [(= s 1) "E"] [(= s 2) "W"] [(= s 3) "I"] [else "H"])))
 
+;;; In an open buffer each diagnostic's range is a pair of marks, made when
+;;; it arrives, so it follows edits until the server sends new ones. A
+;;; buffer keeps the set it shows and, while typing holds new ones back,
+;;; the set it will show next.
+
+(define (lsp-mark-diagnostics! diagnostics)
+  "Marks the range of each of `diagnostics` in the current buffer.
+   Returns the set as (start-mark end-mark diagnostic) lists. The end
+   mark is sticky, so typing just after a range doesn't stretch it."
+  (set! *lsp-diagnostic-marks* (+ *lsp-diagnostic-marks* 1))
+  (let ([prefix (string-append "lsp-diagnostic:" (number->string *lsp-diagnostic-marks*) ":")]
+        [encoding (lsp-encoding)])
+    (let loop ([ds diagnostics] [i 0] [acc '()])
+      (if (null? ds)
+          (reverse acc)
+          (let* ([r (lsp-range-offsets (jget (car ds) "range") encoding)]
+                 [s (string-append prefix (number->string i) "s")]
+                 [e (string-append prefix (number->string i) "e")])
+            (mark-set! s (car r))
+            (mark-set-sticky! e (cadr r))
+            (loop (cdr ds) (+ i 1) (cons (list s e (car ds)) acc)))))))
+
+(define (lsp-unmark-diagnostics! set)
+  "Deletes the marks of diagnostic `set` (from lsp-mark-diagnostics!)."
+  (when set (for-each (lambda (d) (mark-delete! (car d)) (mark-delete! (cadr d))) set))
+  void)
+
+(define (lsp-forget-diagnostics!)
+  "Drops the current buffer's diagnostic marks, shown and held."
+  (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+  (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-held))
+  (set-buffer-local! 'lsp-diagnostics-shown #f)
+  (set-buffer-local! 'lsp-diagnostics-held #f))
+
 (define (lsp-set-diagnostics! uri diagnostics)
   "Records `diagnostics` for the file at `uri` and shows them.
    If the file is open its signs update, and in the current buffer its
@@ -575,9 +612,15 @@
     (cond [(not id) #f]
           [(and (= id (current-buffer)) (memq *mode* '(insert replace))
                 (not (option 'lsp-diagnostics-in-insert)))
+           (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-held))
+           (set-buffer-local! 'lsp-diagnostics-held (lsp-mark-diagnostics! diagnostics))
            (set! *lsp-held-diagnostics* id)]
           [else
-           (with-buffer id lsp-show-signs!)
+           (with-buffer id
+             (lambda ()
+               (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+               (set-buffer-local! 'lsp-diagnostics-shown (lsp-mark-diagnostics! diagnostics))
+               (lsp-show-signs!)))
            (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))]))
   void)
 
@@ -586,20 +629,43 @@
   (let ([id *lsp-held-diagnostics*])
     (set! *lsp-held-diagnostics* #f)
     (when (and id (memv id (buffer-list)))
-      (with-buffer id lsp-show-signs!)
+      (with-buffer id
+        (lambda ()
+          (let ([held (buffer-local 'lsp-diagnostics-held)])
+            (when held
+              (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+              (set-buffer-local! 'lsp-diagnostics-shown held)
+              (set-buffer-local! 'lsp-diagnostics-held #f)))
+          (lsp-show-signs!)))
       (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!)))))
 
 (add-hook! 'insert-leave lsp-show-held-diagnostics!)
 
+(define (lsp-diagnostics-follow!)
+  "Redraws the current buffer's diagnostics where their marks now are.
+   Highlights and signs stay where they were drawn, so after a change
+   they are drawn again."
+  (when (pair? (buffer-local 'lsp-diagnostics-shown))
+    (lsp-show-signs!)
+    (lsp-show-diagnostics!)))
+
+(add-hook! 'after-change lsp-diagnostics-follow!)
+
 (define (buffer-diagnostics)
   "The current buffer's diagnostics as (start end diagnostic) lists.
-   They are sorted by where they start."
-  (let ([uri (lsp-uri)] [encoding (lsp-encoding)])
-    (if (not uri)
+   They are sorted by where they start: where their marks are now, or
+   for diagnostics that came before the buffer had marks, where the
+   server put them."
+  (let* ([uri (lsp-uri)] [ds (and uri (hash-try-get *lsp-diagnostics* uri))])
+    (if (not ds)
         '()
-        (sort (map (lambda (d) (append (lsp-range-offsets (jget d "range") encoding) (list d)))
-                   (or (hash-try-get *lsp-diagnostics* uri) '()))
-              (lambda (a b) (< (car a) (car b)))))))
+        (let ([shown (or (buffer-local 'lsp-diagnostics-shown)
+                         (let ([set (lsp-mark-diagnostics! ds)])
+                           (set-buffer-local! 'lsp-diagnostics-shown set)
+                           set))])
+          (sort (map (lambda (d) (list (mark-get (car d)) (max (mark-get (car d)) (mark-get (cadr d))) (caddr d)))
+                     shown)
+                (lambda (a b) (< (car a) (car b))))))))
 
 (define (lsp-show-signs!)
   "Puts a sign for the current buffer's diagnostics on their lines.
