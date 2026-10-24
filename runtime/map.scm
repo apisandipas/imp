@@ -213,13 +213,65 @@
     (let* ([args (map-args (ex-args ex))])
       (cond
         [(string? args) (message args)]
-        [(equal? (car args) "") (message "listing mappings comes later")]
-        [(equal? (cadr args) "") (message "listing mappings comes later")]
+        [(equal? (car args) "") (show-mappings! states #f)]
+        [(equal? (cadr args) "") (show-mappings! states (apply string-append (vim-keys (car args))))]
         [else
          (let loop ([states states])
            (when (pair? states)
              (let ([why (define-mapping! (car states) (car args) (cadr args) noremap?)])
                (if why (message why) (loop (cdr states))))))]))))
+
+(define (mapping-places states)
+  "Where mappings for `states` are kept: the states, and 'leader for
+   normal or visual."
+  (if (or (memq 'normal states) (memq 'visual states)) (append states '(leader)) states))
+
+(define (show-mappings! states joined)
+  "Lists the mappings for `states`, or only the one for keys `joined`:
+   state, lhs, * for noremap, rhs, as :map does."
+  (let* ([places (mapping-places states)]
+         [entries (sort (filter (lambda (e) (and (memq (car (car e)) places)
+                                                 (or (not joined) (equal? (cdr (car e)) joined))))
+                                (map (lambda (k) (cons k (hash-ref *mappings* k))) (hash-keys->list *mappings*)))
+                        (lambda (a b) (string<? (cadr a) (cadr b))))]
+         [line (lambda (e)
+                 (let ([state (car (car e))] [lhs (cadr e)] [rhs (caddr e)] [noremap? (cadddr e)])
+                   (string-append (case state [(normal) "n "] [(visual) "v "] [(insert) "i "] [else "nv"])
+                                  "  " lhs (make-string (max 1 (- 14 (string-length lhs))) #\space)
+                                  (if noremap? "* " "  ") rhs)))])
+    (cond [(null? entries) (message "No mapping found")]
+          [(null? (cdr entries)) (message (line (car entries)))]
+          [else (show-popup! (map line entries))])))
+
+(define (remove-mapping! state lhs)
+  "Removes the mapping of `lhs` in `state`. Returns #f, or why it can't."
+  (let* ([keys (vim-keys lhs)]
+         [joined (apply string-append keys)]
+         [leader? (and (not (eq? state 'insert)) (pair? keys) (equal? (car keys) " ") (pair? (cdr keys)))]
+         [place (if leader? 'leader state)])
+    (cond
+      [(not (hash-contains? *mappings* (cons place joined))) (string-append "No such mapping: " lhs)]
+      [else
+       (set! *mappings* (hash-remove *mappings* (cons place joined)))
+       (cond [leader? (undefine-leader! (apply string-append (cdr keys)))]
+             [(and (eq? state 'insert) (> (length keys) 1))
+              (set! *insert-sequences* (hash-remove *insert-sequences* joined))]
+             [else
+              (let ([km (map-keymap state)])
+                (set! *keymaps* (hash-insert *keymaps* km (hash-remove (keymap km) joined)))
+                (set-binding-label! km joined #f))])
+       #f])))
+
+(define (unmap-ex states)
+  "An ex command that removes a mapping in each of `states`: :unmap..."
+  (lambda (ex)
+    (let ([lhs (car (map-args (ex-args ex)))])
+      (if (equal? lhs "")
+          (message "Argument required")
+          ;; :unmap removes it wherever it is among `states`.
+          (let ([why (map (lambda (state) (remove-mapping! state lhs)) states)])
+            (when (= (length (filter (lambda (w) w) why)) (length states))
+              (message (car why))))))))
 
 (define (map-args text)
   "(lhs rhs) from a map command's arguments, \"\" for a missing one,
@@ -246,3 +298,7 @@
 (define-ex! '("vn" "vnoremap") (map-ex '(visual) #t))
 (define-ex! '("im" "imap") (map-ex '(insert) #f))
 (define-ex! '("ino" "inoremap") (map-ex '(insert) #t))
+(define-ex! '("unm" "unmap") (unmap-ex '(normal visual)))
+(define-ex! '("nun" "nunmap") (unmap-ex '(normal)))
+(define-ex! '("vu" "vunmap") (unmap-ex '(visual)))
+(define-ex! '("iu" "iunmap") (unmap-ex '(insert)))

@@ -21,5 +21,5 @@ Decisions made while the owner was away (issue #8 had no answers yet): `:map` co
 - [x] Vim key notation: `(vim-keys text)` turns `<CR>`, `<C-x>`, `<Leader>`, `<lt>` and the rest, case-insensitive, into imp key names. Tested in a new `map.rs`.
 - [x] `:nmap`, `:vmap`, `:map` and the `noremap` forms for normal and visual: mappings after mode keys, counts passed on, `noremap` not seeing mappings, recursion stopped at 100, `<Leader>` into the leader tree, multi-key `{lhs}` rules with an error otherwise, the `{rhs}` as which-key label. Tested.
 - [x] `:imap` and `:inoremap`, single keys and several keys with `timeoutlen`. Tested, including the timeout passing.
-- [ ] `:unmap`, `:nunmap`, `:vunmap`, `:iunmap`, and listing with no arguments or only an `{lhs}`. Tested.
+- [x] `:unmap`, `:nunmap`, `:vunmap`, `:iunmap`, and listing with no arguments or only an `{lhs}`. Tested.
 - [ ] Docs: `runtime/CONTEXT.md` load order and extension points, and a README line on `:map` (and `run-ex!` in `init.scm`).

@@ -167,3 +167,42 @@ fn insert_sequences_time_out() {
     type_keys(&mut s, "k");
     assert_eq!(s.text(), "jk\n");
 }
+
+#[test]
+fn unmap_removes_mappings() {
+    let mut s = server("abc\n");
+    type_keys(&mut s, ":nnoremap gb x<ret>:nunmap gb<ret>gb");
+    assert_eq!(s.text(), "abc\n");
+    // :unmap covers normal and visual; a leader mapping goes too.
+    type_keys(&mut s, ":noremap <Leader>Zq x<ret>:unmap <Leader>Zq<ret>");
+    feed(&mut s, " Z");
+    assert!(s.status().contains("undefined"), "{}", s.status());
+    type_keys(
+        &mut s,
+        "<esc>:inoremap jk <Esc><ret>:iunmap jk<ret>ijk<esc>",
+    );
+    assert_eq!(s.text(), "jkabc\n");
+    feed(&mut s, ":nunmap gz<ret>");
+    assert_eq!(s.status(), "No such mapping: gz");
+}
+
+#[test]
+fn map_commands_list_mappings() {
+    let mut s = server("");
+    feed(&mut s, ":nmap<ret>");
+    assert_eq!(s.status(), "No mapping found");
+    type_keys(
+        &mut s,
+        ":nnoremap gb :ls<CR><ret>:nmap gq gb<ret>:inoremap jk <Esc><ret>",
+    );
+    // One mapping on the status line.
+    type_keys(&mut s, ":nmap gb<ret>");
+    assert_eq!(s.status(), "n   gb            * :ls<CR>");
+    // Several in a popup; :nmap doesn't list insert mappings.
+    type_keys(&mut s, ":nmap<ret>");
+    let r = s.frame().text_rows().join("\n");
+    assert!(r.contains("n   gq              gb"), "{r}");
+    assert!(!r.contains("jk"), "{r}");
+    type_keys(&mut s, "<esc>:imap<ret>");
+    assert_eq!(s.status(), "i   jk            * <Esc>");
+}
