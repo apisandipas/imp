@@ -151,3 +151,47 @@ fn timestamps_parse_into_their_parts() {
         "\"<2026-10-31 Sat 09:00 +1w>\""
     );
 }
+
+/// Marks the heading on the first line done, with <ret>.
+fn mark_done(text: &str) -> String {
+    let mut s = setup(text);
+    type_keys(&mut s, "<ret>");
+    s.text()
+}
+
+#[test]
+fn marking_a_repeating_heading_done_moves_its_dates_on() {
+    // + moves one interval, even if that is still in the past.
+    assert_eq!(
+        mark_done("* TODO Water\nSCHEDULED: <2026-10-01 Thu +1w>\n"),
+        "* TODO Water\nSCHEDULED: <2026-10-08 Thu +1w>\n"
+    );
+    // ++ moves whole intervals until after today (2026-10-21).
+    assert_eq!(
+        mark_done("* TODO Call\nDEADLINE: <2026-10-01 Thu 09:00 ++1w -2d>\n"),
+        "* TODO Call\nDEADLINE: <2026-10-22 Thu 09:00 ++1w -2d>\n"
+    );
+    // .+ moves to one interval after today; a body timestamp moves too.
+    assert_eq!(
+        mark_done("* TODO Cut hair\nSCHEDULED: <2026-01-31 Sat .+1m>\nAt <2026-01-31 Sat +1m>.\n* Next\n<2026-01-01 Thu +1d>\n"),
+        "* TODO Cut hair\nSCHEDULED: <2026-11-21 Sat .+1m>\nAt <2026-02-28 Sat +1m>.\n* Next\n<2026-01-01 Thu +1d>\n"
+    );
+    // Without a repeater, or only an inactive one, done is done.
+    assert_eq!(
+        mark_done("* TODO Once\nSCHEDULED: <2026-10-01 Thu>\n[2026-10-01 Thu +1d]\n"),
+        "* DONE Once\nSCHEDULED: <2026-10-01 Thu>\n[2026-10-01 Thu +1d]\n"
+    );
+}
+
+#[test]
+fn repeating_back_to_the_first_keyword_is_one_undo() {
+    let mut s = setup("* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
+    s.eval("(set-option! 'org-todo-keywords '(\"TODO\" \"NEXT\" \"|\" \"DONE\"))")
+        .unwrap();
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "* TODO Review\nSCHEDULED: <2027-10-19 Tue +1y>\n");
+    let status = s.frame().text_rows().last().unwrap().clone();
+    assert!(status.contains("repeats: <2027-10-19 Tue +1y>"), "{status}");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
+}

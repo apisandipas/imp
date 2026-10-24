@@ -287,11 +287,16 @@
          [next (cond [(not current) (car kws)]
                      [(member current kws)
                       (let ([after (cdr (member current kws))]) (if (null? after) #f (car after)))]
-                     [else #f])])
+                     [else #f])]
+         ;; Done with a repeating date: the date moves on instead.
+         [repeat? (and next (member next (org-done-keywords))
+                       (pair? (org-repeating-stamps line (org-body-end line))))]
+         [next (if repeat? (car kws) next)])
     (begin-change!)
     (org-set-line! line (string-append (make-string level #\*) " " (if next (string-append next " ") "") title))
-    (set-cursor! (line-start line))
-    (message (or next "no keyword"))))
+    (let ([moved (and repeat? (org-repeat-entry! line))])
+      (set-cursor! (line-start line))
+      (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))
 
 (define (org-priority-in text)
   "The priority letter `text` starts with, as in \"[#A] title\", or #f."
@@ -820,7 +825,7 @@
 
 (define (org-interval text prefixes)
   "The (prefix n unit) `text` is, a prefix from `prefixes` (longest
-   first) then a count and one of h d w m y, as \"+1w\" -> (\"+\" 1 \"w\").
+   first) then a count and one of d w m y, as \"+1w\" -> (\"+\" 1 \"w\").
    #f if it is something else."
   (let loop ([ps prefixes])
     (cond
@@ -830,7 +835,7 @@
               [count (and (> n (+ (string-length p) 1))
                           (string->number (substring text (string-length p) (- n 1))))]
               [unit (substring text (- n 1) n)])
-         (and count (integer? count) (> count 0) (member unit '("h" "d" "w" "m" "y"))
+         (and count (integer? count) (> count 0) (member unit '("d" "w" "m" "y"))
               (list p count unit)))]
       [else (loop (cdr ps))])))
 
@@ -877,6 +882,57 @@
                    (if repeater (string-append " " (org-interval->string repeater)) "")
                    (if warning (string-append " " (org-interval->string warning)) "")
                    (if active? ">" "]"))))
+
+;;; Repeaters: marking a heading done moves on its entry's repeating
+;;; timestamps instead, and its keyword goes back to the first.
+
+(define (org-shift-date date interval k)
+  "`date` moved on `k` times `interval`, a (prefix n unit)."
+  (let ([n (* k (cadr interval))] [unit (caddr interval)])
+    (cond [(equal? unit "d") (date-add-days date n)]
+          [(equal? unit "w") (date-add-days date (* 7 n))]
+          [(equal? unit "m") (date-add-months date n)]
+          [else (date-add-months date (* 12 n))])))
+
+(define (org-repeat-stamp stamp today)
+  "`stamp` moved on by its repeater, as on marking its heading done: +
+   one interval, ++ whole intervals until after `today`, .+ one interval
+   from `today`."
+  (let* ([date (cadr stamp)] [r (cadddr stamp)] [kind (car r)]
+         [next (cond [(equal? kind "+") (org-shift-date date r 1)]
+                     [(equal? kind ".+") (org-shift-date today r 1)]
+                     [else (let loop ([k 1])
+                             (let ([d (org-shift-date date r k)]) (if (date<? today d) d (loop (+ k 1)))))])])
+    (list (car stamp) next (caddr stamp) r (list-ref stamp 4))))
+
+(define (org-repeating-stamps first last)
+  "The repeating active timestamps on lines `first` to `last`, as
+   (start end stamp) with buffer offsets, the last one first."
+  (let loop ([l first] [acc '()])
+    (if (> l last)
+        acc
+        (let ([text (line-text l)])
+          (let scan ([i 0] [acc acc])
+            (let ([b (org-stamp-bounds-anywhere text i)])
+              (if (not b)
+                  (loop (+ l 1) acc)
+                  (let ([stamp (org-parse-stamp (substring text (car b) (cadr b)))])
+                    (scan (cadr b)
+                          (if (and stamp (car stamp) (cadddr stamp))
+                              (cons (list (+ (line-start l) (car b)) (+ (line-start l) (cadr b)) stamp) acc)
+                              acc))))))))))
+
+(define (org-repeat-entry! heading)
+  "Moves on each repeating active timestamp in the entry of the heading
+   on line `heading`. Returns the first, as it now reads, or #f if there
+   were none."
+  (let ([today (calendar-today)])
+    (foldl (lambda (found first)
+             (let ([text (org-stamp->string (org-repeat-stamp (caddr found) today))])
+               (replace-range! (car found) (cadr found) text)
+               text))
+           #f
+           (org-repeating-stamps heading (org-body-end heading)))))
 
 (define (org-set-planning! heading key stamp)
   "Sets `key` (\"SCHEDULED:\" or \"DEADLINE:\") of the heading on line

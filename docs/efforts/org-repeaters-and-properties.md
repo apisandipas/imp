@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/15
 frozen:
-  docs/specs/org.md: f060f1821a4a
+  docs/specs/org.md: ed7c59f62f51
 ---
 # Org repeaters and properties
 
@@ -17,7 +17,7 @@ All of it is Scheme in `runtime/org.scm`, with the date arithmetic `calendar.scm
 ## Tasks
 
 - [x] Parse a timestamp into date, time, repeater and warning, and write it back with its day name, with tests.
-- [ ] Marking a heading done moves on its entry's repeating active timestamps (`+`, `++`, `.+`) and sets its keyword back to the first TODO keyword, with tests.
+- [x] Marking a heading done moves on its entry's repeating active timestamps (`+`, `++`, `.+`) and sets its keyword back to the first TODO keyword, with tests.
 - [ ] Changing a repeating timestamp from the calendar keeps its repeater, with a test.
 - [ ] `org-entry-property` reads a heading's property, with inheritance and `#+PROPERTY:`, with tests.
 - [ ] `C-c C-x p` (`SPC m P`) sets or removes a property, making the drawer if needed, with tests.
