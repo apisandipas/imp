@@ -237,6 +237,59 @@ fn links() {
 }
 
 #[test]
+fn priorities() {
+    let mut s = org("prio.org", "* TODO Write [#B] notes\n* Plain\n");
+    // C-c , then a letter sets it, after the keyword.
+    s.keys(&["C-c", ","]);
+    type_keys(&mut s, "a");
+    assert_eq!(s.text(), "* TODO [#A] Write [#B] notes\n* Plain\n");
+    // Again replaces it; space removes it.
+    s.keys(&["C-c", ","]);
+    type_keys(&mut s, "c");
+    assert_eq!(s.text(), "* TODO [#C] Write [#B] notes\n* Plain\n");
+    s.keys(&["C-c", ","]);
+    s.keys(&[" "]);
+    assert_eq!(s.text(), "* TODO Write [#B] notes\n* Plain\n");
+    // A heading with no keyword.
+    type_keys(&mut s, "j ");
+    type_keys(&mut s, "mpb");
+    assert_eq!(s.text(), "* TODO Write [#B] notes\n* [#B] Plain\n");
+}
+
+#[test]
+fn the_agenda_sorts_by_priority() {
+    let dir = temp_path("org-prio-agenda");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("p.org"),
+        "* TODO [#C] Low\n* TODO None first\n* TODO [#A] High\n* TODO None second\n* TODO [#C] Due low\nDEADLINE: <2000-01-01 Sat>\n* TODO [#A] Due high\nDEADLINE: <2000-01-01 Sat>\n",
+    )
+    .unwrap();
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    let text = s.text();
+    let at = |what: &str| {
+        text.find(what)
+            .unwrap_or_else(|| panic!("{what} in {text}"))
+    };
+    // Same date: A before C. No date: A, then the ones with none (as B) in
+    // file order, then C.
+    assert!(at("Due high") < at("Due low"), "{text}");
+    assert!(
+        at("High") < at("None first")
+            && at("None first") < at("None second")
+            && at("None second") < at("[#C] Low"),
+        "{text}"
+    );
+}
+
+#[test]
 fn agenda_and_capture() {
     let dir = temp_path("org-agenda");
     let _ = std::fs::remove_dir_all(&dir);

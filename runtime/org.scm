@@ -293,6 +293,39 @@
     (set-cursor! (line-start line))
     (message (or next "no keyword"))))
 
+(define (org-priority-in text)
+  "The priority letter `text` starts with, as in \"[#A] title\", or #f."
+  (and (>= (string-length text) 4) (starts-with? text "[#") (equal? (string-ref text 3) #\])
+       (string (string-ref text 2))))
+
+(define (org-set-priority! line priority)
+  "Gives the heading on `line` priority `priority` (\"A\", \"B\"...), or
+   none when it is #f. The cookie goes after the TODO keyword."
+  (let* ([text (line-text line)]
+         [level (org-level line)]
+         [rest (substring text (+ level 1) (string-length text))]
+         [kw (org-keyword-in rest)]
+         [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)]
+         [title (if (org-priority-in title) (trim-start (substring title 4 (string-length title))) title)])
+    (begin-change!)
+    (org-set-line! line (string-append (make-string level #\*) " " (if kw (string-append kw " ") "")
+                                       (if priority (string-append "[#" priority "] ") "") title))
+    (set-cursor! (line-start line))))
+
+(define (org-priority-menu!)
+  "C-c ,: asks for the priority of the heading the cursor is under."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (menu! "Priority"
+               (append (map (lambda (p) (list (string-downcase p) p (lambda () (org-set-priority! h p))))
+                            '("A" "B" "C"))
+                       (list (list " " "remove" (lambda () (org-set-priority! h #f)))))))))
+
+(define (org-priority-rank p)
+  "Where priority `p` sorts: A first, a heading with none as B."
+  (char->integer (string-ref (or p "B") 0)))
+
 (define (org-list-item line)
   "A list item on `line`: (indent-width marker-end checkbox-offset-or-#f), or #f."
   (let* ([text (line-text line)] [n (string-length text)] [start (line-start line)])
@@ -662,7 +695,8 @@
                 (substring rest 1 11))))))
 
 (define (org-file-entries file)
-  "Agenda entries in `file`: (file line keyword title scheduled deadline)."
+  "Agenda entries in `file`: (file line keyword title scheduled deadline
+   priority)."
   (let loop ([lines (text-lines (read-file file))] [n 0] [acc '()] [current #f])
     (let ([finish (lambda (acc) (if current (cons current acc) acc))])
       (if (null? lines)
@@ -673,11 +707,11 @@
                (let* ([rest (substring text (+ level 1) (string-length text))]
                       [kw (org-keyword-in rest)]
                       [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)])
-                 (loop (cdr lines) (+ n 1) (finish acc) (list file n kw title #f #f)))]
+                 (loop (cdr lines) (+ n 1) (finish acc) (list file n kw title #f #f (org-priority-in title))))]
               [current
                (let* ([s (org-date-after text "SCHEDULED:")] [d (org-date-after text "DEADLINE:")]
                       [current (list (car current) (cadr current) (caddr current) (cadddr current)
-                                     (or s (list-ref current 4)) (or d (list-ref current 5)))])
+                                     (or s (list-ref current 4)) (or d (list-ref current 5)) (list-ref current 6))])
                  (loop (cdr lines) (+ n 1) acc current))]
               [else (loop (cdr lines) (+ n 1) acc current)]))))))
 
@@ -713,8 +747,19 @@
                                      (append (if (list-ref e 4) (list (list (list-ref e 4) "Scheduled:" e)) '())
                                              (if (list-ref e 5) (list (list (list-ref e 5) "Deadline:" e)) '())))
                                    open))]
-         [dated (sort dated (lambda (a b) (string<? (car a) (car b))))]
-         [todos (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)])
+         ;; By date, then priority, then where they are in the files.
+         [rank (lambda (e) (org-priority-rank (list-ref e 6)))]
+         [dated (map cdr (sort (map cons (range 0 (length dated)) dated)
+                               (lambda (a b)
+                                 (let ([da (cadr a)] [db (cadr b)]
+                                       [ra (rank (cadddr a))] [rb (rank (cadddr b))])
+                                   (or (string<? da db)
+                                       (and (equal? da db) (or (< ra rb) (and (= ra rb) (< (car a) (car b))))))))))]
+         [todos (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)]
+         [todos (map cdr (sort (map cons (range 0 (length todos)) todos)
+                               (lambda (a b)
+                                 (let ([ra (rank (cdr a))] [rb (rank (cdr b))])
+                                   (or (< ra rb) (and (= ra rb) (< (car a) (car b))))))))])
     (draw-begin!)
     (draw-line! (list (list (string-append "Agenda for " today) "git.section")) #f)
     (draw-line! '() #f)
@@ -1260,6 +1305,7 @@
                     (list "org-special" "SCHEDULED:\\|DEADLINE:\\|CLOSED:" "org.special")
                     (list "org-date" "[<[]\\d\\{4}-\\d\\d-\\d\\d[^]>]*[]>]" "org.date")
                     (list "org-box" "\\[[ X-]\\]" "org.checkbox")
+                    (list "org-priority" "\\[#[A-Z]\\]" "org.priority")
                     (list "org-cookie" "\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]" "org.checkbox")
                     (list "org-code" "=[^= ][^=]*=" "org.code")
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
@@ -1330,6 +1376,7 @@
 (org-key! '(normal insert) "C-cC-s" (lambda args (org-schedule!)))
 (org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
+(org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1337,6 +1384,7 @@
 (define-mode-leader! 'org-mode "." (lambda (n) (org-time-stamp!)) "timestamp")
 (define-mode-leader! 'org-mode "t" (lambda (n) (let ([h (org-heading-line (current-line))]) (if h (org-todo-cycle! h) (message "not under a heading")))) "cycle TODO")
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
+(define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 

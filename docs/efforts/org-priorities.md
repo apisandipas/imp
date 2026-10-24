@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/44
 frozen:
@@ -18,4 +18,4 @@ Decisions made while the owner was away (split from #15): priorities A to C with
 
 ## Tasks
 
-- [ ] `C-c ,` and `SPC m p` set or remove the priority, the cookie has a face, and the agenda sorts by priority. Tested in `org.rs`.
+- [x] `C-c ,` and `SPC m p` set or remove the priority, the cookie has a face, and the agenda sorts by priority. Tested in `org.rs`.

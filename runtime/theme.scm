@@ -119,6 +119,7 @@
      (list "org.special" (fg 'dim))
      (list "org.date" (fg 'cyan "underline"))
      (list "org.checkbox" (fg 'yellow "bold"))
+     (list "org.priority" (fg 'yellow "bold"))
      (list "org.code" (fg 'green))
      (list "org.link" (fg 'blue "underline"))
      ;; Git and diffs
