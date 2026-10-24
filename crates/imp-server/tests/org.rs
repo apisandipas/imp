@@ -316,15 +316,12 @@ fn agenda_and_capture() {
     type_keys(&mut s, ":OrgAgenda<ret>");
     let text = s.text();
     let overdue = text.find("Overdue").unwrap();
-    let upcoming = text.find("Upcoming").unwrap();
     let todo = text.find("To do").unwrap();
     let report = text.find("Scheduled:  TODO Write report").expect(&text);
-    let future = text.find("Deadline:   TODO Future").expect(&text);
     let trip = text.find("TODO Plan trip").expect(&text);
-    assert!(
-        overdue < report && report < upcoming && upcoming < future && future < todo && todo < trip,
-        "{text}"
-    );
+    assert!(overdue < report && report < todo && todo < trip, "{text}");
+    // A date after the week isn't shown.
+    assert!(!text.contains("Future"), "{text}");
     assert!(
         !text.contains("Old thing"),
         "DONE items are left out: {text}"
