@@ -69,8 +69,8 @@
 
 (define (level-ranges levels)
   "The folds `levels` make, as (first last): each run of lines at level n
-   or deeper, for every n, so they nest. One-line folds are left out, as
-   Vim shows them open anyway."
+   or deeper, for every n, so they nest. One-line runs are kept; see
+   multi-line."
   (let loop ([ls levels] [line 0] [open '()] [acc '()])
     ;; `open` holds the first line of each open fold, deepest first.
     (let* ([level (if (null? ls) 0 (car ls))]
@@ -78,10 +78,20 @@
       (cond
         [(< level depth)
          (let ([closed (list (car open) (- line 1))])
-           (loop ls line (cdr open) (if (> (cadr closed) (car closed)) (cons closed acc) acc)))]
+           (loop ls line (cdr open) (cons closed acc)))]
         [(null? ls) (reverse acc)]
         [(> level depth) (loop ls line (cons line open) acc)]
         [else (loop (cdr ls) (+ line 1) open acc)]))))
+
+(define (multi-line ranges)
+  "`ranges` without one-line folds, which Vim shows open anyway."
+  (filter (lambda (r) (> (cadr r) (car r))) ranges))
+
+(define (with-headers ranges)
+  "`ranges` each taking the line above it, the one that opens the block,
+   so a closed block shows as that line; a range at the top has none.
+   VSCode's way, not Vim's; see lore:decision/0014."
+  (map (lambda (r) (if (> (car r) 0) (list (- (car r) 1) (cadr r)) r)) ranges))
 
 (define (syntax-ranges)
   "The folds tree-sitter nodes make: those of the language's fold kinds
@@ -97,8 +107,8 @@
 (define (wanted-folds)
   "The folds the current buffer's foldmethod wants, as (first last)."
   (let ([method (option 'foldmethod)])
-    (cond [(equal? method "indent") (level-ranges (indent-levels))]
-          [(equal? method "expr") (level-ranges (expr-levels))]
+    (cond [(equal? method "indent") (multi-line (with-headers (level-ranges (indent-levels))))]
+          [(equal? method "expr") (multi-line (level-ranges (expr-levels)))]
           [(equal? method "syntax") (syntax-ranges)]
           [else '()])))
 
