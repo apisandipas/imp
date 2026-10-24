@@ -4379,9 +4379,11 @@
    Insert and Emacs state insert it as it is, with no autoindent; normal
    and visual state insert it at the cursor as one change; the command
    line types it, line breaks as spaces; anywhere else it is typed key
-   by key."
+   by key. An empty paste (the window client's, when the clipboard gave
+   nothing) only says so."
   (let ([chars (map string (string->list text))])
     (cond
+      [(equal? text "") (message "Nothing to paste")]
       [(and *paste-handler* (*paste-handler* text)) #t]
       [(member *mode* '(insert replace emacs))
        (insert-text! text)

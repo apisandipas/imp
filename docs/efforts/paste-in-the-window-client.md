@@ -17,5 +17,5 @@ The window client recognises the paste keys before naming them, reads the clipbo
 ## Tasks
 
 - [x] `keys::is_paste` in `crates/imp-gui/src/keys.rs` says whether a key and modifiers are a paste: `S-<insert>`, `C-S-v`, and `Cmd-v` on macOS, but not `C-v`; with unit tests.
-- [ ] `imp-handle-paste` shows a message for an empty paste and changes nothing, with a test in `crates/imp-server/tests/paste.rs`.
+- [x] `imp-handle-paste` shows a message for an empty paste and changes nothing, with a test in `crates/imp-server/tests/paste.rs`.
 - [ ] The window client sends `ClientMsg::Paste` with the clipboard's text (empty if none) on a paste key instead of the key; `imp_server::clipboard` made public. Checked by hand in `imp --gui`: the REPL, insert, normal and the command line.
