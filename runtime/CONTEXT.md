@@ -4,7 +4,7 @@ The editor, in Steel Scheme: every command, keymap and mode, the Vim engine incl
 
 ## Load order
 
-The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
+The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `foldmethod`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
 
 ## Rules
 
@@ -23,7 +23,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Options: `define-option!`, `define-computed-option!`, `option`, `set-option!`, `watch-option!`.
 - Background: `run-after!`, `run-every!`, `start-job!`.
 - Completion: `completing-read`, `define-completion-source!`, `set-completion-sources!`, `define-snippet!`.
-- Languages: `define-mode-language!`, `define-syntax-objects!`, `define-language-server!`, `define-debug-adapter!`.
+- Languages: `define-mode-language!`, `define-syntax-objects!`, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.
 - Special buffers (`special.scm`): `special-mode`, `menu!`, `confirm!`, `draw-line!`, `define-popup-rule!`.
 - Themes: `define-theme!`, `load-theme!`; MCP: `define-mcp-tool!`; sockets: `listen-socket!`.
 

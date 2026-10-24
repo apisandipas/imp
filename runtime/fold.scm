@@ -62,19 +62,29 @@
 
 (define (fold-create! first last closed?)
   "Makes a fold of lines first..last; returns its id."
+  (let ([id (fold-add! first last closed?)])
+    (folds-changed!)
+    id))
+
+(define (fold-add! first last closed?)
+  "Makes a fold of lines first..last without redrawing; returns its id.
+   Call folds-changed! after a batch of these."
   (set! *fold-next* (+ *fold-next* 1))
   (let ([id *fold-next*] [first (min first last)] [last (max first last)])
     (mark-set! (fold-mark id #f) (line-start first))
     (mark-set! (fold-mark id #t) (if (< last (last-line)) (line-start (+ last 1)) (buffer-length)))
     (set-buffer-local! 'folds (cons (list id closed?) (fold-entries)))
-    (folds-changed!)
     id))
 
 (define (fold-delete! id)
   "Removes fold `id` from the current buffer."
-  (fold-forget! id)
-  (set-buffer-local! 'folds (filter (lambda (e) (not (= (car e) id))) (fold-entries)))
+  (fold-remove! id)
   (folds-changed!))
+
+(define (fold-remove! id)
+  "Removes fold `id` without redrawing; call folds-changed! after."
+  (fold-forget! id)
+  (set-buffer-local! 'folds (filter (lambda (e) (not (= (car e) id))) (fold-entries))))
 
 (define (fold-set-closed! id closed?)
   "Closes fold `id`, or opens it when `closed?` is #f."
