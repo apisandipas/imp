@@ -30,7 +30,7 @@
   "Whether the current buffer visits a file in a git repository."
   (and (buffer-path) (git-root-of (directory-of (expand-path (buffer-path)))) #t))
 
-(define-minor-mode! 'git-blame-mode #f (lambda () (git-blame-hide!)))
+(define-minor-mode! 'git-blame-mode (lambda () (git-blame-update!)) (lambda () (git-blame-hide!)))
 
 (define-command! 'git-blame-mode
   (lambda (count)
@@ -45,9 +45,6 @@
    a git repository."
   (when (git-blame-file?) (minor-mode-on! 'git-blame-mode)))
 
-;; Files opened from now on, and those open as the package loads.
-(add-hook! 'buffer-open git-blame-start!)
-(for-each (lambda (id) (with-buffer id git-blame-start!)) (buffer-list))
 
 (define (git-blame-here)
   "Where the cursor is, as (buffer line version)."
@@ -124,3 +121,9 @@
                         (git-blame-show! here text))))))))
 
 (add-hook! 'post-command git-blame-update!)
+;; A file on the command line, before any key.
+(add-hook! 'startup git-blame-update!)
+
+;; Files opened from now on, and those open as the package loads.
+(add-hook! 'buffer-open git-blame-start!)
+(for-each (lambda (id) (with-buffer id git-blame-start!)) (buffer-list))

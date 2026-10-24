@@ -127,3 +127,18 @@ fn an_untracked_file_shows_nothing() {
     let mut s = visiting(&dir.join("new.txt"));
     assert_eq!(rows_after(&mut s, 1200)[0], "fresh");
 }
+
+#[test]
+fn a_file_on_the_command_line_shows_it_before_any_key() {
+    let dir = repo("blame-startup");
+    let config = temp_path("blame-startup-init.scm");
+    std::fs::write(&config, "(use-package! 'git-blame)").unwrap();
+    let mut s = imp_server::Server::new(
+        imp_core::Buffer::open(&dir.join("a.txt")).unwrap(),
+        imp_server::Options {
+            user_config: Some(config),
+        },
+    )
+    .expect("runtime loads");
+    wait_for_row(&mut s, 0, "• Add a");
+}
