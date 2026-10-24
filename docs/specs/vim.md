@@ -36,4 +36,3 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 - Which-key shows for the leader and Emacs prefixes, not for Vim's `g` and `z`. [#9](https://github.com/apisandipas/imp/issues/9)
 - Block visual mode counts char columns (a tab is one), unlike the renderer, which measures display width. [#10](https://github.com/apisandipas/imp/issues/10)
 - Undo is whole-text snapshots with no undo tree, and undo doesn't restore marks. [#5](https://github.com/apisandipas/imp/issues/5)
-- Search copies the rope to a string per search (about 3 ms on 100k lines). [#12](https://github.com/apisandipas/imp/issues/12)

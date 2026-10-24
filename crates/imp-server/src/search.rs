@@ -213,7 +213,7 @@ pub fn next_match(
     from: usize,
     forward: bool,
 ) -> Option<(usize, bool)> {
-    let text = buffer.text();
+    let text = buffer.shared_text();
     let from = buffer.char_to_byte(from);
     let starts = re.find_iter(&text).map(|m| m.start());
     let found = if forward {

@@ -1122,7 +1122,7 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("search-all", |pattern: String, limit: isize| {
         let re = search::compile(&pattern)?;
         Ok::<_, String>(editor::with(|e| {
-            let text = e.buffer.text();
+            let text = e.buffer.shared_text();
             re.find_iter(&text)
                 .take(clamp(limit))
                 .map(|m| e.buffer.byte_to_char(m.start()) as isize)
@@ -1137,7 +1137,7 @@ pub fn register(engine: &mut Engine) {
             if needle.is_empty() {
                 return Vec::new();
             }
-            let text = e.buffer.text();
+            let text = e.buffer.shared_text();
             text.match_indices(&needle)
                 .take(clamp(limit))
                 .map(|(b, _)| e.buffer.byte_to_char(b) as isize)
