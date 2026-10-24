@@ -268,3 +268,33 @@ fn a_buffer_deleted_elsewhere_is_replaced() {
     assert!(b.until(|f| f.text_rows()[0].trim_end() != "doomed"));
     kill_server(&mut a);
 }
+
+#[test]
+fn a_popup_stays_in_its_client() {
+    let socket = start_daemon("popup");
+    let mut a = Client::connect(&socket);
+    a.keys(&["i", "t", "e", "x", "t", "<esc>"]);
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "text"));
+    let mut b = Client::connect(&socket);
+    b.keys(&["l"]);
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "text"));
+    // a lists the faces in a popup down the right; b has none.
+    a.send(ClientMsg::Resize {
+        width: 80,
+        height: 6,
+    });
+    ex(&mut a, "eval (run-command 'list-faces)");
+    assert!(a.until(split));
+    b.keys(&["l"]);
+    assert!(b.until(|f| !split(f) && f.text_rows()[0].starts_with("text")));
+    // b opens one of its own; q in a's still closes a's and goes back.
+    b.send(ClientMsg::Resize {
+        width: 80,
+        height: 6,
+    });
+    ex(&mut b, "eval (run-command 'list-faces)");
+    assert!(b.until(split));
+    a.keys(&["q"]);
+    assert!(a.until(|f| !split(f) && f.text_rows()[0].starts_with("text")));
+    kill_server(&mut a);
+}
