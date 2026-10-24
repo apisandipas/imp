@@ -581,8 +581,10 @@ impl Buffer {
     }
 
     /// The tip of each branch of the undo tree, oldest first, as (change
-    /// number, changes deep, when it was made).
-    pub fn undo_list(&self) -> Vec<(usize, usize, std::time::SystemTime)> {
+    /// number, changes deep, when it was made). Changes since the last
+    /// undo point become a state first, as undo would make them.
+    pub fn undo_list(&mut self) -> Vec<(usize, usize, std::time::SystemTime)> {
+        self.undo_boundary();
         let parents: HashSet<usize> = self.states.iter().filter_map(|s| s.parent).collect();
         (1..self.states.len())
             .filter(|i| !parents.contains(i))

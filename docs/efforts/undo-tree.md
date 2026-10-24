@@ -19,5 +19,5 @@ Decisions made while the owner was away (issue #5 had no answers yet): marks set
 ## Tasks
 
 - [x] `Buffer` undo as a tree with marks: `undo`, `redo`, `undo_step`, `undo_list`. Unit tests for branching, redo along the last branch, chronological steps across branches and marks put back.
-- [ ] Scheme: `undo-step!`, `undo-list`; `g-`, `g+` and `:undolist`. Tested in `vim.rs` or a new `undo.rs`, checked against Vim's `g-`/`g+` on a branching history.
+- [x] Scheme: `undo-step!`, `undo-list`; `g-`, `g+` and `:undolist`. Tested in `vim.rs` or a new `undo.rs`, checked against Vim's `g-`/`g+` on a branching history.
 - [ ] Docs: the help for `u` and `C-r` mention the tree if they describe undo.
