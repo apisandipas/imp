@@ -64,6 +64,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("repl.scm", include_str!("../../../runtime/repl.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
     (
+        "foldmethod.scm",
+        include_str!("../../../runtime/foldmethod.scm"),
+    ),
+    (
         "complete.scm",
         include_str!("../../../runtime/complete.scm"),
     ),

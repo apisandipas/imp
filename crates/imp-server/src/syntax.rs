@@ -367,6 +367,39 @@ pub fn ancestors(root: Node, rope: &Rope, at: usize) -> Vec<(String, String, usi
 
 /// The children of the smallest node spanning chars `start..end` exactly
 /// (named or not), each with its field name.
+/// The (first, last) lines of every named node of one of `kinds` that
+/// spans more than one line, in tree order: what foldmethod syntax folds.
+/// A node ending at the start of a line ends on the line before.
+pub fn fold_lines(root: Node, kinds: &[String]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut cursor = root.walk();
+    loop {
+        let node = cursor.node();
+        if node.is_named() && kinds.iter().any(|k| k == node.kind()) {
+            let (start, end) = (node.start_position(), node.end_position());
+            let last = if end.column == 0 && end.row > start.row {
+                end.row - 1
+            } else {
+                end.row
+            };
+            if last > start.row {
+                out.push((start.row, last));
+            }
+        }
+        if cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                return out;
+            }
+        }
+    }
+}
+
 pub fn children(
     root: Node,
     rope: &Rope,

@@ -1438,6 +1438,21 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
+    // (first last) lines of each multi-line node of one of `kinds`, for
+    // foldmethod syntax (syntax::fold_lines).
+    engine.register_fn("syntax-fold-lines", |kinds: Vec<String>| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
+                return Vec::new();
+            };
+            crate::syntax::fold_lines(root, &kinds)
+                .into_iter()
+                .map(|(a, b)| vec![a as isize, b as isize])
+                .collect::<Vec<_>>()
+        })
+    });
     // The whole tree as an S-expression, for looking at while writing
     // text objects.
     engine.register_fn("syntax-tree", || {
