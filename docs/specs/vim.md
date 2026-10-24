@@ -1,7 +1,8 @@
 ---
 status: accepted
+issue: https://github.com/apisandipas/imp/issues/8
 summary: "Vim's normal, insert, visual and command-line behavior, matched against real Vim."
-anchors: [runtime/vim.scm, crates/imp-server/src/search.rs, crates/imp-server/src/scan.rs, crates/imp-server/tests/vim.rs]
+anchors: [runtime/vim.scm, runtime/map.scm, crates/imp-server/tests/map.rs, crates/imp-server/src/search.rs, crates/imp-server/src/scan.rs, crates/imp-server/tests/vim.rs]
 ---
 # Vim
 
@@ -21,16 +22,23 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 - **Marks and jumps**: `a-zA-Z ' . ^ [ ] < >` (marks live in the buffer and move with edits), the jump list `C-o C-i` across buffers.
 - **Scrolling**: `C-d C-u C-f C-b C-e C-y zt zz zb z<ret> z. z-`.
 - **Ex**: ranges (`. $ N 'x /pat/ ?pat? %` and offsets); `:w [file] :w! :sav :q :wq :x :qa :e`; `:s` with `g i I`, groups, `&`, `\r`; `:d :y :m :t :> :< :j :pu :k :p :nu :sort :normal :g :v :! :r :u :red :noh :set :setlocal :marks :reg :jumps :delm`; command-line history and editing keys, `C-r`. `<tab>` completes command names and their arguments (files, buffers, options, themes, help topics), extending to what the candidates share; `define-ex-completion!` adds more.
+- **Mappings**: `:map`, `:nmap`, `:vmap` and `:imap` bind `{lhs}` to typing `{rhs}`; `:noremap`, `:nnoremap`, `:vnoremap` and `:inoremap` do the same, but their `{rhs}` runs imp's own keys, not other mappings. `:map` and `:noremap` cover normal and visual state. Both sides take Vim's key notation, case-insensitive: `<CR>`, `<Esc>`, `<Tab>`, `<BS>`, `<Space>`, `<lt>`, `<Bar>`, `<C-x>`, `<M-x>`, arrows, `<F1>`, and `<Leader>` (space). A recursive `{rhs}` stops after 100 levels with an error.
+  - A mapping comes after the buffer's mode keys and before Vim's own keys, motions, operators and prefixes, so `:nnoremap j gj` works. A count typed before it applies to its `{rhs}`, as in Vim.
+  - In normal and visual state, an `{lhs}` of several keys must start with a prefix (`g`, `z`, `Z`, `[`, `]`, `C-w`), with `<Leader>`, which adds to the leader tree, or with a key nothing is bound to, which becomes a prefix. Otherwise `:map` says why it can't.
+  - In insert state an `{lhs}` can be any keys: `:inoremap jk <Esc>` inserts `j`, and if `k` follows within `timeoutlen` (1000 ms) the `j` is removed and `<Esc>` runs, as in Vim.
+  - Which-key shows a mapping's `{rhs}` as its label.
+  - `:unmap`, `:nunmap`, `:vunmap` and `:iunmap` remove a mapping. With no arguments the map commands list the mappings made with them; with only an `{lhs}`, that mapping.
 
 ## Keys and options
 
-`:set` takes `no`, `?`, `!` and `=`. Options: `tabstop shiftwidth expandtab autoindent smartindent wrapscan hlsearch incsearch clipboard number relativenumber cursorline wrap linebreak signcolumn splitbelow splitright`. `cmdline-completion #f` gives back Vim's wildmenu.
+`:set` takes `no`, `?`, `!` and `=`. Options: `tabstop shiftwidth expandtab autoindent smartindent wrapscan hlsearch incsearch clipboard number relativenumber cursorline wrap linebreak signcolumn splitbelow splitright timeoutlen`. `cmdline-completion #f` gives back Vim's wildmenu.
 
 ## Out of scope
 
+- Mappings in operator-pending, select, command-line and terminal state (`:omap`, `:xmap`, `:smap`, `:cmap`, `:tmap`), and the `<buffer>`, `<expr>`, `<script>` and `<unique>` arguments; `<silent>` is accepted and changes nothing.
+- A normal-state `{lhs}` of several keys starting with a key that already does something (`,w`), which Vim resolves with a timeout.
 - Vimscript. Configuration is Scheme ([[0010-config-in-init-scm]]).
 
 ## Known gaps
 
-- No `:map` or `:noremap`; bind keys with `define-key!` in Scheme. [#8](https://github.com/apisandipas/imp/issues/8)
 - Undo is whole-text snapshots with no undo tree, and undo doesn't restore marks. [#5](https://github.com/apisandipas/imp/issues/5)
