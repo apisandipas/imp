@@ -60,6 +60,7 @@ const RUNTIME: &[(&str, &str)] = &[
         include_str!("../../../runtime/packages.scm"),
     ),
     ("files.scm", include_str!("../../../runtime/files.scm")),
+    ("repl.scm", include_str!("../../../runtime/repl.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
     (
         "complete.scm",
