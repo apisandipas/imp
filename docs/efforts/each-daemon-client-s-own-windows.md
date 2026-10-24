@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/daemon]]"]
 issue: https://github.com/apisandipas/imp/issues/3
 frozen:
@@ -18,4 +18,4 @@ A `ClientView` in `editor.rs` holds one client's windows, layout and current win
 
 - [x] `ClientView` and `take_view`/`put_view`/`new_view`/`drop_view`; the daemon swaps views around each client's input and frame. Tests in `tests/daemon.rs`: own splits, own cursors moved by another client's edits, `:q` closing a client's window, buffer switches kept apart, a deleted buffer replaced in another client's window.
 - [x] Popup windows (`*git…*`, `*grep*`) opened in one client stay in its windows, and `q` there works while another client is attached. Test.
-- [ ] `crates/imp-server/CONTEXT.md` says view state lives in the swapped fields; checked by hand by the owner with two clients.
+- [x] `crates/imp-server/CONTEXT.md` says view state lives in the swapped fields; checked by hand by the owner with two clients.
