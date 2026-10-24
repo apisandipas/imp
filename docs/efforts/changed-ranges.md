@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/live-scheme-and-help]]", "[[spec/lsp]]"]
 issue: https://github.com/apisandipas/imp/issues/6
 frozen:
@@ -22,4 +22,4 @@ Decisions made while the owner was away (issue #6 had no answers yet): the hook 
 - [x] `Buffer` logs edits with their versions, cleared by undo, redo and reload, capped at 1000; `changes_since(version)`. Unit tests in `buffer.rs`.
 - [x] Scheme: `buffer-changes-since` and `after-change-range`. Tested in `hooks.rs`, including several edits in one key and an undo.
 - [x] LSP sends incremental changes to servers that ask for them and count UTF-32, the full text otherwise. The fake server applies ranges (and has a full-sync mode); `lsp.rs` tests both.
-- [ ] Docs: `runtime/CONTEXT.md` extension points mention the change log.
+- [x] Docs: `runtime/CONTEXT.md` extension points mention the change log.
