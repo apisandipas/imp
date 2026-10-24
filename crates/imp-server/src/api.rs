@@ -694,6 +694,13 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("line-col-at-display", |line: isize, x: isize| {
         editor::with(|e| crate::render::col_at_display(e, clamp(line), clamp(x)) as isize)
     });
+    // Any window's text area as (rows columns), or #f.
+    engine.register_fn("window-text-size", |id: isize| {
+        editor::with(|e| {
+            crate::render::window_text_size(e, clamp(id))
+                .map(|(r, c)| vec![SteelVal::IntV(r as isize), SteelVal::IntV(c as isize)])
+        })
+    });
     engine.register_fn("window-text-width", || {
         editor::with(|e| crate::render::window_text_width(e) as isize)
     });
@@ -1104,6 +1111,34 @@ pub fn register(engine: &mut Engine) {
     });
     engine.register_fn("term-application-cursor?", |id: isize| {
         crate::term::application_cursor(clamp(id) as u64)
+    });
+    // What mouse reporting the program asked for, as (mode encoding)
+    // strings (term::mouse_mode), or #f once it is gone.
+    engine.register_fn("term-mouse-mode", |id: isize| {
+        crate::term::mouse_mode(clamp(id) as u64)
+            .map(|(m, e)| vec![SteelVal::StringV(m.into()), SteelVal::StringV(e.into())])
+    });
+    // The buffer line the terminal's screen starts on, or #f.
+    engine.register_fn("term-screen-top", |id: isize| {
+        crate::term::screen_top(clamp(id) as u64).map(|n| n as isize)
+    });
+    // The text cell at screen cell (x, y) as (window line column), or #f
+    // (render::window_cell).
+    engine.register_fn("window-cell", |x: isize, y: isize| {
+        editor::with(|e| {
+            crate::render::window_cell(e, clamp(x), clamp(y)).map(|(w, l, c)| {
+                vec![
+                    SteelVal::IntV(w as isize),
+                    SteelVal::IntV(l as isize),
+                    SteelVal::IntV(c as isize),
+                ]
+            })
+        })
+    });
+    // The terminal's screen as (rows columns), or #f once it is gone.
+    engine.register_fn("term-size", |id: isize| {
+        crate::term::screen_size(clamp(id) as u64)
+            .map(|(r, c)| vec![SteelVal::IntV(r as isize), SteelVal::IntV(c as isize)])
     });
     engine.register_fn("term-bracketed-paste?", |id: isize| {
         crate::term::bracketed_paste(clamp(id) as u64)

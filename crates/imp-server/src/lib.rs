@@ -326,6 +326,9 @@ impl Server {
                 self.call("imp-open-files", vec![SteelVal::ListV(list)])
             }
             ClientMsg::Key(key) => self.call("imp-handle-key", vec![SteelVal::StringV(key.into())]),
+            ClientMsg::Paste(text) => {
+                self.call("imp-handle-paste", vec![SteelVal::StringV(text.into())])
+            }
             ClientMsg::Mouse {
                 action,
                 button,

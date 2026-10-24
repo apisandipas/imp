@@ -4306,8 +4306,11 @@
   (when (and *recording* (not (stops-recording? key)))
     (set! *recorded-keys* (cons key *recorded-keys*)))
   (handle-top-level-key! key)
-  ;; after-change runs once per key that changed the current buffer;
-  ;; post-command after every key.
+  (after-input!))
+
+(define (after-input!)
+  "Runs the hooks that follow a key or a paste: after-change if it
+   changed the current buffer, then post-command always."
   (let ([now (cons (current-buffer) (buffer-version))])
     (when (and *last-version* (= (car now) (car *last-version*)) (not (= (cdr now) (cdr *last-version*))))
       (run-hooks 'after-change))
@@ -4338,6 +4341,35 @@
                 ;; An end past the range so far, in the text before it.
                 (max old-end (- oe grown))
                 (+ (max new-end oe) (- ne oe)))))))
+
+;; Sees a paste first, as its text; #t from it means handled. term.scm
+;; sets it to give pastes to the program in the terminal state.
+(define *paste-handler* #f)
+
+(define (imp-handle-paste text)
+  "Handles text pasted whole (the terminal client's bracketed paste).
+   Insert and Emacs state insert it as it is, with no autoindent; normal
+   and visual state insert it at the cursor as one change; the command
+   line types it, line breaks as spaces; anywhere else it is typed key
+   by key."
+  (let ([chars (map string (string->list text))])
+    (cond
+      [(and *paste-handler* (*paste-handler* text)) #t]
+      [(member *mode* '(insert replace emacs))
+       (insert-text! text)
+       (when (typing-mode?)
+         (set! *insert-keys* (append (reverse (map (lambda (c) (if (equal? c "\n") "<ret>" c)) chars))
+                                     *insert-keys*)))]
+      [(member *mode* '(normal visual))
+       (when (eq? *mode* 'visual) (leave-visual!))
+       (begin-change!)
+       (insert-text! text)
+       (set-cursor! (max 0 (- (cursor) 1)))
+       (normal-clamp!)]
+      [(eq? *mode* 'cmdline)
+       (for-each (lambda (c) (process-key! (if (equal? c "\n") " " c))) chars)]
+      [else (for-each process-key! chars)]))
+  (after-input!))
 
 (define (handle-top-level-key! key)
   "Handles a key, closing the popup first if one is up.

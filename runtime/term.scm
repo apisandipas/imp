@@ -4,7 +4,7 @@
 ;;; buffer, in the TERMINAL state: keys go to the program. C-\ C-n goes
 ;;; back to normal state, where the output can be searched and yanked like
 ;;; any text; i or a returns to the program. When it exits, the buffer
-;;; stays, saying so. The terminal is sized to its window.
+;;; stays, saying so. The terminal is sized to the windows showing it.
 
 (define *terminals* (hash))  ; terminal id -> buffer
 (define *term-redraw* #f)    ; a pending redraw timer
@@ -84,14 +84,83 @@
 
 (define-state! 'terminal "TERMINAL" "bar" terminal-key!)
 
+;;; The mouse, for programs that ask for it (less, htop, vim).
+
+(define (term-mouse! action button x y)
+  "Passes a mouse event to the program in the current terminal, if it
+   asked for that kind of event and the event is on its screen in the
+   current window, in the terminal state. #t if it was passed."
+  (let* ([id (and (eq? *mode* 'terminal) (term-id))]
+         [mouse (and id (term-mouse-mode id))]
+         [mode (and mouse (car mouse))]
+         [cell (and mouse (not (equal? mode "none")) (window-cell x y))]
+         [row (and cell (= (car cell) (current-window)) (- (cadr cell) (term-screen-top id)))]
+         [wanted? (cond [(member action '("press" "scroll-up" "scroll-down")) #t]
+                        [(equal? action "release") (not (equal? mode "press"))]
+                        [(equal? action "drag") (member mode '("button-motion" "any-motion"))]
+                        [else #f])])
+    (and row (>= row 0) wanted?
+         (begin
+           (term-send! id (term-mouse-bytes action button (+ (caddr cell) 1) (+ row 1) (cadr mouse)))
+           #t))))
+
+(define (term-mouse-bytes action button x y encoding)
+  "The bytes reporting a mouse event at 1-based cell `x`, `y`, in
+   `encoding`: \"sgr\" (ESC [ < b ; x ; y M, m on release) or the classic
+   ESC [ M and three chars, \"utf8\" letting them go past 223."
+  (let* ([esc (string (integer->char 27))]
+         [code (+ (cond [(equal? action "scroll-up") 64]
+                        [(equal? action "scroll-down") 65]
+                        [(equal? button "middle") 1]
+                        [(equal? button "right") 2]
+                        [else 0])
+                  (if (equal? action "drag") 32 0))])
+    (if (equal? encoding "sgr")
+        (string-append esc "[<" (number->string code) ";" (number->string x) ";" (number->string y)
+                       (if (equal? action "release") "m" "M"))
+        (let* ([most (if (equal? encoding "utf8") 2015 223)]
+               [char (lambda (n) (string (integer->char (+ 32 (min n most)))))])
+          (string-append esc "[M" (char (if (equal? action "release") 3 code)) (char x) (char y))))))
+
+(set! *mouse-handler* term-mouse!)
+
+(define (term-paste! text)
+  "Gives pasted `text` to the program in the terminal state, bracketed
+   if it asked for that, line breaks as returns as terminals send them.
+   #t if it did."
+  (let ([id (and (eq? *mode* 'terminal) (term-id))]
+        [text (list->string (map (lambda (c) (if (equal? c #\newline) (integer->char 13) c)) (string->list text)))])
+    (and id
+         (let ([esc (string (integer->char 27))])
+           (term-send! id (if (term-bracketed-paste? id)
+                              (string-append esc "[200~" text esc "[201~")
+                              text))
+           #t))))
+
+(set! *paste-handler* term-paste!)
+
+(define (term-fit! id)
+  "Sizes terminal `id` to the windows showing it: the smallest rows and
+   columns among them, as Neovim does. Unshown, it keeps its size."
+  (let* ([buf (hash-try-get *terminals* id)]
+         [sizes (filter pair?
+                        (map window-text-size
+                             (filter (lambda (w) (eqv? (if (= w (current-window)) (current-buffer) (window-buffer w))
+                                                       buf))
+                                     (window-list))))])
+    (when (pair? sizes)
+      (term-resize! id (apply min (map car sizes)) (apply min (map cadr sizes))))))
+
+;; A command can split, close or resize windows: refit every terminal
+;; (term-resize! does nothing when the size is the same).
+(add-hook! 'post-command (lambda () (for-each term-fit! (hash-keys->list *terminals*))))
+
 (define (term-redraw! id)
-  "Redraws terminal `id` into its buffer.
-   If it is the current buffer the terminal is sized to the window, and
-   in the terminal state the cursor follows the program's."
+  "Redraws terminal `id` into its buffer, sized to its windows.
+   In the terminal state the cursor follows the program's."
   (let ([buf (hash-try-get *terminals* id)])
     (when (and buf (memv buf (buffer-list)))
-      (when (= buf (current-buffer))
-        (term-resize! id (window-height) (window-text-width)))
+      (term-fit! id)
       (let ([at (term-render! id buf)])
         (when (and at (= buf (current-buffer)) (eq? *mode* 'terminal))
           (set-cursor! at))))))
