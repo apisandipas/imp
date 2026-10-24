@@ -263,13 +263,13 @@ pub fn register(engine: &mut Engine) {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
-    // Seconds since the epoch the file was modified, or #f.
+    // Milliseconds since the epoch the file was modified, or #f.
     engine.register_fn("file-mtime", |path: String| {
         std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as isize)
+            .map(|d| d.as_millis() as isize)
     });
     engine.register_fn("write-text-file!", |path: String, text: String| {
         let path = Path::new(&path);

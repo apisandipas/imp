@@ -18,6 +18,3 @@ anchors: [crates/imp-core/src/fileio.rs, crates/imp-server/src/files.rs, runtime
 
 `autoread`, `backup`, `autosave-interval`, `state-directory` (default `$XDG_STATE_HOME/imp`).
 
-## Known gaps
-
-- File times are compared in whole seconds for autosave. [#7](https://github.com/apisandipas/imp/issues/7)
