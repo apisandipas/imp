@@ -159,3 +159,23 @@
 (add-hook! 'insert-leave refresh-automatic-folds!)
 ;; A file opened with foldmethod set (in init.scm) starts with its folds.
 (add-hook! 'buffer-open (lambda () (when (automatic-folds?) (sync-folds! #t))))
+
+;;; Making and deleting folds by hand is for foldmethod manual, as in Vim.
+
+(define (manual-folds-only proc)
+  "`proc`, a key's procedure, refusing unless foldmethod is manual."
+  (lambda args
+    (if (automatic-folds?)
+        (message (string-append "can't make or delete folds with foldmethod=" (option 'foldmethod)))
+        (apply proc args))))
+
+(for-each
+ (lambda (state)
+   (for-each (lambda (key)
+               (let ([proc (lookup-key state key)])
+                 (when proc
+                   (define-key! state key (manual-folds-only proc) (binding-label-in state key)))))
+             '("zF" "zd" "zD" "zE")))
+ '(normal visual))
+(let ([zf (hash-ref *operators* "zf")])
+  (define-operator! "zf" (manual-folds-only zf) (binding-label-in 'operator "zf")))

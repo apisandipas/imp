@@ -91,7 +91,8 @@ fn syntax_folds_functions_and_classes() {
     // Functions and the struct and impl, nested, all closed.
     assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
     // A language's own fold kinds.
-    s.eval(r#"(define-syntax-folds! "rust" '("impl_item"))"#).unwrap();
+    s.eval(r#"(define-syntax-folds! "rust" '("impl_item"))"#)
+        .unwrap();
     type_keys(&mut s, ":setlocal fdm=syntax<ret>");
     assert_eq!(folds(&mut s), r#""7-11+""#);
 }
@@ -102,4 +103,24 @@ fn a_file_opened_with_foldmethod_set_starts_folded() {
     s.eval("(set-option! 'foldmethod \"syntax\")").unwrap();
     open(&mut s, "folded.rs", RUST);
     assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
+}
+
+#[test]
+fn hand_made_folds_are_for_manual() {
+    let mut s = server(CODE);
+    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    type_keys(&mut s, ":setlocal fdm=indent<ret>");
+    for keys in ["zfj", "zE", "jzd"] {
+        type_keys(&mut s, keys);
+        assert_eq!(
+            s.status(),
+            "can't make or delete folds with foldmethod=indent",
+            "{keys}"
+        );
+        assert_eq!(folds(&mut s), r#""1-6+ 3-4+ 8-9+""#, "{keys}");
+        type_keys(&mut s, "gg");
+    }
+    // Back to manual: the folds stay, and can be deleted by hand.
+    type_keys(&mut s, ":setlocal fdm=manual<ret>jzd");
+    assert_eq!(folds(&mut s), r#""3-4+ 8-9+""#);
 }

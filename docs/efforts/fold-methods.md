@@ -20,5 +20,5 @@ Decisions made while the owner was away (issue #11 had no answers yet): `foldlev
 
 - [x] `foldmethod`, `foldlevel` and `foldexpr` options; syncing folds to wanted ranges; `indent` and `expr`. Tested in a new `foldmethod.rs`, including nesting, blank lines, edits keeping a closed fold closed, and `foldlevel`.
 - [x] `syntax`: `syntax-fold-lines` in Rust, `define-syntax-folds!`, default kinds from the text objects. Tested on Rust code.
-- [ ] Manual-only keys refuse under another method; back to manual keeps the folds. Tested.
+- [x] Manual-only keys refuse under another method; back to manual keeps the folds. Tested.
 - [ ] Docs: `runtime/CONTEXT.md` extension points name `define-syntax-folds!`.
