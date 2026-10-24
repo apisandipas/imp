@@ -1082,6 +1082,11 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // The line whose fold chevron is at screen cell (x, y), or #f.
+    engine.register_fn("fold-column-at", |x: isize, y: isize| {
+        editor::with(|e| crate::render::fold_column_at(e, clamp(x), clamp(y)).map(|l| l as isize))
+    });
+
     // The border at screen cell (x, y): "width" between side-by-side
     // windows (dragging it changes their widths), "height" on a status
     // line with a window below it; #f elsewhere.

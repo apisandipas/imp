@@ -1443,6 +1443,35 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
         .unwrap_or(cells.len())
 }
 
+/// The line whose chevron is at screen cell (`x`, `y`): a fold's first
+/// line, on its first row, in the fold column of the window there.
+pub fn fold_column_at(e: &Editor, x: usize, y: usize) -> Option<usize> {
+    let (id, rect) = e
+        .window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
+    let buffer_id = if id == e.current_window {
+        e.current
+    } else {
+        e.windows[&id].buffer
+    };
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let starts = shown_fold_starts(e, buffer_id)?;
+    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
+    let text = rect.x + indent + gutter;
+    if x >= text || x + FOLD_WIDTH < text {
+        return None;
+    }
+    let line_at = |y| match screen_position(e, x, y) {
+        Some((_, Some(at))) => Some(buffer.offset_to_line(at.min(buffer.len()))),
+        _ => None,
+    };
+    let line = line_at(y)?;
+    // A wrapped line's later rows have no chevron.
+    let first_row = y == rect.y || line_at(y - 1) != Some(line);
+    (first_row && starts.contains_key(&line)).then_some(line)
+}
+
 /// Columns for text in the current window: its width less the gutter.
 /// The text cell at screen cell (`x`, `y`) as (window, line, column),
 /// counting lines from the window's first and ignoring folds and wrapping

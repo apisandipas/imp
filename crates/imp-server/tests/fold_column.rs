@@ -4,6 +4,7 @@
 mod common;
 
 use common::*;
+use imp_core::ClientMsg;
 
 const CODE: &str = "fn a\n    one\n    if x\n        two\nfn b\n    three\n";
 
@@ -78,4 +79,60 @@ fn foldcolumn_says_when_it_shows() {
     let mut s = indented(CODE);
     type_keys(&mut s, ":setlocal foldcolumn=no<ret>");
     assert_eq!(rows(&mut s)[0], "fn a");
+}
+
+fn click(s: &mut imp_server::Server, x: u16, y: u16) {
+    s.frame(); // positions are worked out from the last frame drawn
+    for action in ["press", "release"] {
+        s.handle(ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x,
+            y,
+            fine: None,
+        });
+    }
+    assert!(!s.status().starts_with("error"), "{}", s.status());
+}
+
+fn line(s: &mut imp_server::Server) -> String {
+    s.eval("(current-line)").unwrap()
+}
+
+#[test]
+fn a_click_on_a_chevron_toggles_its_fold() {
+    let mut s = indented(CODE);
+    // fn b is on row 4; the cursor, on line 0, stays.
+    click(&mut s, 0, 4);
+    assert_eq!(rows(&mut s)[4], "▸ fn b ··· 2 lines");
+    assert_eq!(s.cursor(), 0);
+    click(&mut s, 0, 4);
+    assert_eq!(rows(&mut s)[4], "▾ fn b");
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn closing_over_the_cursor_puts_it_on_the_first_line() {
+    let mut s = indented(CODE);
+    type_keys(&mut s, "Gl");
+    click(&mut s, 1, 4);
+    assert_eq!(rows(&mut s)[4], "▸ fn b ··· 2 lines");
+    assert_eq!(line(&mut s), "4");
+}
+
+#[test]
+fn a_click_beside_no_chevron_moves_the_cursor() {
+    let mut s = indented(CODE);
+    click(&mut s, 0, 3);
+    assert_eq!(line(&mut s), "3");
+    assert_eq!(rows(&mut s)[2], "▾     if x");
+}
+
+#[test]
+fn a_wrapped_line_s_later_rows_don_t_toggle() {
+    let mut s = server(&format!("{}\n    b\n", "x".repeat(150)));
+    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    type_keys(&mut s, ":set wrap<ret>:setlocal fdm=indent<ret>");
+    click(&mut s, 0, 1);
+    assert!(rows(&mut s)[0].starts_with("▾ x"));
 }
