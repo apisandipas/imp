@@ -1027,6 +1027,36 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // The current buffer's change column: a list of (line text face), or
+    // #f to take the column away. '() keeps the column with no marks.
+    engine.register_fn("set-change-marks!", |marks: SteelVal| {
+        let marks = match marks {
+            SteelVal::BoolV(false) => None,
+            SteelVal::ListV(list) => Some(
+                list.iter()
+                    .filter_map(|mark| match mark {
+                        SteelVal::ListV(m) => match m.iter().collect::<Vec<_>>().as_slice() {
+                            [SteelVal::IntV(line), SteelVal::StringV(text), SteelVal::StringV(face)] => {
+                                Some((clamp(*line), (text.to_string(), face.to_string())))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            ),
+            _ => return Err("set-change-marks!: expected a list or #f".to_string()),
+        };
+        editor::with(|e| {
+            let id = e.current;
+            match marks {
+                Some(marks) => e.change_marks.insert(id, marks),
+                None => e.change_marks.remove(&id),
+            };
+        });
+        Ok(())
+    });
+
     // Display-only text before lines of the current buffer: a list of
     // (line ((text face) ...)). The empty list removes the margin.
     engine.register_fn("set-margin!", |lines: Vec<SteelVal>| {

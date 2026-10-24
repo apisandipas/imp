@@ -115,6 +115,10 @@ pub struct Editor {
     /// When each buffer shows its sign column (the `signcolumn` option);
     /// a buffer not here shows it only while it has signs.
     pub sign_columns: HashMap<usize, crate::render::GutterColumn>,
+    /// Change marks by buffer id: line -> (text, face). A buffer here has
+    /// a one-cell change column between its line numbers and its fold
+    /// column, marks or not (git-gutter; see lore:decision/0016).
+    pub change_marks: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// Buffers drawn indented by outline level (org-indent): buffer ->
     /// columns per level. See `render::outline_prefix`.
     pub outline_indents: HashMap<usize, usize>,
@@ -332,6 +336,7 @@ impl Editor {
         self.line_end_texts.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
+        self.change_marks.remove(&id);
         self.outline_indents.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
