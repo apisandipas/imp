@@ -775,6 +775,75 @@
    inheritance does."
   (org-lines-property (org-buffer-lines) line name (and (pair? inherit) (car inherit))))
 
+;;; Setting properties: C-c C-x p (SPC m P).
+
+(define (org-property-name-in text)
+  "The name of a drawer line such as \":Effort: 2h\", as written, or #f."
+  (let ([t (trim text)])
+    (and (starts-with? t ":")
+         (let ([close (string-index-from t ":" 1)])
+           (and close (> close 1) (substring t 1 close))))))
+
+(define (org-property-names lines)
+  "The names of the properties in any property drawer of `lines`, each
+   once, as first written."
+  (let loop ([hs (filter (lambda (l) (org-level-of (vector-ref lines l))) (range 0 (vector-length lines)))]
+             [seen (hash)] [acc '()])
+    (if (null? hs)
+        (reverse acc)
+        (let* ([d (org-drawer-at lines (car hs))]
+               [names (if d
+                          (filter (lambda (n) n) (map (lambda (l) (org-property-name-in (vector-ref lines l)))
+                                                      (range (+ (car d) 1) (cadr d))))
+                          '())]
+               [new (filter (lambda (n) (not (hash-contains? seen (string-upcase n)))) names)])
+          (loop (cdr hs)
+                (foldl (lambda (n h) (hash-insert h (string-upcase n) #t)) seen new)
+                (append (reverse new) acc))))))
+
+(define (org-set-property! heading name value)
+  "Sets property `name` of the heading on line `heading` to `value`, or
+   removes it when `value` is \"\". The drawer is made, after the
+   planning line, if the heading has none."
+  (let* ([lines (org-buffer-lines)]
+         [d (org-drawer-at lines heading)]
+         [key (string-upcase name)]
+         [at (and d (let loop ([l (+ (car d) 1)])
+                      (cond [(>= l (cadr d)) #f]
+                            [(let ([p (org-property-line (vector-ref lines l))]) (and p (equal? (car p) key))) l]
+                            [else (loop (+ l 1))])))]
+         [entry (lambda (n) (string-append ":" n ": " value))])
+    (begin-change!)
+    (cond
+      [(equal? value "")
+       (when at
+         ;; The last property goes with its drawer.
+         (if (= (- (cadr d) (car d)) 2)
+             (replace-range! (line-start (car d)) (+ (line-end (cadr d)) (if (< (line-end (cadr d)) (buffer-length)) 1 0)) "")
+             (replace-range! (line-start at) (+ (line-end at) 1) "")))]
+      [at (org-set-line! at (entry (org-property-name-in (vector-ref lines at))))]
+      [d (buffer-insert! (line-start (cadr d)) (string-append (entry name) "\n"))]
+      [else
+       (let ([after (if (and (<= (+ heading 1) (last-line)) (org-planning-line? (line-text (+ heading 1))))
+                        (+ heading 1)
+                        heading)])
+         (buffer-insert! (line-end after) (string-append "\n:PROPERTIES:\n" (entry name) "\n:END:")))])
+    (message (if (equal? value "") (string-append "removed " name) (string-append name ": " value)))))
+
+(define (org-property-prompt!)
+  "C-c C-x p: asks for a property name, completing from the buffer's,
+   then its value for the heading the cursor is under. An empty value
+   removes it."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (completing-read "Property: " (org-property-names (org-buffer-lines))
+                         (lambda (name)
+                           (if (or (string-index-from name ":" 0) (string-index-from name " " 0))
+                               (message "a property name has no spaces or colons")
+                               (open-cmdline! (string-append name ": ") (or (org-entry-property h name) "")
+                                              (lambda (v) (org-set-property! h name (trim v))) #f #f)))))))
+
 ;;; The agenda
 
 (define (org-notes-file)
@@ -1669,6 +1738,7 @@
 (org-key! '(normal insert) "C-cC-d" (lambda args (org-deadline!)))
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
+(org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1677,6 +1747,7 @@
 (define-mode-leader! 'org-mode "t" (lambda (n) (let ([h (org-heading-line (current-line))]) (if h (org-todo-cycle! h) (message "not under a heading")))) "cycle TODO")
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
+(define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 
