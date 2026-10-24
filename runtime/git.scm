@@ -18,6 +18,8 @@
 ;;; :Git ARGS runs any git command and shows what it printed.
 
 (define-option! 'git-recent-commits 10 '())
+;; Whether the status buffer shows its main keys at the bottom of its window.
+(define-option! 'git-status-hints #t '())
 
 ;;; Running git
 
@@ -250,7 +252,8 @@
       (for-each (lambda (c) (draw-line! (list (list (car c) "git.hash") (list (string-append "  " (cadr c)) #f))
                                        (list 'commit (car c))))
                 commits))
-    (draw-finish!)))
+    (draw-finish!)
+    (set-footer! (git-status-footer))))
 
 (define (git-refresh!)
   "Redraws the current git status or log buffer from the repository.
@@ -628,7 +631,7 @@
 ;; listed by ? and the footer from here, so they can't drift apart.
 (define git-status-keys
   (list
-    (list "<tab>" "show/hide diff" (lambda (n) (git-toggle!)))
+    (list "<tab>" "diff" (lambda (n) (git-toggle!)))
     (list "<ret>" "visit" (lambda (n) (git-visit!)))
     (list "s" "stage" (lambda (n) (git-stage!)))
     (list "u" "unstage" (lambda (n) (git-unstage!)))
@@ -642,7 +645,7 @@
     (list "b" "branch" (lambda (n) (menu! "Branch" (list (list "b" "checkout" git-checkout!)
                                                      (list "c" "create and checkout" git-create-branch!)))))
     (list "l" "log" (lambda (n) (git-log! (git-root))))
-    (list "d" "diff" (lambda (n) (menu! "Diff" (list (list "d" "unstaged" (lambda () (git-diff! #f)))
+    (list "d" "diff menu" (lambda (n) (menu! "Diff" (list (list "d" "unstaged" (lambda () (git-diff! #f)))
                                                    (list "s" "staged" (lambda () (git-diff! #t)))))))
     (list "z" "stash" (lambda (n) (menu! "Stash" (list (list "z" "stash changes" (lambda () (git-do! (git-root) "stash push") (git-refresh!)))
                                                     (list "p" "pop" (lambda () (git-do! (git-root) (string-append "stash pop " (git-stash-ref))) (git-refresh!)))
@@ -654,16 +657,33 @@
     (list "P" "push" (lambda (n) (menu! "Push" (list (list "P" "push" (lambda () (git-job! (git-root) "push")))
                                                    (list "u" "push, setting upstream" (lambda () (git-job! (git-root) "push -u origin HEAD")))))))
     (list "$" "git output" (lambda (n) (git-show-process!)))
-    (list "gr" "refresh" (lambda (n) (git-refresh!)))))
+    (list "gr" "refresh" (lambda (n) (git-refresh!)))
+    (list "?" "all keys" (lambda (n) (git-status-menu!)))))
+
+;; The keys the status buffer's footer shows, a line each.
+(define git-status-hint-keys '(("s" "u" "c" "F" "P") ("<tab>" "x" "b" "l" "?")))
+
+(define (git-status-footer)
+  "The status buffer's footer: a line of keys and their labels, from
+   git-status-keys, for each list in git-status-hint-keys; none with
+   git-status-hints off."
+  (if (option 'git-status-hints)
+      (map (lambda (keys)
+             (cdr (apply append
+                         (map (lambda (key)
+                                (let ([k (list-find (lambda (k) (equal? (car k) key)) git-status-keys)])
+                                  (list (list "  " #f) (list key "git.key") (list (string-append " " (cadr k)) "git.head"))))
+                              keys))))
+           git-status-hint-keys)
+      '()))
 
 (define (git-status-menu!)
   "Opens a menu of every status key, as Magit's ? does; the key pressed
    runs on the item at the cursor."
-  (menu! "Git" (map (lambda (k) (list (car k) (cadr k) (lambda () ((caddr k) 1)))) git-status-keys)))
+  (menu! "Git" (map (lambda (k) (list (car k) (cadr k) (lambda () ((caddr k) 1))))
+                    (filter (lambda (k) (not (equal? (car k) "?"))) git-status-keys))))
 
-(git-keys! 'git-status-mode
-  (map (lambda (k) (list (car k) (caddr k) (cadr k)))
-       (append git-status-keys (list (list "?" "all keys" (lambda (n) (git-status-menu!)))))))
+(git-keys! 'git-status-mode (map (lambda (k) (list (car k) (caddr k) (cadr k))) git-status-keys))
 
 (git-keys! 'git-log-mode git-common-keys)
 (git-keys! 'git-diff-mode git-common-keys)
