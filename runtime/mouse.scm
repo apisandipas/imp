@@ -59,7 +59,8 @@
     (set! *mouse-border*
           (if (equal? what "width")
               (let ([at (move-border! x y 0)]) (list what at y (- x at)))
-              (list what y x 0)))))
+              (list what y x 0))))
+  void)
 
 (define (mouse-drag-border! x y)
   "Moves the border being dragged to follow the mouse at `x`, `y`."
@@ -69,7 +70,8 @@
          [delta (- (if width? (- x grab) y) at)])
     (unless (= delta 0)
       (let ([now (if width? (move-border! at other delta) (move-border! other at delta))])
-        (when now (set! *mouse-border* (list what now other grab)))))))
+        (when now (set! *mouse-border* (list what now other grab))))))
+  void)
 
 (define (mouse-click! window offset)
   "Focuses `window` and moves the cursor to `offset` there.
@@ -88,7 +90,8 @@
       (set-cursor! offset)
       (unless typing? (normal-clamp!))
       (set! *goal-col* (current-col)))
-    (set! *mouse-press* (and offset (list window (cursor))))))
+    (set! *mouse-press* (and offset (list window (cursor)))))
+  void)
 
 (define (mouse-drag! window offset)
   "Moves the cursor to `offset` as the left button drags in `window`.
@@ -98,7 +101,8 @@
       (when (typing-mode?) (leave-insert!))
       (enter-visual! 'char (cadr *mouse-press*)))
     (set-cursor! (min offset (max 0 (- (buffer-length) 1))))
-    (set! *goal-col* (current-col))))
+    (set! *goal-col* (current-col)))
+  void)
 
 (define (mouse-scroll! window sign)
   "Scrolls `window` (focusing it for the moment if it isn't current); the

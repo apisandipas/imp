@@ -26,7 +26,8 @@
 (define (define-mode-language! mode language)
   "Parses buffers in major mode `mode` with tree-sitter grammar
    `language` (a name like \"rust\")."
-  (set! *mode-languages* (hash-insert *mode-languages* mode language)))
+  (set! *mode-languages* (hash-insert *mode-languages* mode language))
+  void)
 
 (add-hook! 'major-mode
            (lambda (mode)
@@ -77,7 +78,8 @@
    `functions` are for af and if, `classes` for ac and ic, and
    `argument-lists` the lists whose children aa and ia select."
   (set! *syntax-objects*
-        (hash-insert *syntax-objects* language (list functions classes argument-lists))))
+        (hash-insert *syntax-objects* language (list functions classes argument-lists)))
+  void)
 
 (define-syntax-objects! "rust"
   '("function_item" "closure_expression" "function_signature_item")

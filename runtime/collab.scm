@@ -48,12 +48,14 @@
   (unless (hash-contains? *collab-peers* buf)
     (set! *collab-peers* (hash-insert *collab-peers* buf '())))
   (unless *collab-timer*
-    (set! *collab-timer* (run-every! collab-sync-ms collab-sync!))))
+    (set! *collab-timer* (run-every! collab-sync-ms collab-sync!)))
+  void)
 
 (define (collab-add-peer! buf conn)
   "Records `conn` as a peer of shared buffer `buf`."
   (set! *collab-buffers* (hash-insert *collab-buffers* conn buf))
-  (set! *collab-peers* (hash-insert *collab-peers* buf (cons conn (collab-peers buf)))))
+  (set! *collab-peers* (hash-insert *collab-peers* buf (cons conn (collab-peers buf))))
+  void)
 
 (define (collab-drop-peer! conn)
   "Forgets connection `conn`; returns the buffer it was a peer of, or #f.
@@ -76,7 +78,8 @@
   (crdt-unshare! buf)
   (when (and *collab-timer* (= (hash-length *collab-peers*) 0))
     (cancel-timer! *collab-timer*)
-    (set! *collab-timer* #f)))
+    (set! *collab-timer* #f))
+  void)
 
 (define (collab-receive! buf conn line)
   "Handles `line`, a message from `conn`, a peer of shared buffer `buf`.

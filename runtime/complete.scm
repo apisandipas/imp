@@ -132,7 +132,8 @@
                 (cond [(null? l) (list entry)]
                       [(eq? (car (car l)) before) (cons entry l)]
                       [else (cons (car l) (loop (cdr l)))]))
-              (append others (list entry))))))
+              (append others (list entry)))))
+  void)
 
 (define (source-option name key default)
   "Option `key` source `name` was defined with, or `default`."
@@ -155,7 +156,8 @@
   (set! *mode-completion-sources*
         (if groups
             (hash-insert *mode-completion-sources* mode groups)
-            (hash-remove *mode-completion-sources* mode))))
+            (hash-remove *mode-completion-sources* mode)))
+  void)
 
 (define (completion-groups-here)
   "The groups of source names the current buffer completes from."
@@ -441,7 +443,8 @@
     (completion-store-clear!)
     (set-popup! '())
     (set-popup-selected! -1)
-    (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f))))
+    (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f)))
+  void)
 
 (define (move-menu! step)
   "Moves the menu's selection by `step`, wrapping around.
@@ -642,7 +645,8 @@
                                    (if refresh? *menu-open* (not (or *menu-open* *key-interceptor*))))
                           (if refresh?
                               (refresh-incomplete!)
-                              (complete-at-point! #f))))))))
+                              (complete-at-point! #f)))))))
+  void)
 
 (define (auto-complete-char? c)
   "Whether `c`, just typed, should open the menu after a pause: when a
@@ -761,7 +765,8 @@
   (set! *cmd-editing* #t)
   (cmdline-edit! (string-append (substring *cmdline* 0 *cmd-start*) text (cmdline-after))
                  (+ *cmd-start* (string-length text)))
-  (set! *cmd-editing* #f))
+  (set! *cmd-editing* #f)
+  void)
 
 (define (cmd-select! step)
   "Steps `step` through the menu, putting the one chosen in the line."

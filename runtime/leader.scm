@@ -22,18 +22,21 @@
    Keys are written run together as typed:
 
      (define-leader! \"gs\" 'git-status \"status\")"
-  (set! *leader-bindings* (hash-insert *leader-bindings* keys (list command description))))
+  (set! *leader-bindings* (hash-insert *leader-bindings* keys (list command description)))
+  void)
 
 (define (define-leader-group! keys name)
   "Names the group of leader keys that start with `keys`.
    The which-key popup shows it as +name:
 
      (define-leader-group! \"g\" \"git\")"
-  (set! *leader-groups* (hash-insert *leader-groups* keys name)))
+  (set! *leader-groups* (hash-insert *leader-groups* keys name))
+  void)
 
 (define (undefine-leader! keys)
   "Removes the leader binding for `keys`, if there is one."
-  (set! *leader-bindings* (hash-remove *leader-bindings* keys)))
+  (set! *leader-bindings* (hash-remove *leader-bindings* keys))
+  void)
 
 (define (first-key text)
   "The first key of `text` in key notation: \"<tab>\", \"C-x\" or one char."
@@ -180,7 +183,8 @@
                             (set! *which-key-timer* #f)
                             ;; Only if still waiting on the same keys.
                             (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
-                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt))))))))))
+                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))))))))
+  void)
 
 (define-command! 'leader
   (lambda (count)

@@ -18,12 +18,14 @@
 (define (posframe-on!)
   "Puts completion menus in a centred box, posframe-width percent wide."
   (set! *posframe-on* #t)
-  (set! *completion-place* (list "center" (option 'posframe-width))))
+  (set! *completion-place* (list "center" (option 'posframe-width)))
+  void)
 
 (define (posframe-off!)
   "Puts completion menus back along the bottom of the screen."
   (set! *posframe-on* #f)
-  (set! *completion-place* (list "bottom" 0)))
+  (set! *completion-place* (list "bottom" 0))
+  void)
 
 (define-command! 'posframe-mode
   (lambda (count)

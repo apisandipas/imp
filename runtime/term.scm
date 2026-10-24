@@ -58,10 +58,12 @@
 (define (define-terminal-key! key proc)
   "Keeps `key` for the editor in the terminal state: it runs `proc`.
    `proc` takes no arguments; the key no longer reaches the program."
-  (set! *terminal-keys* (hash-insert *terminal-keys* key proc)))
+  (set! *terminal-keys* (hash-insert *terminal-keys* key proc))
+  void)
 (define (remove-terminal-key! key)
   "Sends `key` to the program again in the terminal state."
-  (set! *terminal-keys* (hash-remove *terminal-keys* key)))
+  (set! *terminal-keys* (hash-remove *terminal-keys* key))
+  void)
 
 (define (terminal-key! key)
   "Handles `key` in the terminal state, mostly by sending it on.
@@ -77,7 +79,8 @@
              ;; C-\ C-\ sends one C-\.
              [else (term-send! id (string-append (term-key-bytes "C-\\" id) (term-key-bytes key id)))])]
       [(equal? key "C-\\") (set! *term-prefix* #t)]
-      [else (term-send! id (term-key-bytes key id))])))
+      [else (term-send! id (term-key-bytes key id))]))
+  void)
 
 (define-state! 'terminal "TERMINAL" "bar" terminal-key!)
 
@@ -102,7 +105,8 @@
           (run-after! term-redraw-ms
                       (lambda ()
                         (set! *term-redraw* #f)
-                        (for-each term-redraw! (hash-keys->list *terminals*)))))))
+                        (for-each term-redraw! (hash-keys->list *terminals*))))))
+  void)
 
 (define (imp-term-exit id code)
   "Called when terminal `id`'s program exits with status `code`.

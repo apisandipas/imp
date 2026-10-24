@@ -25,6 +25,7 @@ Re-`define`-ing an existing global makes a new binding that code compiled earlie
 - A `cond` clause with only a test returns void, not the test's value. Use `[(test) => (lambda (x) x)]`.
 - Local names shadow builtins silently: a `let` binding called `range` broke a later `(range a b)` in the same scope.
 - `void` is a value, not a function: `(void)` is an error.
+- `set!` returns the variable's old value. A function called for its effect whose last expression is a `set!` returns that value, and the REPL and `:eval` print it, so end such a function with `void`. `tests/eval.rs` fails on any runtime or package function that doesn't.
 - Symbols from Rust (JSON `null` is `'null`) aren't `eq?` to quoted ones; compare with `equal?`.
 
 ## Errors

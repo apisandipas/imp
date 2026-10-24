@@ -31,7 +31,8 @@
                      [(hash-try-get *themes* parent) => (lambda (t) t)]
                      [else (error (string-append "no theme " (symbol->string parent)))])]
          [merged (foldl (lambda (k h) (hash-insert h k (hash-ref palette k))) (car base) (hash-keys->list palette))])
-    (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces))))))
+    (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces)))))
+  void)
 
 (define (theme-faces p)
   "Every face as a (name spec) list, made from palette `p`."
@@ -188,7 +189,8 @@
           (for-each (lambda (f) (set-face! (car f) (cadr f)))
                     (append (theme-faces (car theme)) (cadr theme)))
           (set-terminal-palette! (terminal-palette (car theme)))
-          (set! *theme* name)))))
+          (set! *theme* name))))
+  void)
 
 (define-theme! 'one-dark #f
   (hash 'bg "#282c34" 'bg-alt "#21252b" 'bg-hl "#2c313a" 'selection "#3e4452" 'border "#3e4452"

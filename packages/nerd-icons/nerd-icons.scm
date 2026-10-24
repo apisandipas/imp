@@ -37,7 +37,8 @@
    `kind`: 'extension (a file extension, without the dot), 'name (a whole
    file name), 'mode (a major mode), 'category (a picker's: 'command,
    'symbol...) or 'lsp-kind (a completion item kind number)."
-  (set! *nerd-icons* (hash-insert *nerd-icons* (list kind key) (nerd hex))))
+  (set! *nerd-icons* (hash-insert *nerd-icons* (list kind key) (nerd hex)))
+  void)
 
 (define (nerd-icon kind key)
   "The icon for `key` of `kind`, or #f."
