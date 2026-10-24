@@ -24,7 +24,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Background: `run-after!`, `run-every!`, `start-job!`.
 - Completion: `completing-read`, `define-completion-source!`, `set-completion-sources!`, `define-snippet!`.
 - Languages: `define-mode-language!`, `define-syntax-objects!`, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.
-- Special buffers (`special.scm`): `special-mode`, `menu!` (entries may be short key sequences, `gr`), `confirm!`, `draw-line!`, `define-popup-rule!`, and `set-footer!` for lines pinned at the bottom of a buffer's windows.
+- Special buffers (`special.scm`): `special-mode`, `menu!` (entries may be short key sequences, `gr`), `confirm!`, `draw-line!`, `define-popup-rule!`, `set-footer!` for lines pinned at the bottom of a buffer's windows, and `set-line-end-text!` for text after a line's end.
 - Themes: `define-theme!`, `load-theme!`; MCP: `define-mcp-tool!`; sockets: `listen-socket!`.
 
 ## Notes
