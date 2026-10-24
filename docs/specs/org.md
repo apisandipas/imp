@@ -1,6 +1,6 @@
 ---
 status: accepted
-issue: https://github.com/apisandipas/imp/issues/42
+issue: https://github.com/apisandipas/imp/issues/44
 summary: "Org mode: outlines, TODOs, checkboxes, links, tables, dates, agenda and capture."
 anchors: [runtime/org.scm, runtime/calendar.scm, crates/imp-server/tests/org.rs, crates/imp-server/tests/capture.rs, crates/imp-server/tests/calendar.rs]
 ---
@@ -13,6 +13,7 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 - **Faces** by heading level, TODO keywords, dates, links, checkboxes, tables and markup, as per-buffer patterns that follow edits.
 - **Outline**: `<tab>` cycles a subtree (folded, children, all), `<s-tab>` the buffer; `M-<ret>` adds a heading; promote, demote and move subtrees. Drawers (`:PROPERTIES:` … `:END:`) start closed and close again as headings cycle open; `<tab>` on one toggles it.
 - **TODO and checkboxes**: TODO keywords cycle (`org-todo-keywords`), checkboxes toggle and update `[1/3]` cookies. `<ret>` does what the line means (link, checkbox, TODO, table), as in Doom Emacs.
+- **Priorities**: a heading's `[#A]`, `[#B]` or `[#C]`, after its TODO keyword, is drawn in `org.priority`. `C-c ,` (`SPC m p`) sets it from a menu: `a`, `b`, `c`, or space to remove it. The agenda sorts entries on the same date, and the TODOs with no date, by priority, a heading without one counting as `B`, as in Org.
 - **Links**: `[[target][text]]`; `<ret>` or `gx` follows one (a file, with `::LINE`, or a URL through `xdg-open`). Off the cursor's line a link shows just its description, as with org-appear.
 - **Tables**: aligned, `|-` lines become rules, `<tab>` moves to the next cell. Typing in a cell in insert state keeps the table aligned as you go, the cursor staying in its cell; the cell keeps what was typed up to the cursor, spaces included, and the whole insert stays one undo step.
 - **Dates**: a calendar above the command line (three months, arrows and PageUp/PageDown, or typed: `fri`, `+3d`, `11-03`, `tom 3pm`). `C-c C-s` and `C-c C-d` (`SPC m s`, `SPC m d`) set SCHEDULED and DEADLINE; `C-c .` puts or changes a timestamp.
@@ -28,4 +29,4 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 
 ## Known gaps
 
-- No repeating timestamps, priorities or export, and properties aren't read. [#15](https://github.com/apisandipas/imp/issues/15)
+- No repeating timestamps or export, and properties aren't read. [#15](https://github.com/apisandipas/imp/issues/15)
