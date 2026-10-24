@@ -3611,15 +3611,19 @@
   (lambda (ex) (go-to-buffer! (buffer-new! ""))))
 
 (define (buffer-line id)
-  "The line :ls shows for buffer `id`: number, flags and name.
-   %a marks the current buffer, # the alternate one, + unsaved changes."
+  "The line :ls shows for buffer `id`: number, flags and name, the name
+   a path run so a long one is shortened from the start. %a marks the
+   current buffer, # the alternate one, + unsaved changes."
   (let ([info (buffer-info id)])
-    (string-append (pad-right (number->string id) 4)
-                   (cond [(= id (current-buffer)) "%a "]
-                         [(equal? id *alternate-buffer*) "#  "]
-                         [else "   "])
-                   (if (caddr info) "+ " "  ")
-                   "\"" (car info) "\"")))
+    (list (list (string-append (pad-right (number->string id) 4)
+                               (cond [(= id (current-buffer)) "%a "]
+                                     [(equal? id *alternate-buffer*) "#  "]
+                                     [else "   "])
+                               (if (caddr info) "+ " "  ")
+                               "\"")
+                "")
+          (list (car info) "popup.path")
+          "\"")))
 
 (define-ex! '("ls" "buffers" "files")
   (lambda (ex) (show-popup! (map buffer-line (buffer-list)))))

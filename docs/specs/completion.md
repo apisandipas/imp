@@ -9,7 +9,7 @@ A vertico/orderless-style menu at the prompt, one of the packages a new editor n
 
 ## Behaviour
 
-- `(completing-read prompt candidates on-select)` opens a prompt with a menu of matches that narrows as you type.
+- `(completing-read prompt candidates on-select)` opens a prompt with a menu of matches that narrows as you type. A candidate with a `/` too long for the menu is shortened from the start, keeping the file name.
 - Matching is orderless: the query splits on spaces and every part must match, as a substring or else a fuzzy subsequence, ranked by score. Filtering is in Rust (`fuzzy-filter`), since a project's file list can be large.
 - `C-n C-p <up> <down>` move, `<ret>` takes the selection (or the typed text when nothing matches), `<esc>` cancels.
 - Used by M-x, find-file, switch-buffer (offering the alternate buffer first) and describe-*.
@@ -21,6 +21,3 @@ A vertico/orderless-style menu at the prompt, one of the packages a new editor n
 - `M-x`, `SPC :` and `SPC SPC` run commands; `SPC f f` finds a file, `SPC b b` switches buffer.
 - `*completion-category*` tells packages (icons) what is being chosen.
 
-## Known gaps
-
-- Long paths in menus are cut at the screen edge rather than shortened from the start. [#18](https://github.com/apisandipas/imp/issues/18)
