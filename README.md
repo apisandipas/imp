@@ -87,7 +87,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 
 - **Vim.** Motions, operators, text objects, counts, `.`, registers, macros,
   marks, visual modes, search and `:s`, `:g`, folds, splits and buffers,
-  matched against real Vim's behavior.
+  matched against real Vim's behavior. A pause after `g`, `z`, `[`, `]` or
+  `C-w` shows the keys that can follow.
 - **Space leader.** `SPC` shows what follows it: `f` files, `b` buffers, `w`
   windows, `p` projects, `s` search, `g` git, `c` code, `o` org and
   terminals, `h` help, `t` toggles. `M-x` runs any command by name.
@@ -146,6 +147,7 @@ runtime and can change anything in it. `c` on the start screen opens it.
 (load-theme! 'gruvbox-dark)                  ; one-dark, gruvbox-dark, everforest-dark, one-light
 
 (define-key! 'normal "C-s" 'save-buffer)
+(define-key! 'normal "gb" 'switch-buffer "switch buffer")  ; labelled in which-key
 
 ;; A command of your own, on the leader and in M-x.
 (define-command! 'insert-date
