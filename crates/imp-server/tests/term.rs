@@ -256,3 +256,21 @@ fn classic_mouse_encoding_and_press_only() {
     wait_for(&mut s, "the press", |s| s.text().contains(r#"\x1b[M"%!"#));
     assert!(!s.text().contains(r"\x1b[M#"), "{}", s.text());
 }
+
+#[test]
+fn pastes_go_to_the_program_bracketed_if_it_asks() {
+    if !have_python() {
+        return;
+    }
+    let mut s = server("");
+    // A program that turns on bracketed paste and prints what it reads.
+    type_keys(
+        &mut s,
+        ":terminal python3 -c \"import os,tty; tty.setraw(0); os.write(1, b'\\\\x1b[?2004hready\\\\r\\\\n'); [os.write(1, (repr(os.read(0, 64)) + '\\\\r\\\\n').encode()) for _ in range(3)]\"<ret>",
+    );
+    wait_for(&mut s, "the program", |s| s.text().contains("ready"));
+    s.handle(imp_core::protocol::ClientMsg::Paste("a\nb".into()));
+    wait_for(&mut s, "the paste", |s| {
+        s.text().contains(r"\x1b[200~a\rb\x1b[201~")
+    });
+}

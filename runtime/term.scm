@@ -124,6 +124,21 @@
 
 (set! *mouse-handler* term-mouse!)
 
+(define (term-paste! text)
+  "Gives pasted `text` to the program in the terminal state, bracketed
+   if it asked for that, line breaks as returns as terminals send them.
+   #t if it did."
+  (let ([id (and (eq? *mode* 'terminal) (term-id))]
+        [text (list->string (map (lambda (c) (if (equal? c #\newline) (integer->char 13) c)) (string->list text)))])
+    (and id
+         (let ([esc (string (integer->char 27))])
+           (term-send! id (if (term-bracketed-paste? id)
+                              (string-append esc "[200~" text esc "[201~")
+                              text))
+           #t))))
+
+(set! *paste-handler* term-paste!)
+
 (define (term-fit! id)
   "Sizes terminal `id` to the windows showing it: the smallest rows and
    columns among them, as Neovim does. Unshown, it keeps its size."
