@@ -11,6 +11,7 @@ mod complete;
 mod crdt;
 #[cfg(unix)]
 pub mod daemon;
+mod diff;
 mod docs;
 mod editor;
 mod events;

@@ -996,6 +996,20 @@ pub fn register(engine: &mut Engine) {
             e.fold_starts.insert(id, starts);
         })
     });
+    // The blocks of lines that differ between two texts, as a list of
+    // (old-start old-count new-start new-count), lines counted from 0.
+    engine.register_fn("line-diff", |old: String, new: String| {
+        crate::diff::line_hunks(&old, &new)
+            .into_iter()
+            .map(|h| {
+                vec![h.old_start, h.old_count, h.new_start, h.new_count]
+                    .into_iter()
+                    .map(|n| SteelVal::IntV(n as isize))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+
     // Gutter signs for the current buffer: a list of (line text face);
     // '() removes them, and the sign column with them.
     engine.register_fn("set-signs!", |signs: Vec<Vec<SteelVal>>| {
