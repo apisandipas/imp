@@ -2355,8 +2355,10 @@
      (set! *count* (string-append *count* key))]
 
     ;; Search prompts. With an operator pending, the search is its motion.
+    ;; A buffer's mode can take / or ? over (? in the git status).
     [(and (not *prefix*) (member key '("/" "?"))
-          (not (and (equal? *operator* "g?") (equal? key "?")))) ; g??
+          (not (and (equal? *operator* "g?") (equal? key "?"))) ; g??
+          (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
      (let ([op *operator*]
            [count (* (count-value *operator-count*) (count-value *count*))])
        (reset-pending!)

@@ -13,6 +13,7 @@ anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runt
 - **Popup windows**: a generated buffer whose name matches a rule (`define-popup-rule!`) opens along an edge of the frame: `*grep*` along the bottom, `*git…*`, `*faces*` and `*capture*` down the right. `q` closes it, a file opened from it opens in the window it came from, and a popup opened from a popup reuses its window.
 - **Display**: soft wrap (on by default, as in Vim), `linebreak` to wrap between words, Unicode display width (wide chars take two cells, combining marks none), horizontal scrolling without wrap, line numbers (absolute, relative, hybrid), `cursorline`, `signcolumn`.
 - **Frames**: only changed rows are sent and redrawn.
+- **Footers**: a buffer can have footer lines, made of (text face) parts (`set-footer!`), pinned at the bottom of each window showing it, above its status line, however far the window scrolls. They take rows from the text, aren't part of it (the cursor can't go there, a click on them does nothing), and are cut to the window's width; a window with fewer than two rows of text beside them leaves them out.
 - **Special buffers**: generated buffers in `special-mode`, where `q` returns to where you were; `menu!` popups and `confirm!`; read-only buffers (`:set nomodifiable`).
 
 ## Keys and options

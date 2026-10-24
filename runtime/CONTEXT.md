@@ -11,7 +11,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Every function and command has an Emacs-style docstring: a string first in its body (or in the command's lambda), its first line a sentence of its own. Help and M-x show it. Variables and options get a comment above. `tools/docstrings.py missing` lists gaps.
 - A file can't call a function first defined in a later file, and a `define` there won't replace an earlier file's function for its callers. To extend across files, use hooks, tables (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`, `*local-keymaps*`, `*cmdline-key-handler*`).
 - Show a package's buffers with `display-buffer!`, not `go-to-buffer!`, so popup rules apply.
-- A buffer's mode keys come before Vim's operators, motions and prefixes, so special buffers can bind `c`, `d`, `q`, `g`.
+- A buffer's mode keys come before Vim's operators, motions, prefixes and the `/` and `?` search prompts, so special buffers can bind `c`, `d`, `q`, `g`, `?`.
 
 ## Extension points
 
@@ -24,7 +24,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Background: `run-after!`, `run-every!`, `start-job!`.
 - Completion: `completing-read`, `define-completion-source!`, `set-completion-sources!`, `define-snippet!`.
 - Languages: `define-mode-language!`, `define-syntax-objects!`, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.
-- Special buffers (`special.scm`): `special-mode`, `menu!`, `confirm!`, `draw-line!`, `define-popup-rule!`.
+- Special buffers (`special.scm`): `special-mode`, `menu!` (entries may be short key sequences, `gr`), `confirm!`, `draw-line!`, `define-popup-rule!`, and `set-footer!` for lines pinned at the bottom of a buffer's windows.
 - Themes: `define-theme!`, `load-theme!`; MCP: `define-mcp-tool!`; sockets: `listen-socket!`.
 
 ## Notes

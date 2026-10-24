@@ -359,3 +359,53 @@ fn a_remote_head_is_not_a_branch() {
     type_keys(&mut s, "bbother<ret>");
     assert_eq!(git(&dir, &["branch", "--show-current"]), "other\n");
 }
+
+#[test]
+fn question_mark_runs_the_key_pressed() {
+    let dir = repo("git-menu");
+    let mut s = status(&dir);
+    // ? lists every key with its label.
+    type_keys(&mut s, "?");
+    let popup = s.frame().text_rows().join("\n");
+    for entry in ["stage", "unstage", "commit", "pull", "push", "refresh"] {
+        assert!(popup.contains(entry), "{entry} in {popup}");
+    }
+    // s from it stages the file at the cursor.
+    type_keys(&mut s, "<esc>");
+    go_to(&mut s, "untracked  b.txt");
+    type_keys(&mut s, "?s");
+    assert!(git(&dir, &["diff", "--cached", "--name-only"]).contains("b.txt"));
+    // c opens the commit menu; g waits for the r of gr.
+    type_keys(&mut s, "?c");
+    assert!(s.frame().text_rows().join("\n").contains("amend"));
+    type_keys(&mut s, "<esc>?g");
+    assert!(s.frame().text_rows().join("\n").contains("refresh"));
+    type_keys(&mut s, "r");
+    assert!(!s.status().contains("undefined"), "{}", s.status());
+}
+
+#[test]
+fn the_main_keys_are_at_the_bottom_of_the_status_window() {
+    let dir = repo("git-hints");
+    let mut s = status(&dir);
+    // A 120x24 screen, so the half-width status window fits the lines:
+    // its status line is row 22, its footer the two rows above.
+    s.handle(imp_core::ClientMsg::Resize {
+        width: 120,
+        height: 24,
+    });
+    let rows = s.frame().text_rows();
+    let right = |r: &String| r.split('│').nth(1).unwrap_or("").trim_end().to_string();
+    assert_eq!(
+        right(&rows[20]),
+        "s stage  u unstage  c commit  F pull  P push"
+    );
+    assert_eq!(
+        right(&rows[21]),
+        "<tab> diff  x discard  b branch  l log  ? all keys"
+    );
+    // git-status-hints off leaves them out.
+    s.eval("(set-option! 'git-status-hints #f)").unwrap();
+    type_keys(&mut s, "gr");
+    assert!(!s.frame().text_rows().iter().any(|r| r.contains("all keys")));
+}

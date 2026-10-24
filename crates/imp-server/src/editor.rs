@@ -13,6 +13,8 @@ use regex::Regex;
 
 use crate::layout::{Dir, Layout, Rect};
 
+/// A footer line: (text, face) parts.
+pub type FooterLine = Vec<(String, Option<String>)>;
 /// One line's margin text: (text, face) parts.
 pub type MarginText = Vec<(String, String)>;
 
@@ -130,6 +132,9 @@ pub struct Editor {
     /// Each buffer's folds by first line, the outermost starting there,
     /// and whether it's closed: the fold column's chevrons.
     pub fold_starts: HashMap<usize, BTreeMap<usize, bool>>,
+    /// Each buffer's footer: lines of (text, face) parts pinned at the
+    /// bottom of its windows, above their status lines.
+    pub footers: HashMap<usize, Vec<FooterLine>>,
     /// When each buffer shows its fold column (the `foldcolumn` option).
     pub fold_columns: HashMap<usize, crate::render::GutterColumn>,
     /// Timers and jobs, which report back through the server's events.
@@ -308,6 +313,7 @@ impl Editor {
         self.folds.remove(&id);
         self.fold_starts.remove(&id);
         self.fold_columns.remove(&id);
+        self.footers.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
         self.outline_indents.remove(&id);
@@ -373,12 +379,23 @@ impl Editor {
     }
 
     /// Rows for text in the current window: its height less its status
-    /// line.
+    /// line and footer.
     pub fn text_rows(&self) -> usize {
-        self.window_rect(self.current_window)
-            .h
-            .saturating_sub(1)
+        let h = self.window_rect(self.current_window).h;
+        h.saturating_sub(1 + self.footer_rows(self.current, h))
             .max(1)
+    }
+
+    /// Rows a window `height` rows tall showing `buffer_id` gives its
+    /// footer: all its lines, or none if that would leave fewer than two
+    /// rows of text.
+    pub fn footer_rows(&self, buffer_id: usize, height: usize) -> usize {
+        let n = self.footers.get(&buffer_id).map_or(0, Vec::len);
+        if height.saturating_sub(1) >= n + 2 {
+            n
+        } else {
+            0
+        }
     }
 
     /// Makes the first window, showing the current buffer. Called once

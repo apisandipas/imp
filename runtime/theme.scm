@@ -126,6 +126,7 @@
      ;; Git and diffs
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))
+     (list "git.key" (fg 'yellow "bold"))
      (list "git.branch" (fg 'cyan "bold"))
      (list "git.remote" (fg 'green "bold"))
      (list "git.hash" (fg 'dim))
