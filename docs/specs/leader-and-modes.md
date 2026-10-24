@@ -2,7 +2,7 @@
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/9
 summary: "The SPC leader and Vim prefixes with which-key, and major and minor modes."
-anchors: [runtime/leader.scm, runtime/modes.scm, crates/imp-server/tests/leader.rs, crates/imp-server/tests/modes.rs]
+anchors: [runtime/leader.scm, runtime/modes.scm, "symbol:binding-label", "symbol:*prefix-which-key*", crates/imp-server/tests/leader.rs, crates/imp-server/tests/modes.rs]
 ---
 # Leader and modes
 

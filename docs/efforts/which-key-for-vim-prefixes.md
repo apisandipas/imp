@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/leader-and-modes]]"]
 issue: https://github.com/apisandipas/imp/issues/9
 frozen:
