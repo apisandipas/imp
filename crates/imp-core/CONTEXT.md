@@ -8,7 +8,7 @@ Types the server and every client share. Clients depend on this crate, never on 
 
 ## Protocol
 
-- Clients send `Key` (Vim-notation names: `"j"`, `"<esc>"`, `"C-r"`, `"M-x"`), `Resize`, `Open`, `Mouse` (with `fine`, hundredths of a cell), and describe themselves: `Hello { heights: true }` from a client that draws text at different sizes, `Cell { width }` (hundredths of a logical pixel) from one with real cell widths. The terminal sends neither.
+- Clients send `Key` (Vim-notation names: `"j"`, `"<esc>"`, `"C-r"`, `"M-x"`), `Resize`, `Open`, `Mouse` (with `fine`, hundredths of a cell), `Paste` (the terminal client's bracketed paste, the text whole), and describe themselves: `Hello { heights: true }` from a client that draws text at different sizes, `Cell { width }` (hundredths of a logical pixel) from one with real cell widths. The terminal sends neither.
 - The server replies with a whole `Frame` (rows of styled spans and the cursor), then `Patch`es of changed rows, or `Quit`. For a client that draws heights, a window's text comes as a `WindowBlock` of `BlockRow`s and those cells of `Frame::rows` are left blank; other clients get every height stripped.
 - Each `Frame` carries the window `appearance` (font, padding, opacity, divider) with the `normal` face's background.
 
