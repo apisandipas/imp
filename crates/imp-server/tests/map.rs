@@ -206,3 +206,11 @@ fn map_commands_list_mappings() {
     type_keys(&mut s, "<esc>:imap<ret>");
     assert_eq!(s.status(), "i   jk            * <Esc>");
 }
+
+#[test]
+fn maps_from_init_scm() {
+    let mut s = server("\n");
+    s.eval(r#"(run-ex! "inoremap jk <Esc>")"#).unwrap();
+    type_keys(&mut s, "iajkx");
+    assert_eq!(s.text(), "\n");
+}

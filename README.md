@@ -147,6 +147,7 @@ runtime and can change anything in it. `c` on the start screen opens it.
 (load-theme! 'gruvbox-dark)                  ; one-dark, gruvbox-dark, everforest-dark, one-light
 
 (define-key! 'normal "C-s" 'save-buffer)
+(run-ex! "inoremap jk <Esc>")                ; Vim's :map family works too
 (define-key! 'normal "gb" 'switch-buffer "switch buffer")  ; labelled in which-key
 
 ;; A command of your own, on the leader and in M-x.
