@@ -195,3 +195,19 @@ fn repeating_back_to_the_first_keyword_is_one_undo() {
     type_keys(&mut s, "u");
     assert_eq!(s.text(), "* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
 }
+
+#[test]
+fn picking_a_new_date_keeps_the_repeater() {
+    let mut s = setup("* TODO Water\nSCHEDULED: <2026-10-01 Thu 08:00 .+1w -1d>\n");
+    type_keys(&mut s, "<C-c><C-s>fri<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Water\nSCHEDULED: <2026-10-23 Fri .+1w -1d>\n"
+    );
+    // And C-c . on one.
+    type_keys(&mut s, "gg0jf<<C-c>.tom 9am<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Water\nSCHEDULED: <2026-10-22 Thu 09:00 .+1w -1d>\n"
+    );
+}

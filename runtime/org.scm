@@ -934,6 +934,14 @@
            #f
            (org-repeating-stamps heading (org-body-end heading)))))
 
+(define (org-restamp old new)
+  "Timestamp `new` with the repeater and warning of timestamp `old`, so
+   picking a new date keeps them."
+  (let ([o (org-parse-stamp old)] [n (org-parse-stamp new)])
+    (if (and o n)
+        (org-stamp->string (list (car n) (cadr n) (caddr n) (cadddr o) (list-ref o 4)))
+        new)))
+
 (define (org-set-planning! heading key stamp)
   "Sets `key` (\"SCHEDULED:\" or \"DEADLINE:\") of the heading on line
    `heading` to timestamp `stamp`, on its planning line (made if there
@@ -946,7 +954,8 @@
                [at (string-index-from text key 0)]
                [bounds (and at (org-stamp-bounds text (+ at (string-length key))))])
           (cond
-            [bounds (replace-range! (+ (line-start next) (car bounds)) (+ (line-start next) (cadr bounds)) stamp)]
+            [bounds (replace-range! (+ (line-start next) (car bounds)) (+ (line-start next) (cadr bounds))
+                                   (org-restamp (substring text (car bounds) (cadr bounds)) stamp))]
             [at (buffer-insert! (+ (line-start next) at (string-length key)) (string-append " " stamp))]
             [else (buffer-insert! (line-end next) (string-append " " key " " stamp))]))
         (buffer-insert! (line-end heading) (string-append "\n" key " " stamp)))))
@@ -1003,7 +1012,10 @@
          [initial (and old (string->date (buffer-substring (+ (car old) 1) (+ (car old) 11))))])
     (read-date "Date: " initial
                (lambda (d)
-                 (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                 (let ([stamp (if old
+                                  (org-restamp (buffer-substring (car old) (cadr old))
+                                               (date-timestamp (take d 3) (cadddr d) #t))
+                                  (date-timestamp (take d 3) (cadddr d) #t))])
                    (begin-change!)
                    (if old
                        (replace-range! (car old) (cadr old) stamp)
