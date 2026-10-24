@@ -244,22 +244,22 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
             "Agenda: 2026-10-18 to 2026-10-24",
             "",
             "Overdue",
-            "  2026-10-01  Scheduled:  TODO Water  a.org",
-            "  2026-10-20  Scheduled:  TODO Pay  a.org",
+            "  2026-10-01  Scheduled:  TODO Water  a",
+            "  2026-10-20  Scheduled:  TODO Pay  a",
             "",
             "Sunday    18 October 2026",
             "Monday    19 October 2026",
             "Tuesday   20 October 2026",
-            "  Scheduled:  TODO Pay  a.org",
+            "  Scheduled:  TODO Pay  a",
             "Wednesday 21 October 2026  today",
             "Thursday  22 October 2026",
-            "  Scheduled:  TODO Water  a.org",
+            "  Scheduled:  TODO Water  a",
             "Friday    23 October 2026",
-            "  Deadline:   TODO Ship  a.org",
+            "  Deadline:   TODO Ship  a",
             "Saturday  24 October 2026",
             "",
             "To do",
-            "  TODO Someday  a.org",
+            "  TODO Someday  a",
         ]
     );
     // f shows the next week, the repeat on its Thursday; . comes back.
@@ -268,7 +268,7 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
     assert_eq!(next[0], "Agenda: 2026-10-25 to 2026-10-31");
     let thu = next.iter().position(|l| l.starts_with("Thursday")).unwrap();
     assert_eq!(next[thu], "Thursday  29 October 2026");
-    assert_eq!(next[thu + 1], "  Scheduled:  TODO Water  a.org");
+    assert_eq!(next[thu + 1], "  Scheduled:  TODO Water  a");
     type_keys(&mut s, "bb");
     assert_eq!(lines(&s)[0], "Agenda: 2026-10-11 to 2026-10-17");
     type_keys(&mut s, ".");
@@ -277,4 +277,15 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
     s.eval("(set-option! 'org-agenda-span 3)").unwrap();
     type_keys(&mut s, "gr");
     assert_eq!(lines(&s)[0], "Agenda: 2026-10-18 to 2026-10-20");
+}
+
+#[test]
+fn the_agenda_shows_each_entry_s_category() {
+    let s = agenda(
+        "agenda-category",
+        "#+CATEGORY: home\n* TODO Plain\n* Work\n:PROPERTIES:\n:CATEGORY: job\n:END:\n** TODO Report\n",
+    );
+    let text = lines(&s);
+    assert!(text.contains(&"  TODO Plain  home".to_string()), "{text:?}");
+    assert!(text.contains(&"  TODO Report  job".to_string()), "{text:?}");
 }

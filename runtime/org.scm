@@ -24,6 +24,7 @@
 ;;;   C-c C-s    schedule the heading (SCHEDULED:), from a calendar
 ;;;   C-c C-d    give it a deadline (DEADLINE:)
 ;;;   C-c .      put a timestamp at the cursor, or change the one there
+;;;   C-c C-x p  set a property of the heading (SPC m P); empty removes it
 ;;;
 ;;; A timestamp ending in a repeater, <2026-10-24 Sat +1w> (or ++1w, .+1w),
 ;;; moves on when its heading is marked done, and the heading goes back
@@ -884,31 +885,40 @@
 
 (define (org-file-entries file)
   "Agenda entries in `file`: (file line keyword title scheduled deadline
-   priority), the dates as org-parse-stamp gives them."
-  (let loop ([lines (text-lines (read-file file))] [n 0] [acc '()] [current #f])
-    (let ([finish (lambda (acc) (if current (cons current acc) acc))])
-      (if (null? lines)
-          (reverse (finish acc))
-          (let* ([text (car lines)] [level (org-level-of text)])
-            (cond
-              [level
-               (let* ([rest (substring text (+ level 1) (string-length text))]
-                      [kw (org-keyword-in rest)]
-                      [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)])
-                 (loop (cdr lines) (+ n 1) (finish acc) (list file n kw title #f #f (org-priority-in title))))]
-              [current
-               (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
-                      [current (list (car current) (cadr current) (caddr current) (cadddr current)
-                                     (or s (list-ref current 4)) (or d (list-ref current 5)) (list-ref current 6))])
-                 (loop (cdr lines) (+ n 1) acc current))]
-              [else (loop (cdr lines) (+ n 1) acc current)]))))))
+   priority category), the dates as org-parse-stamp gives them."
+  (let* ([all (text-lines (read-file file))]
+         [vec (list->vector all)]
+         [base (file-name-of file)]
+         [base (if (ends-with? base ".org") (substring base 0 (- (string-length base) 4)) base)]
+         [file-category (or (org-file-setting vec "#+CATEGORY:") base)])
+    (let loop ([lines all] [n 0] [acc '()] [current #f])
+      (let ([finish (lambda (acc) (if current (cons current acc) acc))])
+        (if (null? lines)
+            (reverse (finish acc))
+            (let* ([text (car lines)] [level (org-level-of text)])
+              (cond
+                [level
+                 (let* ([rest (substring text (+ level 1) (string-length text))]
+                        [kw (org-keyword-in rest)]
+                        [title (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest)])
+                   (loop (cdr lines) (+ n 1) (finish acc)
+                         (list file n kw title #f #f (org-priority-in title)
+                               (or (org-lines-property vec n "CATEGORY" #t) file-category))))]
+                [current
+                 (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
+                        [current (list (car current) (cadr current) (caddr current) (cadddr current)
+                                       (or s (list-ref current 4)) (or d (list-ref current 5)) (list-ref current 6)
+                                       (list-ref current 7))])
+                   (loop (cdr lines) (+ n 1) acc current))]
+                [else (loop (cdr lines) (+ n 1) acc current)])))))))
 
 (define (org-entry-done? e)
   "Whether agenda entry `e` has a done keyword (see `org-done-keywords`)."
   (and (caddr e) (member (caddr e) (org-done-keywords)) #t))
 
 (define (org-agenda-line! e date what)
-  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...).
+  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...),
+   and its category.
    Either may be #f. The line remembers the entry's file and line, so
    <ret> on it goes there."
   (draw-line! (list (list "  " #f)
@@ -916,7 +926,7 @@
                    (list (if what (pad-right what 12) "") "org.special")
                    (list (if (caddr e) (string-append (caddr e) " ") "") (if (org-entry-done? e) "org.done" "org.todo"))
                    (list (cadddr e) #f)
-                   (list (string-append "  " (file-name-of (car e))) "git.count"))
+                   (list (string-append "  " (list-ref e 7)) "git.count"))
              (list 'org (car e) (cadr e))))
 
 ;; The first day the agenda shows, or #f for this week's.
