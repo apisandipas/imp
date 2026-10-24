@@ -181,6 +181,12 @@
       (set-local-option! 'foldmethod "indent"))
   void)
 (add-hook! 'buffer-open open-folds!)
+;; Files on the command line exist before buffer-open could run; they get
+;; theirs at startup, after their major modes (modes.scm).
+(add-hook! 'startup
+           (lambda ()
+             (for-each (lambda (id) (with-buffer id (lambda () (when (buffer-path) (open-folds!)))))
+                       (buffer-list))))
 
 ;;; Making and deleting folds by hand is for foldmethod manual, as in Vim.
 

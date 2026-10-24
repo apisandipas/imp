@@ -136,3 +136,16 @@ fn a_wrapped_line_s_later_rows_don_t_toggle() {
     click(&mut s, 0, 1);
     assert!(rows(&mut s)[0].starts_with("▾ x"));
 }
+
+#[test]
+fn a_file_on_the_command_line_gets_its_folds() {
+    let file = temp_path("startup.txt");
+    std::fs::write(&file, "fn a\n    one\n").unwrap();
+    let mut s = imp_server::Server::new(
+        imp_core::Buffer::open(&file).unwrap(),
+        imp_server::Options { user_config: None },
+    )
+    .expect("runtime loads");
+    assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""indent""#);
+    assert!(rows(&mut s)[0].starts_with("▾ fn a"), "{:?}", rows(&mut s));
+}
