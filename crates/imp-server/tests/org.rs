@@ -571,3 +571,29 @@ fn heading_heights_come_from_the_option() {
     assert_eq!(style(&mut s, 0).height, 200);
     assert_eq!(style(&mut s, 1).height, 0);
 }
+
+const PROPERTIES: &str = "#+property: owner Ann\n* Project\n:PROPERTIES:\n:Effort: 2h\n:CATEGORY: work\n:END:\n** TODO Task\nSCHEDULED: <2026-10-24 Sat>\n:PROPERTIES:\n:effort:   30m\n:END:\nbody\n:PROPERTIES:\n:Late: no\n:END:\n** Other\n* Loose\n";
+
+#[test]
+fn properties_are_read_from_the_drawer() {
+    let mut s = server(PROPERTIES);
+    let mut get = |line: usize, name: &str, inherit: bool| {
+        s.eval(&format!(
+            "(org-entry-property {line} {name:?} {})",
+            if inherit { "#t" } else { "#f" }
+        ))
+        .unwrap()
+    };
+    // Its own drawer, after the planning line, any case.
+    assert_eq!(get(6, "EFFORT", false), "\"30m\"");
+    assert_eq!(get(11, "Effort", false), "\"30m\"");
+    // A drawer further down the body isn't the property drawer.
+    assert_eq!(get(6, "late", false), "#false");
+    // Inherited from the parent, then the file.
+    assert_eq!(get(15, "effort", false), "#false");
+    assert_eq!(get(15, "effort", true), "\"2h\"");
+    assert_eq!(get(15, "category", true), "\"work\"");
+    assert_eq!(get(16, "owner", true), "\"Ann\"");
+    assert_eq!(get(16, "owner", false), "#false");
+    assert_eq!(get(0, "owner", true), "\"Ann\"");
+}

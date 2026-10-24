@@ -676,6 +676,105 @@
       [else (let ([b (hash-try-get (keymap 'normal) "<tab>")])
               (when b ((if (symbol? b) (command-proc b) b) count)))])))
 
+;;; Properties
+;;;
+;;; A heading's properties are the :NAME: value lines of the :PROPERTIES:
+;;; drawer right under it (after its planning line, if any), as in Org.
+;;; They are read from lines of text, a vector, so the agenda can read
+;;; files that aren't open; (org-entry-property line name) reads the
+;;; current buffer.
+
+(define (org-property-line text)
+  "The (NAME . value) a drawer line such as \":Effort: 2h\" holds, the
+   name upper-cased, or #f."
+  (let ([t (trim text)])
+    (and (> (string-length t) 2) (starts-with? t ":")
+         (let ([close (string-index-from t ":" 1)])
+           (and close (> close 1)
+                (cons (string-upcase (substring t 1 close))
+                      (trim (substring t (+ close 1) (string-length t)))))))))
+
+(define (org-drawer-at lines heading)
+  "The (first last) lines of the property drawer of the heading at index
+   `heading` of `lines`, from :PROPERTIES: to :END:, or #f."
+  (let* ([n (vector-length lines)]
+         [at (+ heading 1)]
+         [at (if (and (< at n) (org-planning-line? (vector-ref lines at))) (+ at 1) at)])
+    (and (< at n) (equal? (string-upcase (trim (vector-ref lines at))) ":PROPERTIES:")
+         (let loop ([l (+ at 1)])
+           (cond [(or (>= l n) (org-level-of (vector-ref lines l))) #f]
+                 [(equal? (string-upcase (trim (vector-ref lines l))) ":END:") (list at l)]
+                 [else (loop (+ l 1))])))))
+
+(define (org-heading-properties lines heading)
+  "The (NAME . value) properties of the heading at index `heading`."
+  (let ([d (org-drawer-at lines heading)])
+    (if d
+        (filter (lambda (p) p) (map (lambda (l) (org-property-line (vector-ref lines l)))
+                                    (range (+ (car d) 1) (cadr d))))
+        '())))
+
+(define (org-heading-above lines index)
+  "The heading at or above index `index` of `lines`, or #f."
+  (let loop ([l index]) (cond [(< l 0) #f] [(org-level-of (vector-ref lines l)) l] [else (loop (- l 1))])))
+
+(define (org-parent-heading lines heading)
+  "The heading the one at index `heading` is under, or #f."
+  (let ([level (org-level-of (vector-ref lines heading))])
+    (let loop ([l (- heading 1)])
+      (cond [(< l 0) #f]
+            [(let ([lv (org-level-of (vector-ref lines l))]) (and lv (< lv level))) l]
+            [else (loop (- l 1))]))))
+
+(define (org-file-setting lines key)
+  "The value of the first `key` line in `lines`, as \"#+CATEGORY:\" (any
+   case) gives \"work\" from \"#+category: work\", or #f."
+  (let ([n (vector-length lines)] [k (string-upcase key)])
+    (let loop ([l 0])
+      (cond [(>= l n) #f]
+            [(let ([t (vector-ref lines l)])
+               (and (starts-with? (string-upcase t) k) (trim (substring t (string-length k) (string-length t)))))
+             => (lambda (v) v)]
+            [else (loop (+ l 1))]))))
+
+(define (org-file-property lines name)
+  "The value `#+PROPERTY: NAME value` lines give `name`, or #f."
+  (let ([n (vector-length lines)] [name (string-upcase name)])
+    (let loop ([l 0])
+      (if (>= l n)
+          #f
+          (let ([t (vector-ref lines l)])
+            (if (starts-with? (string-upcase t) "#+PROPERTY:")
+                (let* ([rest (trim (substring t 11 (string-length t)))]
+                       [parts (split-once rest " ")])
+                  (if (and (pair? parts) (equal? (string-upcase (car parts)) name))
+                      (if (pair? (cdr parts)) (trim (cadr parts)) "")
+                      (loop (+ l 1))))
+                (loop (+ l 1))))))))
+
+(define (org-lines-property lines index name inherit?)
+  "The value of property `name` for the entry at index `index` of
+   `lines`, or #f. With `inherit?`, a heading without it takes its
+   ancestors', then the file's #+PROPERTY:."
+  (let ([name (string-upcase name)])
+    (let loop ([h (org-heading-above lines index)])
+      (let ([found (and h (assoc name (org-heading-properties lines h)))])
+        (cond [found (cdr found)]
+              [(not inherit?) #f]
+              [h (loop (org-parent-heading lines h))]
+              [else (org-file-property lines name)])))))
+
+(define (org-buffer-lines)
+  "The current buffer's lines, as a vector."
+  (list->vector (map line-text (range 0 (buffer-line-count)))))
+
+(define (org-entry-property line name . inherit)
+  "The value of property `name` (any case) of the heading `line` is
+   under, or #f. With a third argument #t, a heading without it takes
+   its ancestors', then the file's #+PROPERTY: lines, as Org's
+   inheritance does."
+  (org-lines-property (org-buffer-lines) line name (and (pair? inherit) (car inherit))))
+
 ;;; The agenda
 
 (define (org-notes-file)
