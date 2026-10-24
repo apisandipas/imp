@@ -20,5 +20,5 @@ Decisions made while the owner was away (issue #14 had no answers yet): `<up>`/`
 
 - [x] Move the REPL into `runtime/repl.scm`, loaded after `files.scm`, with the tests and help unchanged.
 - [x] `M-p`/`M-n` in insert and normal state step through inputs typed this session, with prefix matching and the typed text restored past the newest; `<up>`/`<down>` do the same in insert state on the last prompt's line only. Tested in `eval.rs` or a new `repl.rs`.
-- [ ] History is saved to `repl-history` in the state directory after each input and read when the REPL first needs it, multi-line inputs intact, 200 kept; an unwritable directory is ignored. Tested with a temporary state directory.
+- [x] History is saved to `repl-history` in the state directory after each input and read when the REPL first needs it, multi-line inputs intact, 200 kept; an unwritable directory is ignored. Tested with a temporary state directory.
 - [ ] Docs: `runtime/CONTEXT.md` load order lists `repl`, and the README mentions REPL history if it describes the REPL.

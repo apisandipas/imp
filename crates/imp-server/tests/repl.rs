@@ -93,3 +93,63 @@ fn normal_state_steps_too() {
     type_keys(&mut s, "<M-p>");
     assert_eq!(input(&s), "(+ 1 1)");
 }
+
+#[test]
+fn history_lasts_across_sessions() {
+    let mut s = repl("repl-saved");
+    type_keys(&mut s, "(+ 1 1)<ret>");
+    s.eval(r#"(repl-set-input! "(string-length \"a\\\\b\n\")")"#)
+        .unwrap();
+    type_keys(&mut s, "<ret>");
+    let sent = input_before_last_prompt(&s);
+    let dir = temp_path("repl-saved");
+    // A new editor with the same state directory has the inputs.
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'state-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, ":repl<ret><M-p>");
+    assert_eq!(input(&s), sent);
+    assert!(sent.contains("\\\\b\n"), "{sent:?}");
+    type_keys(&mut s, "<M-p>");
+    assert_eq!(input(&s), "(+ 1 1)");
+}
+
+/// The input sent last: the text between the last two prompts, without
+/// the result line.
+fn input_before_last_prompt(s: &imp_server::Server) -> String {
+    let text = s.text();
+    let last = text.rfind("imp> ").unwrap();
+    let prev = text[..last].rfind("imp> ").unwrap() + 5;
+    let sent = &text[prev..last];
+    sent[..sent.trim_end_matches('\n').rfind('\n').unwrap()].to_string()
+}
+
+#[test]
+fn history_keeps_200() {
+    let mut s = repl("repl-200");
+    for i in 0..205 {
+        s.eval(&format!("(repl-add-history! \"{i}\")")).unwrap();
+    }
+    assert_eq!(s.eval("(length (repl-history))").unwrap(), "200");
+    let saved = std::fs::read_to_string(temp_path("repl-200").join("repl-history")).unwrap();
+    assert_eq!(saved.lines().count(), 200);
+    assert_eq!(saved.lines().next(), Some("204"));
+}
+
+#[test]
+fn an_unwritable_state_directory_is_ignored() {
+    let mut s = repl("repl-unwritable");
+    // A file where the directory should be: history can't be saved.
+    let file = temp_path("repl-not-a-dir");
+    std::fs::write(&file, "").unwrap();
+    s.eval(&format!(
+        "(set-option! 'state-directory {:?})",
+        file.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, "(+ 1 1)<ret><M-p>");
+    assert_eq!(input(&s), "(+ 1 1)");
+}
