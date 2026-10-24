@@ -22,6 +22,9 @@
 (define *operator* #f)         ; pending operator key, e.g. "d"
 (define *operator-count* "")   ; count typed before the operator
 (define *prefix* #f)           ; pending prefix key, e.g. "g"
+;; Called with (state title prefix) when a prefix starts waiting, and with
+;; (#f #f #f) when it stops; leader.scm sets it to show which-key.
+(define *prefix-which-key* (lambda (state title prefix) void))
 (define *goal-col* 0)          ; column j/k try to keep
 (define *registers* (hash))    ; register char -> (text linewise?)
 (define *register-prefix* #f)  ; the register named with "x for this command
@@ -124,6 +127,7 @@
   (set! *count* "")
   (set! *operator* #f)
   (set! *operator-count* "")
+  (when *prefix* (*prefix-which-key* #f #f #f))
   (set! *prefix* #f)
   void)
 
@@ -145,11 +149,13 @@
 
 (define *motions* (hash))
 
-(define (define-motion! key type proc)
+(define (define-motion! key type proc . label)
   "Makes `key` a motion of `type` (exclusive, inclusive or linewise).
    `proc` is (lambda (from count) target-offset), returning #f when the
-   motion can't move. It then works with every operator and visual mode."
+   motion can't move. It then works with every operator and visual mode.
+   An optional last argument is the label which-key shows."
   (set! *motions* (hash-insert *motions* key (list type proc)))
+  (set-binding-label! 'motion key (and (pair? label) (car label)))
   void)
 
 (define (motion-type m)
@@ -504,10 +510,12 @@
 
 (define *operators* (hash))
 
-(define (define-operator! key proc)
+(define (define-operator! key proc . label)
   "Makes `key` an operator. `proc` is (lambda (start end linewise?) ...).
-   It then works with every motion, text object, visual mode and `.`."
+   It then works with every motion, text object, visual mode and `.`.
+   An optional last argument is the label which-key shows."
   (set! *operators* (hash-insert *operators* key proc))
+  (set-binding-label! 'operator key (and (pair? label) (car label)))
   void)
 
 (define (lines-range first last)
@@ -2258,6 +2266,36 @@
 
 ;;; Normal mode dispatch
 
+;;; Which-key labels
+
+(define (binding-label state key)
+  "The which-key label of `key` in `state` ('normal or 'visual): the label
+   it was bound with, else the name of the command it runs, else #f.
+   Looks where normal-key! does, in the same order, so the binding that
+   would run is the one described."
+  (let ([keymap-label
+         (lambda (table)
+           (let ([binding (hash-try-get (keymap table) key)])
+             (and binding
+                  (list (or (binding-label-in table key)
+                            (and (symbol? binding) (symbol->string binding)))))))]
+        [table-label
+         (lambda (table found?)
+           (and found? (list (binding-label-in table key))))])
+    (let loop ([lookups
+                (append
+                 (map (lambda (m) (lambda () (keymap-label m))) (*local-keymaps* state))
+                 (if (eq? state 'visual)
+                     (list (lambda () (keymap-label 'visual))
+                           (lambda () (table-label 'operator (hash-contains? *operators* key)))
+                           (lambda () (table-label 'motion (find-motion key))))
+                     (list (lambda () (table-label 'operator (hash-contains? *operators* key)))
+                           (lambda () (table-label 'motion (find-motion key)))
+                           (lambda () (keymap-label 'normal)))))])
+      (cond [(null? lookups) #f]
+            [((car lookups)) => car]
+            [else (loop (cdr lookups))]))))
+
 ;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
 ;; reachable. Char motions and char commands are prefixes automatically.
 (define *prefix-keys* (hash "g" #t "z" #t "Z" #t "[" #t "]" #t "\"" #t))
@@ -2295,6 +2333,8 @@
    runs the command, motion, operator or text object they make. Looks in
    the buffer's mode keys before Vim's own. Afterwards keeps the cursor
    on a char and updates the goal column."
+  ;; The key after a prefix closes its which-key popup.
+  (when *prefix* (*prefix-which-key* #f #f #f))
   (cond
     [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
      (reset-pending!)]
@@ -2320,7 +2360,11 @@
     ;; A buffer's mode can take one over (q in special buffers).
     [(and (not *prefix*) (prefix-key? key)
           (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
-     (set! *prefix* key)]
+     (set! *prefix* key)
+     ;; which-key for g, z, C-w ...; not for registers, char motions or
+     ;; an operator's motion.
+     (when (and (hash-contains? *prefix-keys* key) (not (equal? key "\"")) (not *operator*))
+       (*prefix-which-key* (if (eq? *mode* 'visual) 'visual 'normal) (string-append *count* key) key))]
     [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
      (set! *prefix* key)]
 
@@ -4354,3 +4398,62 @@
      (when (and (not *operator*) (not *prefix*) (equal? *count* ""))
        (set-status! ""))
      (normal-key! key)]))
+
+;;; Which-key labels for the keys after Vim's prefixes. Binding a key again
+;;; without a label forgets its label here; tests/leader.rs fails on a
+;;; built-in key after a prefix without one.
+
+(for-each
+ (lambda (e) (set-binding-label! 'motion (car e) (cadr e)))
+ '(("gg" "first line") ("ge" "end of previous word") ("gE" "end of previous WORD")
+   ("gj" "down a screen line") ("gk" "up a screen line")
+   ("g*" "search word, partial") ("g#" "search word back, partial")))
+
+(for-each
+ (lambda (e) (set-binding-label! 'operator (car e) (cadr e)))
+ '(("gu" "lowercase") ("gU" "uppercase") ("g~" "toggle case") ("g?" "rot13")
+   ("zf" "create fold")))
+
+(for-each
+ (lambda (e) (for-each (lambda (state) (set-binding-label! state (car e) (cadr e))) (caddr e)))
+ '(("gI" "insert at column 0" (normal))
+   ("gi" "insert at last insert" (normal))
+   ("gp" "paste after, cursor after" (normal))
+   ("gP" "paste before, cursor after" (normal))
+   ("gv" "reselect last selection" (normal))
+   ("gJ" "join without spaces" (normal visual))
+   ("ZZ" "save and quit" (normal))
+   ("ZQ" "quit without saving" (normal))
+   ("zt" "line to top" (normal visual))
+   ("zz" "line to middle" (normal visual))
+   ("zb" "line to bottom" (normal visual))
+   ("z<ret>" "top, first non-blank" (normal visual))
+   ("z." "middle, first non-blank" (normal visual))
+   ("z-" "bottom, first non-blank" (normal visual))
+   ("zF" "fold lines" (normal))
+   ("zo" "open fold" (normal visual))
+   ("zO" "open folds under cursor" (normal visual))
+   ("zc" "close fold" (normal visual))
+   ("zC" "close folds under cursor" (normal visual))
+   ("za" "toggle fold" (normal visual))
+   ("zA" "toggle folds under cursor" (normal visual))
+   ("zR" "open all folds" (normal visual))
+   ("zM" "close all folds" (normal visual))
+   ("zE" "delete all folds" (normal visual))
+   ("zd" "delete fold" (normal visual))
+   ("zD" "delete folds under cursor" (normal visual))
+   ("zj" "start of next fold" (normal))
+   ("zk" "end of previous fold" (normal))))
+
+(for-each
+ (lambda (e)
+   (for-each (lambda (key)
+               (for-each (lambda (state) (set-binding-label! state (string-append "C-w" key) (cadr e)))
+                         '(normal visual)))
+             (car e)))
+ '((("s" "S" "C-s") "split") (("v" "C-v") "split vertically") (("n" "C-n") "new window")
+   (("w" "C-w") "next window") (("W") "previous window")
+   (("h" "C-h" "<left>") "window left") (("l" "C-l" "<right>") "window right")
+   (("k" "C-k" "<up>") "window above") (("j" "C-j" "<down>") "window below")
+   (("c" "C-c" "q" "C-q") "close window") (("o" "C-o") "close other windows")
+   (("=") "equal sizes") (("+") "taller") (("-") "shorter") ((">") "wider") (("<") "narrower")))

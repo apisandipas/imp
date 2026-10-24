@@ -33,5 +33,4 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 ## Known gaps
 
 - No `:map` or `:noremap`; bind keys with `define-key!` in Scheme. [#8](https://github.com/apisandipas/imp/issues/8)
-- Which-key shows for the leader and Emacs prefixes, not for Vim's `g` and `z`. [#9](https://github.com/apisandipas/imp/issues/9)
 - Undo is whole-text snapshots with no undo tree, and undo doesn't restore marks. [#5](https://github.com/apisandipas/imp/issues/5)

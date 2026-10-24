@@ -48,13 +48,14 @@
   "The keymap name for `mode` in `state`, e.g. scheme-mode:normal."
   (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
 
-(define (define-mode-key! mode state key command)
+(define (define-mode-key! mode state key command . label)
   "Binds `key` to `command` in `state` for buffers in `mode`.
    `state` is 'normal, 'visual or 'insert; the binding wins over the
-   global one there. `mode` can be a major or a minor mode:
+   global one there. `mode` can be a major or a minor mode. An optional
+   last argument is the label which-key shows:
 
-     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function)"
-  (define-key! (mode-keymap mode state) key command))
+     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function \"describe\")"
+  (apply define-key! (append (list (mode-keymap mode state) key command) label)))
 
 (define (major-mode)
   "The current buffer's major mode, fundamental-mode if it has none."
@@ -256,9 +257,10 @@
   (lambda (start end linewise?)
     (let ([first (offset->line start)] [last (offset->line (max start (- end 1)))])
       (comment-lines! first last)
-      (set-cursor! (line-first-nonblank first)))))
+      (set-cursor! (line-first-nonblank first))))
+  "comment")
 
-(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)))
+(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)) "comment")
 
 ;;; The modes that come with imp
 
@@ -322,7 +324,7 @@
       (if name (describe-function name) (message "no symbol at the cursor")))))
 
 (define-mode-key! 'scheme-mode 'normal "K" 'describe-symbol-at-point)
-(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point)
+(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point "go to definition")
 
 ;;; The local leader: SPC m runs the major mode's own bindings.
 

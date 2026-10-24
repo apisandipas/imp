@@ -67,6 +67,33 @@
     (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
           (lambda (a b) (string<? (car a) (car b))))))
 
+(define (prefix-continuations state prefix)
+  "The keys that can follow Vim prefix `prefix` in `state` ('normal or
+   'visual), as sorted (key . label) pairs: each key bound after it in the
+   buffer's mode keymaps, the state's keymap, operators, motions and (in
+   visual) text objects. A key that is itself a prefix is +prefix; one
+   with no label has \"\"."
+  (let* ([n (string-length prefix)]
+         [bound (apply append
+                       (map hash-keys->list
+                            (append (map keymap (*local-keymaps* state))
+                                    (list (keymap state) *operators* *motions*)
+                                    (if (eq? state 'visual) (list *text-objects*) '()))))]
+         [seen (hash)])
+    (for-each
+     (lambda (keys)
+       (when (and (starts-with? keys prefix) (> (string-length keys) n))
+         (let* ([key (first-key (substring keys n (string-length keys)))]
+                [full (string-append prefix key)])
+           (unless (hash-contains? seen key)
+             (set! seen (hash-insert seen key
+                                     (if (member full bound)
+                                         (or (binding-label state full) "")
+                                         "+prefix")))))))
+     bound)
+    (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
+          (lambda (a b) (string<? (car a) (car b))))))
+
 (define (key-label key)
   "How `key` shows in prompts and popups: SPC for a space."
   (if (equal? key " ") "SPC" key))
@@ -185,6 +212,31 @@
                             (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
                               (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))))))))
   void)
+
+;; Which-key for Vim's prefixes (vim.scm calls this through
+;; *prefix-which-key*): the same popup and delay as the leader.
+(define *prefix-popup* #f)  ; the prefix whose popup is up, or #f
+
+(set! *prefix-which-key*
+      (lambda (state title prefix)
+        (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
+        (when *prefix-popup* (set! *prefix-popup* #f) (set-popup! '()))
+        (when (and prefix (pair? (prefix-continuations state prefix)))
+          (let ([show! (lambda ()
+                         (set! *prefix-popup* prefix)
+                         (show-which-key-popup!
+                          (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e)))
+                                                (prefix-continuations state prefix)))
+                          title))])
+            (if (<= (option 'which-key-delay) 0)
+                (show!)
+                (set! *which-key-timer*
+                      (run-after! (option 'which-key-delay)
+                                  (lambda ()
+                                    (set! *which-key-timer* #f)
+                                    ;; Only if the prefix is still waiting.
+                                    (when (equal? *prefix* prefix) (show!))))))))
+        void))
 
 (define-command! 'leader
   (lambda (count)

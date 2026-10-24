@@ -16,14 +16,36 @@
   (let ([m (hash-try-get *keymaps* mode)])
     (if m m (hash))))
 
-(define (define-key! mode key command)
+(define (define-key! mode key command . label)
   "Binds `key` to `command` in `mode`. A command is a procedure, or the
    name (a symbol) of one made with define-command!; a name is looked up
    each time the key is pressed, so redefining the command changes every
    key bound to it. What arguments a command takes is up to the mode that
-   calls it; Vim's modes pass the count."
+   calls it; Vim's modes pass the count. An optional last argument is the
+   label which-key shows beside the key:
+
+     (define-key! 'normal \"gb\" 'switch-buffer \"switch buffer\")"
   (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command)))
+  (set-binding-label! mode key (and (pair? label) (car label)))
   void)
+
+;; table (a keymap name, or 'motion or 'operator) -> hash of key -> the
+;; label which-key shows. Binding a key without a label forgets its old one.
+(define *binding-labels* (hash))
+
+(define (set-binding-label! table key label)
+  "Sets the which-key label of `key` in `table` to `label`, or forgets it
+   when `label` is #f. `table` is a keymap name, 'motion or 'operator."
+  (let ([labels (or (hash-try-get *binding-labels* table) (hash))])
+    (set! *binding-labels*
+          (hash-insert *binding-labels* table
+                       (if label (hash-insert labels key label) (hash-remove labels key)))))
+  void)
+
+(define (binding-label-in table key)
+  "The which-key label of `key` in `table`, or #f."
+  (let ([labels (hash-try-get *binding-labels* table)])
+    (and labels (hash-try-get labels key))))
 
 ;; Keymaps checked before `mode`'s own, given `mode`: modes.scm sets this
 ;; so a buffer's minor and major modes can override keys.
