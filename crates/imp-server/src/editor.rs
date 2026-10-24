@@ -112,7 +112,7 @@ pub struct Editor {
     pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// When each buffer shows its sign column (the `signcolumn` option);
     /// a buffer not here shows it only while it has signs.
-    pub sign_columns: HashMap<usize, crate::render::SignColumn>,
+    pub sign_columns: HashMap<usize, crate::render::GutterColumn>,
     /// Buffers drawn indented by outline level (org-indent): buffer ->
     /// columns per level. See `render::outline_prefix`.
     pub outline_indents: HashMap<usize, usize>,
@@ -127,6 +127,11 @@ pub struct Editor {
     /// Each buffer's closed folds as (first, last) lines: sorted, not
     /// nested. Scheme decides where folds are (runtime/fold.scm).
     pub folds: HashMap<usize, Vec<(usize, usize)>>,
+    /// Each buffer's folds by first line, the outermost starting there,
+    /// and whether it's closed: the fold column's chevrons.
+    pub fold_starts: HashMap<usize, BTreeMap<usize, bool>>,
+    /// When each buffer shows its fold column (the `foldcolumn` option).
+    pub fold_columns: HashMap<usize, crate::render::GutterColumn>,
     /// Timers and jobs, which report back through the server's events.
     pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
@@ -301,6 +306,8 @@ impl Editor {
         self.syntax.remove(&id);
         self.buffer_layers.remove(&id);
         self.folds.remove(&id);
+        self.fold_starts.remove(&id);
+        self.fold_columns.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
         self.outline_indents.remove(&id);

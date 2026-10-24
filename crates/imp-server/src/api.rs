@@ -794,15 +794,17 @@ pub fn register(engine: &mut Engine) {
     // When the current buffer shows its sign column: "yes", "no" or
     // "auto" (while it has signs).
     engine.register_fn("set-sign-column!", |mode: String| {
-        use crate::render::SignColumn;
         editor::with(|e| {
             let id = e.current;
-            let mode = match mode.as_str() {
-                "yes" => SignColumn::Yes,
-                "no" => SignColumn::No,
-                _ => SignColumn::Auto,
-            };
-            e.sign_columns.insert(id, mode);
+            e.sign_columns.insert(id, gutter_column(&mode));
+        })
+    });
+    // When the current buffer shows its fold column: "yes", "no" or
+    // "auto" (while it has folds).
+    engine.register_fn("set-fold-column!", |mode: String| {
+        editor::with(|e| {
+            let id = e.current;
+            e.fold_columns.insert(id, gutter_column(&mode));
         })
     });
     // Draws the current buffer indented by outline level, `per-level`
@@ -950,15 +952,35 @@ pub fn register(engine: &mut Engine) {
         },
     );
 
-    // The current buffer's closed folds, as (first last) lines; nested
-    // ones are dropped, since the outer fold hides them.
-    engine.register_fn("set-closed-folds!", |folds: Vec<Vec<isize>>| {
-        let mut ranges: Vec<(usize, usize)> = folds
+    // The current buffer's folds, as (first last closed?) lines. The
+    // renderer hides what closed ones hold, nested ones dropped since the
+    // outer fold hides them, and puts a chevron on each first line.
+    engine.register_fn("set-folds!", |folds: Vec<Vec<SteelVal>>| {
+        let folds: Vec<(usize, usize, bool)> = folds
             .iter()
             .filter_map(|f| match f.as_slice() {
-                [a, b] if a <= b => Some((clamp(*a), clamp(*b))),
+                [SteelVal::IntV(a), SteelVal::IntV(b), closed] if a <= b => Some((
+                    clamp(*a),
+                    clamp(*b),
+                    !matches!(closed, SteelVal::BoolV(false)),
+                )),
                 _ => None,
             })
+            .collect();
+        let mut starts: std::collections::BTreeMap<usize, (usize, bool)> = Default::default();
+        for &(a, b, closed) in &folds {
+            if starts.get(&a).is_none_or(|&(last, _)| b > last) {
+                starts.insert(a, (b, closed));
+            }
+        }
+        let starts = starts
+            .into_iter()
+            .map(|(a, (_, closed))| (a, closed))
+            .collect();
+        let mut ranges: Vec<(usize, usize)> = folds
+            .iter()
+            .filter(|f| f.2)
+            .map(|&(a, b, _)| (a, b))
             .collect();
         ranges.sort_by_key(|&(a, b)| (a, std::cmp::Reverse(b)));
         let mut outer: Vec<(usize, usize)> = Vec::new();
@@ -971,6 +993,7 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let id = e.current;
             e.folds.insert(id, outer);
+            e.fold_starts.insert(id, starts);
         })
     });
     // Gutter signs for the current buffer: a list of (line text face);
@@ -1584,4 +1607,15 @@ pub fn register(engine: &mut Engine) {
     crate::wasm::register(engine);
     crate::crdt::register(engine);
     crate::kdl::register(engine);
+}
+
+/// A gutter column's option value ("yes", "no", "auto") as the renderer
+/// takes it.
+fn gutter_column(mode: &str) -> crate::render::GutterColumn {
+    use crate::render::GutterColumn;
+    match mode {
+        "yes" => GutterColumn::Yes,
+        "no" => GutterColumn::No,
+        _ => GutterColumn::Auto,
+    }
 }

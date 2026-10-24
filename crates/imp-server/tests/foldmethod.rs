@@ -4,6 +4,14 @@ mod common;
 
 use common::*;
 
+/// A server without the fold column, so rows start with their text; the
+/// column's own tests are in fold_column.rs.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'foldcolumn \"no\")").unwrap();
+    s
+}
+
 /// The folds as "first-last" with + for closed, sorted.
 fn folds(s: &mut imp_server::Server) -> String {
     s.eval(

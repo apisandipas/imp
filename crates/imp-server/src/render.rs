@@ -24,14 +24,14 @@ pub enum LineNumbers {
     Hybrid,
 }
 
-/// When a buffer shows its sign column (the `signcolumn` option, as in
-/// Vim).
+/// When a buffer shows a gutter column: its sign column (the
+/// `signcolumn` option, as in Vim) or its fold column (`foldcolumn`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum SignColumn {
-    /// Only while it has signs.
+pub enum GutterColumn {
+    /// Only while it has signs, or folds.
     #[default]
     Auto,
-    /// Always, so text doesn't shift as signs come and go.
+    /// Always, so text doesn't shift as they come and go.
     Yes,
     /// Never.
     No,
@@ -502,6 +502,9 @@ struct View<'a> {
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
     /// The buffer's margin text, and the margin's width.
     margin: Option<(&'a BTreeMap<usize, crate::editor::MarginText>, usize)>,
+    /// The first line of each fold, outermost, and whether it's closed,
+    /// if the buffer shows its fold column.
+    fold_starts: Option<&'a BTreeMap<usize, bool>>,
     folds: Folds<'a>,
     cursor_line: usize,
     indent: usize,
@@ -643,6 +646,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: shown_signs(e, buffer_id),
+        fold_starts: shown_fold_starts(e, buffer_id),
         margin: e
             .margins
             .get(&buffer_id)
@@ -1138,6 +1142,9 @@ impl View<'_> {
                 }
                 let margin = self.margin.map_or(0, |(_, w)| w);
                 numbers -= margin;
+                if self.fold_starts.is_some() {
+                    numbers -= FOLD_WIDTH;
+                }
                 if numbers > 0 {
                     row.push(if i == 0 {
                         Span::new(
@@ -1165,6 +1172,14 @@ impl View<'_> {
                         &" ".repeat(width.saturating_sub(used)),
                         Style::default(),
                     );
+                }
+                if let Some(starts) = self.fold_starts {
+                    let chevron = match starts.get(&line).filter(|_| i == 0) {
+                        Some(true) => "▸ ",
+                        Some(false) => "▾ ",
+                        None => "  ",
+                    };
+                    row.push(Span::new(chevron, e.face("fold-column")));
                 }
                 if prefix > 0 {
                     push(&mut row, &" ".repeat(prefix), Style::default());
@@ -1198,15 +1213,30 @@ fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
 /// Cells of the sign column, when a buffer has signs.
 const SIGN_WIDTH: usize = 2;
 
+/// Cells of the fold column: a chevron and a space.
+const FOLD_WIDTH: usize = 2;
+
+static NO_FOLD_STARTS: BTreeMap<usize, bool> = BTreeMap::new();
+
+/// A buffer's fold starts, if its fold column shows (`foldcolumn`).
+fn shown_fold_starts(e: &Editor, buffer_id: usize) -> Option<&BTreeMap<usize, bool>> {
+    let starts = e.fold_starts.get(&buffer_id).filter(|s| !s.is_empty());
+    match e.fold_columns.get(&buffer_id).copied().unwrap_or_default() {
+        GutterColumn::Auto => starts,
+        GutterColumn::Yes => Some(starts.unwrap_or(&NO_FOLD_STARTS)),
+        GutterColumn::No => None,
+    }
+}
+
 static NO_SIGNS: BTreeMap<usize, (String, String)> = BTreeMap::new();
 
 /// A buffer's signs if it shows the sign column, else None.
 fn shown_signs(e: &Editor, buffer_id: usize) -> Option<&BTreeMap<usize, (String, String)>> {
     let signs = e.signs.get(&buffer_id).filter(|s| !s.is_empty());
     match e.sign_columns.get(&buffer_id).copied().unwrap_or_default() {
-        SignColumn::Auto => signs,
-        SignColumn::Yes => Some(signs.unwrap_or(&NO_SIGNS)),
-        SignColumn::No => None,
+        GutterColumn::Auto => signs,
+        GutterColumn::Yes => Some(signs.unwrap_or(&NO_SIGNS)),
+        GutterColumn::No => None,
     }
 }
 
@@ -1228,7 +1258,12 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
         SIGN_WIDTH
     } else {
         0
-    } + margin_width(e, buffer_id);
+    } + margin_width(e, buffer_id)
+        + if shown_fold_starts(e, buffer_id).is_some() {
+            FOLD_WIDTH
+        } else {
+            0
+        };
     if e.line_numbers == LineNumbers::Off {
         return signs;
     }
