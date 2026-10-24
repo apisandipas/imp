@@ -396,6 +396,7 @@
               (set-buffer-local! 'lsp-server key)
               (set-buffer-local! 'lsp-uri uri)
               (set-buffer-local! 'lsp-version 0)
+              (set-buffer-local! 'lsp-sent (buffer-version))
               (minor-mode-on! 'lsp-mode)
               (lsp-notify! key "textDocument/didOpen"
                            (hash "textDocument"
@@ -428,11 +429,31 @@
         (set-buffer-local! 'lsp-dirty #f)
         (lsp-notify! key "textDocument/didChange"
                      (hash "textDocument" (hash "uri" (lsp-uri) "version" version)
-                           "contentChanges" (list (hash "text" (buffer-substring 0 (buffer-length))))))
+                           "contentChanges" (lsp-content-changes key)))
+        (set-buffer-local! 'lsp-sent (buffer-version))
         ;; A change can affect other files' diagnostics too.
         (if (jget (lsp-get key 'capabilities) "diagnosticProvider" "interFileDependencies")
             (lsp-pull-all! key)
             (lsp-pull-diagnostics!))))))
+
+(define (lsp-content-changes key)
+  "What changed in the current buffer since it was last sent to server
+   `key`, as didChange's contentChanges: the edits, for a server that
+   takes them and counts UTF-32 (after an edit there is no old text to
+   count UTF-16 in), or else the whole text."
+  (let* ([sync (jget (lsp-get key 'capabilities) "textDocumentSync")]
+         [incremental? (and (equal? (lsp-get key 'encoding) "utf-32")
+                            (or (equal? sync 2) (equal? (jget sync "change") 2)))]
+         [sent (buffer-local 'lsp-sent)]
+         [changes (and incremental? sent (buffer-changes-since sent))])
+    (if (pair? changes)
+        (map (lambda (c)
+               (let ([point (lambda (line col) (hash "line" line "character" col))])
+                 (hash "range" (hash "start" (point (list-ref c 4) (list-ref c 5))
+                                     "end" (point (list-ref c 6) (list-ref c 7)))
+                       "text" (list-ref c 3))))
+             changes)
+        (list (hash "text" (buffer-substring 0 (buffer-length)))))))
 
 (define (lsp-pull-diagnostics!)
   "Asks the server for the current buffer's diagnostics, if it is asked.

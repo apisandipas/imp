@@ -8,6 +8,9 @@ references (every occurrence), rename (every occurrence), formatting
 (strips trailing spaces), code actions ("bad" -> "good", and a command
 that makes the server send workspace/applyEdit) and completion.
 
+It asks for incremental document sync and applies each range, unless
+$FAKE_LSP_FULL is set, when it asks for the whole text.
+
 With $FAKE_LSP_PULL set it doesn't push diagnostics but answers
 textDocument/diagnostic, as TypeScript 7's server does; after a save it
 also reports "meh" and asks the client to pull again.
@@ -25,6 +28,7 @@ import sys
 docs = {}
 log_path = os.environ.get("FAKE_LSP_LOG")
 pull = bool(os.environ.get("FAKE_LSP_PULL"))
+full = bool(os.environ.get("FAKE_LSP_FULL"))
 flagged = ["bad"]
 
 
@@ -49,6 +53,19 @@ def send(msg):
     body = json.dumps(msg).encode()
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
+
+
+def apply_change(text, change):
+    """`text` after one contentChanges entry: a range edit, or all of it."""
+    if "range" not in change:
+        return change["text"]
+    lines = text.split("\n")
+
+    def offset(pos):
+        return sum(len(l) + 1 for l in lines[:pos["line"]]) + pos["character"]
+
+    start, end = offset(change["range"]["start"]), offset(change["range"]["end"])
+    return text[:start] + change["text"] + text[end:]
 
 
 def words(text, word=None):
@@ -95,7 +112,7 @@ def handle(msg):
         offered = params["capabilities"].get("general", {}).get("positionEncodings", [])
         reply({"capabilities": {
             "positionEncoding": "utf-32" if "utf-32" in offered else "utf-16",
-            "textDocumentSync": 1,
+            "textDocumentSync": 1 if full else {"openClose": True, "change": 2},
             "hoverProvider": True,
             "definitionProvider": True,
             "referencesProvider": True,
@@ -113,8 +130,12 @@ def handle(msg):
         publish(doc["uri"])
     elif method == "textDocument/didChange":
         uri = params["textDocument"]["uri"]
-        docs[uri] = params["contentChanges"][-1]["text"]
+        for change in params["contentChanges"]:
+            docs[uri] = apply_change(docs[uri], change)
         publish(uri)
+    elif method == "fake/text":
+        # For tests: the server's copy of a document.
+        reply(docs.get(params["uri"]))
     elif method == "textDocument/diagnostic":
         reply({"kind": "full", "items": diagnostics(params["textDocument"]["uri"])})
     elif method == "textDocument/didSave" and pull:

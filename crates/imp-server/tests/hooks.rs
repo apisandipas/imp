@@ -84,3 +84,38 @@ fn a_failing_hook_does_not_stop_the_others() {
     assert_eq!(s.eval("ran").unwrap(), "#true");
     assert!(s.status().contains("post-command hook"));
 }
+
+#[test]
+fn after_change_reports_the_changed_range() {
+    let mut s = server("one two\nthree\n");
+    s.eval(
+        r#"(define ranges '())
+           (add-hook! 'after-change (lambda () (set! ranges (cons (after-change-range) ranges))))"#,
+    )
+    .unwrap();
+    // The hook runs once per key: cw deletes "one", then 1 is typed.
+    type_keys(&mut s, "cw1<esc>");
+    assert_eq!(s.eval("(reverse ranges)").unwrap(), "((0 3 0) (0 0 1))");
+    // Several edits in one key are merged into one range.
+    s.eval(
+        r#"(define-key! 'normal "Q" (lambda (n) (buffer-insert! 5 "a") (buffer-insert! 0 "b")))"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "Q");
+    assert_eq!(s.eval("(car ranges)").unwrap(), "(0 5 7)");
+    // An undo replaces the whole text: not known.
+    type_keys(&mut s, "u");
+    assert_eq!(s.eval("(car ranges)").unwrap(), "#false");
+}
+
+#[test]
+fn changes_since_a_version_from_scheme() {
+    let mut s = server("one\ntwo\n");
+    let v = s.eval("(buffer-version)").unwrap();
+    type_keys(&mut s, "jA!<esc>");
+    assert_eq!(
+        s.eval(&format!("(buffer-changes-since {v})")).unwrap(),
+        r#"((7 7 8 "!" 1 3 1 3))"#
+    );
+    assert_eq!(s.eval("(buffer-changes-since -1)").unwrap(), "#false");
+}

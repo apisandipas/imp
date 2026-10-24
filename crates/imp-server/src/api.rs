@@ -105,6 +105,40 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-version", || {
         editor::with(|e| e.buffer.version() as isize)
     });
+    // The edits since the buffer was at `version`, oldest first, as
+    // (start old-end new-end text start-line start-col old-end-line
+    // old-end-col), or #f when they aren't known (Buffer::changes_since).
+    engine.register_fn("buffer-changes-since", |version: isize| {
+        editor::with(|e| {
+            let changes = u64::try_from(version)
+                .ok()
+                .and_then(|v| e.buffer.changes_since(v));
+            changes.map(|changes| {
+                let int = |n: usize| SteelVal::IntV(n as isize);
+                SteelVal::ListV(
+                    changes
+                        .into_iter()
+                        .map(|c| {
+                            SteelVal::ListV(
+                                vec![
+                                    int(c.start),
+                                    int(c.old_end),
+                                    int(c.new_end),
+                                    SteelVal::StringV(c.text.into()),
+                                    int(c.start_point.0),
+                                    int(c.start_point.1),
+                                    int(c.old_end_point.0),
+                                    int(c.old_end_point.1),
+                                ]
+                                .into(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                )
+            })
+        })
+    });
     engine.register_fn("buffer-modified?", || {
         editor::with(|e| e.buffer.is_modified())
     });

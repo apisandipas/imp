@@ -4,7 +4,7 @@
 //! provided for the editing layer, which decides what the positions mean.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -52,6 +52,28 @@ pub struct Buffer {
     /// `shared_text`. Kept until the next search after a change, so a
     /// searched buffer holds a second copy of its text.
     shared: RefCell<Option<(u64, Arc<str>)>>,
+    /// The last `CHANGE_LOG` edits, each with the version it made, for
+    /// `changes_since`; any number of readers can each keep a version.
+    changes: VecDeque<(u64, Change)>,
+    /// The oldest version `changes_since` can start from: edits before it
+    /// were dropped, or an undo, redo or reload replaced the whole text.
+    changes_from: u64,
+}
+
+/// How many edits `changes_since` can reach back.
+const CHANGE_LOG: usize = 1000;
+
+/// One edit, in chars: `start..old_end` became `start..new_end`, holding
+/// `text`. The (line, column) points are where it started and ended
+/// before it was made, as an LSP range wants them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub start: usize,
+    pub old_end: usize,
+    pub new_end: usize,
+    pub text: String,
+    pub start_point: (usize, usize),
+    pub old_end_point: (usize, usize),
 }
 
 /// One change to the text, in the terms a tree-sitter parser wants:
@@ -328,6 +350,40 @@ impl Buffer {
             edits.clear();
             edits.push(Edit::Reset);
         }
+        self.changes.clear();
+        self.changes_from = self.version;
+    }
+
+    /// The (line, column) of char offset `offset`.
+    fn char_point(&self, offset: usize) -> (usize, usize) {
+        let line = self.text.char_to_line(offset);
+        (line, offset - self.text.line_to_char(line))
+    }
+
+    /// Logs `change`, made by the version just reached.
+    fn log_change(&mut self, change: Change) {
+        self.changes.push_back((self.version, change));
+        if self.changes.len() > CHANGE_LOG {
+            if let Some((version, _)) = self.changes.pop_front() {
+                self.changes_from = version;
+            }
+        }
+    }
+
+    /// The edits made since the text was at `version`, oldest first, or
+    /// `None` when they aren't known: across an undo, redo or reload, or
+    /// more than `CHANGE_LOG` edits back.
+    pub fn changes_since(&self, version: u64) -> Option<Vec<Change>> {
+        if version < self.changes_from || version > self.version {
+            return None;
+        }
+        Some(
+            self.changes
+                .iter()
+                .filter(|(v, _)| *v > version)
+                .map(|(_, c)| c.clone())
+                .collect(),
+        )
     }
 
     pub fn insert(&mut self, offset: usize, text: &str) {
@@ -335,6 +391,7 @@ impl Buffer {
             return;
         }
         let offset = offset.min(self.len());
+        let start_point = self.char_point(offset);
         let tracking = self.edits.is_some();
         let before = tracking.then(|| {
             let b = self.text.char_to_byte(offset);
@@ -355,6 +412,14 @@ impl Buffer {
         }
         self.version += 1;
         let n = text.chars().count();
+        self.log_change(Change {
+            start: offset,
+            old_end: offset,
+            new_end: offset + n,
+            text: text.to_string(),
+            start_point,
+            old_end_point: start_point,
+        });
         for (name, m) in self.marks.iter_mut() {
             if *m > offset || (*m == offset && !self.sticky.contains(name)) {
                 *m += n;
@@ -371,6 +436,7 @@ impl Buffer {
         let end = end.min(self.len());
         let start = start.min(end);
         let removed = self.text.slice(start..end).to_string();
+        let points = (start < end).then(|| (self.char_point(start), self.char_point(end)));
         let before = (self.edits.is_some() && start < end).then(|| {
             let (sb, eb) = (self.text.char_to_byte(start), self.text.char_to_byte(end));
             (sb, eb, self.point(sb), self.point(eb))
@@ -386,8 +452,16 @@ impl Buffer {
                 new_end: start_point,
             });
         }
-        if start < end {
+        if let Some((start_point, old_end_point)) = points {
             self.version += 1;
+            self.log_change(Change {
+                start,
+                old_end: end,
+                new_end: start,
+                text: String::new(),
+                start_point,
+                old_end_point,
+            });
         }
         for m in self.marks.values_mut() {
             if *m >= end {
@@ -517,6 +591,60 @@ mod tests {
         assert_eq!(&*b.shared_text(), "zero one\n");
         b.undo();
         assert_eq!(&*b.shared_text(), "one\n");
+    }
+
+    #[test]
+    fn changes_since_a_version() {
+        let mut b = Buffer::from_text("one\ntwo\n");
+        let v = b.version();
+        b.insert(4, "2");
+        b.delete(0, 2);
+        let changes = b.changes_since(v).unwrap();
+        assert_eq!(
+            changes,
+            vec![
+                Change {
+                    start: 4,
+                    old_end: 4,
+                    new_end: 5,
+                    text: "2".into(),
+                    start_point: (1, 0),
+                    old_end_point: (1, 0),
+                },
+                Change {
+                    start: 0,
+                    old_end: 2,
+                    new_end: 0,
+                    text: String::new(),
+                    start_point: (0, 0),
+                    old_end_point: (0, 2),
+                },
+            ]
+        );
+        // Each reader keeps its own version.
+        assert_eq!(b.changes_since(v + 1).unwrap().len(), 1);
+        assert_eq!(b.changes_since(b.version()).unwrap(), vec![]);
+        // Nothing deleted is no change.
+        b.delete(1, 1);
+        assert_eq!(b.changes_since(v).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn changes_are_unknown_across_undo_and_far_back() {
+        let mut b = Buffer::from_text("x");
+        let v = b.version();
+        b.undo_boundary();
+        b.insert(0, "a");
+        b.undo();
+        assert_eq!(b.changes_since(v), None);
+        let after = b.version();
+        b.insert(0, "b");
+        assert_eq!(b.changes_since(after).unwrap().len(), 1);
+        for _ in 0..CHANGE_LOG {
+            b.insert(0, "c");
+        }
+        assert_eq!(b.changes_since(after), None);
+        assert_eq!(b.changes_since(after + 1).unwrap().len(), CHANGE_LOG);
     }
 
     #[test]
