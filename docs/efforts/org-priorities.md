@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/44
 frozen:
-  docs/specs/org.md: cd9696c2b1e6
+  docs/specs/org.md: 70a1f9867895
 ---
 # Org priorities
 
