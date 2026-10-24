@@ -240,3 +240,48 @@ fn jumping_far_with_wrap_is_quick() {
     );
     assert_eq!(rows[7], "line 199999");
 }
+
+#[test]
+fn end_of_line_text_follows_the_line() {
+    let mut s = sized("abc\ndef\n", 30, 10);
+    s.eval(r#"(set-face! "note" "fg=#ff0000") (set-line-end-text! 0 "a note" "note")"#)
+        .unwrap();
+    let frame = s.frame();
+    assert_eq!(frame.text_rows()[0].trim_end(), "abc  a note");
+    assert_eq!(frame.text_rows()[1].trim_end(), "def");
+    let span = frame.rows[0].iter().find(|s| s.text == "a note").unwrap();
+    assert_eq!(span.style.fg, Some(Color::Rgb(255, 0, 0)));
+    // #f takes it away.
+    s.eval(r#"(set-line-end-text! 0 #f "note")"#).unwrap();
+    assert_eq!(s.frame().text_rows()[0].trim_end(), "abc");
+}
+
+#[test]
+fn end_of_line_text_is_cut_at_the_edge() {
+    let mut s = sized("abcdef\n", 12, 10);
+    s.eval(r#"(set-line-end-text! 0 "a long note" "note")"#)
+        .unwrap();
+    assert_eq!(s.frame().text_rows()[0].trim_end(), "abcdef  a lo");
+}
+
+#[test]
+fn end_of_line_text_goes_after_a_wrapped_line() {
+    let mut s = sized(&format!("{}\n", "x".repeat(15)), 10, 10);
+    s.eval(r#"(set-option! 'wrap #t) (set-line-end-text! 0 "n" "note")"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0].trim_end(), "xxxxxxxxxx");
+    assert_eq!(rows[1].trim_end(), "xxxxx  n");
+}
+
+#[test]
+fn end_of_line_text_isnt_drawn_on_a_closed_fold() {
+    let mut s = sized("one\ntwo\nthree\n", 30, 10);
+    s.eval(r#"(set-option! 'foldcolumn "no") (set-line-end-text! 0 "note" "note")"#)
+        .unwrap();
+    for key in ["z", "f", "j"] {
+        s.handle(imp_core::ClientMsg::Key(key.into()));
+    }
+    let rows = s.frame().text_rows();
+    assert!(!rows[0].contains("note"), "{rows:?}");
+}

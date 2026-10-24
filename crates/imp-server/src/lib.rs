@@ -118,6 +118,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "nerd-icons",
         include_str!("../../../packages/nerd-icons/nerd-icons.scm"),
     ),
+    (
+        "git-blame",
+        include_str!("../../../packages/git-blame/git-blame.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from

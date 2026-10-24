@@ -1082,6 +1082,26 @@ pub fn register(engine: &mut Engine) {
         })
     });
 
+    // Text after the end of line `line` of the current buffer, in `face`;
+    // #f for `text` removes it.
+    engine.register_fn(
+        "set-line-end-text!",
+        |line: isize, text: SteelVal, face: String| {
+            editor::with(|e| {
+                let id = e.current;
+                let texts = e.line_end_texts.entry(id).or_default();
+                match text {
+                    SteelVal::StringV(t) => {
+                        texts.insert(clamp(line), (t.to_string(), face));
+                    }
+                    _ => {
+                        texts.remove(&clamp(line));
+                    }
+                }
+            })
+        },
+    );
+
     // The current buffer's footer: a list of lines, each a list of (text
     // face) parts, face #f for none; '() removes it.
     engine.register_fn("set-footer!", |lines: Vec<Vec<Vec<SteelVal>>>| {

@@ -1101,6 +1101,13 @@ impl View<'_> {
             if eol_style != Style::default() && end < width {
                 push(rows.last_mut().expect("one row"), " ", eol_style);
             }
+            self.line_end_text(
+                rows.last_mut().expect("one row"),
+                line,
+                end + 2,
+                width,
+                cursorline,
+            );
         } else {
             let (left, right) = (self.hscroll, self.hscroll + width);
             let mut row: Row = Vec::new();
@@ -1123,6 +1130,9 @@ impl View<'_> {
             }
             if eol_style != Style::default() && x_end >= left && x_end < right {
                 push(&mut row, " ", eol_style);
+            }
+            if x_end + 2 >= left {
+                self.line_end_text(&mut row, line, x_end + 2 - left, width, cursorline);
             }
             rows.push(row);
         }
@@ -1212,6 +1222,36 @@ impl View<'_> {
                 row
             })
             .collect()
+    }
+}
+
+impl View<'_> {
+    /// Draws `line`'s end-of-line text on `row` from column `at`, cut at
+    /// `width`; the cursor line's face goes under it. Not on a closed
+    /// fold's line, which ends with its note.
+    fn line_end_text(&self, row: &mut Row, line: usize, at: usize, width: usize, cursorline: bool) {
+        let e = self.e;
+        if self.folds.at(line).is_some() {
+            return;
+        }
+        let Some((text, face)) = e
+            .line_end_texts
+            .get(&self.buffer_id)
+            .and_then(|texts| texts.get(&line))
+        else {
+            return;
+        };
+        let used: usize = row.iter().map(|s| text_width(&s.text)).sum();
+        if at >= width || used > at {
+            return;
+        }
+        let base = if cursorline {
+            e.face("cursorline")
+        } else {
+            Style::default()
+        };
+        push(row, &" ".repeat(at - used), base);
+        push(row, &clip(text, width - at), e.face(face).over(base));
     }
 }
 
