@@ -180,6 +180,8 @@ imp --connect FILE              # attach a terminal to it
 imp --connect --via 'ssh host imp --bridge'
 ```
 
+The socket is in `$XDG_RUNTIME_DIR/imp`, or `/tmp/imp-$USER` without one, and imp refuses a directory owned by someone else. Whoever can connect controls the editor, and so can run commands as you. The same goes for the agent socket `(mcp-enable!)` opens, whose tools include evaluating Scheme, so enable it only for agents you'd let use your shell.
+
 ## Developing
 
 `make` lists every build and test target (`make run`, `make dev`, `make

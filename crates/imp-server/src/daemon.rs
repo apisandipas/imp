@@ -180,15 +180,38 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
 /// running") if something already answers on it, and clearing a stale one
 /// left by a process that died.
 pub(crate) fn bind(socket: &Path, busy: &str) -> Result<UnixListener, String> {
+    if let Some(dir) = socket.parent().filter(|d| !d.as_os_str().is_empty()) {
+        private_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     if UnixStream::connect(socket).is_ok() {
         return Err(format!("{busy} on {}", socket.display()));
     }
     let _ = std::fs::remove_file(socket);
-    if let Some(dir) = socket.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        // Only this user may connect: the socket gives full control.
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-    }
     UnixListener::bind(socket).map_err(|e| format!("{}: {e}", socket.display()))
+}
+
+/// Makes `dir` if needed and leaves it mode 0700. Only this user may
+/// connect, since the socket gives full control, so a directory someone
+/// else owns (another user could make `/tmp/imp-$USER` first and swap the
+/// socket) or a symlink is refused.
+fn private_dir(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| e.to_string())?;
+    let meta = std::fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
+    if !meta.is_dir() {
+        return Err("not a directory".into());
+    }
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    if meta.uid() != unsafe { libc::geteuid() } {
+        return Err("owned by another user".into());
+    }
+    if meta.mode() & 0o777 != 0o700 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
