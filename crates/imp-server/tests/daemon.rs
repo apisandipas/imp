@@ -80,6 +80,11 @@ impl Client {
 
 fn start_daemon(name: &str) -> std::path::PathBuf {
     let socket = common::temp_path(&format!("{name}.sock"));
+    start_daemon_at(name, &socket);
+    socket
+}
+
+fn options(name: &str) -> imp_server::Options {
     // State (recent files, remembered projects) stays out of the real one.
     let config = common::temp_path(&format!("{name}-init.scm"));
     std::fs::write(
@@ -90,14 +95,14 @@ fn start_daemon(name: &str) -> std::path::PathBuf {
         ),
     )
     .unwrap();
-    let s = socket.clone();
-    std::thread::spawn(move || {
-        let options = imp_server::Options {
-            user_config: Some(config),
-        };
-        imp_server::daemon::run(&s, options).unwrap();
-    });
-    socket
+    imp_server::Options {
+        user_config: Some(config),
+    }
+}
+
+fn start_daemon_at(name: &str, socket: &std::path::Path) {
+    let (s, options) = (socket.to_path_buf(), options(name));
+    std::thread::spawn(move || imp_server::daemon::run(&s, options).unwrap());
 }
 
 #[test]
@@ -160,4 +165,27 @@ fn a_second_daemon_on_the_same_socket_is_refused() {
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
     ]);
     assert!(!a.until(|_| false));
+}
+
+#[test]
+fn the_socket_directory_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+    // A directory this user owns is made 0700.
+    let dir = common::temp_path("loose");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let socket = dir.join("imp.sock");
+    start_daemon_at("loose", &socket);
+    let mut a = Client::connect(&socket);
+    let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+    a.keys(&[
+        ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
+    ]);
+    assert!(!a.until(|_| false));
+    // A symlink is refused: someone else may have put it there.
+    let link = common::temp_path("link");
+    std::os::unix::fs::symlink(&dir, &link).unwrap();
+    let err = imp_server::daemon::run(&link.join("imp.sock"), options("link"));
+    assert!(err.unwrap_err().contains("not a directory"));
 }

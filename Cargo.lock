@@ -1587,6 +1587,7 @@ dependencies = [
  "ignore",
  "imp-core",
  "kdl",
+ "libc",
  "portable-pty",
  "regex",
  "ropey",

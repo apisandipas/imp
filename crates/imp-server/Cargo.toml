@@ -23,6 +23,7 @@ tree-sitter-md.workspace = true
 ropey.workspace = true
 vt100.workspace = true
 portable-pty.workspace = true
+libc.workspace = true
 wasmtime = { workspace = true, optional = true }
 yrs = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
