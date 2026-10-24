@@ -213,6 +213,31 @@
                               (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))))))))
   void)
 
+;; Which-key for Vim's prefixes (vim.scm calls this through
+;; *prefix-which-key*): the same popup and delay as the leader.
+(define *prefix-popup* #f)  ; the prefix whose popup is up, or #f
+
+(set! *prefix-which-key*
+      (lambda (state title prefix)
+        (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
+        (when *prefix-popup* (set! *prefix-popup* #f) (set-popup! '()))
+        (when (and prefix (pair? (prefix-continuations state prefix)))
+          (let ([show! (lambda ()
+                         (set! *prefix-popup* prefix)
+                         (show-which-key-popup!
+                          (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e)))
+                                                (prefix-continuations state prefix)))
+                          title))])
+            (if (<= (option 'which-key-delay) 0)
+                (show!)
+                (set! *which-key-timer*
+                      (run-after! (option 'which-key-delay)
+                                  (lambda ()
+                                    (set! *which-key-timer* #f)
+                                    ;; Only if the prefix is still waiting.
+                                    (when (equal? *prefix* prefix) (show!))))))))
+        void))
+
 (define-command! 'leader
   (lambda (count)
     "Start a leader sequence."

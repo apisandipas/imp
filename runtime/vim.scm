@@ -22,6 +22,9 @@
 (define *operator* #f)         ; pending operator key, e.g. "d"
 (define *operator-count* "")   ; count typed before the operator
 (define *prefix* #f)           ; pending prefix key, e.g. "g"
+;; Called with (state title prefix) when a prefix starts waiting, and with
+;; (#f #f #f) when it stops; leader.scm sets it to show which-key.
+(define *prefix-which-key* (lambda (state title prefix) void))
 (define *goal-col* 0)          ; column j/k try to keep
 (define *registers* (hash))    ; register char -> (text linewise?)
 (define *register-prefix* #f)  ; the register named with "x for this command
@@ -124,6 +127,7 @@
   (set! *count* "")
   (set! *operator* #f)
   (set! *operator-count* "")
+  (when *prefix* (*prefix-which-key* #f #f #f))
   (set! *prefix* #f)
   void)
 
@@ -2329,6 +2333,8 @@
    runs the command, motion, operator or text object they make. Looks in
    the buffer's mode keys before Vim's own. Afterwards keeps the cursor
    on a char and updates the goal column."
+  ;; The key after a prefix closes its which-key popup.
+  (when *prefix* (*prefix-which-key* #f #f #f))
   (cond
     [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
      (reset-pending!)]
@@ -2354,7 +2360,11 @@
     ;; A buffer's mode can take one over (q in special buffers).
     [(and (not *prefix*) (prefix-key? key)
           (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
-     (set! *prefix* key)]
+     (set! *prefix* key)
+     ;; which-key for g, z, C-w ...; not for registers, char motions or
+     ;; an operator's motion.
+     (when (and (hash-contains? *prefix-keys* key) (not (equal? key "\"")) (not *operator*))
+       (*prefix-which-key* (if (eq? *mode* 'visual) 'visual 'normal) (string-append *count* key) key))]
     [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
      (set! *prefix* key)]
 

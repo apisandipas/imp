@@ -162,3 +162,59 @@ fn keys_after_a_vim_prefix() {
     assert!(keys(&mut s, "normal", "g").contains("\"u=mode's own\""));
     assert!(keys(&mut s, "normal", "C-w").contains("\"s="));
 }
+
+#[test]
+fn which_key_after_vim_prefixes() {
+    let mut s = server("a\nb\nc\n");
+    s.eval(r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")"#)
+        .unwrap();
+    type_keys(&mut s, "G3g");
+    let r = rows(&mut s);
+    assert!(r.contains("b → switch buffer"), "{r}");
+    // Titled with the count and the prefix.
+    assert!(r.contains("─ 3g ─"), "{r}");
+    // The next key closes it and runs: 3gg.
+    type_keys(&mut s, "g");
+    assert!(!rows(&mut s).contains("switch buffer"));
+    assert_eq!(s.cursor(), 4);
+    // <esc> cancels the prefix and closes it.
+    type_keys(&mut s, "z");
+    assert!(rows(&mut s).contains("─ z ─"));
+    type_keys(&mut s, "<esc>");
+    assert!(!rows(&mut s).contains("─ z ─"));
+    s.keys(&["C-w"]);
+    assert!(rows(&mut s).contains("─ C-w ─"), "{}", rows(&mut s));
+    type_keys(&mut s, "<esc>");
+    // In visual, the keys that work there.
+    type_keys(&mut s, "vg");
+    let r = rows(&mut s);
+    assert!(r.contains("─ g ─") && !r.contains("switch buffer"), "{r}");
+    type_keys(&mut s, "<esc><esc>");
+}
+
+#[test]
+fn no_which_key_for_registers_char_motions_or_operators() {
+    let mut s = server("abc\n");
+    for keys in ["\"", "f", "dg", "gu"] {
+        type_keys(&mut s, keys);
+        let r = rows(&mut s);
+        assert!(!r.contains(" → "), "{keys}: {r}");
+        type_keys(&mut s, "<esc>");
+    }
+}
+
+#[test]
+fn vim_prefix_which_key_waits_for_its_delay() {
+    let mut s = common::server("a\nb\n");
+    s.eval("(set-option! 'which-key-delay 30)").unwrap();
+    type_keys(&mut s, "z");
+    assert!(!s.frame().text_rows().join("\n").contains("─ z ─"));
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(s.frame().text_rows().join("\n").contains("─ z ─"));
+    // A key typed before the delay ends: no popup.
+    type_keys(&mut s, "<esc>G");
+    type_keys(&mut s, "gg");
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(!s.frame().text_rows().join("\n").contains("─ g ─"));
+    assert_eq!(s.cursor(), 0);
+}
