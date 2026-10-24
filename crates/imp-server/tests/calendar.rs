@@ -124,3 +124,30 @@ fn capture_asks_for_a_date_and_can_schedule() {
     let filed = std::fs::read_to_string(dir.join("inbox.org")).unwrap();
     assert!(filed.contains("SCHEDULED: <2026-11-01 Sun>"), "{filed}");
 }
+
+#[test]
+fn timestamps_parse_into_their_parts() {
+    let mut s = setup("");
+    let mut parse = |text: &str| s.eval(&format!("(org-parse-stamp {text:?})")).unwrap();
+    assert_eq!(
+        parse("<2026-10-24 Sat>"),
+        "(#true (2026 10 24) #false #false #false)"
+    );
+    assert_eq!(
+        parse("<2026-10-24 Sat 09:00-10:30 .+2w -3d>"),
+        "(#true (2026 10 24) \"09:00-10:30\" (\".+\" 2 \"w\") (\"-\" 3 \"d\"))"
+    );
+    assert_eq!(
+        parse("[2026-10-24 ++1m]"),
+        "(#false (2026 10 24) #false (\"++\" 1 \"m\") #false)"
+    );
+    assert_eq!(parse("<2026-10-24 Sat +1x>"), "#false");
+    assert_eq!(parse("<2026-10-24 Sat"), "#false");
+    assert_eq!(parse("<soon>"), "#false");
+    // Written back with the day name the date has.
+    assert_eq!(
+        s.eval("(org-stamp->string (list #t (list 2026 10 31) \"09:00\" (list \"+\" 1 \"w\") #f))")
+            .unwrap(),
+        "\"<2026-10-31 Sat 09:00 +1w>\""
+    );
+}

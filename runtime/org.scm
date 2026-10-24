@@ -818,6 +818,66 @@
                (and close (list i (+ close 1))))]
             [else #f]))))
 
+(define (org-interval text prefixes)
+  "The (prefix n unit) `text` is, a prefix from `prefixes` (longest
+   first) then a count and one of h d w m y, as \"+1w\" -> (\"+\" 1 \"w\").
+   #f if it is something else."
+  (let loop ([ps prefixes])
+    (cond
+      [(null? ps) #f]
+      [(starts-with? text (car ps))
+       (let* ([p (car ps)] [n (string-length text)]
+              [count (and (> n (+ (string-length p) 1))
+                          (string->number (substring text (string-length p) (- n 1))))]
+              [unit (substring text (- n 1) n)])
+         (and count (integer? count) (> count 0) (member unit '("h" "d" "w" "m" "y"))
+              (list p count unit)))]
+      [else (loop (cdr ps))])))
+
+(define (org-parse-stamp text)
+  "The parts of the Org timestamp `text`, such as
+   \"<2026-10-24 Sat 09:00 +1w -3d>\": (active? date time repeater
+   warning). The date is a (year month day), the time a string or #f, the
+   repeater a (kind n unit) such as (\"+\" 1 \"w\") or #f, and the warning
+   one too, such as (\"-\" 3 \"d\"). #f if `text` isn't a timestamp."
+  (let ([n (string-length text)])
+    (and (>= n 12)
+         (let ([open (string-ref text 0)] [close (string-ref text (- n 1))])
+           (and (or (and (equal? open #\<) (equal? close #\>)) (and (equal? open #\[) (equal? close #\])))
+                (let* ([words (split-whitespace (substring text 1 (- n 1)))]
+                       [date (and (pair? words) (string->date (car words)))])
+                  (and date
+                       (let loop ([ws (cdr words)] [time #f] [repeater #f] [warning #f] [day? #t])
+                         (if (null? ws)
+                             (list (equal? open #\<) date time repeater warning)
+                             (let* ([w (car ws)] [c (string-ref w 0)])
+                               (cond
+                                 [(and day? (not (char-digit? c)) (not (memv c (list #\+ #\- #\.))))
+                                  (loop (cdr ws) time repeater warning #f)]
+                                 [(and (not time) (char-digit? c) (string-index-from w ":" 0))
+                                  (loop (cdr ws) w repeater warning #f)]
+                                 [(and (not repeater) (org-interval w '("++" ".+" "+")))
+                                  => (lambda (r) (loop (cdr ws) time r warning #f))]
+                                 [(and (not warning) (org-interval w '("--" "-")))
+                                  => (lambda (r) (loop (cdr ws) time repeater r #f))]
+                                 [else #f])))))))))))
+
+(define (org-interval->string interval)
+  "`interval`, a (prefix n unit), written as Org does: \"+1w\"."
+  (string-append (car interval) (number->string (cadr interval)) (caddr interval)))
+
+(define (org-stamp->string stamp)
+  "The timestamp `stamp`, parts as org-parse-stamp gives them, written
+   out with the day name its date has."
+  (let ([active? (car stamp)] [date (cadr stamp)] [time (caddr stamp)]
+        [repeater (cadddr stamp)] [warning (list-ref stamp 4)])
+    (string-append (if active? "<" "[") (date->string date) " "
+                   (vector-ref *calendar-day-names* (date-weekday date))
+                   (if time (string-append " " time) "")
+                   (if repeater (string-append " " (org-interval->string repeater)) "")
+                   (if warning (string-append " " (org-interval->string warning)) "")
+                   (if active? ">" "]"))))
+
 (define (org-set-planning! heading key stamp)
   "Sets `key` (\"SCHEDULED:\" or \"DEADLINE:\") of the heading on line
    `heading` to timestamp `stamp`, on its planning line (made if there
