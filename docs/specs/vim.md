@@ -13,7 +13,7 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 - **Text objects**: `iw aw iW aW`, quotes (on the cursor's line only), every bracket kind, `it at`, `ip ap`; tree-sitter adds `af if ac ic aa ia` ([[tree-sitter]]). `aw` takes trailing white space, else leading; `i{` on braces on their own lines is linewise over the inner lines.
 - **Operators**: `d c y > < gu gU g~ g? gc`, doubled forms, counts that multiply. A linewise range is always whole lines; only `d` knows the final-newline case.
 - **Commands**: `x X D C s S Y p P gp gP r R J gJ ~ C-a C-x u C-r U . & ZZ ZQ C-g i a I A o O gi gI`, counts on inserts and pastes.
-- **Visual**: `v V C-v`, `o O gv`, operators and text objects, `I A c r J p u U ~ > <`, block `$`, and `.` over the same size of region. `:` from visual uses the `<` and `>` marks.
+- **Visual**: `v V C-v`, `o O gv`, operators and text objects, `I A c r J p u U ~ > <`, block `$`, and `.` over the same size of region. `:` from visual uses the `<` and `>` marks. Blocks are display columns: a tab or wide char at a corner widens the block to all of it, and one the block's edge cuts becomes spaces where text is taken out or put in.
 - **Insert**: autoindent and smartindent, expandtab-aware `<tab>`, `C-w C-u C-h C-t C-d C-r C-o`, `<del> <home> <end> <up> <down>`; Replace mode restores on `<bs>`.
 - **Search**: `/ ? n N * #`, incremental and highlighted (`:noh`), as a motion (`d/foo`), smartcase, Vim regex syntax translated to the `regex` crate.
 - **Registers**: `"a-z "A-Z "0-9 "- "_ ". ": "/ "% "+ "*`, `clipboard=unnamedplus`, `"1p..`. The system clipboard goes through `wl-copy`, `xclip`, `xsel` or `pbcopy`.
@@ -34,6 +34,5 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 
 - No `:map` or `:noremap`; bind keys with `define-key!` in Scheme. [#8](https://github.com/apisandipas/imp/issues/8)
 - Which-key shows for the leader and Emacs prefixes, not for Vim's `g` and `z`. [#9](https://github.com/apisandipas/imp/issues/9)
-- Block visual mode counts char columns (a tab is one), unlike the renderer, which measures display width. [#10](https://github.com/apisandipas/imp/issues/10)
 - Undo is whole-text snapshots with no undo tree, and undo doesn't restore marks. [#5](https://github.com/apisandipas/imp/issues/5)
 - Search copies the rope to a string per search (about 3 ms on 100k lines). [#12](https://github.com/apisandipas/imp/issues/12)

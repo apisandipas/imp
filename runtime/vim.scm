@@ -1285,57 +1285,122 @@
 
 ;;; Block selections
 ;;;
-;;; A block is the columns between the anchor's and the cursor's, on every
-;;; line between them (to each line's end after $). Columns are chars; a
-;;; tab inside a block counts as one column for now.
+;;; A block is display columns, as Vim's virtual columns are: from the
+;;; leftmost column the anchor's or the cursor's char covers to the
+;;; rightmost, on every line between them (to each line's end after $). A
+;;; tab or wide char the block's edge cuts through is turned into spaces
+;;; where text is taken out or put in, as Vim does.
+
+(define (col-span line col)
+  "The display columns char `col` of `line` covers, as (start end) with
+   end excluded. Past the line's end, the one column after it."
+  (let ([x (line-display-col line col)])
+    (list x (if (< col (buffer-line-length line)) (line-display-col line (+ col 1)) (+ x 1)))))
 
 (define (block-bounds)
-  "The visual block as (first-line last-line left-col right-col).
-   Both columns are included."
-  (let ([a *visual-anchor*] [c (cursor)])
+  "The visual block as (first-line last-line left right): display
+   columns, right excluded, or #f after $."
+  (let* ([a *visual-anchor*] [c (cursor)]
+         [sa (col-span (offset->line a) (offset->col a))]
+         [sc (col-span (offset->line c) (offset->col c))])
     (list (min (offset->line a) (offset->line c))
           (max (offset->line a) (offset->line c))
-          (min (offset->col a) (offset->col c))
-          (max (offset->col a) (offset->col c)))))
+          (min (car sa) (car sc))
+          (if *block-eol* #f (max (cadr sa) (cadr sc))))))
+
+(define (block-line-segment line left right)
+  "The part of `line` in display columns `left` to `right` (#f: the
+   line's end), as (start end before after text). `start` and `end` are
+   the offsets of the chars the columns touch; `before` and `after` are
+   how many columns of a cut first or last char lie outside them; `text`
+   is what a yank takes, a cut char's inside part as spaces. A line
+   ending before `left` takes the block's width in spaces."
+  (let* ([len (buffer-line-length line)]
+         [first (line-col-at-display line left)])
+    (if (= first len)
+        (list (line-end line) (line-end line) 0 0
+              (if (and right (< (line-display-col line len) left)) (make-string (- right left) #\space) ""))
+        (let* ([last (if right (min (line-col-at-display line (- right 1)) (- len 1)) (- len 1))]
+               [s1 (col-span line first)] [s2 (col-span line last)]
+               [right (or right (cadr s2))]
+               [before (- left (car s1))]
+               [after (max 0 (- (cadr s2) right))]
+               [start (line-col->offset line first)]
+               [end (line-col->offset line (+ last 1))])
+          (list start end before after
+                (cond
+                  [(and (= first last) (or (> before 0) (> after 0))) (make-string (- right left) #\space)]
+                  [else
+                   (string-append (if (> before 0) (make-string (- (cadr s1) left) #\space) "")
+                                  (buffer-substring (if (> before 0) (+ start 1) start) (if (> after 0) (- end 1) end))
+                                  (if (> after 0) (make-string (- right (car s2)) #\space) ""))]))))))
 
 (define (block-segments)
-  "The selected part of each line, as (start end) offsets, top to bottom."
+  "Each line's part of the block, top to bottom (see block-line-segment)."
   (let* ([b (block-bounds)] [left (caddr b)] [right (cadddr b)])
-    (map (lambda (l)
-           (list (line-col->offset l left)
-                 (if *block-eol* (line-end l) (line-col->offset l (+ right 1)))))
+    (map (lambda (l) (block-line-segment l left right))
          (range (car b) (+ (cadr b) 1)))))
 
 (define (block-text segments)
-  "The text of block `segments`, one line per segment."
-  (string-join (map (lambda (seg) (buffer-substring (car seg) (cadr seg))) segments) "\n"))
+  "The text a yank of block `segments` takes, one line per segment."
+  (string-join (map (lambda (seg) (list-ref seg 4)) segments) "\n"))
 
 (define (delete-segments! segments)
-  "Deletes the segments, bottom first so offsets above stay right."
-  (for-each (lambda (seg) (buffer-delete! (car seg) (cadr seg))) (reverse segments)))
+  "Deletes the segments, bottom first so offsets above stay right. The
+   outside part of a cut tab or wide char is left as spaces."
+  (for-each (lambda (seg)
+              (replace-range! (car seg) (cadr seg)
+                              (make-string (+ (caddr seg) (cadddr seg)) #\space)))
+            (reverse segments)))
+
+(define (insert-at-display! line x text pad?)
+  "Puts `text` on `line` at display column `x` and returns the offset
+   after it. A tab across `x` becomes spaces either side of the text; a
+   wide char across it gets spaces before it, as Vim does. A line ending
+   before `x` is padded with spaces when `pad?`, and otherwise left alone
+   (returning #f)."
+  (let* ([len (buffer-line-length line)] [width (line-display-col line len)])
+    (if (>= x width)
+        (and (or pad? (= x width))
+             (let ([at (line-end line)] [new (string-append (make-string (- x width) #\space) text)])
+               (buffer-insert! at new)
+               (+ at (string-length new))))
+        (let* ([col (line-col-at-display line x)] [span (col-span line col)]
+               [at (line-col->offset line col)] [pad (make-string (- x (car span)) #\space)])
+          (cond
+            [(= (car span) x) (buffer-insert! at text) (+ at (string-length text))]
+            [(equal? (buffer-substring at (+ at 1)) "\t")
+             (replace-range! at (+ at 1)
+                             (string-append pad text (make-string (- (cadr span) x) #\space)))
+             (+ at (string-length pad) (string-length text))]
+            [else
+             (buffer-insert! at (string-append pad text))
+             (+ at (string-length pad) (string-length text))])))))
 
 (define (put-block! text after?)
-  "Puts a block's lines at the cursor column (after it with p), one per
-   line downward, adding lines and padding short ones as needed."
+  "Puts a block's lines at the cursor's display column (after its char
+   with p), one per line downward, adding lines and padding short ones as
+   needed."
   (let* ([lines (split-lines text)]
          [first (current-line)]
-         [col (if (and after? (> (buffer-line-length first) 0)) (+ (current-col) 1) (current-col))])
+         [span (col-span first (current-col))]
+         [x (if (and after? (> (buffer-line-length first) 0)) (cadr span) (car span))]
+         [start #f])
     (let loop ([ls lines] [l first])
       (unless (null? ls)
         (when (> l (last-line))
           (buffer-insert! (buffer-length) (if (ends-with? (buffer-substring 0 (buffer-length)) "\n") "\n" "\n\n")))
-        (let ([len (buffer-line-length l)])
-          (when (< len col) (buffer-insert! (line-end l) (make-string (- col len) #\space)))
-          (buffer-insert! (line-col->offset l col) (car ls)))
+        (let ([end (insert-at-display! l x (car ls) #t)])
+          (unless start (set! start (- end (string-length (car ls))))))
         (loop (cdr ls) (+ l 1))))
-    (mark-set! "[" (line-col->offset first col))
-    (set-cursor! (line-col->offset first col))))
+    (mark-set! "[" start)
+    (set-cursor! start)))
 
 (define (block-operator! op-key to-eol?)
   "d y c and the rest on a block. d and y keep the text as a block register."
   (when to-eol? (set! *block-eol* #t))
   (let* ([segments (block-segments)] [b (block-bounds)]
-         [top-left (line-col->offset (car b) (caddr b))])
+         [top-left (car (car segments))])
     (leave-visual!)
     (begin-change!)
     (cond
@@ -1345,11 +1410,11 @@
       [(equal? op-key "d")
        (register-set! (current-register) (block-text segments) 'block 'delete)
        (delete-segments! segments)
-       (set-cursor! top-left)]
+       (set-cursor! (+ top-left (caddr (car segments))))]
       [(equal? op-key "c")
        (register-set! (current-register) (block-text segments) 'block 'delete)
        (delete-segments! segments)
-       (start-block-insert! (car b) (cadr b) (caddr b) #f top-left)]
+       (start-block-insert! (car b) (cadr b) (caddr b) #f (+ top-left (caddr (car segments))))]
       [else
        (for-each (lambda (seg) ((hash-ref *operators* op-key) (car seg) (cadr seg) #f))
                  (reverse segments))
@@ -1358,9 +1423,10 @@
   void)
 
 (define (start-block-insert! first last col append? at)
-  "I, A and c on a block: type on the first line; on <esc> the same text
-   goes into every other line of the block. `col` is a column or 'eol;
-   `append?` (A) pads lines too short to reach it."
+  "I, A and c on a block: type on the first line at offset `at`; on <esc>
+   the same text goes into every other line of the block. `col` is a
+   display column or 'eol; `append?` (A) pads lines too short to reach
+   it."
   (set! *block-insert* (list first last col append?))
   (set-cursor! at)
   (set-mode! 'insert)
@@ -1374,20 +1440,14 @@
    are skipped, except by A, which pads them."
   (let* ([b *block-insert*] [first (car b)] [last (cadr b)] [col (caddr b)] [append? (cadddr b)])
     (set! *block-insert* #f)
-    (when (and (= (current-line) first) (>= (current-col) (if (eq? col 'eol) 0 col)))
-      (let* ([start (if (eq? col 'eol) *insert-start* (line-col->offset first col))]
-             [text (buffer-substring start (cursor))])
+    (when (and (= (current-line) first) (>= (cursor) *insert-start*))
+      (let ([text (buffer-substring *insert-start* (cursor))])
         (unless (or (equal? text "") (string-contains? text "\n"))
           (let loop ([l (+ first 1)])
             (when (<= l last)
-              (let ([len (buffer-line-length l)])
-                (cond
-                  [(eq? col 'eol) (buffer-insert! (line-end l) text)]
-                  [(>= len col) (buffer-insert! (line-col->offset l col) text)]
-                  ;; A short line gets text only when appending (A pads).
-                  [append?
-                   (buffer-insert! (line-end l) (string-append (make-string (- col len) #\space) text))]
-                  [else #t]))
+              (if (eq? col 'eol)
+                  (buffer-insert! (line-end l) text)
+                  (insert-at-display! l col text append?))
               (loop (+ l 1)))))))))
 
 (define (block-insert-command append?)
@@ -1405,27 +1465,29 @@
           (set-mode! 'insert)
           (set! *insert-start* (cursor)))
         (let* ([b (block-bounds)] [first (car b)] [last (cadr b)]
-               [col (cond [(not append?) (caddr b)] [*block-eol* 'eol] [else (+ (cadddr b) 1)])])
+               [col (cond [(not append?) (caddr b)] [(not (cadddr b)) 'eol] [else (cadddr b)])])
           (leave-visual!)
           (begin-change!)
           (set! *block-eol* #f)
+          ;; The first line is split or padded (A) to reach the column, as
+          ;; the others will be.
           (start-block-insert! first last col append?
-                               (if (eq? col 'eol) (line-end first) (min (line-col->offset first col) (line-end first))))
-          ;; Appending past a short first line pads it, as Vim does.
-          (when (and (not (eq? col 'eol)) (< (buffer-line-length first) col))
-            (buffer-insert! (line-end first) (make-string (- col (buffer-line-length first)) #\space))
-            (set-cursor! (line-col->offset first col)))))))
+                               (if (eq? col 'eol)
+                                   (line-end first)
+                                   (or (insert-at-display! first col "" append?) (line-end first))))))))
 
 (define-key! 'visual "I" (block-insert-command #f))
 (define-key! 'visual "A" (block-insert-command #t))
 
-;; O in a block goes to the other corner on the same line.
+;; O in a block goes to the other corner on the same line: the same
+;; display column, which may be a different char column there.
 (define-key! 'visual "O"
   (lambda (count)
     (if (eq? *visual* 'block)
-        (let ([a *visual-anchor*] [c (cursor)])
-          (set! *visual-anchor* (line-col->offset (offset->line a) (offset->col c)))
-          (set-cursor! (line-col->offset (offset->line c) (offset->col a))))
+        (let* ([a *visual-anchor*] [c (cursor)] [la (offset->line a)] [lc (offset->line c)]
+               [xa (line-display-col la (offset->col a))] [xc (line-display-col lc (offset->col c))])
+          (set! *visual-anchor* (line-col->offset la (line-col-at-display la xc)))
+          (set-cursor! (line-col->offset lc (line-col-at-display lc xa))))
         ((lookup-key 'visual "o") count))))
 
 (define (visual-command! kind)
