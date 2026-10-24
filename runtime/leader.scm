@@ -67,6 +67,33 @@
     (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
           (lambda (a b) (string<? (car a) (car b))))))
 
+(define (prefix-continuations state prefix)
+  "The keys that can follow Vim prefix `prefix` in `state` ('normal or
+   'visual), as sorted (key . label) pairs: each key bound after it in the
+   buffer's mode keymaps, the state's keymap, operators, motions and (in
+   visual) text objects. A key that is itself a prefix is +prefix; one
+   with no label has \"\"."
+  (let* ([n (string-length prefix)]
+         [bound (apply append
+                       (map hash-keys->list
+                            (append (map keymap (*local-keymaps* state))
+                                    (list (keymap state) *operators* *motions*)
+                                    (if (eq? state 'visual) (list *text-objects*) '()))))]
+         [seen (hash)])
+    (for-each
+     (lambda (keys)
+       (when (and (starts-with? keys prefix) (> (string-length keys) n))
+         (let* ([key (first-key (substring keys n (string-length keys)))]
+                [full (string-append prefix key)])
+           (unless (hash-contains? seen key)
+             (set! seen (hash-insert seen key
+                                     (if (member full bound)
+                                         (or (binding-label state full) "")
+                                         "+prefix")))))))
+     bound)
+    (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
+          (lambda (a b) (string<? (car a) (car b))))))
+
 (define (key-label key)
   "How `key` shows in prompts and popups: SPC for a space."
   (if (equal? key " ") "SPC" key))

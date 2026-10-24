@@ -122,3 +122,43 @@ fn keys_have_which_key_labels() {
     s.eval("(set-major-mode! 'label-mode)").unwrap();
     assert_eq!(label(&mut s, "normal", "gb"), "\"mode's own\"");
 }
+
+#[test]
+fn keys_after_a_vim_prefix() {
+    let mut s = server("");
+    s.eval(
+        r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")
+           (define-key! 'normal "gzq" 'switch-buffer)
+           (define-major-mode! 'label-mode #f '() #f)
+           (define-mode-key! 'label-mode 'normal "gu" (lambda (n) 1) "mode's own")"#,
+    )
+    .unwrap();
+    let keys = |s: &mut imp_server::Server, state: &str, prefix: &str| {
+        s.eval(&format!(
+            "(map (lambda (e) (string-append (car e) \"=\" (cdr e))) (prefix-continuations '{state} \"{prefix}\"))"
+        ))
+        .unwrap()
+    };
+    let normal = keys(&mut s, "normal", "g");
+    // Keymaps, motions and operators; a longer key is a prefix.
+    for k in [
+        "\"b=switch buffer\"",
+        "\"g=",
+        "\"u=",
+        "\"j=",
+        "\"z=+prefix\"",
+    ] {
+        assert!(normal.contains(k), "{k} in {normal}");
+    }
+    // Sorted, each once.
+    assert_eq!(normal.matches("\"b=").count(), 1);
+    assert!(normal.find("\"b=").unwrap() < normal.find("\"g=").unwrap());
+    // Visual has no normal-state keys.
+    let visual = keys(&mut s, "visual", "g");
+    assert!(!visual.contains("switch buffer"), "{visual}");
+    assert!(visual.contains("\"u="), "{visual}");
+    // A mode's key wins over the operator of the same name.
+    s.eval("(set-major-mode! 'label-mode)").unwrap();
+    assert!(keys(&mut s, "normal", "g").contains("\"u=mode's own\""));
+    assert!(keys(&mut s, "normal", "C-w").contains("\"s="));
+}
