@@ -1269,14 +1269,16 @@
     (org-show-links! (not (buffer-local 'org-links-whole)))
     (message (if (buffer-local 'org-links-whole) "links shown whole" "links show their descriptions"))))
 
-(define (org-key! states key proc)
-  "Binds `key` to `proc` in Org buffers, in each of `states`."
-  (for-each (lambda (state) (define-mode-key! 'org-mode state key proc)) states))
+(define (org-key! states key proc . label)
+  "Binds `key` to `proc` in Org buffers, in each of `states`. An optional
+   last argument is the label which-key shows."
+  (for-each (lambda (state) (apply define-mode-key! (append (list 'org-mode state key proc) label))) states))
 
 (org-key! '(normal) "<tab>" org-tab!)
 (org-key! '(normal) "<s-tab>" (lambda (count) (org-global-cycle!)))
 (org-key! '(normal) "<ret>" org-dwim!)
-(org-key! '(normal) "gx" (lambda (count) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))))
+(org-key! '(normal) "gx" (lambda (count) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here"))))
+  "follow link")
 (org-key! '(normal insert) "M-<ret>" (lambda args (org-insert-heading!)))
 (org-key! '(normal) "M-h" (lambda (count) (org-shift! (current-line) -1 #f)))
 (org-key! '(normal) "M-l" (lambda (count) (org-shift! (current-line) 1 #f)))
@@ -1303,7 +1305,7 @@
 
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
 (define-mode-key! 'org-agenda-mode 'normal "<ret>" (lambda (n) (org-agenda-visit!)))
-(define-mode-key! 'org-agenda-mode 'normal "gr" (lambda (n) (org-render-agenda!)))
+(define-mode-key! 'org-agenda-mode 'normal "gr" (lambda (n) (org-render-agenda!)) "refresh")
 
 (define-command! 'org-agenda
   (lambda (count)

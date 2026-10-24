@@ -414,12 +414,14 @@
 (define-mode-key! 'dired-mode 'normal "q" (lambda (n) (dired-quit!)))
 (define-mode-key! 'dired-mode 'normal "g." (lambda (n)
                                              (set-option! 'dired-show-hidden (not (option 'dired-show-hidden)))
-                                             (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
+                                             (if (buffer-modified?) (message "save or :e! first") (dired-refresh!)))
+  "toggle hidden files")
 (define-mode-key! 'dired-mode 'normal "("
   (lambda (n)
     (set-option! 'dired-details (not (option 'dired-details)))
     (dired-show-details!)))
-(define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
+(define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!)))
+  "refresh")
 
 (define (dired-explore! arg)
   "Lists directory `arg`, or for \"\" the current buffer's directory.

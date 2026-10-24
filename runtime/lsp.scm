@@ -760,8 +760,8 @@
 (define-command! 'previous-diagnostic (lambda (count)
                                         "Go to the previous diagnostic ([d), wrapping around."
                                         (next-diagnostic! count #f)))
-(define-key! 'normal "]d" 'next-diagnostic)
-(define-key! 'normal "[d" 'previous-diagnostic)
+(define-key! 'normal "]d" 'next-diagnostic "next diagnostic")
+(define-key! 'normal "[d" 'previous-diagnostic "previous diagnostic")
 
 (define (relative-path path)
   "`path` relative to the current directory, if it is under it."
@@ -1095,8 +1095,8 @@
 
 (define-minor-mode! 'lsp-mode #f #f)
 (define-mode-key! 'lsp-mode 'normal "K" 'lsp-hover)
-(define-mode-key! 'lsp-mode 'normal "gd" 'lsp-definition)
-(define-mode-key! 'lsp-mode 'normal "gr" 'lsp-references)
+(define-mode-key! 'lsp-mode 'normal "gd" 'lsp-definition "go to definition")
+(define-mode-key! 'lsp-mode 'normal "gr" 'lsp-references "references")
 
 (define-leader-group! "c" "code")
 (define-leader! "ca" 'lsp-code-action "code action")

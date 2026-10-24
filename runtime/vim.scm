@@ -4398,3 +4398,62 @@
      (when (and (not *operator*) (not *prefix*) (equal? *count* ""))
        (set-status! ""))
      (normal-key! key)]))
+
+;;; Which-key labels for the keys after Vim's prefixes. Binding a key again
+;;; without a label forgets its label here; tests/leader.rs fails on a
+;;; built-in key after a prefix without one.
+
+(for-each
+ (lambda (e) (set-binding-label! 'motion (car e) (cadr e)))
+ '(("gg" "first line") ("ge" "end of previous word") ("gE" "end of previous WORD")
+   ("gj" "down a screen line") ("gk" "up a screen line")
+   ("g*" "search word, partial") ("g#" "search word back, partial")))
+
+(for-each
+ (lambda (e) (set-binding-label! 'operator (car e) (cadr e)))
+ '(("gu" "lowercase") ("gU" "uppercase") ("g~" "toggle case") ("g?" "rot13")
+   ("zf" "create fold")))
+
+(for-each
+ (lambda (e) (for-each (lambda (state) (set-binding-label! state (car e) (cadr e))) (caddr e)))
+ '(("gI" "insert at column 0" (normal))
+   ("gi" "insert at last insert" (normal))
+   ("gp" "paste after, cursor after" (normal))
+   ("gP" "paste before, cursor after" (normal))
+   ("gv" "reselect last selection" (normal))
+   ("gJ" "join without spaces" (normal visual))
+   ("ZZ" "save and quit" (normal))
+   ("ZQ" "quit without saving" (normal))
+   ("zt" "line to top" (normal visual))
+   ("zz" "line to middle" (normal visual))
+   ("zb" "line to bottom" (normal visual))
+   ("z<ret>" "top, first non-blank" (normal visual))
+   ("z." "middle, first non-blank" (normal visual))
+   ("z-" "bottom, first non-blank" (normal visual))
+   ("zF" "fold lines" (normal))
+   ("zo" "open fold" (normal visual))
+   ("zO" "open folds under cursor" (normal visual))
+   ("zc" "close fold" (normal visual))
+   ("zC" "close folds under cursor" (normal visual))
+   ("za" "toggle fold" (normal visual))
+   ("zA" "toggle folds under cursor" (normal visual))
+   ("zR" "open all folds" (normal visual))
+   ("zM" "close all folds" (normal visual))
+   ("zE" "delete all folds" (normal visual))
+   ("zd" "delete fold" (normal visual))
+   ("zD" "delete folds under cursor" (normal visual))
+   ("zj" "start of next fold" (normal))
+   ("zk" "end of previous fold" (normal))))
+
+(for-each
+ (lambda (e)
+   (for-each (lambda (key)
+               (for-each (lambda (state) (set-binding-label! state (string-append "C-w" key) (cadr e)))
+                         '(normal visual)))
+             (car e)))
+ '((("s" "S" "C-s") "split") (("v" "C-v") "split vertically") (("n" "C-n") "new window")
+   (("w" "C-w") "next window") (("W") "previous window")
+   (("h" "C-h" "<left>") "window left") (("l" "C-l" "<right>") "window right")
+   (("k" "C-k" "<up>") "window above") (("j" "C-j" "<down>") "window below")
+   (("c" "C-c" "q" "C-q") "close window") (("o" "C-o") "close other windows")
+   (("=") "equal sizes") (("+") "taller") (("-") "shorter") ((">") "wider") (("<") "narrower")))

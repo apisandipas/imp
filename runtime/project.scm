@@ -253,8 +253,8 @@
 (define-ex! '("cla" "clast") (lambda (ex) (quickfix-go! (- (length *quickfix*) 1))))
 (define-ex! '("cc") (lambda (ex) (quickfix-go! (if (equal? (trim (ex-args ex)) "") *quickfix-index*
                                                     (- (or (string->number (trim (ex-args ex))) 1) 1)))))
-(define-key! 'normal "]q" (lambda (count) (quickfix-step! count)))
-(define-key! 'normal "[q" (lambda (count) (quickfix-step! (- count))))
+(define-key! 'normal "]q" (lambda (count) (quickfix-step! count)) "next quickfix entry")
+(define-key! 'normal "[q" (lambda (count) (quickfix-step! (- count))) "previous quickfix entry")
 
 (define-leader-group! "p" "project")
 (define-leader! "pf" 'project-find-file "find file")

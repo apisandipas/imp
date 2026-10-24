@@ -218,3 +218,34 @@ fn vim_prefix_which_key_waits_for_its_delay() {
     assert!(!s.frame().text_rows().join("\n").contains("─ g ─"));
     assert_eq!(s.cursor(), 0);
 }
+
+#[test]
+fn built_in_keys_after_prefixes_have_labels() {
+    let mut s = server("");
+    // Every key after a prefix in a normal or visual keymap (mode keymaps
+    // included), and every motion and operator after one.
+    let missing = s
+        .eval(
+            r#"(let* ([prefixes (filter (lambda (p) (not (equal? p "\""))) (hash-keys->list *prefix-keys*))]
+                      [after-prefix? (lambda (key)
+                                       (ormap (lambda (p) (and (starts-with? key p) (> (string-length key) (string-length p))))
+                                              prefixes))]
+                      [state-table? (lambda (t)
+                                      (let ([name (symbol->string t)])
+                                        (or (member t '(normal visual)) (ends-with? name ":normal") (ends-with? name ":visual"))))]
+                      [tables (append (filter state-table? (hash-keys->list *keymaps*))
+                                      '(motion operator))]
+                      [keys-of (lambda (t)
+                                 (cond [(eq? t 'motion) (hash-keys->list *motions*)]
+                                       [(eq? t 'operator) (hash-keys->list *operators*)]
+                                       [else (hash-keys->list (keymap t))]))])
+                 (apply append
+                        (map (lambda (t)
+                               (map (lambda (k) (string-append (symbol->string t) " " k))
+                                    (filter (lambda (k) (and (after-prefix? k) (not (binding-label-in t k))))
+                                            (keys-of t))))
+                             tables)))"#,
+        )
+        .unwrap();
+    assert_eq!(missing, "()", "keys without a which-key label");
+}

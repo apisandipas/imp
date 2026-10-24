@@ -257,9 +257,10 @@
   (lambda (start end linewise?)
     (let ([first (offset->line start)] [last (offset->line (max start (- end 1)))])
       (comment-lines! first last)
-      (set-cursor! (line-first-nonblank first)))))
+      (set-cursor! (line-first-nonblank first))))
+  "comment")
 
-(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)))
+(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)) "comment")
 
 ;;; The modes that come with imp
 
@@ -323,7 +324,7 @@
       (if name (describe-function name) (message "no symbol at the cursor")))))
 
 (define-mode-key! 'scheme-mode 'normal "K" 'describe-symbol-at-point)
-(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point)
+(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point "go to definition")
 
 ;;; The local leader: SPC m runs the major mode's own bindings.
 

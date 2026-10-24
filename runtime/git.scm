@@ -615,11 +615,12 @@
     (buffer-highlight-pattern! "git-comment" "^#.*" "syntax.comment")))
 
 (define (git-keys! mode keys)
-  "Binds each (key action) of `keys` in normal state in `mode`."
-  (for-each (lambda (k) (define-mode-key! mode 'normal (car k) (cadr k))) keys))
+  "Binds each (key action) of `keys` in normal state in `mode`; a third
+   element is the key's which-key label."
+  (for-each (lambda (k) (apply define-mode-key! (cons mode (cons 'normal k)))) keys))
 
 (define git-common-keys
-  (list (list "gr" (lambda (n) (git-refresh!)))
+  (list (list "gr" (lambda (n) (git-refresh!)) "refresh")
         (list "$" (lambda (n) (git-show-process!)))
         (list "<ret>" (lambda (n) (git-visit!)))))
 
@@ -655,8 +656,8 @@
 (git-keys! 'git-log-mode git-common-keys)
 (git-keys! 'git-diff-mode git-common-keys)
 (git-keys! 'git-commit-mode
-  (list (list "ZZ" (lambda (n) (git-commit-finish!)))
-        (list "ZQ" (lambda (n) (git-commit-cancel!)))))
+  (list (list "ZZ" (lambda (n) (git-commit-finish!)) "commit")
+        (list "ZQ" (lambda (n) (git-commit-cancel!)) "cancel commit")))
 ;; And Magit's keys, in insert state too.
 (for-each (lambda (state)
             (define-mode-key! 'git-commit-mode state "C-cC-c" (lambda args (git-commit-finish!)))
