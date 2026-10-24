@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/15
 frozen:
-  docs/specs/org.md: ac578a071195
+  docs/specs/org.md: 7120a0ea277d
 ---
 # Org properties
 

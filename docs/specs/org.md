@@ -33,5 +33,6 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 ## Known gaps
 
 - No export. [#54](https://github.com/apisandipas/imp/issues/54)
-- The agenda has no day or month view, and a deadline doesn't show before its day (no warning periods in the agenda). Repeating doesn't log the change (no `LAST_REPEAT` or state-change notes), the calendar can't add a repeater (type one into the timestamp), and there are no hourly repeaters.
+- The agenda is far from Org's: no day or month view, no deadline warnings, appointments, times, dispatcher, match views, filters or actions on entries from the agenda. [#59](https://github.com/apisandipas/imp/issues/59)
+- Repeating doesn't log the change (no `LAST_REPEAT` or state-change notes), the calendar can't add a repeater (type one into the timestamp), and there are no hourly repeaters.
 - Properties aren't used beyond `CATEGORY`: no column view, no property searches in the agenda, and no special properties such as `ID` or `STYLE`.
