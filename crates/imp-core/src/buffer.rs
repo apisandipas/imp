@@ -3,9 +3,11 @@
 //! Positions are char offsets into the whole text. Line/column conversions are
 //! provided for the editing layer, which decides what the positions mean.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ropey::Rope;
 
@@ -46,6 +48,10 @@ pub struct Buffer {
     /// Edits since a parser last looked, when something asked to track
     /// them (a syntax tree; see `track_edits`).
     edits: Option<Vec<Edit>>,
+    /// The text as one string and the version it was copied at, for
+    /// `shared_text`. Kept until the next search after a change, so a
+    /// searched buffer holds a second copy of its text.
+    shared: RefCell<Option<(u64, Arc<str>)>>,
 }
 
 /// One change to the text, in the terms a tree-sitter parser wants:
@@ -191,6 +197,21 @@ impl Buffer {
 
     pub fn text(&self) -> String {
         self.text.to_string()
+    }
+
+    /// The text as one string, for searching it with a regex. It is copied
+    /// once per version and shared until the text changes, so repeated
+    /// searches (`n`, each key of an incremental search) don't copy it.
+    pub fn shared_text(&self) -> Arc<str> {
+        let mut shared = self.shared.borrow_mut();
+        match &*shared {
+            Some((version, text)) if *version == self.version => text.clone(),
+            _ => {
+                let text: Arc<str> = self.text.to_string().into();
+                *shared = Some((self.version, text.clone()));
+                text
+            }
+        }
     }
 
     /// Number of chars in the buffer.
@@ -485,6 +506,18 @@ fn first_difference(a: &Rope, b: &Rope) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_text_is_copied_once_per_change() {
+        let mut b = Buffer::from_text("one\n");
+        let first = b.shared_text();
+        assert!(Arc::ptr_eq(&first, &b.shared_text()));
+        b.undo_boundary();
+        b.insert(0, "zero ");
+        assert_eq!(&*b.shared_text(), "zero one\n");
+        b.undo();
+        assert_eq!(&*b.shared_text(), "one\n");
+    }
 
     #[test]
     fn lines_ignore_trailing_newline() {
