@@ -131,3 +131,39 @@ fn mode_keys_come_first() {
     assert_eq!(s.text(), "abc\n");
     assert_eq!(s.status(), "mode");
 }
+
+#[test]
+fn insert_mappings() {
+    let mut s = server("\n");
+    type_keys(&mut s, ":inoremap ( ()<Left><ret>ia(b<esc>");
+    assert_eq!(s.text(), "a(b)\n");
+}
+
+#[test]
+fn insert_sequences_wait_for_the_next_key() {
+    let mut s = server("\n");
+    type_keys(&mut s, ":inoremap jk <Esc><ret>");
+    type_keys(&mut s, "ihij");
+    // The j shows while the sequence is half typed.
+    assert_eq!(s.text(), "hij\n");
+    type_keys(&mut s, "k");
+    assert_eq!(s.text(), "hi\n");
+    // Back in normal state: x deletes.
+    type_keys(&mut s, "x");
+    assert_eq!(s.text(), "h\n");
+    // Another key after j: both are typed.
+    type_keys(&mut s, "ajxjk");
+    assert_eq!(s.text(), "hjx\n");
+    // . repeats the text typed, without the sequence.
+    type_keys(&mut s, "0.");
+    assert_eq!(s.text(), "hjxjx\n", "{:?}", s.text());
+}
+
+#[test]
+fn insert_sequences_time_out() {
+    let mut s = server("\n");
+    type_keys(&mut s, ":set timeoutlen=30<ret>:inoremap jk <Esc><ret>ij");
+    s.pump(std::time::Duration::from_millis(200));
+    type_keys(&mut s, "k");
+    assert_eq!(s.text(), "jk\n");
+}

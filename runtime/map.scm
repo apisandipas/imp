@@ -120,6 +120,10 @@
       [(and (not (eq? state 'insert)) (= (length keys) 2)
             (not (prefix-key? (car keys))) (key-does-something? state (car keys)))
        (string-append "can't map " lhs ": " (car keys) " already does something")]
+      [(and (eq? state 'insert) (> (length keys) 1))
+       (set! *insert-sequences* (hash-insert *insert-sequences* joined (list keys rhs-keys noremap?)))
+       (remember! state)
+       #f]
       [else
        (when (and (not (eq? state 'insert)) (= (length keys) 2) (not (prefix-key? (car keys))))
          (define-prefix! (car keys)))
@@ -130,6 +134,78 @@
                     rhs)
        (remember! state)
        #f])))
+
+;;; Insert mappings of several keys: jk inserts j, and if k follows within
+;;; timeoutlen the j is removed and the {rhs} runs, as Vim shows it.
+
+(define-option! 'timeoutlen 1000 '())
+;; lhs keys joined -> (lhs-keys rhs-keys noremap?)
+(define *insert-sequences* (hash))
+;; While a sequence is half typed: (keys-so-far start timer), else #f.
+(define *insert-pending* #f)
+
+(define (insert-sequences-from keys)
+  "The insert sequences whose keys start with `keys`, longer than them."
+  (filter (lambda (seq) (and (> (length (car seq)) (length keys))
+                             (equal? (take (car seq) (length keys)) keys)))
+          (hash-values->list *insert-sequences*)))
+
+(define (insert-pending-clear!)
+  "Forgets a half-typed insert sequence."
+  (when *insert-pending*
+    (let ([timer (caddr *insert-pending*)]) (when timer (cancel-timer! timer)))
+    (set! *insert-pending* #f))
+  void)
+
+(define (insert-pending-start! keys start)
+  "Waits timeoutlen for the rest of a sequence begun with `keys` at `start`."
+  (insert-pending-clear!)
+  (set! *insert-pending*
+        (list keys start
+              (run-after! (option 'timeoutlen)
+                          (lambda ()
+                            (when (and *insert-pending* (eq? (car *insert-pending*) keys))
+                              (set! *insert-pending* #f))))))
+  void)
+
+(define (insert-sequence-key! key)
+  "Handles typed `key` for insert sequences; #t if it completed one and
+   was used up. Other keys are typed as usual."
+  (cond
+    [(or *noremap* (not (eq? *mode* 'insert)) (= (hash-length *insert-sequences*) 0))
+     (insert-pending-clear!)
+     #f]
+    [*insert-pending*
+     (let* ([keys (append (car *insert-pending*) (list key))]
+            [start (cadr *insert-pending*)]
+            [seq (hash-try-get *insert-sequences* (apply string-append keys))])
+       (cond
+         [seq
+          (insert-pending-clear!)
+          ;; Take back what the first keys typed, and their record for `.`.
+          (when (> (cursor) start)
+            (buffer-delete! start (cursor))
+            (set-cursor! start))
+          (set! *insert-keys* (list-tail-safe *insert-keys* (- (length keys) 1)))
+          (play-mapping! (cadr seq) (caddr seq) 1)
+          #t]
+         [(pair? (insert-sequences-from keys))
+          (insert-pending-start! keys start)
+          #f]
+         [else
+          (insert-pending-clear!)
+          (insert-sequence-key! key)]))]
+    [(pair? (insert-sequences-from (list key)))
+     (insert-pending-start! (list key) (cursor))
+     #f]
+    [else #f]))
+
+(define (list-tail-safe items n)
+  "`items` without its first `n`, or '() if it has fewer."
+  (if (or (<= n 0) (null? items)) items (list-tail-safe (cdr items) (- n 1))))
+
+(set! *insert-key-handler* insert-sequence-key!)
+(add-hook! 'insert-leave insert-pending-clear!)
 
 (define (map-ex states noremap?)
   "An ex command that maps in each of `states`: :nmap, :noremap..."
@@ -168,3 +244,5 @@
 (define-ex! '("no" "noremap") (map-ex '(normal visual) #t))
 (define-ex! '("nn" "nnoremap") (map-ex '(normal) #t))
 (define-ex! '("vn" "vnoremap") (map-ex '(visual) #t))
+(define-ex! '("im" "imap") (map-ex '(insert) #f))
+(define-ex! '("ino" "inoremap") (map-ex '(insert) #t))
