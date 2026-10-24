@@ -126,6 +126,40 @@
 ;; Shown again: the index may have changed, by staging or a commit.
 (add-hook! 'buffer-enter git-gutter-refresh!)
 
+(define (git-gutter-hunk-lines)
+  "The first line of each changed block in the current buffer, in order:
+   a removal's is the line its mark is on."
+  (let ([lines (map (lambda (h) (if (= (cadddr h) 0) (max 0 (- (caddr h) 1)) (caddr h)))
+                    (if (git-gutter-on?) (or (buffer-local 'git-gutter-hunks) '()) '()))])
+    (let loop ([ls (sort lines <)] [acc '()])
+      (cond [(null? ls) (reverse acc)]
+            [(and (pair? acc) (= (car acc) (car ls))) (loop (cdr ls) acc)]
+            [else (loop (cdr ls) (cons (car ls) acc))]))))
+
+(define (git-gutter-next-hunk! count forward?)
+  "Moves `count` changed blocks on (or back), to the first line of the
+   block; as far as there are, or nowhere when there are none."
+  (let* ([line (current-line)]
+         [ahead (if forward?
+                    (filter (lambda (l) (> l line)) (git-gutter-hunk-lines))
+                    (reverse (filter (lambda (l) (< l line)) (git-gutter-hunk-lines))))])
+    (if (null? ahead)
+        (message "no more hunks")
+        (let ([to (list-ref ahead (- (min (max 1 count) (length ahead)) 1))])
+          (set-cursor! (line-start to)))))
+  void)
+
+(define-command! 'git-gutter-next-hunk
+  (lambda (count)
+    "Go to the next block of lines that differ from git (]h)."
+    (git-gutter-next-hunk! count #t)))
+(define-command! 'git-gutter-previous-hunk
+  (lambda (count)
+    "Go to the previous block of lines that differ from git ([h)."
+    (git-gutter-next-hunk! count #f)))
+(define-key! 'normal "]h" 'git-gutter-next-hunk "next hunk")
+(define-key! 'normal "[h" 'git-gutter-previous-hunk "previous hunk")
+
 ;; Files opened from now on, and those open as the package loads.
 (add-hook! 'buffer-open git-gutter-start!)
 (for-each (lambda (id) (with-buffer id git-gutter-start!)) (buffer-list))

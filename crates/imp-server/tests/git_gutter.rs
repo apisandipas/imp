@@ -164,3 +164,31 @@ fn staged_changes_are_not_marked() {
     s.eval("(run-hooks 'buffer-enter)").unwrap();
     wait_for(&mut s, &[" ONE"]);
 }
+
+#[test]
+fn bracket_h_moves_between_hunks() {
+    let dir = repo("gutter-hunks");
+    std::fs::write(dir.join("a.txt"), "1\n2\n3\n4\n5\n6\n7\n").unwrap();
+    git(&dir, &["commit", "-qam", "Numbers"]);
+    let mut s = visiting(&dir.join("a.txt"));
+    // Changed 2, removed 4 (marked on 3), added after 7.
+    type_keys(&mut s, "jrxjjddjjox<esc>gg");
+    wait_for(&mut s, &[" 1", "┃x", "▁3", " 5", " 6", " 7", "┃x"]);
+    let line = |s: &mut imp_server::Server| s.eval("(current-line)").unwrap();
+    type_keys(&mut s, "]h");
+    assert_eq!(line(&mut s), "1");
+    type_keys(&mut s, "2]h");
+    assert_eq!(line(&mut s), "6");
+    type_keys(&mut s, "]h");
+    assert_eq!(line(&mut s), "6");
+    assert!(s
+        .frame()
+        .text_rows()
+        .last()
+        .unwrap()
+        .contains("no more hunks"));
+    type_keys(&mut s, "[h");
+    assert_eq!(line(&mut s), "2");
+    type_keys(&mut s, "5[h");
+    assert_eq!(line(&mut s), "1");
+}
