@@ -3,6 +3,7 @@ type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/50
 summary: "The git-blame package: the cursor's line's last commit, after the line, as GitLens shows it."
+anchors: [packages/git-blame/git-blame.scm, crates/imp-server/tests/git_blame.rs]
 ---
 # Git blame
 
