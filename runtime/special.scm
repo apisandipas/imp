@@ -220,17 +220,24 @@
 
 (define (menu-input! key)
   "Runs the menu entry for `key`, the key typed while a menu is open.
-   Esc, C-g, C-c and q just close the menu; any other key says it is
+   The first key of a longer entry (g of gr) waits for the rest. Esc,
+   C-g, C-c and q just close the menu; any other key says it is
    undefined."
-  (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)])
+  (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)]
+        [longer (filter (lambda (e) (let ([ks (split-keys (car e))]) (and (> (length ks) 1) (equal? (car ks) key))))
+                        *menu-entries*)])
     (menu-done!)
     (cond [entry (message "") ((caddr entry))]
+          [(pair? longer)
+           (menu! (key-label key)
+                  (map (lambda (e) (cons (apply string-append (cdr (split-keys (car e)))) (cdr e))) longer))]
           [(member key '("<esc>" "C-g" "C-c" "q")) (message "")]
           [else (message (string-append (key-label key) " is undefined"))])))
 
 (define (menu! title entries)
   "Shows a popup menu titled `title`; the next key runs its entry.
-   Each of `entries` is (key label thunk):
+   Each of `entries` is (key label thunk); a key may be a short
+   sequence, \"gr\":
 
      (menu! \"Commit\" (list (list \"c\" \"commit\" commit!)
                            (list \"a\" \"amend\" amend!)))"

@@ -359,3 +359,27 @@ fn a_remote_head_is_not_a_branch() {
     type_keys(&mut s, "bbother<ret>");
     assert_eq!(git(&dir, &["branch", "--show-current"]), "other\n");
 }
+
+#[test]
+fn question_mark_runs_the_key_pressed() {
+    let dir = repo("git-menu");
+    let mut s = status(&dir);
+    // ? lists every key with its label.
+    type_keys(&mut s, "?");
+    let popup = s.frame().text_rows().join("\n");
+    for entry in ["stage", "unstage", "commit", "pull", "push", "refresh"] {
+        assert!(popup.contains(entry), "{entry} in {popup}");
+    }
+    // s from it stages the file at the cursor.
+    type_keys(&mut s, "<esc>");
+    go_to(&mut s, "untracked  b.txt");
+    type_keys(&mut s, "?s");
+    assert!(git(&dir, &["diff", "--cached", "--name-only"]).contains("b.txt"));
+    // c opens the commit menu; g waits for the r of gr.
+    type_keys(&mut s, "?c");
+    assert!(s.frame().text_rows().join("\n").contains("amend"));
+    type_keys(&mut s, "<esc>?g");
+    assert!(s.frame().text_rows().join("\n").contains("refresh"));
+    type_keys(&mut s, "r");
+    assert!(!s.status().contains("undefined"), "{}", s.status());
+}
