@@ -74,3 +74,32 @@ fn expr_folds_from_a_procedure() {
     .unwrap();
     assert_eq!(folds(&mut s), r#""1-2 4-6""#);
 }
+
+const RUST: &str = "fn a() {\n    let x = 1;\n}\n\nstruct S {\n    f: u8,\n}\nimpl S {\n    fn m(&self) {\n        1;\n    }\n}\n";
+
+fn open(s: &mut imp_server::Server, name: &str, text: &str) {
+    let path = temp_path(name);
+    std::fs::write(&path, text).unwrap();
+    type_keys(s, &format!(":e {}<ret>", path.display()));
+}
+
+#[test]
+fn syntax_folds_functions_and_classes() {
+    let mut s = server("");
+    open(&mut s, "folds.rs", RUST);
+    type_keys(&mut s, ":setlocal fdm=syntax<ret>");
+    // Functions and the struct and impl, nested, all closed.
+    assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
+    // A language's own fold kinds.
+    s.eval(r#"(define-syntax-folds! "rust" '("impl_item"))"#).unwrap();
+    type_keys(&mut s, ":setlocal fdm=syntax<ret>");
+    assert_eq!(folds(&mut s), r#""7-11+""#);
+}
+
+#[test]
+fn a_file_opened_with_foldmethod_set_starts_folded() {
+    let mut s = server("");
+    s.eval("(set-option! 'foldmethod \"syntax\")").unwrap();
+    open(&mut s, "folded.rs", RUST);
+    assert_eq!(folds(&mut s), r#""0-2+ 4-6+ 7-11+ 8-10+""#);
+}
