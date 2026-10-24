@@ -116,11 +116,25 @@ fn moving_or_swapping_lines_is_safe() {
     type_keys(&mut s, "y");
     assert_eq!(read(&dir, "a.txt"), "aaa\n");
     assert_eq!(read(&dir, "fresh.txt"), "");
-    // Swapping two names reads as no change (both lines read as entries).
+    // Swapping two names is two renames: each line keeps its entry.
     type_keys(&mut s, ":e!<ret>/a.txt<ret>ccb.txt<esc>jcca.txt<esc>");
     assert_eq!(s.text(), "sub/\nb.txt\na.txt\nfresh.txt\n");
     type_keys(&mut s, ":w<ret>");
-    assert!(s.status().contains("no changes"), "{}", s.status());
+    let shown = s.frame().text_rows().join("\n");
+    assert!(shown.contains("rename  a.txt → b.txt"), "{shown}");
+    assert!(shown.contains("rename  b.txt → a.txt"), "{shown}");
+    type_keys(&mut s, "y");
+    assert_eq!(read(&dir, "a.txt"), "bbb\n");
+    assert_eq!(read(&dir, "b.txt"), "aaa\n");
+    // So is a rotation, where the last name is new.
+    type_keys(&mut s, "/a.txt<ret>ccb.txt<esc>jccc.txt<esc>:w<ret>");
+    let shown = s.frame().text_rows().join("\n");
+    assert!(shown.contains("rename  a.txt → b.txt"), "{shown}");
+    assert!(shown.contains("rename  b.txt → c.txt"), "{shown}");
+    assert!(!shown.contains("delete"), "{shown}");
+    type_keys(&mut s, "y");
+    assert_eq!(read(&dir, "b.txt"), "bbb\n");
+    assert_eq!(read(&dir, "c.txt"), "aaa\n");
     // cc on a name keeps its identity: a rename, typed from the start.
     type_keys(&mut s, "/b.txt<ret>ccbee.txt<esc>Inew-<esc>:w<ret>");
     assert!(s
