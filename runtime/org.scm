@@ -1286,6 +1286,8 @@
 (define-major-mode! 'org-mode 'text-mode '("org")
   (lambda ()
     (set-local-option! 'shiftwidth 2)
+    ;; The outline is made of folds by hand, not by indent.
+    (set-local-option! 'foldmethod "manual")
     (for-each (lambda (p) (buffer-highlight-pattern! (car p) (cadr p) (caddr p)))
               (list (list "org-1" "^\\* .*" "org.level1")
                     (list "org-2" "^\\*\\* .*" "org.level2")

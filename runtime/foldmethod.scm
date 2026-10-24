@@ -7,7 +7,7 @@
 ;;; know, and after vim.scm, for its keys.
 
 (define-option! 'foldmethod "manual" '(fdm))
-(define-option! 'foldlevel 0 '(fdl))
+(define-option! 'foldlevel 99 '(fdl))
 ;; A procedure (lambda (line) level) for foldmethod expr, or #f.
 (define-option! 'foldexpr #f '(fde))
 
@@ -167,8 +167,20 @@
     (sync-folds! #f)))
 (add-hook! 'post-command (lambda () (unless (typing-mode?) (refresh-automatic-folds!))))
 (add-hook! 'insert-leave refresh-automatic-folds!)
-;; A file opened with foldmethod set (in init.scm) starts with its folds.
-(add-hook! 'buffer-open (lambda () (when (automatic-folds?) (sync-folds! #t))))
+;; Files over this many lines start with foldmethod manual.
+(define *default-fold-lines* 10000)
+
+(define (open-folds!)
+  "Gives a buffer that just opened a file its folds: indent folding,
+   unless foldmethod was set globally or for the buffer (by its major
+   mode, as Org's) or the file is long; see lore:decision/0014. A
+   foldmethod set in init.scm works its folds out."
+  (if (or (option-set? 'foldmethod) (buffer-local? (list 'option 'foldmethod))
+          (> (+ (last-line) 1) *default-fold-lines*))
+      (when (automatic-folds?) (sync-folds! #t))
+      (set-local-option! 'foldmethod "indent"))
+  void)
+(add-hook! 'buffer-open open-folds!)
 
 ;;; Making and deleting folds by hand is for foldmethod manual, as in Vim.
 
