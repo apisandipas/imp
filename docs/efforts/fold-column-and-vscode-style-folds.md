@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/folding]]"]
 issue: https://github.com/apisandipas/imp/issues/48
 frozen:
@@ -21,4 +21,4 @@ The fold model in `fold.scm` stays; what changes is which folds `foldmethod.scm`
 - [x] `set-folds!` replaces `set-closed-folds!`, and the renderer draws the fold column between numbers and text: `▾`/`▸` on the outermost fold starting on a line, first row of a wrapped line only, the `foldcolumn` option (`auto`/`yes`/`no`, buffer-local) and the `fold-column` face. Render tests.
 - [x] A click on a chevron toggles that fold, leaving the cursor unless the fold closes over it (then its first line); a click on a blank column cell acts as a click on the line's number. Tests.
 - [x] Files named on the command line, which exist before `buffer-open` runs, get their folds at startup, after their major modes. Test.
-- [ ] Checked by hand in both clients by the owner; `crates/imp-server/CONTEXT.md` or `runtime/CONTEXT.md` updated if their rules changed.
+- [x] Checked by hand in both clients by the owner; `crates/imp-server/CONTEXT.md` or `runtime/CONTEXT.md` updated if their rules changed.

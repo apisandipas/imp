@@ -2,7 +2,7 @@
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/48
 summary: "Folds by indent unless set otherwise, a clickable fold column, and Vim's fold keys."
-anchors: [runtime/fold.scm, crates/imp-server/tests/foldmethod.rs, crates/imp-server/tests/folds.rs]
+anchors: [runtime/fold.scm, runtime/foldmethod.scm, crates/imp-server/tests/foldmethod.rs, crates/imp-server/tests/folds.rs, crates/imp-server/tests/fold_column.rs]
 ---
 # Folding
 
