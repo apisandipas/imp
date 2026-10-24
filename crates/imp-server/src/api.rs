@@ -543,6 +543,28 @@ pub fn register(engine: &mut Engine) {
             Ok::<_, String>(e.buffer.redo().map(|at| at as isize))
         })
     });
+    // g+ (#t) and g-: the state made just after or before, across
+    // branches. Where the text changed, or #f past the newest or oldest.
+    engine.register_fn("undo-step!", |forward: bool| {
+        editor::with(|e| {
+            writable(e)?;
+            Ok::<_, String>(e.buffer.undo_step(forward).map(|at| at as isize))
+        })
+    });
+    // The tip of each undo branch as (change-number changes-deep
+    // seconds-ago), oldest first.
+    engine.register_fn("undo-list", || {
+        editor::with(|e| {
+            e.buffer
+                .undo_list()
+                .into_iter()
+                .map(|(n, depth, made)| {
+                    let ago = made.elapsed().map_or(0, |d| d.as_secs());
+                    vec![n as isize, depth as isize, ago as isize]
+                })
+                .collect::<Vec<_>>()
+        })
+    });
     engine.register_fn("save!", || {
         editor::with(|e| match e.buffer.save() {
             Ok(()) => true,

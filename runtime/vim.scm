@@ -1231,6 +1231,11 @@
 
 (define-key! 'normal "u" (undo-command undo! "already at oldest change"))
 (define-key! 'normal "C-r" (undo-command redo! "already at newest change"))
+;; g- and g+ go through the undo tree in the order changes were made,
+;; across branches.
+(define-key! 'normal "g-" (undo-command (lambda () (undo-step! #f)) "already at oldest change"))
+(define-key! 'normal "g+" (undo-command (lambda () (undo-step! #t)) "already at newest change"))
+
 
 ;; U undoes the latest changes on the last changed line, as one new change
 ;; (so U again redoes them).
@@ -3972,6 +3977,29 @@
 (define-ex! '("u" "undo") (lambda (ex) ((lookup-key 'normal "u") 1)))
 (define-ex! '("red" "redo") (lambda (ex) ((lookup-key 'normal "C-r") 1)))
 
+(define (pad-spaces text width)
+  "`text` with spaces before it to make `width` chars."
+  (string-append (make-string (max 0 (- width (string-length text))) #\space) text))
+
+(define (seconds-ago n)
+  "`n` seconds as :undolist says how long ago: \"5 seconds ago\"."
+  (cond [(< n 100) (string-append (number->string n) " seconds ago")]
+        [(< n 6000) (string-append (number->string (quotient n 60)) " minutes ago")]
+        [else (string-append (number->string (quotient n 3600)) " hours ago")]))
+
+(define-ex! '("undol" "undolist")
+  (lambda (ex)
+    (let ([tips (undo-list)])
+      (if (null? tips)
+          (message "Nothing to undo")
+          (show-popup!
+           (cons "number changes  when"
+                 (map (lambda (t)
+                        (string-append (pad-spaces (number->string (car t)) 6)
+                                       (pad-spaces (number->string (cadr t)) 8)
+                                       "  " (seconds-ago (caddr t))))
+                      tips)))))))
+
 ;; :pu [x] puts a register's text as lines below the line (:pu! above).
 (define-ex! '("pu" "put")
   (lambda (ex)
@@ -4480,6 +4508,8 @@
    ("gp" "paste after, cursor after" (normal))
    ("gP" "paste before, cursor after" (normal))
    ("gv" "reselect last selection" (normal))
+   ("g-" "older undo state" (normal))
+   ("g+" "newer undo state" (normal))
    ("gJ" "join without spaces" (normal visual))
    ("ZZ" "save and quit" (normal))
    ("ZQ" "quit without saving" (normal))

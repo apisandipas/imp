@@ -12,6 +12,3 @@ Types the server and every client share. Clients depend on this crate, never on 
 - The server replies with a whole `Frame` (rows of styled spans and the cursor), then `Patch`es of changed rows, or `Quit`. For a client that draws heights, a window's text comes as a `WindowBlock` of `BlockRow`s and those cells of `Frame::rows` are left blank; other clients get every height stripped.
 - Each `Frame` carries the window `appearance` (font, padding, opacity, divider) with the `normal` face's background.
 
-## Limits
-
-- Undo stores whole-text snapshots, and marks aren't restored by undo (they're clamped into the text). [#5](https://github.com/apisandipas/imp/issues/5)

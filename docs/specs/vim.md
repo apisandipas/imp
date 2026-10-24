@@ -1,6 +1,6 @@
 ---
 status: accepted
-issue: https://github.com/apisandipas/imp/issues/8
+issue: https://github.com/apisandipas/imp/issues/5
 summary: "Vim's normal, insert, visual and command-line behavior, matched against real Vim."
 anchors: [runtime/vim.scm, runtime/map.scm, crates/imp-server/tests/map.rs, crates/imp-server/src/search.rs, crates/imp-server/src/scan.rs, crates/imp-server/tests/vim.rs]
 ---
@@ -16,6 +16,7 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 - **Commands**: `x X D C s S Y p P gp gP r R J gJ ~ C-a C-x u C-r U . & ZZ ZQ C-g i a I A o O gi gI`, counts on inserts and pastes.
 - **Visual**: `v V C-v`, `o O gv`, operators and text objects, `I A c r J p u U ~ > <`, block `$`, and `.` over the same size of region. `:` from visual uses the `<` and `>` marks. Blocks are display columns: a tab or wide char at a corner widens the block to all of it, and one the block's edge cuts becomes spaces where text is taken out or put in.
 - **Insert**: autoindent and smartindent, expandtab-aware `<tab>`, `C-w C-u C-h C-t C-d C-r C-o`, `<del> <home> <end> <up> <down>`; Replace mode restores on `<bs>`.
+- **Undo**: a tree, as in Vim. `u` goes back to the state before, `C-r` forward along the branch last taken, and a change made after an undo starts a new branch without losing the old one. `g-` and `g+` step through states in the order they were made, across branches; all four take a count. `:undolist` lists the tip of each branch: its change number, how many changes deep it is, and how long ago it was made. Moving through undo puts marks back where they were in that state; marks set since keep their place, kept inside the text.
 - **Search**: `/ ? n N * #`, incremental and highlighted (`:noh`), as a motion (`d/foo`), smartcase, Vim regex syntax translated to the `regex` crate.
 - **Registers**: `"a-z "A-Z "0-9 "- "_ ". ": "/ "% "+ "*`, `clipboard=unnamedplus`, `"1p..`. The system clipboard goes through `wl-copy`, `xclip`, `xsel` or `pbcopy`.
 - **Macros**: `q @ @@ @:`; a failing key stops a macro. Keys are stored as text in Vim notation.
@@ -37,8 +38,5 @@ imp is Vim-first ([[0006-vim-by-default-in-the-core]]). Everything here behaves 
 
 - Mappings in operator-pending, select, command-line and terminal state (`:omap`, `:xmap`, `:smap`, `:cmap`, `:tmap`), and the `<buffer>`, `<expr>`, `<script>` and `<unique>` arguments; `<silent>` is accepted and changes nothing.
 - A normal-state `{lhs}` of several keys starting with a key that already does something (`,w`), which Vim resolves with a timeout.
+- Undo by time (`:earlier 10m`, `:later`), undo files kept across sessions, and the undo tree drawn as a tree.
 - Vimscript. Configuration is Scheme ([[0010-config-in-init-scm]]).
-
-## Known gaps
-
-- Undo is whole-text snapshots with no undo tree, and undo doesn't restore marks. [#5](https://github.com/apisandipas/imp/issues/5)
