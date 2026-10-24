@@ -1,4 +1,5 @@
-//! The daemon: clients attach over a socket and share one editor.
+//! The daemon: clients attach over a socket and share one editor, each
+//! with its own windows.
 
 mod common;
 
@@ -117,11 +118,12 @@ fn clients_share_one_editor() {
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "hi"));
     b.keys(&["A", "!", "<esc>"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi!"));
-    // :q detaches b; a carries on.
+    // :q detaches b; a carries on, its cursor still on the i, not where
+    // b's was.
     b.keys(&[":", "q", "!", "<ret>"]);
     assert!(!b.until(|_| false));
     a.keys(&["x"]);
-    assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi"));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "h!"));
     // :kill-server stops the daemon for everyone.
     a.keys(&[
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
@@ -188,4 +190,81 @@ fn the_socket_directory_is_private() {
     std::os::unix::fs::symlink(&dir, &link).unwrap();
     let err = imp_server::daemon::run(&link.join("imp.sock"), options("link"));
     assert!(err.unwrap_err().contains("not a directory"));
+}
+
+fn kill_server(c: &mut Client) {
+    c.keys(&[
+        ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
+    ]);
+    assert!(!c.until(|_| false));
+}
+
+fn ex(c: &mut Client, command: &str) {
+    c.keys(&[":"]);
+    for ch in command.chars() {
+        c.keys(&[&ch.to_string()]);
+    }
+    c.keys(&["<ret>"]);
+}
+
+/// Whether the screen shows two windows side by side.
+fn split(f: &Frame) -> bool {
+    f.text_rows()[0].contains('│')
+}
+
+#[test]
+fn each_client_has_its_own_windows() {
+    let socket = start_daemon("own-windows");
+    let mut a = Client::connect(&socket);
+    a.keys(&[
+        "i", "o", "n", "e", "<ret>", "t", "w", "o", "<ret>", "t", "h", "r", "e", "e", "<esc>",
+    ]);
+    assert!(a.until(|f| f.text_rows()[2].trim_end() == "three"));
+    let mut b = Client::connect(&socket);
+    // b starts on a's buffer, in one window of its own.
+    b.keys(&["g", "g"]);
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "one"));
+    // a splits; b doesn't.
+    a.keys(&["C-w", "v"]);
+    assert!(a.until(split));
+    b.keys(&["l"]);
+    assert!(b.until(|f| !split(f) && f.text_rows()[0].starts_with("one")));
+    // Each keeps its own cursor: b on "one", a on "three", where x lands
+    // after b adds a line above it.
+    b.keys(&["O", "z", "e", "r", "o", "<esc>"]);
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "zero"));
+    a.keys(&["0", "x"]);
+    assert!(a.until(|f| f.text_rows()[3].starts_with("hree")));
+    // :q on a's split closes a window, and a stays.
+    ex(&mut a, "q");
+    assert!(a.until(|f| !split(f)));
+    // b switching buffers leaves a's window alone.
+    let path = common::temp_path("daemon-own.txt");
+    std::fs::write(&path, "elsewhere\n").unwrap();
+    ex(&mut b, &format!("e {}", path.display()));
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "elsewhere"));
+    a.keys(&["k"]);
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "zero"));
+    kill_server(&mut a);
+}
+
+#[test]
+fn a_buffer_deleted_elsewhere_is_replaced() {
+    let socket = start_daemon("deleted");
+    let path = common::temp_path("daemon-deleted.txt");
+    std::fs::write(&path, "doomed\n").unwrap();
+    let mut a = Client::connect(&socket);
+    a.keys(&["i", "k", "e", "p", "t", "<esc>"]);
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "kept"));
+    let mut b = Client::connect(&socket);
+    b.send(ClientMsg::Open(vec![path.display().to_string()]));
+    assert!(b.until(|f| f.text_rows()[0].trim_end() == "doomed"));
+    // a opens it too, then deletes it: b's window shows another buffer.
+    ex(&mut a, &format!("e {}", path.display()));
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "doomed"));
+    ex(&mut a, "bd");
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "kept"));
+    b.keys(&["l"]);
+    assert!(b.until(|f| f.text_rows()[0].trim_end() != "doomed"));
+    kill_server(&mut a);
 }

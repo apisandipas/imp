@@ -366,6 +366,26 @@ impl Server {
         }
     }
 
+    /// Takes the current windows out as a daemon client's view.
+    pub(crate) fn take_view(&mut self) -> editor::ClientView {
+        editor::with(|e| e.take_view())
+    }
+
+    /// Makes a daemon client's view the current windows.
+    pub(crate) fn put_view(&mut self, view: editor::ClientView) {
+        editor::with(|e| e.put_view(view))
+    }
+
+    /// A view for a new daemon client: one window on the current buffer.
+    pub(crate) fn new_view(&mut self) -> editor::ClientView {
+        editor::with(|e| e.new_view())
+    }
+
+    /// Forgets a departed daemon client's view.
+    pub(crate) fn drop_view(&mut self, view: &editor::ClientView) {
+        editor::with(|e| e.drop_view(view))
+    }
+
     /// Whether the next frame is for a client that draws text heights
     /// (each daemon client says for itself).
     pub fn set_heights(&mut self, on: bool) {
