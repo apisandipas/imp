@@ -15,13 +15,19 @@
 ;;;   gx         follow the link at the cursor
 ;;;
 ;;; SPC o a shows the agenda: TODOs and SCHEDULED/DEADLINE dates from
-;;; org-agenda-files (empty means every .org file under org-directory).
+;;; org-agenda-files (empty means every .org file under org-directory),
+;;; as a week (org-agenda-span days): f and b move a week on and back, .
+;;; returns to this one, gr reads the files again.
 ;;; SPC o c captures: a TODO, a note or a journal entry, from templates
 ;;; (see Capture below).
 ;;;
 ;;;   C-c C-s    schedule the heading (SCHEDULED:), from a calendar
 ;;;   C-c C-d    give it a deadline (DEADLINE:)
 ;;;   C-c .      put a timestamp at the cursor, or change the one there
+;;;
+;;; A timestamp ending in a repeater, <2026-10-24 Sat +1w> (or ++1w, .+1w),
+;;; moves on when its heading is marked done, and the heading goes back
+;;; to its first TODO keyword.
 
 (define-option! 'org-directory "~/org" '())
 (define-option! 'org-agenda-files '() '())
