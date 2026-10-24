@@ -70,6 +70,39 @@ fn buffer_list_and_navigation() {
     assert!(rows.iter().any(|r| r.contains("nav-b.txt")));
 }
 
+/// A path too long for :ls or a menu is shortened from the start,
+/// keeping the file name, as the status line does.
+#[test]
+fn long_paths_shorten_from_the_start() {
+    let long = file("a-rather-long-file-name.txt", "x\n");
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {long}<ret>"));
+    s.set_size(40, 24);
+    type_keys(&mut s, ":ls<ret>");
+    let rows = s.frame().text_rows();
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("%a + \"<") || r.contains("%a   \"<")),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.trim_end().ends_with("a-rather-long-file-name.txt\"")),
+        "{rows:?}"
+    );
+    type_keys(&mut s, "<esc>");
+    s.eval(r#"(completing-read "Pick: " (list "some/deeply/nested/directory/tree/target.txt" "plain") (lambda (x) x))"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("<") && r.contains("target.txt")),
+        "{rows:?}"
+    );
+    // Rows that fit, and candidates that aren't paths, are left alone.
+    assert!(rows.iter().any(|r| r.contains(" plain")), "{rows:?}");
+}
+
 #[test]
 fn delete_buffer() {
     let a = file("del-a.txt", "a\n");

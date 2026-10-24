@@ -7,7 +7,7 @@ anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runt
 
 ## Behaviour
 
-- **Buffers**: `:e :e! :enew :ls :b :bn :bp :bd C-^ :wa :qa`, each with its own cursor and scroll; jumps cross buffers.
+- **Buffers**: `:e :e! :enew :ls :b :bn :bp :bd C-^ :wa :qa`, each with its own cursor and scroll; jumps cross buffers. A path too long for `:ls` is shortened from the start, keeping the file name, as the status line does.
 - **Windows**: a split tree owned by the server. `C-w s v n w W h j k l c q o = + - < >`, `:sp :vs :new :vnew :close :only`, `:q` closing a window when there are several, `SPC w`. Each window has its own status line; the bottom row is the message line, or the command line while typing. A window's cursor is a buffer mark while it isn't focused, so edits through another window keep it in place.
 - **Borders**: side-by-side windows are separated by a divider as wide as `window-divider-width` (logical pixels) in the window client, one column in a terminal. Drag it, or a status line, to resize.
 - **Popup windows**: a generated buffer whose name matches a rule (`define-popup-rule!`) opens along an edge of the frame: `*grep*` along the bottom, `*git…*`, `*faces*` and `*capture*` down the right. `q` closes it, a file opened from it opens in the window it came from, and a popup opened from a popup reuses its window.
@@ -19,6 +19,3 @@ anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runt
 
 `window-divider-width`, `splitbelow`, `splitright`, `wrap`, `linebreak`, `number`, `relativenumber`, `cursorline`, `signcolumn`.
 
-## Known gaps
-
-- `:ls` and menus cut long paths at the screen edge instead of shortening them from the start, as the status line does. [#18](https://github.com/apisandipas/imp/issues/18)

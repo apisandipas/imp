@@ -191,12 +191,27 @@ pub fn frame(e: &mut Editor) -> Frame {
 }
 
 /// A popup row `width` cells wide: its runs over the popup's face (or the
-/// selected one), padded.
+/// selected one), padded. A row too wide has its first `popup.path` run
+/// shortened from the start, keeping the file name, as the status line
+/// does; then what still doesn't fit is cut.
 fn popup_row(e: &Editor, line: &[(String, String)], selected: bool, width: usize) -> Row {
     let base = e.face(if selected { "popup-selected" } else { "popup" });
+    let total: usize = line.iter().map(|(text, _)| text_width(text)).sum();
+    let mut shortened = false;
+    let line: Vec<(String, &String)> = line
+        .iter()
+        .map(|(text, face)| {
+            if total > width && !shortened && face == "popup.path" {
+                shortened = true;
+                (trim_start(text, total - width), face)
+            } else {
+                (text.clone(), face)
+            }
+        })
+        .collect();
     let mut row = Vec::new();
     let mut used = 0;
-    for (text, face) in line {
+    for (text, face) in &line {
         let style = if face.is_empty() {
             base
         } else {

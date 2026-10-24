@@ -74,6 +74,8 @@
      (list "popup-title" (fg 'blue "bold"))
      (list "popup.detail" (fg 'dim))
      (list "popup.match" (fg 'blue "bold"))
+     ;; A path in a popup row: shortened from the start when the row is too wide.
+     (list "popup.path" "")
      (list "which-key.key" (fg 'magenta "bold"))
      (list "which-key.separator" (fg 'dim))
      (list "which-key.group" (fg 'blue))
