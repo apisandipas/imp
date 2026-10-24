@@ -132,9 +132,10 @@
   (car (buffer-info id)))
 
 (define (live-popup-windows)
-  "The popup windows still open, as (window origin rule)."
-  (set! *popup-windows* (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
-  *popup-windows*)
+  "The popup windows open among the current windows, as (window origin
+   rule). The others are kept: with the daemon they may be another
+   client's (see lore:decision/0015), and window ids aren't reused."
+  (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
 
 (define (popup-window-entry window)
   "The (window origin rule) entry for `window` if it is an open popup,

@@ -12,6 +12,7 @@ The editor. It owns all state; clients only send input and draw frames ([[0004-c
 ## How it runs
 
 - Standalone (`imp FILE`), the client spawns `imp_server::run` on a thread, connected by two channels. With `imp --daemon` it listens on a Unix socket; `--connect` clients speak JSON lines and `--bridge` relays stdio for `--via 'ssh host imp --bridge'`.
+- Each daemon client has its own windows: a `ClientView` (layout, current window, each window's buffer and scroll) swapped into the `Editor` around its input and its frame; every cursor waits in a window mark meanwhile. Everything else, the typing state included, is shared ([[0015-daemon-clients-own-their-windows-and-share-the-typing]]). State about what a client sees belongs in those swapped fields, or keyed by window id, never in a new Scheme global or `Editor` field that every client would share.
 - One loop reads one channel of events: client messages, timers, job output. Only that thread touches the editor and the Steel VM ([[0012-one-thread-owns-the-vm-and-the-editor]]).
 - For every key the server calls `(imp-handle-key key)` and for every mouse event `(imp-handle-mouse action button x y)`. Rust has no idea what keys mean.
 - Runtime files are embedded with `include_str!`; `IMP_RUNTIME` loads them from disk instead.
