@@ -19,6 +19,6 @@ Decisions made while the owner was away (issue #16 had no answers yet): the smal
 ## Tasks
 
 - [x] `window-text-size` and `term-size` primitives; every terminal sized to the smallest window showing it, on output and after each command. Tested in `term.rs` with two windows.
-- [ ] Mouse: `term-mouse-mode`, `term-mouse-encoding`, `term-screen-top` and `window-cell` primitives, and forwarding in SGR and classic encodings by mode. Tested in `term.rs` with a program that turns on mouse reporting and prints what it reads.
+- [x] Mouse: `term-mouse-mode`, `term-mouse-encoding`, `term-screen-top` and `window-cell` primitives, and forwarding in SGR and classic encodings by mode. Tested in `term.rs` with a program that turns on mouse reporting and prints what it reads.
 - [ ] Paste: `ClientMsg::Paste`, the terminal client's bracketed paste, `imp-handle-paste` for insert, normal, visual, command line and TERMINAL state. Tested in `term.rs` and a new `paste.rs`.
 - [ ] Docs: `crates/imp-core/CONTEXT.md` protocol section lists `Paste`; README mentions the terminal's mouse and paste if it describes terminals.

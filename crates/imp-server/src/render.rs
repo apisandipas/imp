@@ -1409,6 +1409,27 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
 }
 
 /// Columns for text in the current window: its width less the gutter.
+/// The text cell at screen cell (`x`, `y`) as (window, line, column),
+/// counting lines from the window's first and ignoring folds and wrapping
+/// (for terminals, which have neither). `None` off a window's text, as on
+/// its status line or gutter.
+pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usize)> {
+    let (id, rect) = e
+        .window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y + 1 < r.y + r.h)?;
+    let (buffer_id, scroll, hscroll) = if id == e.current_window {
+        (e.current, e.scroll, e.hscroll)
+    } else {
+        let w = &e.windows[&id];
+        (w.buffer, w.scroll, w.hscroll)
+    };
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
+    let left = rect.x + indent + gutter;
+    (x >= left).then(|| (id, scroll + y - rect.y, x - left + hscroll))
+}
+
 /// The rows and columns of text window `id` shows, or `None` if there is
 /// no such window.
 pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {

@@ -24,6 +24,10 @@
 ;; it was grabbed at, and `grab` how far into the border.
 (define *mouse-border* #f)
 
+;; Sees mouse events first, as (action button x y); #t from it means
+;; handled. term.scm sets it to pass the mouse to programs that ask.
+(define *mouse-handler* #f)
+
 (define (imp-handle-mouse action button x y)
   "Handles a mouse event from the client, `action` with `button` at
    screen cell `x`, `y`: press, drag, release, scroll-up or scroll-down.
@@ -32,7 +36,8 @@
   (when (and (option 'mouse) (not (eq? *mode* 'cmdline))
              ;; Something reading keys (the leader menu, describe-key)
              ;; owns the next input, except the completion menu.
-             (or (not *key-interceptor*) *menu-open*))
+             (or (not *key-interceptor*) *menu-open*)
+             (not (and *mouse-handler* (*mouse-handler* action button x y))))
     (let ([at (screen-position x y)])
       (cond
         [(and (equal? action "press") (equal? button "left") (border-at x y))

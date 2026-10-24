@@ -84,6 +84,46 @@
 
 (define-state! 'terminal "TERMINAL" "bar" terminal-key!)
 
+;;; The mouse, for programs that ask for it (less, htop, vim).
+
+(define (term-mouse! action button x y)
+  "Passes a mouse event to the program in the current terminal, if it
+   asked for that kind of event and the event is on its screen in the
+   current window, in the terminal state. #t if it was passed."
+  (let* ([id (and (eq? *mode* 'terminal) (term-id))]
+         [mouse (and id (term-mouse-mode id))]
+         [mode (and mouse (car mouse))]
+         [cell (and mouse (not (equal? mode "none")) (window-cell x y))]
+         [row (and cell (= (car cell) (current-window)) (- (cadr cell) (term-screen-top id)))]
+         [wanted? (cond [(member action '("press" "scroll-up" "scroll-down")) #t]
+                        [(equal? action "release") (not (equal? mode "press"))]
+                        [(equal? action "drag") (member mode '("button-motion" "any-motion"))]
+                        [else #f])])
+    (and row (>= row 0) wanted?
+         (begin
+           (term-send! id (term-mouse-bytes action button (+ (caddr cell) 1) (+ row 1) (cadr mouse)))
+           #t))))
+
+(define (term-mouse-bytes action button x y encoding)
+  "The bytes reporting a mouse event at 1-based cell `x`, `y`, in
+   `encoding`: \"sgr\" (ESC [ < b ; x ; y M, m on release) or the classic
+   ESC [ M and three chars, \"utf8\" letting them go past 223."
+  (let* ([esc (string (integer->char 27))]
+         [code (+ (cond [(equal? action "scroll-up") 64]
+                        [(equal? action "scroll-down") 65]
+                        [(equal? button "middle") 1]
+                        [(equal? button "right") 2]
+                        [else 0])
+                  (if (equal? action "drag") 32 0))])
+    (if (equal? encoding "sgr")
+        (string-append esc "[<" (number->string code) ";" (number->string x) ";" (number->string y)
+                       (if (equal? action "release") "m" "M"))
+        (let* ([most (if (equal? encoding "utf8") 2015 223)]
+               [char (lambda (n) (string (integer->char (+ 32 (min n most)))))])
+          (string-append esc "[M" (char (if (equal? action "release") 3 code)) (char x) (char y))))))
+
+(set! *mouse-handler* term-mouse!)
+
 (define (term-fit! id)
   "Sizes terminal `id` to the windows showing it: the smallest rows and
    columns among them, as Neovim does. Unshown, it keeps its size."
