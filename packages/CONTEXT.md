@@ -7,5 +7,6 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `org-babel`: `C-c C-c` runs an Org source block, results under `#+RESULTS:`.
 - `move-lines`: `J` and `K` move a visual line selection.
 - `nerd-icons`: Nerd Font icons in completion, menus and the status line.
+- `git-blame`: the cursor's line's last commit, after the line.
 
 The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.
