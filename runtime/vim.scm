@@ -4265,7 +4265,7 @@
     (set! *local-prefix* #f)
     (cond [(member key '("<esc>" "C-g")) (message "")]
           [(local-key-proc state keys) => (lambda (proc) (message "") (run-local-binding! state proc))]
-          [(local-prefix? state keys) (set! *local-prefix* keys) (message (string-append keys "-"))]
+          [(local-prefix? state keys) (set! *local-prefix* keys) (set-status! (string-append keys "-"))]
           [else (message (string-append keys " is undefined"))])))
 
 (define (handle-key! key)
@@ -4279,7 +4279,7 @@
           (not (local-key-proc (local-prefix-state) key))
           (local-prefix? (local-prefix-state) key))
      (set! *local-prefix* key)
-     (message (string-append key "-"))]
+     (set-status! (string-append key "-"))]
     [(hash-try-get *extra-states* *mode*) => (lambda (s) ((caddr s) key))]
     [(typing-mode?) (insert-mode-key! key)]
     [(eq? *mode* 'cmdline) (cmdline-key! key)]

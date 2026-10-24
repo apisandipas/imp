@@ -171,7 +171,7 @@
 (define (show-which-key!)
   "Shows the leader prompt now, and the which-key popup after
    which-key-delay ms if the sequence is still waiting on the same keys."
-  (message (leader-prompt))
+  (set-status! (leader-prompt))
   (when *which-key-timer* (cancel-timer! *which-key-timer*))
   (set! *which-key-timer* #f)
   (let ([keys *leader-keys*])

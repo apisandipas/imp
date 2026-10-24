@@ -96,6 +96,18 @@ fn messages_are_kept() {
 }
 
 #[test]
+fn key_echoes_and_clears_are_not_kept() {
+    let mut s = server("");
+    type_keys(&mut s, "<esc>");
+    s.keys(&[" "]);
+    // The leader still echoes, on the status line only.
+    assert_eq!(s.status().trim(), "SPC");
+    s.keys(&["<esc>", " ", "e", "<esc>"]);
+    s.eval("(message \"kept\")").unwrap();
+    assert_eq!(s.eval("*messages*").unwrap(), "(\"kept\")");
+}
+
+#[test]
 fn named_commands_bound_to_keys_follow_redefinition() {
     let mut s = server("x\n");
     s.eval(
