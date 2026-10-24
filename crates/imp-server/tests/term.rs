@@ -109,3 +109,78 @@ fn killing_the_buffer_ends_the_program() {
     type_keys(&mut s, ":bd!<ret>");
     assert_eq!(s.eval("(hash-length *terminals*)").unwrap(), "0");
 }
+
+/// Terminal ids, oldest first, and window ids top to bottom.
+fn term_ids(s: &mut imp_server::Server) -> Vec<String> {
+    let ids = s.eval("(sort (hash-keys->list *terminals*) <)").unwrap();
+    ids.trim_matches(|c| c == '(' || c == ')')
+        .split(' ')
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn every_terminal_fits_the_windows_showing_it() {
+    let mut s = server("");
+    s.set_size(80, 30);
+    type_keys(&mut s, ":terminal cat<ret>");
+    s.keys(&["C-\\", "C-n"]);
+    type_keys(&mut s, ":split<ret>:terminal cat<ret>");
+    s.keys(&["C-\\", "C-n"]);
+    let ids = term_ids(&mut s);
+    let (first, second) = (&ids[0], &ids[1]);
+    let windows = s.eval("(window-list)").unwrap();
+    let windows: Vec<&str> = windows
+        .trim_matches(|c| c == '(' || c == ')')
+        .split(' ')
+        .collect();
+    let size_of =
+        |s: &mut imp_server::Server, w: &str| s.eval(&format!("(window-text-size {w})")).unwrap();
+    let shown_in = |s: &mut imp_server::Server, t: &str| {
+        s.eval(&format!(
+            "(car (filter (lambda (w) (eqv? (if (= w (current-window)) (current-buffer) (window-buffer w)) (hash-ref *terminals* {t}))) (window-list)))"
+        ))
+        .unwrap()
+    };
+    // The first terminal, no longer in the current window, was refitted
+    // when the split made its window smaller.
+    let w1 = shown_in(&mut s, first);
+    let w2 = shown_in(&mut s, second);
+    assert_ne!(w1, w2);
+    assert_eq!(
+        s.eval(&format!("(term-size {first})")).unwrap(),
+        size_of(&mut s, &w1)
+    );
+    assert_eq!(
+        s.eval(&format!("(term-size {second})")).unwrap(),
+        size_of(&mut s, &w2)
+    );
+    // Making one window taller resizes its terminal.
+    s.keys(&["C-w", "+"]);
+    s.keys(&["C-w", "+"]);
+    assert_eq!(
+        s.eval(&format!("(term-size {second})")).unwrap(),
+        size_of(&mut s, &w2)
+    );
+    assert_eq!(
+        s.eval(&format!("(term-size {first})")).unwrap(),
+        size_of(&mut s, &w1)
+    );
+    // Shown in both windows, a terminal takes the smaller one.
+    s.eval(&format!("(go-to-buffer! (hash-ref *terminals* {first}))"))
+        .unwrap();
+    type_keys(&mut s, "<esc>");
+    let smaller = windows
+        .iter()
+        .map(|w| size_of(&mut s, w))
+        .min_by_key(|r| {
+            r.trim_matches(|c| c == '(' || c == ')')
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse::<u32>()
+                .unwrap()
+        })
+        .unwrap();
+    assert_eq!(s.eval(&format!("(term-size {first})")).unwrap(), smaller);
+}

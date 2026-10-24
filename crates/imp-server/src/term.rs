@@ -159,6 +159,11 @@ pub fn resize(id: u64, rows: u16, cols: u16) {
     });
 }
 
+/// The terminal's (rows, columns), or `None` if it is gone.
+pub fn screen_size(id: u64) -> Option<(u16, u16)> {
+    with(id, |t| t.parser.screen().size())
+}
+
 pub fn kill(id: u64) {
     if let Some(mut t) = TERMS.with(|t| t.borrow_mut().remove(&id)) {
         let _ = t.killer.kill();
