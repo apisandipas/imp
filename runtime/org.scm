@@ -517,14 +517,24 @@
          [parts (if (and (pair? parts) (equal? (trim (last parts)) "")) (reverse (cdr (reverse parts))) parts)])
     (map trim parts)))
 
-(define (org-table-align! line)
+(define (org-table-align! line . live)
   "Aligns the table around `line`, padding every column to its widest.
    Returns (first-line columns cell-index), the cell being the 1-based
-   one the cursor was in."
+   one the cursor was in. With `live`, a (cell text) pair, the cursor's
+   line has that 0-based cell's text as typed, and the change joins the
+   insert in progress instead of being an undo step of its own."
   (let* ([bounds (org-table-bounds line)] [first (car bounds)] [last (cadr bounds)]
          [texts (map line-text (range first (+ last 1)))]
          [indent (let ([t (car texts)]) (substring t 0 (- (string-length t) (string-length (trim-start t)))))]
-         [rows (map (lambda (t) (if (org-separator? t) 'rule (org-row-cells t))) texts)]
+         [keep (and (pair? live) (car live))]
+         [rows (map (lambda (t l)
+                      (cond [(org-separator? t) 'rule]
+                            [(and keep (= l (current-line)))
+                             (let ([cells (org-row-cells t)])
+                               (map (lambda (c i) (if (= i (car keep)) (cadr keep) c))
+                                    cells (range 0 (length cells))))]
+                            [else (org-row-cells t)]))
+                    texts (range first (+ last 1)))]
          [cols (apply max (cons 1 (map (lambda (r) (if (eq? r 'rule) 0 (length r))) rows)))]
          [width (lambda (i) (apply max (cons 1 (map (lambda (r) (if (and (pair? r) (< i (length r))) (string-length (list-ref r i)) 0)) rows))))]
          [widths (map width (range 0 cols))]
@@ -539,9 +549,36 @@
                        (length (filter (lambda (i) (equal? (string-ref t i) #\|)) (range 0 (min col (string-length t))))))]
          [new (string-append (string-join (map render rows) "\n") "\n")])
     (unless (equal? new (org-lines-text first last))
-      (begin-change!)
+      (unless keep (begin-change!))
       (org-replace-lines! first last new))
     (list first cols (max 1 cell-index))))
+
+(define (org-table-live-align!)
+  "Realigns the table at the cursor while typing in it, keeping the
+   cursor where it was in its cell. The cell keeps what was typed up to
+   the cursor, spaces included, so the space before the next word stays."
+  (let* ([line (current-line)] [col (current-col)] [t (line-text line)]
+         [bars (filter (lambda (i) (equal? (string-ref t i) #\|)) (range 0 (string-length t)))]
+         [index (length (filter (lambda (b) (< b col)) bars))])
+    (if (or (= index 0) (>= index (length bars)))
+        (org-table-align! line (list -1 ""))
+        (let* ([start (+ (list-ref bars (- index 1)) 1)]
+               [raw (substring t start (list-ref bars index))]
+               [body (trim-start raw)]
+               [lead (- (string-length raw) (string-length body))]
+               [offset (max 0 (min (- col start lead) (string-length body)))]
+               [text (substring body 0 (max offset (string-length (trim-right body))))])
+          (org-table-align! line (list (- index 1) text))
+          (let* ([t (line-text line)]
+                 [bars (filter (lambda (i) (equal? (string-ref t i) #\|)) (range 0 (string-length t)))])
+            (when (< (- index 1) (length bars))
+              (set-cursor! (+ (line-start line) (list-ref bars (- index 1)) 2 offset))))))))
+
+;; Typing in a table keeps it aligned.
+(add-hook! 'after-change
+  (lambda ()
+    (when (and (eq? (major-mode) 'org-mode) (eq? *mode* 'insert) (org-table-line? (current-line)))
+      (org-table-live-align!))))
 
 (define (org-go-to-cell! line index)
   "Moves to cell `index` (1-based) of row `line`."
