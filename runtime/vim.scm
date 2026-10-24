@@ -145,11 +145,13 @@
 
 (define *motions* (hash))
 
-(define (define-motion! key type proc)
+(define (define-motion! key type proc . label)
   "Makes `key` a motion of `type` (exclusive, inclusive or linewise).
    `proc` is (lambda (from count) target-offset), returning #f when the
-   motion can't move. It then works with every operator and visual mode."
+   motion can't move. It then works with every operator and visual mode.
+   An optional last argument is the label which-key shows."
   (set! *motions* (hash-insert *motions* key (list type proc)))
+  (set-binding-label! 'motion key (and (pair? label) (car label)))
   void)
 
 (define (motion-type m)
@@ -504,10 +506,12 @@
 
 (define *operators* (hash))
 
-(define (define-operator! key proc)
+(define (define-operator! key proc . label)
   "Makes `key` an operator. `proc` is (lambda (start end linewise?) ...).
-   It then works with every motion, text object, visual mode and `.`."
+   It then works with every motion, text object, visual mode and `.`.
+   An optional last argument is the label which-key shows."
   (set! *operators* (hash-insert *operators* key proc))
+  (set-binding-label! 'operator key (and (pair? label) (car label)))
   void)
 
 (define (lines-range first last)
@@ -2257,6 +2261,36 @@
       (if (null? ends) (set! *command-failed* #t) (cursor-to-line! (apply max ends))))))
 
 ;;; Normal mode dispatch
+
+;;; Which-key labels
+
+(define (binding-label state key)
+  "The which-key label of `key` in `state` ('normal or 'visual): the label
+   it was bound with, else the name of the command it runs, else #f.
+   Looks where normal-key! does, in the same order, so the binding that
+   would run is the one described."
+  (let ([keymap-label
+         (lambda (table)
+           (let ([binding (hash-try-get (keymap table) key)])
+             (and binding
+                  (list (or (binding-label-in table key)
+                            (and (symbol? binding) (symbol->string binding)))))))]
+        [table-label
+         (lambda (table found?)
+           (and found? (list (binding-label-in table key))))])
+    (let loop ([lookups
+                (append
+                 (map (lambda (m) (lambda () (keymap-label m))) (*local-keymaps* state))
+                 (if (eq? state 'visual)
+                     (list (lambda () (keymap-label 'visual))
+                           (lambda () (table-label 'operator (hash-contains? *operators* key)))
+                           (lambda () (table-label 'motion (find-motion key))))
+                     (list (lambda () (table-label 'operator (hash-contains? *operators* key)))
+                           (lambda () (table-label 'motion (find-motion key)))
+                           (lambda () (keymap-label 'normal)))))])
+      (cond [(null? lookups) #f]
+            [((car lookups)) => car]
+            [else (loop (cdr lookups))]))))
 
 ;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
 ;; reachable. Char motions and char commands are prefixes automatically.

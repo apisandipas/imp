@@ -48,13 +48,14 @@
   "The keymap name for `mode` in `state`, e.g. scheme-mode:normal."
   (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
 
-(define (define-mode-key! mode state key command)
+(define (define-mode-key! mode state key command . label)
   "Binds `key` to `command` in `state` for buffers in `mode`.
    `state` is 'normal, 'visual or 'insert; the binding wins over the
-   global one there. `mode` can be a major or a minor mode:
+   global one there. `mode` can be a major or a minor mode. An optional
+   last argument is the label which-key shows:
 
-     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function)"
-  (define-key! (mode-keymap mode state) key command))
+     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function \"describe\")"
+  (apply define-key! (append (list (mode-keymap mode state) key command) label)))
 
 (define (major-mode)
   "The current buffer's major mode, fundamental-mode if it has none."

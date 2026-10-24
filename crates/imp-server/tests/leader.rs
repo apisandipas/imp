@@ -89,3 +89,36 @@ fn which_key_waits_for_its_delay() {
     s.pump(std::time::Duration::from_millis(200));
     assert!(s.frame().text_rows().join("\n").contains("switch buffer"));
 }
+
+#[test]
+fn keys_have_which_key_labels() {
+    let mut s = server("");
+    let label = |s: &mut imp_server::Server, state: &str, key: &str| {
+        s.eval(&format!("(binding-label '{state} \"{key}\")"))
+            .unwrap()
+    };
+    s.eval(
+        r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")
+           (define-key! 'normal "gB" 'switch-buffer)
+           (define-key! 'normal "gL" (lambda (n) 1))
+           (define-motion! "gX" 'exclusive (lambda (from n) from) "nowhere")
+           (define-operator! "gO" (lambda (s e l) 1) "do nothing")
+           (define-major-mode! 'label-mode #f '() #f)
+           (define-mode-key! 'label-mode 'normal "gb" (lambda (n) 1) "mode's own")"#,
+    )
+    .unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "\"switch buffer\"");
+    // No label: the command's name, or nothing for a procedure.
+    assert_eq!(label(&mut s, "normal", "gB"), "\"switch-buffer\"");
+    assert_eq!(label(&mut s, "normal", "gL"), "#false");
+    assert_eq!(label(&mut s, "normal", "gX"), "\"nowhere\"");
+    assert_eq!(label(&mut s, "visual", "gO"), "\"do nothing\"");
+    assert_eq!(label(&mut s, "normal", "gq"), "#false");
+    // Binding again without a label forgets the old one.
+    s.eval(r#"(define-key! 'normal "gb" (lambda (n) 1))"#)
+        .unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "#false");
+    // A mode's key and label win.
+    s.eval("(set-major-mode! 'label-mode)").unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "\"mode's own\"");
+}
