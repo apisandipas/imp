@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/42
 frozen:
@@ -18,4 +18,4 @@ Decisions made while the owner was away (split from #15, which asked for that): 
 
 ## Tasks
 
-- [ ] Realign while typing in insert state, keeping the cursor, typed spaces and one undo step. Tested in `org.rs`.
+- [x] Realign while typing in insert state, keeping the cursor, typed spaces and one undo step. Tested in `org.rs`.

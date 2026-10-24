@@ -187,13 +187,30 @@ fn tables_align() {
     // The cursor went to the next row's first cell.
     assert_eq!(s.eval("(current-line)").unwrap(), "2");
     assert_eq!(s.eval("(current-col)").unwrap(), "2");
-    // <tab> at the last cell makes a new row.
-    // <ret> in normal state aligns, as typing doesn't.
+    // <tab> at the last cell makes a new row; typing keeps it aligned.
     type_keys(&mut s, "<esc>$i<tab>beta<tab>2<esc><ret>");
     assert_eq!(
         s.text(),
         "| name  | n  |\n|-------+----|\n| alpha | 10 |\n| beta  | 2  |\n"
     );
+}
+
+#[test]
+fn tables_stay_aligned_while_typing() {
+    let mut s = org("live.org", "| a | b |\n| cc | d |\n");
+    // Append to the first cell: the column widens as you type.
+    type_keys(&mut s, "0llaxyz");
+    assert_eq!(s.text(), "| axyz | b |\n| cc   | d |\n");
+    // The space before the next word stays, and the cursor with it.
+    type_keys(&mut s, " w");
+    assert_eq!(s.text(), "| axyz w | b |\n| cc     | d |\n");
+    assert_eq!(s.eval("(current-col)").unwrap(), "8");
+    // Deleting shrinks it again.
+    type_keys(&mut s, "<bs><bs><bs><bs>");
+    assert_eq!(s.text(), "| ax | b |\n| cc | d |\n");
+    // The whole insert is one undo step.
+    type_keys(&mut s, "<esc>u");
+    assert_eq!(s.text(), "| a | b |\n| cc | d |\n");
 }
 
 #[test]
