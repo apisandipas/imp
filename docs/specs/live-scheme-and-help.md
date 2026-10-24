@@ -1,6 +1,6 @@
 ---
 status: accepted
-issue: https://github.com/apisandipas/imp/issues/14
+issue: https://github.com/apisandipas/imp/issues/6
 summary: "Evaluating Scheme in the running editor, the REPL, hooks and advice, and help from the source."
 anchors: [runtime/core.scm, runtime/help.scm, runtime/repl.scm, crates/imp-server/src/docs.rs, crates/imp-server/tests/eval.rs, crates/imp-server/tests/help.rs, crates/imp-server/tests/hooks.rs]
 ---
@@ -14,6 +14,7 @@ The defining Emacs capability: change the editor while it runs, and ask it how i
 - **REPL**: a `*scheme*` buffer (`:repl`, `SPC e i`). `<ret>` at the end evaluates the input after the last prompt and prints the result and a new prompt.
 - **REPL history**: `M-p` and `M-n`, in insert and normal state, replace the input with the previous or next one. `<up>` and `<down>` do the same in insert state while the cursor is on the last prompt's line, and move between lines elsewhere. As on the command line, they visit only entries that start with what was typed before the first step, and stepping past the newest brings that text back. Each non-blank input is kept whole, multi-line ones included; an earlier copy of the same input is dropped. The newest 200 are kept in `repl-history` in the state directory, so history lasts across sessions; a state directory that can't be read or written is ignored.
 - **Hooks and advice**: `add-hook!`, `remove-hook!`, `run-hooks`; `advice-add!` with `'before`, `'after` or `'around`, and `advice-remove!`. Every caller sees advice.
+- **Changes**: `(buffer-changes-since version)` lists the current buffer's edits since `(buffer-version)` was `version`, oldest first, each as `(start old-end new-end text start-line start-col old-end-line old-end-col)`: char offsets, the text inserted, and where the edit started and ended before it was made. It is #f when they aren't known: across an undo, a redo or a reload, or for edits more than 1000 back. In an `after-change` hook, `(after-change-range)` is everything the key changed as one `(start old-end new-end)`, like Emacs's `after-change-functions`, or #f. The hook itself still takes no arguments, so existing hooks keep working.
 - **Named commands**: a key bound to a command name looks it up when pressed, so redefining the command changes every key bound to it.
 - **Help from the source**: `describe-key` (press keys; see the binding form and its documentation), `describe-function`, `describe-option`, `describe-command`, `apropos`, `find-definition`, `:help`. In Scheme buffers `K` shows help and `gd` goes to the definition; without a language server `K` says what's missing elsewhere.
 - **Docstrings** are a string first in a function's body or a command's lambda, as in Emacs; help reads them from the source.
@@ -25,7 +26,3 @@ The defining Emacs capability: change the editor while it runs, and ask it how i
 ## Out of scope
 
 - Searching REPL history (`M-r` in Emacs), and a history per project.
-
-## Known gaps
-
-- The `after-change` hook runs once per key, without the changed range. [#6](https://github.com/apisandipas/imp/issues/6)
