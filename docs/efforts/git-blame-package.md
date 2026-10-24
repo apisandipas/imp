@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/git-blame]]", "[[spec/buffers-and-windows]]"]
 issue: https://github.com/apisandipas/imp/issues/50
 frozen:
@@ -17,7 +17,7 @@ Core gets one primitive, the one the package can't do without ([[0011-non-essent
 
 ## Tasks
 
-- [ ] `set-line-end-text!` (line, text, face; text #f removes it) for the current buffer; the renderer draws it two cells past the line's end, cut at the window's edge, after the last row of a wrapped line, not on a closed fold. Tests in `tests/render.rs`.
+- [x] `set-line-end-text!` (line, text, face; text #f removes it) for the current buffer; the renderer draws it two cells past the line's end, cut at the window's edge, after the last row of a wrapped line, not on a closed fold. Tests in `tests/render.rs`.
 - [ ] `packages/git-blame/git-blame.scm`, listed in `PACKAGES` and `packages/CONTEXT.md`: `git-blame-mode`, turned on as a file in a repository opens; `SPC g b` and `:GitBlame` toggle it. Tests in `tests/git_blame.rs`.
 - [ ] After the cursor rests `git-blame-delay` ms in normal state, the line's blame shows in the `git-blame` face: `Author, N days ago • subject`, or `Not committed yet`; blamed with `--contents -` in the background; hidden on moving, a change or insert state; nothing for an untracked file or outside a repository. Tests in `tests/git_blame.rs` on a temporary repository.
 - [ ] Checked by hand by the owner.

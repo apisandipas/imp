@@ -135,6 +135,9 @@ pub struct Editor {
     /// Each buffer's footer: lines of (text, face) parts pinned at the
     /// bottom of its windows, above their status lines.
     pub footers: HashMap<usize, Vec<FooterLine>>,
+    /// Text drawn after the end of a line, by buffer id: line -> (text,
+    /// face). Not part of the buffer's text.
+    pub line_end_texts: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// When each buffer shows its fold column (the `foldcolumn` option).
     pub fold_columns: HashMap<usize, crate::render::GutterColumn>,
     /// Timers and jobs, which report back through the server's events.
@@ -314,6 +317,7 @@ impl Editor {
         self.fold_starts.remove(&id);
         self.fold_columns.remove(&id);
         self.footers.remove(&id);
+        self.line_end_texts.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
         self.outline_indents.remove(&id);
