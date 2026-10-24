@@ -122,7 +122,7 @@ fn the_whole_buffer_runs_in_order_and_errors_are_shown() {
     s.keys(&["C-c", "C-v", "C-b"]);
     assert_eq!(
         s.text(),
-        "#+begin_src scheme\n(define base 40)\n#+end_src\n\n#+RESULTS:\n: 40\n\n#+begin_src scheme\n(+ base 2)\n#+end_src\n\n#+RESULTS:\n: 42\n"
+        "#+begin_src scheme\n(define base 40)\n#+end_src\n\n#+RESULTS:\n: base\n\n#+begin_src scheme\n(+ base 2)\n#+end_src\n\n#+RESULTS:\n: 42\n"
     );
     // An error is shown, and leaves no results.
     type_keys(&mut s, "Go#+begin_src scheme\n(car '())\n#+end_src<esc>k");

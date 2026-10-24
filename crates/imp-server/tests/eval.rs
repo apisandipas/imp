@@ -150,8 +150,73 @@ fn repl_buffer_evaluates_input() {
         "{:?}",
         s.text()
     );
-    type_keys(&mut s, "(define (sq x) (* x x))<ret>(sq 5)<ret>");
-    assert!(s.text().ends_with("(sq 5)\n25\nimp> "), "{:?}", s.text());
+    // A define prints the name; a function called for its effect, nothing.
+    type_keys(&mut s, "(define (sq x) (* x x))<ret>");
+    assert!(s.text().ends_with("x))\nsq\nimp> "), "{:?}", s.text());
+    type_keys(&mut s, "(sq 5)<ret>(message \"hi\")<ret>");
+    assert!(
+        s.text()
+            .ends_with("(sq 5)\n25\nimp> (message \"hi\")\nimp> "),
+        "{:?}",
+        s.text()
+    );
     feed(&mut s, "(car 1)<ret>");
     assert!(s.text().contains("error: car"), "{:?}", s.text());
+}
+
+#[test]
+fn eval_shows_nothing_for_effects() {
+    let mut s = server("");
+    // The message stays: void shows nothing over it.
+    type_keys(&mut s, ":eval (message \"hi\")<ret>");
+    assert_eq!(s.status(), "hi");
+    assert_eq!(s.eval("(define x 1)").unwrap(), "x");
+    assert_eq!(s.eval("(define x 2)").unwrap(), "x");
+    assert_eq!(s.eval("(add-hook! 'after-save (lambda () 1))").unwrap(), "");
+}
+
+/// `set!` returns the variable's old value, so a function whose last
+/// expression is a `set!` hands that back, and the REPL and `:eval` print
+/// it. Every runtime and package function ends with `void` instead.
+#[test]
+fn no_runtime_function_returns_a_set() {
+    let mut s = server("");
+    s.eval("(for-each (lambda (n) (use-package! (string->symbol n))) (builtin-package-names))")
+        .unwrap();
+    let found = s
+        .eval(
+            r#"(begin
+  (define (set-tails e)
+    ;; The set! forms in tail position in `e`.
+    (cond
+      [(not (pair? e)) '()]
+      [(eq? (car e) 'set!) (list e)]
+      [(memq (car e) '(begin when unless let let* letrec letrec* with-handler))
+       (if (null? (cdr e)) '() (set-tails (last e)))]
+      [(eq? (car e) 'if) (apply append (map set-tails (if (pair? (cdr e)) (cddr e) '())))]
+      [(memq (car e) '(cond case))
+       (apply append (map (lambda (c) (if (and (pair? c) (pair? (cdr c))) (set-tails (last c)) '()))
+                          (if (eq? (car e) 'case) (cddr e) (cdr e))))]
+      [else '()]))
+  (define (function-body form)
+    (and (pair? form) (eq? (car form) 'define) (pair? (cdr form)) (pair? (cddr form))
+         (cond [(pair? (cadr form)) (cddr form)]
+               [(and (pair? (caddr form)) (eq? (car (caddr form)) 'lambda) (pair? (cddr (caddr form))))
+                (cddr (caddr form))]
+               [else #f])))
+  (define (offenders src)
+    (let ([port (open-input-string (or (source-text src) ""))])
+      (let loop ([form (read port)] [acc '()])
+        (if (eof-object? form)
+            (reverse acc)
+            (let ([body (function-body form)])
+              (loop (read port)
+                    (if (and body (pair? (set-tails (last body))))
+                        (cons (string-append src " " (to-string (cadr form))) acc)
+                        acc)))))))
+  (apply append (map offenders (filter (lambda (n) (or (starts-with? n "runtime/") (starts-with? n "packages/")))
+                                       (source-names)))))"#,
+        )
+        .unwrap();
+    assert_eq!(found, "()", "functions that return a set!'s old value");
 }

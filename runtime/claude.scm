@@ -119,7 +119,8 @@
       [(> tries 0) (run-after! claude-ready-ms (lambda () (claude-flush! buf (- tries 1))))]
       [else
        (set! *claude-pending* (hash-remove *claude-pending* buf))
-       (message "Claude didn't start taking input, so nothing was sent")])))
+       (message "Claude didn't start taking input, so nothing was sent")]))
+  void)
 
 (define (claude-send! text)
   "Puts `text` in the prompt of the current project's Claude and goes there."

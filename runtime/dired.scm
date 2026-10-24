@@ -256,7 +256,8 @@
       (kill-buffer! old)
       ;; C-^ goes back to where you were before the browser.
       (when (and alt (memv alt (buffer-list)) (not (= alt (current-buffer))))
-        (set! *alternate-buffer* alt)))))
+        (set! *alternate-buffer* alt))))
+  void)
 
 (define (dired-quit!)
   "q: closes the browser for the buffer you came from, unless it has

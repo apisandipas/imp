@@ -240,7 +240,8 @@
            (set-cursor! (car r))
            (buffer-highlight-add! "snippet" (car r) (cadr r) "visual")
            (set! *key-interceptor* (snippet-placeholder-key (car r) (cadr r)))]
-          [else (set-cursor! (car r))]))))
+          [else (set-cursor! (car r))])))
+  void)
 
 (define (snippet-placeholder-key start end)
   "The key interceptor while a placeholder (`start` to `end`) is

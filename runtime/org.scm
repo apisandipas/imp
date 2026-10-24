@@ -391,7 +391,8 @@
                (buffer-insert! (buffer-length) (string-append (if break? "" "\n") stars (if break? "\n" "")))
                (set-cursor! (line-end (last-line))))))])
     (set-mode! 'insert)
-    (set! *insert-start* (cursor))))
+    (set! *insert-start* (cursor)))
+  void)
 
 (define (org-shift! line delta subtree?)
   "Promotes (-1) or demotes (+1) the heading or list item on `line`, or
@@ -844,11 +845,13 @@
    `description` is what the menu shows, `target` where the entry
    goes and `template` its text; see the Capture notes above."
   (remove-capture-template! key)
-  (set! *capture-templates* (append *capture-templates* (list (list key description target template)))))
+  (set! *capture-templates* (append *capture-templates* (list (list key description target template))))
+  void)
 
 (define (remove-capture-template! key)
   "Removes the capture template bound to `key`, if there is one."
-  (set! *capture-templates* (filter (lambda (t) (not (equal? (car t) key))) *capture-templates*)))
+  (set! *capture-templates* (filter (lambda (t) (not (equal? (car t) key))) *capture-templates*))
+  void)
 
 (define-capture-template! "t" "Todo" '(file+headline "" "Tasks") "* TODO %?\n/Entered on/ %U")
 (define-capture-template! "n" "Note" '(file+headline "" "Notes") "* %? %a\n/Entered on/ %U")

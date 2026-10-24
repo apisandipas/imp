@@ -25,13 +25,15 @@
 
      (define-major-mode! 'lua-mode 'prog-mode '(\"lua\")
        (lambda () (set-local-option! 'shiftwidth 2)))"
-  (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup))))
+  (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup)))
+  void)
 
 (define (define-minor-mode! name setup teardown)
   "Defines minor mode `name`, which a buffer can turn on and off.
    `setup` runs when it turns on in a buffer and `teardown` when it
    turns off; each is a procedure of no arguments, or #f."
-  (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown))))
+  (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown)))
+  void)
 
 ;; Files with no extension, or one that misleads, by their whole name.
 (define (define-file-name-mode! file-name mode)
@@ -39,7 +41,8 @@
    This wins over the extension:
 
      (define-file-name-mode! \"Justfile\" 'makefile-mode)"
-  (set! *file-names* (hash-insert *file-names* file-name mode)))
+  (set! *file-names* (hash-insert *file-names* file-name mode))
+  void)
 
 (define (mode-keymap mode state)
   "The keymap name for `mode` in `state`, e.g. scheme-mode:normal."
@@ -332,7 +335,8 @@
 
      (define-mode-leader! 'lua-mode \"r\" 'lua-run \"run file\")"
   (let ([table (or (hash-try-get *mode-leaders* mode) (hash))])
-    (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description))))))
+    (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description)))))
+  void)
 
 (define-command! 'local-leader
   (lambda (count)

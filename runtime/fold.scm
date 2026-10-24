@@ -138,7 +138,8 @@
     (when (and *fold-open-wanted* (closed-fold-at (current-line)))
       (for-each (lambda (f) (when (fold-closed? f) (fold-set-closed! (fold-id f) #f)))
                 (folds-at (current-line)))))
-  (set! *fold-open-wanted* #f))
+  (set! *fold-open-wanted* #f)
+  void)
 
 (add-hook! 'post-command folds-after-command!)
 (add-hook! 'buffer-enter (lambda () (unless (null? (fold-entries)) (folds-changed!))))

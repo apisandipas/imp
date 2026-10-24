@@ -82,7 +82,8 @@
        (set! *emacs-prefix* "")
        (set-popup! '())
        (set! *emacs-arg* #f)
-       (message (string-append keys " is undefined"))])))
+       (message (string-append keys " is undefined"))]))
+  void)
 
 (define (run-emacs-command! binding)
   "Run `binding`, a command name or a procedure, with the argument.
@@ -96,7 +97,8 @@
     (if proc
         (proc count)
         (message (string-append "no command " (symbol->string binding))))
-    (set! *last-command* *this-command*)))
+    (set! *last-command* *this-command*))
+  void)
 
 (define (emacs-which-key prefix)
   "The bindings after `prefix`, for the popup."
@@ -144,7 +146,8 @@
 
 (define (deactivate-mark!)
   "Make the region inactive; the mark itself stays where it is."
-  (set! *mark* #f))
+  (set! *mark* #f)
+  void)
 
 (define (region)
   "The active region as (start end), or #f."
@@ -204,7 +207,8 @@
           (let ([start (cursor)])
             (insert-text! text)
             (set! *last-yank* (list start (cursor))))
-          (set! *this-command* 'yank)))))
+          (set! *this-command* 'yank))))
+  void)
 
 (define (yank-pop! count)
   "M-y right after C-y: replace what was yanked with the previous kill."
@@ -217,7 +221,8 @@
           (set-cursor! start)
           (insert-text! text)
           (set! *last-yank* (list start (cursor))))
-        (set! *this-command* 'yank-pop))))
+        (set! *this-command* 'yank-pop)))
+  void)
 
 ;;; Moving
 
@@ -440,7 +445,8 @@
                    (when r (set-cursor! (car r)))))
                #t]
               [(equal? key "C-g") (cmdline-key! "<esc>") #t]
-              [else #f])))))
+              [else #f]))))
+  void)
 
 (define-command! 'isearch-forward (lambda (n)
                                     "Search forward as you type; C-s again for the next match."

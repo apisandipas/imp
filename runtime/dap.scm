@@ -41,7 +41,8 @@
    adapterID sent in initialize, and `launch` a procedure that gets a
    `done` procedure and calls it with the launch arguments (a hash); it
    may prompt first."
-  (set! *debug-adapters* (hash-insert *debug-adapters* mode (list command adapter-id launch))))
+  (set! *debug-adapters* (hash-insert *debug-adapters* mode (list command adapter-id launch)))
+  void)
 
 ;; Faces debug-line, sign.breakpoint and sign.debug come from theme.scm.
 
@@ -240,7 +241,8 @@
 
 (define (dap-add-output! text)
   "Adds `text` to the program's output, keeping the newest 1000 chunks."
-  (set! *dap-output* (cons text (if (> (length *dap-output*) 999) (take *dap-output* 999) *dap-output*))))
+  (set! *dap-output* (cons text (if (> (length *dap-output*) 999) (take *dap-output* 999) *dap-output*)))
+  void)
 
 ;;; Where it stopped
 

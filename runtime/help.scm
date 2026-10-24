@@ -208,7 +208,8 @@
    those made in a loop from a table:
 
      (document-command! 'my-command \"Do the thing.\")"
-  (set! *command-docs* (hash-insert *command-docs* (symbol->string name) text)))
+  (set! *command-docs* (hash-insert *command-docs* (symbol->string name) text))
+  void)
 
 (define (command-doc name docs)
   "What command `name` (a string) does, in a line, or #f.
@@ -367,7 +368,8 @@
         (begin
           (set! *describing-keys* #f)
           (set! *key-interceptor* #f)
-          (show-key-description! keys)))))
+          (show-key-description! keys))))
+  void)
 
 (define (prefix-key-for-describe? keys)
   "Whether `keys` could be the start of a longer key."

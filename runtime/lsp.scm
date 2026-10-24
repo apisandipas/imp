@@ -50,7 +50,8 @@
    installed is used. The project root is the nearest directory up
    holding one of `markers`; `language-id` is the languageId sent in
    didOpen."
-  (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id))))
+  (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id)))
+  void)
 
 (define-language-server! 'rust-mode "rust-analyzer" '("Cargo.toml" ".git") "rust")
 ;; TypeScript 7's own server, tsgo (`tsc --lsp` once 7 is released), first.
@@ -79,7 +80,8 @@
 
 (define (lsp-log! text)
   "Adds `text` to the :lsp-log, which keeps the newest 500 entries."
-  (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*))))
+  (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*)))
+  void)
 
 ;;; Server state
 ;;;
@@ -100,7 +102,8 @@
   "Sets field `field` of the state of server `key` to `value`.
    Does nothing if that server isn't running."
   (let ([s (lsp-state key)])
-    (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value))))))
+    (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value)))))
+  void)
 
 (define (shell-quote text)
   "`text` in single quotes, safe to put in a shell command."
@@ -359,7 +362,8 @@
        (when (and *lsp-progress-message* (equal? (status-text) *lsp-progress-message*)) (set-status! ""))
        (set! *lsp-progress-message* #f)]
       [ours? (set! *lsp-progress-message* text) (set-status! text)]
-      [else #f])))
+      [else #f]))
+  void)
 
 ;;; Documents
 
@@ -457,7 +461,8 @@
                          (run-after! (option 'lsp-change-delay)
                                      (lambda ()
                                        (set! *lsp-change-timers* (hash-remove *lsp-change-timers* id))
-                                       (when (memv id (buffer-list)) (with-buffer id lsp-sync!)))))))))
+                                       (when (memv id (buffer-list)) (with-buffer id lsp-sync!))))))))
+  void)
 
 (add-hook! 'major-mode (lambda (mode) (lsp-attach!)))
 (add-hook! 'after-change lsp-changed!)
@@ -573,7 +578,8 @@
            (set! *lsp-held-diagnostics* id)]
           [else
            (with-buffer id lsp-show-signs!)
-           (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))])))
+           (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))]))
+  void)
 
 (define (lsp-show-held-diagnostics!)
   "Shows the diagnostics that arrived while typing, after insert ends."
@@ -664,7 +670,8 @@
             [(and (not d) *lsp-line-message* (equal? status *lsp-line-message*))
              (set-status! "")
              (set! *lsp-line-message* #f)]
-            [else #f]))))
+            [else #f])))
+  void)
 
 (add-hook! 'post-command lsp-show-cursor-diagnostic!)
 

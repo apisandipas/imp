@@ -73,7 +73,8 @@
 (define (set-package-status! name status)
   "Sets what :packages shows for package `name` to `status`."
   (set! *packages*
-        (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*)))
+        (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*))
+  void)
 
 (define (load-package! name)
   "Loads package `name`: its main file (or the built-in copy, for one

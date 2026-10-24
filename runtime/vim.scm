@@ -78,7 +78,8 @@
 
 (define (define-state! state name cursor-shape handler)
   "Adds an editor state beside Vim's: keys in it go to `handler`."
-  (set! *extra-states* (hash-insert *extra-states* state (list name cursor-shape handler))))
+  (set! *extra-states* (hash-insert *extra-states* state (list name cursor-shape handler)))
+  void)
 
 (define (set-mode! mode)
   "Switches to `mode`, running the mode hooks and setting the cursor.
@@ -123,7 +124,8 @@
   (set! *count* "")
   (set! *operator* #f)
   (set! *operator-count* "")
-  (set! *prefix* #f))
+  (set! *prefix* #f)
+  void)
 
 (define (normal-clamp!)
   "Moves the cursor back onto the line's last char if it is past it.
@@ -147,7 +149,8 @@
   "Makes `key` a motion of `type` (exclusive, inclusive or linewise).
    `proc` is (lambda (from count) target-offset), returning #f when the
    motion can't move. It then works with every operator and visual mode."
-  (set! *motions* (hash-insert *motions* key (list type proc))))
+  (set! *motions* (hash-insert *motions* key (list type proc)))
+  void)
 
 (define (motion-type m)
   "The type of motion `m`: exclusive, inclusive or linewise."
@@ -410,7 +413,8 @@
   "Makes `key` a motion that takes a char, as f and t do.
    `proc` is (lambda (from count char) target); `key` becomes a prefix
    and `key` plus a char works like any other motion."
-  (set! *char-motions* (hash-insert *char-motions* key (list type proc))))
+  (set! *char-motions* (hash-insert *char-motions* key (list type proc)))
+  void)
 
 ;; Normal-mode commands that take a char, such as r and m: `proc` is
 ;; (lambda (count char) ...).
@@ -428,7 +432,8 @@
 (define (define-char-command! key proc)
   "Makes `key` a normal-mode command that takes the next char, as r does.
    `proc` is (lambda (count char) ...)."
-  (set! *char-commands* (hash-insert *char-commands* key proc)))
+  (set! *char-commands* (hash-insert *char-commands* key proc))
+  void)
 
 (define (key-char key)
   "The char named by a key: \"x\" is x, \"<tab>\" a tab. Other named keys are
@@ -502,7 +507,8 @@
 (define (define-operator! key proc)
   "Makes `key` an operator. `proc` is (lambda (start end linewise?) ...).
    It then works with every motion, text object, visual mode and `.`."
-  (set! *operators* (hash-insert *operators* key proc)))
+  (set! *operators* (hash-insert *operators* key proc))
+  void)
 
 (define (lines-range first last)
   "Whole lines `first` through `last`, as (start end #t). The range always
@@ -558,7 +564,8 @@
 
 (define (store! c value)
   "Sets register `c` to `value`, (text linewise?), and nothing else."
-  (set! *registers* (hash-insert *registers* c value)))
+  (set! *registers* (hash-insert *registers* c value))
+  void)
 
 (define (register-set! c text linewise? kind)
   "Puts `text` in register `c`. `kind` is 'yank or 'delete, which decides
@@ -721,7 +728,8 @@
    `proc` is (lambda (from count) (start end linewise?)), or #f when there
    is nothing to select. It then works after any operator and in visual
    mode."
-  (set! *text-objects* (hash-insert *text-objects* key proc)))
+  (set! *text-objects* (hash-insert *text-objects* key proc))
+  void)
 
 (define (run-end p classify hi)
   "The end of the run of chars sharing `p`'s class, as far as `hi`.
@@ -968,7 +976,8 @@
   (mark-set! "." (cursor))
   (unless (equal? *u-line* (current-line))
     (set! *u-line* (current-line))
-    (set! *u-text* (buffer-substring (line-start (current-line)) (line-end (current-line))))))
+    (set! *u-text* (buffer-substring (line-start (current-line)) (line-end (current-line)))))
+  void)
 
 (define (record-change! change count)
   "Records `change` as the thing `.` repeats. If it ends in insert mode, the
@@ -977,7 +986,8 @@
   (let ([change (with-register change (next-register *register-prefix*))])
   (if (typing-mode?)
       (begin (set! *insert-entry* change) (set! *insert-keys* '()))
-      (set! *last-change* change))))
+      (set! *last-change* change)))
+  void)
 
 (define (with-register change reg)
   "A change that runs with register `reg` named, as when it was made. \"1p
@@ -1034,7 +1044,8 @@
               ;; 3cw it was the operator's.
               (when counted? (repeat-insert! keys (- count 1) reentry))
               (leave-insert!))))
-    (set! *insert-entry* #f)))
+    (set! *insert-entry* #f))
+  void)
 
 ;;; Normal mode commands
 ;;;
@@ -1079,7 +1090,8 @@
           (set-cursor! (line-start line))
           (buffer-insert! (cursor) (string-append indent "\n"))
           (set-cursor! (+ (cursor) (string-length indent)))))
-    (set! *autoindent-line* (and (> (string-length indent) 0) (current-line)))))
+    (set! *autoindent-line* (and (> (string-length indent) 0) (current-line))))
+  void)
 
 (define (insert-command! key where)
   "Binds `key` in normal mode to enter insert mode at `where`.
@@ -1342,7 +1354,8 @@
        (for-each (lambda (seg) ((hash-ref *operators* op-key) (car seg) (cadr seg) #f))
                  (reverse segments))
        (set-cursor! top-left)])
-    (set! *block-eol* #f)))
+    (set! *block-eol* #f))
+  void)
 
 (define (start-block-insert! first last col append? at)
   "I, A and c on a block: type on the first line; on <esc> the same text
@@ -1351,7 +1364,8 @@
   (set! *block-insert* (list first last col append?))
   (set-cursor! at)
   (set-mode! 'insert)
-  (set! *insert-start* at))
+  (set! *insert-start* at)
+  void)
 
 (define (finish-block-insert!)
   "Copies the text typed on a block's first line into its other lines.
@@ -1885,7 +1899,8 @@
         (when (memv (jump-buffer old) (buffer-list))
           (with-buffer (jump-buffer old) (lambda () (mark-delete! (jump-mark old))))))
       (set! *jumps* (cdr *jumps*)))
-    (set! *jump-index* (length *jumps*))))
+    (set! *jump-index* (length *jumps*)))
+  void)
 
 ;; C-o and C-i (<tab> in a terminal) move back and forth in the list.
 (define (jump-older! count)
@@ -1906,7 +1921,8 @@
         (set! *jump-index* i)
         (when (and (not (= (jump-buffer j) (current-buffer))) (memv (jump-buffer j) (buffer-list)))
           (go-to-buffer! (jump-buffer j)))
-        (set-cursor! (or (mark-get (jump-mark j)) (cursor))))))
+        (set-cursor! (or (mark-get (jump-mark j)) (cursor)))))
+  void)
 
 (define-key! 'normal "C-o" (lambda (count) (jump-older! count)))
 (define-key! 'normal "C-i" (lambda (count) (jump-to-index! (+ *jump-index* count))))
@@ -1917,12 +1933,14 @@
 (define (show-popup! lines)
   "Shows `lines` in a popup that the next key closes."
   (set-popup! lines)
-  (set! *popup-shown* #t))
+  (set! *popup-shown* #t)
+  void)
 
 (define (close-popup!)
   "Closes the popup."
   (set-popup! '())
-  (set! *popup-shown* #f))
+  (set! *popup-shown* #f)
+  void)
 
 (define (printable text)
   "`text` as it would be typed: line breaks as ^J, tabs as ^I."
@@ -2185,7 +2203,8 @@
 (define (define-prefix! key)
   "Makes `key` a prefix: in normal mode it waits for the next key.
    (define-prefix! \"z\") is what lets \"zz\" and \"zt\" be bound."
-  (set! *prefix-keys* (hash-insert *prefix-keys* key #t)))
+  (set! *prefix-keys* (hash-insert *prefix-keys* key #t))
+  void)
 
 (define (prefix-key? key)
   "Whether `key` waits for another key in normal mode.
@@ -2347,7 +2366,8 @@
   (when (member *mode* '(normal visual))
     (normal-clamp!)
     (unless (or *operator* *prefix* (vertical-motion? key))
-      (set! *goal-col* (current-col)))))
+      (set! *goal-col* (current-col))))
+  void)
 
 ;;; Insert and replace mode
 
@@ -2383,7 +2403,8 @@
     (let ([start (line-start (current-line))])
       (buffer-delete! start (line-end (current-line)))
       (set-cursor! start)))
-  (set! *autoindent-line* #f))
+  (set! *autoindent-line* #f)
+  void)
 
 ;; smartindent: after a line ending in an opening bracket the new line is
 ;; indented one shiftwidth more, and <ret> between a pair of brackets puts
@@ -2436,7 +2457,8 @@
             (buffer-insert! inside (string-append "\n" indent))
             (set-cursor! inside)))
         (insert-text! (string-append "\n" deeper)))
-    (set! *autoindent-line* (and (> (string-length deeper) 0) (current-line)))))
+    (set! *autoindent-line* (and (> (string-length deeper) 0) (current-line))))
+  void)
 
 (define (maybe-dedent-for! ch)
   "Typing a closing bracket first on a line takes one shiftwidth off it."
@@ -2555,7 +2577,8 @@
   (when (> (current-col) 0)
     (set-cursor! (- (cursor) 1)))
   (normal-clamp!)
-  (set! *goal-col* (current-col)))
+  (set! *goal-col* (current-col))
+  void)
 
 (define (insert-mode-key! key)
   "Handles `key` in insert or replace mode, around insert-key!.
@@ -2587,7 +2610,8 @@
      (set-mode! 'normal)]
     [else
      (set! *insert-keys* (cons key *insert-keys*))
-     (insert-key! key)]))
+     (insert-key! key)])
+  void)
 
 ;;; The command line
 ;;;
@@ -2679,7 +2703,8 @@
     (let* ([old (filter (lambda (h) (not (equal? h text))) (history prompt))]
            [new (cons text old)])
       (set! *history* (hash-insert *history* prompt
-                                   (if (> (length new) 200) (take new 200) new))))))
+                                   (if (> (length new) 200) (take new 200) new)))))
+  void)
 
 
 (define (history-step! dir)
@@ -2754,7 +2779,8 @@
     [(equal? key "<tab>") (cmdline-complete! 1)]
     [(equal? key "<s-tab>") (cmdline-complete! -1)]
     [(= (string-length key) 1) (cmdline-insert! key)]
-    [else #t]))
+    [else #t])
+  void)
 
 ;;; <tab> on the command line completes the command's name, or its
 ;;; argument: a file for :e, a buffer for :b, an option for :set. More with
@@ -3523,7 +3549,8 @@
   (hash-contains? *seen-buffers* id))
 (define (mark-buffer-seen! id)
   "Remembers that buffer `id` has been shown."
-  (set! *seen-buffers* (hash-insert *seen-buffers* id #t)))
+  (set! *seen-buffers* (hash-insert *seen-buffers* id #t))
+  void)
 
 (define (expand-path path)
   "`path` with a leading ~ replaced by the home directory."
@@ -3949,7 +3976,8 @@
   (when (eq? *mode* 'cmdline) (process-key! "<esc>"))
   (when (eq? *mode* 'visual) (leave-visual!))
   (reset-pending!)
-  (set! *command-failed* #f))
+  (set! *command-failed* #f)
+  void)
 
 (define (for-each-line-mark first last thunk)
   "Runs `thunk` with the cursor at the start of lines `first` to `last`.
@@ -4071,10 +4099,11 @@
         (message text))))
 
 (define (eval-and-show! text)
-  "Evaluates `text`, showing the value or the error."
-  (show-result!
-   (with-handler (lambda (e) (string-append "error: " (error-message e)))
-                 (let ([v (imp-eval-string text)]) (if (eq? v void) "#<void>" v)))))
+  "Evaluates `text`, showing the value or the error. No value shows
+   nothing, so a message the code showed stays."
+  (let ([v (with-handler (lambda (e) (string-append "error: " (error-message e)))
+                         (imp-eval-string text))])
+    (unless (eq? v void) (show-result! v))))
 
 (define-ex! '("eval" "ev") (lambda (ex) (eval-and-show! (ex-args ex))))
 

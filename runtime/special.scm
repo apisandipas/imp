@@ -107,14 +107,16 @@
 
      (define-popup-rule! \"*grep*\" 'side 'right 'size 0.3)"
   (remove-popup-rule! match)
-  (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*)))
+  (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*))
+  void)
 
 (define (remove-popup-rule! match)
   "Drops the popup rule for `match`, so its buffers take over the
    current window again:
 
      (remove-popup-rule! \"*grep*\")"
-  (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*)))
+  (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*))
+  void)
 
 (define (popup-prop rule key default)
   "Property `key` of popup rule `rule`, or `default` if it has none."
@@ -248,7 +250,8 @@
         (lambda (key)
           (set! *key-interceptor* #f)
           (message "")
-          (when (equal? key "y") (thunk)))))
+          (when (equal? key "y") (thunk))))
+  void)
 
 (define (text-lines text)
   "The lines of `text`, without the empty one after a final line break."
@@ -271,7 +274,8 @@
 
 (define (draw-begin!)
   "Starts drawing a buffer afresh, for draw-line! and draw-finish!."
-  (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0))
+  (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0)
+  void)
 
 (define (draw-line! parts item)
   "Adds a line made of (text face) parts, about `item`."
@@ -282,7 +286,8 @@
                (set! *draw-at* (+ at 1)))
         (let* ([t (car (car parts))] [face (cadr (car parts))] [n (string-length t)])
           (when (and face (> n 0)) (set! *draw-faces* (cons (list at (+ at n) face) *draw-faces*)))
-          (loop (cdr parts) (+ at n) (string-append text t))))))
+          (loop (cdr parts) (+ at n) (string-append text t)))))
+  void)
 
 (define (draw-finish!)
   "Puts what was drawn into the current buffer, keeping the cursor on the

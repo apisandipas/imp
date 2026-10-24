@@ -24,11 +24,13 @@
    gets the arguments (a hash) and returns text, or (error text)."
   (set! *mcp-tools*
         (append (filter (lambda (t) (not (equal? (car t) name))) *mcp-tools*)
-                (list (list name description schema handler)))))
+                (list (list name description schema handler))))
+  void)
 
 (define (mcp-log! text)
   "Adds `text` to the :mcp-log, which keeps the newest 200 entries."
-  (set! *mcp-log* (cons text (if (> (length *mcp-log*) 199) (take *mcp-log* 199) *mcp-log*))))
+  (set! *mcp-log* (cons text (if (> (length *mcp-log*) 199) (take *mcp-log* 199) *mcp-log*)))
+  void)
 
 (define (mcp-note! text)
   "Tells the user what an agent did."
