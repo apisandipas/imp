@@ -211,3 +211,70 @@ fn picking_a_new_date_keeps_the_repeater() {
         "* TODO Water\nSCHEDULED: <2026-10-22 Thu 09:00 .+1w -1d>\n"
     );
 }
+
+/// The agenda over one file holding `text`, as its buffer's lines.
+fn agenda(name: &str, text: &str) -> imp_server::Server {
+    let dir = temp_path(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.org"), text).unwrap();
+    let mut s = setup("");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    s
+}
+
+fn lines(s: &imp_server::Server) -> Vec<String> {
+    s.text().lines().map(|l| l.trim_end().to_string()).collect()
+}
+
+#[test]
+fn the_agenda_is_a_week_with_repeats_on_each_day() {
+    let mut s = agenda(
+        "agenda-week",
+        "* TODO Pay\nSCHEDULED: <2026-10-20 Tue>\n* TODO Water\nSCHEDULED: <2026-10-01 Thu +1w>\n* TODO Ship\nDEADLINE: <2026-10-23 Fri>\n* TODO Later\nDEADLINE: <2026-12-01 Tue>\n* TODO Someday\n* DONE Gone\nSCHEDULED: <2026-10-22 Thu>\n",
+    );
+    assert_eq!(
+        lines(&s),
+        [
+            "Agenda: 2026-10-18 to 2026-10-24",
+            "",
+            "Overdue",
+            "  2026-10-01  Scheduled:  TODO Water  a.org",
+            "  2026-10-20  Scheduled:  TODO Pay  a.org",
+            "",
+            "Sunday    18 October 2026",
+            "Monday    19 October 2026",
+            "Tuesday   20 October 2026",
+            "  Scheduled:  TODO Pay  a.org",
+            "Wednesday 21 October 2026  today",
+            "Thursday  22 October 2026",
+            "  Scheduled:  TODO Water  a.org",
+            "Friday    23 October 2026",
+            "  Deadline:   TODO Ship  a.org",
+            "Saturday  24 October 2026",
+            "",
+            "To do",
+            "  TODO Someday  a.org",
+        ]
+    );
+    // f shows the next week, the repeat on its Thursday; . comes back.
+    type_keys(&mut s, "f");
+    let next = lines(&s);
+    assert_eq!(next[0], "Agenda: 2026-10-25 to 2026-10-31");
+    let thu = next.iter().position(|l| l.starts_with("Thursday")).unwrap();
+    assert_eq!(next[thu], "Thursday  29 October 2026");
+    assert_eq!(next[thu + 1], "  Scheduled:  TODO Water  a.org");
+    type_keys(&mut s, "bb");
+    assert_eq!(lines(&s)[0], "Agenda: 2026-10-11 to 2026-10-17");
+    type_keys(&mut s, ".");
+    assert_eq!(lines(&s)[0], "Agenda: 2026-10-18 to 2026-10-24");
+    // A span of 3 days.
+    s.eval("(set-option! 'org-agenda-span 3)").unwrap();
+    type_keys(&mut s, "gr");
+    assert_eq!(lines(&s)[0], "Agenda: 2026-10-18 to 2026-10-20");
+}
