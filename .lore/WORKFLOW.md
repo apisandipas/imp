@@ -11,13 +11,17 @@ How imp uses lore. The `lore-*` skills read this file before they act, so editin
 
 ## Where work starts
 
-Ideas and bugs arrive as GitHub Issues. An issue is the discussion; a spec is what was agreed. Small work needs only the issue.
+Ideas and bugs arrive as GitHub Issues, and GitHub, not `lore next`, is the list of what to do next. An issue is the problem and the discussion; a spec is what was agreed; an effort is the work; the PR says `Closes #N`, so the issue closes when the work ships, not when its spec is accepted. Small work needs only the issue.
+
+- A feature issue is labelled `needs-spec` until its spec is accepted, then `specced`. The spec's `issue:` and the effort's `issue:` are the issue's URL, and the issue gets a comment linking the accepted spec.
+- If discussion on an issue changes what was agreed, the spec changes with it.
+- `docs/efforts/baseline.md` covers the specs written for code that existed before efforts were tracked.
 
 ## Size
 
 Size the work before picking a skill. Most work is small, and small work skips the flow.
 
-- **Small**: a bug fix, a rename, a dependency bump, or any change you can state in one sentence and land in one commit, as long as no accepted spec or decision says otherwise. It goes on a `fix/`, `chore/`, `docs/`, `refactor/` or `test/` branch from `develop`. No spec and no effort. Run `lore context` on each file, make the change, then run `tools/check.sh` and `lore check`. If you made a choice a later reader would question, record it with **lore-decide**.
+- **Small**: a bug fix, a rename, a dependency bump, or any change you can state in one sentence and land in one commit, as long as no accepted spec or decision says otherwise. It goes on a `fix/`, `chore/`, `docs/`, `refactor/` or `test/` branch from `develop`. No spec and no effort. Run `lore context` on each file, make the change, then run `tools/check.sh` and `lore check`. If it edits a spec the baseline effort covers (removing a known gap), run `lore freeze docs/efforts/baseline.md` too. If you made a choice a later reader would question, record it with **lore-decide**.
 - **Feature**: anything that changes what a spec says, adds behaviour a user would notice, or needs more than one commit. It goes on a `feat/` branch from `develop` and uses the flow below.
 
 When it is unclear, ask the owner. If small work grows past one commit, stop and start a spec.
