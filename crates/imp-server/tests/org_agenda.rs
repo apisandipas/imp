@@ -767,3 +767,14 @@ fn gh_gm_gl_go_to_the_window_s_top_middle_and_bottom() {
     assert_eq!(top, 0);
     assert!(top < middle && middle < bottom, "{top} {middle} {bottom}");
 }
+
+#[test]
+fn which_key_names_the_agenda_s_keys() {
+    let mut s = agenda("agenda-which-key", MOVES);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, "g");
+    let shown = s.frame().text_rows().join("\n");
+    for label in ["next entry", "go to date", "refresh all", "window top"] {
+        assert!(shown.contains(label), "{label} in\n{shown}");
+    }
+}

@@ -1,10 +1,21 @@
-;;; org-agenda.scm -- the Org agenda: what's scheduled, due and to do in
-;;; the agenda files (org-agenda-files, or every .org file under
-;;; org-directory), as Org's week view.
+;;; org-agenda.scm -- the Org agenda: what's scheduled, due, timed and to
+;;; do in the agenda files (org-agenda-files, or every .org file under
+;;; org-directory), as Org's week view, in aligned columns.
 ;;;
-;;; SPC o a shows it, as a week (org-agenda-span days): f and b move a
-;;; week on and back, . returns to this one, gr reads the files again,
-;;; <ret> goes to an entry.
+;;; SPC o a shows it, a week (org-agenda-span days) with Overdue above
+;;; and Later and To do below. Today has a time grid and a now line, and
+;;; the deadlines coming soon. In it (normal state):
+;;;
+;;;   gj gk  C-j C-k   next, previous entry
+;;;   gH gM gL         the window's top, middle, bottom
+;;;   f b  ]] [[       next, previous span
+;;;   .                back to today
+;;;   gd               go to a date, from the calendar
+;;;   <ret>            go to the entry
+;;;   <tab>            show the entry in another window
+;;;   F                follow mode: show each entry the cursor is on
+;;;   gr gR            read the files again (gR: every agenda buffer)
+;;;   q ZZ             leave; ZQ also closes the files the agenda opened
 ;;;
 ;;; It loads after org.scm and uses its readers: timestamps
 ;;; (org-parse-stamp), properties and categories, TODO keywords.
