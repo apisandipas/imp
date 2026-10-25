@@ -350,7 +350,7 @@
    (list "syntax.constructor" 'type #f "" 'bold)
    (list "syntax.module" 'builtin #f "" 'bold)
    (list "syntax.constant" 'constant #f "" #f)
-   (list "syntax.constant.builtin" 'builtin #f "" 'bold)
+   (list "syntax.constant.builtin" 'constant #f "" #f)
    (list "syntax.number" 'number #f "" #f)
    (list "syntax.boolean" 'constant #f "" #f)
    (list "syntax.variable.builtin" 'builtin #f "" 'bold)
