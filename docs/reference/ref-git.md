@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/git]]"
 frozen:
-  docs/specs/git.md: 78d3f472e9c2
+  docs/specs/git.md: 30ca5c679a3b
 ---
 # Git
 

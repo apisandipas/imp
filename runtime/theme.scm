@@ -127,6 +127,9 @@
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))
      (list "git.key" (fg 'yellow "bold"))
+     ;; The status buffer's key lines, on the status line's background
+     (list "git.footer" (string-append "fg=" (c 'fg) " bg=" (c 'bg-alt)))
+     (list "git.footer.key" (string-append "fg=" (c 'yellow) " bg=" (c 'bg-alt) " bold"))
      (list "git.branch" (fg 'cyan "bold"))
      (list "git.remote" (fg 'green "bold"))
      (list "git.hash" (fg 'dim))
