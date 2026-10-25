@@ -20,7 +20,7 @@ A docs section on the website: four guides, and a reference page per area genera
 - [x] `tools/site-docs.py` builds the reference from `docs/reference/NAME.md` (its `from:` hash, a page's own "Not yet in imp" notice), `--stamp NAME` records a spec's hash and `--check` reports specs without pages, pages without specs and drift; the `docs-page` skill says how a page is written; `docs/reference/org.md` written with it and checked in a browser; the owner settles the tone on it.
 - [x] Pages for the editing areas: vim, emacs-state, leader-and-modes, mouse, look, start-screen.
 - [x] Pages for the files and windows areas: files, buffers-and-windows, projects, dired, folding, terminals.
-- [ ] Pages for the code areas: completion, completion-at-point, lsp, tree-sitter, dap.
+- [x] Pages for the code areas: completion, completion-at-point, lsp, tree-sitter, dap.
 - [ ] Pages for the rest of git and Org: git, git-blame, git-gutter, org-export.
 - [ ] Pages for the extending areas: live-scheme-and-help, packages, kdl-config, wasm-plugins, daemon, shared-buffers, claude, mcp.
 - [ ] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
