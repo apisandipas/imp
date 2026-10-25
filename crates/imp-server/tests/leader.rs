@@ -34,6 +34,27 @@ fn which_key_shows_the_next_keys() {
 }
 
 #[test]
+fn backspace_goes_back_a_level() {
+    let mut s = server("x\n");
+    s.eval("(set-option! 'which-key-delay 1000)").unwrap();
+    type_keys(&mut s, " h");
+    // Back at SPC, its popup shown at once despite the delay.
+    type_keys(&mut s, "<bs>");
+    assert_eq!(s.status().trim_end(), "SPC");
+    let r = rows(&mut s);
+    assert!(r.contains("b → +buffer"), "{r}");
+    assert!(!r.contains("describe key"), "{r}");
+    // Still in the sequence: h goes on from SPC.
+    type_keys(&mut s, "h");
+    assert!(s.status().starts_with("SPC h"), "{}", s.status());
+    // <bs> twice: at SPC alone it cancels, and x deletes again.
+    type_keys(&mut s, "<bs><bs>");
+    assert!(!rows(&mut s).contains("+buffer"));
+    type_keys(&mut s, "x");
+    assert_eq!(s.text(), "\n");
+}
+
+#[test]
 fn leader_runs_commands() {
     let mut s = server("(* 6 7)\n");
     type_keys(&mut s, " eb");

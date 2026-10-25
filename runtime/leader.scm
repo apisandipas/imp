@@ -170,11 +170,26 @@
   (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
   (set-popup! '()))
 
+(define (leader-back!)
+  "Takes back the last leader key typed and shows the popup for the keys
+   before it at once; at SPC alone, ends the sequence."
+  (let ([keys (split-keys *leader-keys*)])
+    (if (null? keys)
+        (begin (leader-done!) (message ""))
+        (begin
+          (set! *leader-keys* (apply string-append (reverse (cdr (reverse keys)))))
+          (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
+          (set-status! (leader-prompt))
+          (show-which-key-popup! (which-key-lines *leader-keys*) (trim (leader-prompt)))))))
+
 (define (leader-input! key)
   "Handles `key`, typed after the leader: runs the command it completes,
-   waits for more keys, or cancels on <esc>, C-g or C-c."
-  (if (member key '("<esc>" "C-g" "C-c"))
-      (begin (leader-done!) (message ""))
+   waits for more keys, goes back a key on <bs>, or cancels on <esc>, C-g
+   or C-c."
+  (cond
+    [(member key '("<esc>" "C-g" "C-c")) (leader-done!) (message "")]
+    [(equal? key "<bs>") (leader-back!)]
+    [else
       (let* ([keys (string-append *leader-keys* key)]
              [binding (hash-try-get *leader-bindings* keys)])
         (cond
@@ -188,7 +203,7 @@
            (show-which-key!)]
           [else
            (leader-done!)
-           (message (string-append (leader-prompt) (key-label key) " is undefined"))]))))
+           (message (string-append (leader-prompt) (key-label key) " is undefined"))]))]))
 
 ;; The popup waits which-key-delay ms, so keys typed quickly don't flash
 ;; it; the prompt shows at once.
