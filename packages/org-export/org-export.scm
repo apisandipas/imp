@@ -1,0 +1,74 @@
+;;; org-export.scm -- exporting Org buffers through pandoc, after Org's
+;;; export dispatcher and ox-pandoc.
+;;;
+;;;   (use-package! 'org-export)
+
+;; The LaTeX engine pandoc makes PDFs with; xelatex copes with Unicode.
+(define-option! 'org-export-pdf-engine "xelatex" '())
+;; Flags added to every pandoc run, as "--toc".
+(define-option! 'org-export-pandoc-args "" '())
+
+;; The programs run; the tests put fakes in their place.
+(define *org-export-pandoc* "pandoc")
+
+;; (name pandoc-format extension text?): text formats can go in a buffer.
+(define *org-export-formats*
+  '(("html" "html" "html" #t)
+    ("pdf" "latex" "pdf" #f)
+    ("markdown" "gfm" "md" #t)
+    ("docx" "docx" "docx" #f)
+    ("latex" "latex" "tex" #t)
+    ("odt" "odt" "odt" #f)
+    ("text" "plain" "txt" #t)))
+
+(define (org-export-format name)
+  "The entry of *org-export-formats* called `name`, or #f."
+  (list-find (lambda (f) (equal? (car f) name)) *org-export-formats*))
+
+(define (org-export-file-for path ext)
+  "`path` with its extension changed to `ext`: notes.org to notes.html."
+  (let* ([name (file-name-of path)]
+         [old (extension-of name)]
+         [stem (if old (substring path 0 (- (string-length path) (string-length old) 1)) path)])
+    (string-append stem "." ext)))
+
+(define (org-export-command format out)
+  "The shell command that has pandoc turn Org on its stdin into `format`,
+   written to file `out`, or to stdout when `out` is #f."
+  (let ([args (option 'org-export-pandoc-args)])
+    (string-append (shell-quote *org-export-pandoc*) " --from org --to " (cadr format) " --standalone"
+                   (if (equal? (car format) "pdf")
+                       (string-append " --pdf-engine=" (shell-quote (option 'org-export-pdf-engine)))
+                       "")
+                   (if (equal? args "") "" (string-append " " args))
+                   (if out (string-append " --output " (shell-quote out)) ""))))
+
+(define (org-export-failed! errors)
+  "Says the export failed, with pandoc's `errors` in *org-export*."
+  (let ([id (special-buffer "*org-export*" 'special-mode)])
+    (with-buffer id (lambda () (set-buffer-contents! errors))))
+  (message "export failed: see *org-export*"))
+
+(define (org-export! name)
+  "Exports the current buffer's text, unsaved edits included, to a file
+   beside it in format `name` (one of *org-export-formats*), with pandoc
+   running in the background from the file's directory."
+  (let* ([format (org-export-format name)]
+         [path (and (buffer-path) (expand-path (buffer-path)))])
+    (cond
+      [(not format) (message (string-append "no export format " name))]
+      [(not path) (message "the buffer has no file to export beside")]
+      [(not (= (car (run-shell (string-append "command -v " (shell-quote *org-export-pandoc*) " >/dev/null") "")) 0))
+       (message "org-export needs pandoc")]
+      [else
+       (let ([out (org-export-file-for path (caddr format))] [errors ""])
+         (message (string-append "exporting " (file-name-of out) "..."))
+         (start-job! (string-append "cd " (shell-quote (directory-of path)) " && "
+                                    (org-export-command format out))
+                     (buffer-substring 0 (buffer-length))
+                     (lambda (text stream) (when (equal? stream "stderr") (set! errors (string-append errors text))))
+                     (lambda (code)
+                       (if (= code 0)
+                           (message (string-append "exported " (file-name-of out)))
+                           (org-export-failed! errors)))))]))
+  void)
