@@ -165,3 +165,38 @@ fn constructs_set_before_the_theme_loads_count() {
     .unwrap();
     assert_eq!(spec(&mut s, "syntax.comment"), "fg=#989898 italic");
 }
+
+#[test]
+fn palette_overrides_change_every_face_using_a_name() {
+    let mut s = modus("modus-vivendi");
+    // A mapping to another name, and a named color to a color.
+    s.eval(r##"(set-option! 'modus-themes-common-palette-overrides '((keyword red) (bg-main "#111111")))"##)
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#ff5f59");
+    assert_eq!(spec(&mut s, "normal"), "fg=#ffffff bg=#111111");
+    // bg-main is what org.hide uses too.
+    assert_eq!(spec(&mut s, "org.hide"), "fg=#111111");
+    // A theme's own list wins over the common one, for that theme only.
+    s.eval("(set-option! 'modus-vivendi-palette-overrides '((keyword green)))")
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#44bc44");
+    s.eval("(load-theme! 'modus-operandi)").unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#a60000");
+}
+
+#[test]
+fn an_unknown_override_is_an_error_naming_it() {
+    let mut s = modus("modus-vivendi");
+    let err = s
+        .eval("(set-option! 'modus-themes-common-palette-overrides '((keywrd red)))")
+        .unwrap_err();
+    assert!(err.contains("no color named keywrd"), "{err}");
+    let err = s
+        .eval("(set-option! 'modus-themes-common-palette-overrides '((keyword nope)))")
+        .unwrap_err();
+    assert!(err.contains("no color named nope"), "{err}");
+    // A good list afterwards still takes.
+    s.eval("(set-option! 'modus-themes-common-palette-overrides '((keyword red)))")
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#ff5f59");
+}
