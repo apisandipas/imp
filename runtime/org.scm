@@ -1063,15 +1063,30 @@
                                   (loop (cdr ws) time repeater warning #f)]
                                  [(and (not time) (char-digit? c) (string-index-from w ":" 0))
                                   (loop (cdr ws) w repeater warning #f)]
-                                 [(and (not repeater) (org-interval w '("++" ".+" "+")))
+                                 [(and (not repeater) (org-repeater w))
                                   => (lambda (r) (loop (cdr ws) time r warning #f))]
                                  [(and (not warning) (org-interval w '("--" "-")))
                                   => (lambda (r) (loop (cdr ws) time repeater r #f))]
                                  [else #f])))))))))))
 
+(define (org-repeater text)
+  "The repeater `text` is, as org-interval gives it, \".+2d\" -> (\".+\" 2
+   \"d\"); a habit's may give the most it may wait after a slash,
+   \".+2d/4d\" -> (\".+\" 2 \"d\" (4 \"d\")). #f if it is something else."
+  (let ([slash (string-index-from text "/" 0)])
+    (if (not slash)
+        (org-interval text '("++" ".+" "+"))
+        (let ([r (org-interval (substring text 0 slash) '("++" ".+" "+"))]
+              [most (org-interval (string-append "+" (substring text (+ slash 1) (string-length text))) '("+"))])
+          (and r most (append r (list (cdr most))))))))
+
 (define (org-interval->string interval)
-  "`interval`, a (prefix n unit), written as Org does: \"+1w\"."
-  (string-append (car interval) (number->string (cadr interval)) (caddr interval)))
+  "`interval`, a (prefix n unit), written as Org does: \"+1w\"; a
+   habit's repeater with its most after a slash, \".+2d/4d\"."
+  (string-append (car interval) (number->string (cadr interval)) (caddr interval)
+                 (if (= (length interval) 4)
+                     (string-append "/" (number->string (car (cadddr interval))) (cadr (cadddr interval)))
+                     "")))
 
 (define (org-stamp->string stamp)
   "The timestamp `stamp`, parts as org-parse-stamp gives them, written

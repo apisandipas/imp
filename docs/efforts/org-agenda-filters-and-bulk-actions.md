@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
-  docs/specs/org-agenda.md: d283f91acd0d
+  docs/specs/org-agenda.md: b6ab81427154
   docs/specs/org.md: eacefd3dbd04
 ---
 # Org agenda: filters and bulk actions
