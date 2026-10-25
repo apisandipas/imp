@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """Builds the website's docs section, site/docs/, with pandoc: the guides
-in docs/guide/*.md, and a reference page for each spec in docs/specs (see
+in docs/guide/*.md, and the reference pages in docs/reference/ref-NAME.md,
+each written in plain English from the spec docs/specs/NAME.md (see
 lore:0018). The Pages workflow runs it before publishing; site/docs/ isn't
 committed.
 
-    tools/site-docs.py [OUT]     (OUT defaults to site/docs)
+    tools/site-docs.py [OUT]       build into OUT (default site/docs)
+    tools/site-docs.py --check     specs without pages, pages without
+                                   specs, and pages whose spec has changed
+    tools/site-docs.py --stamp NAME  record that ref-NAME.md is up to date
+                                   with its spec (lore freeze)
+
+A page is a lore note of type Page, frozen against its spec, so lore check
+also says when a spec has moved on. Links between pages are written as
+[text](ref-NAME.md) and [text](GUIDE.md).
 """
 
 import html
@@ -16,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SPECS = ROOT / "docs" / "specs"
 GUIDES = ROOT / "docs" / "guide"
+PAGES = ROOT / "docs" / "reference"
 ISSUES = "https://github.com/apisandipas/imp/issues"
 
 # The guides, in reading order: (file stem, title).
@@ -43,60 +53,37 @@ SKIP = {"user-docs"}
 REF_PREFIX = "ref-"
 
 
-def read_note(path):
-    """A note's (frontmatter dict, title, {section: text}, intro)."""
+REF_PREFIX = "ref-"
+
+
+def read_page(path):
+    """A page's (title, lede markdown, [(heading, markdown)]), frontmatter
+    dropped."""
     text = path.read_text()
-    meta = {}
     if text.startswith("---\n"):
-        end = text.index("\n---\n", 4)
-        for line in text[4:end].splitlines():
-            if ":" in line:
-                key, value = line.split(":", 1)
-                meta[key.strip()] = value.strip().strip('"')
-        text = text[end + 5:]
-    title_match = re.search(r"^# (.+)$", text, re.M)
-    title = title_match.group(1).strip() if title_match else path.stem
-    body = text[title_match.end():] if title_match else text
-    parts = re.split(r"^## (.+)$", body, flags=re.M)
-    intro = parts[0].strip()
-    sections = {parts[i].strip(): parts[i + 1].strip() for i in range(1, len(parts), 2)}
-    return meta, title, sections, intro
+        text = text[text.index("\n---\n", 4) + 5:]
+    match = re.search(r"^# (.+)$", text, re.M)
+    title = match.group(1).strip() if match else path.stem
+    parts = re.split(r"^## (.+)$", text[match.end():] if match else text, flags=re.M)
+    sections = [(parts[i].strip(), parts[i + 1].strip()) for i in range(1, len(parts), 2)]
+    return title, parts[0].strip(), sections
 
 
-def note_titles():
-    """The title of every note a [[link]] can name, by its file stem."""
-    titles = {}
-    for path in (ROOT / "docs").rglob("*.md"):
-        _, title, _, _ = read_note(path)
-        titles[path.stem] = title
-    return titles
-
-
-def resolve_links(markdown, spec_pages, titles):
-    """[[name]] links: to a spec's page when they name one, else the
-    note's title as plain text (decisions and efforts stay in the repo)."""
-
-    def link(match):
-        target = match.group(1).split("|")[0].strip()
-        name = target.split("/")[-1]
-        if name in spec_pages:
-            return f"[{titles.get(name, name)}]({REF_PREFIX}{name}.html)"
-        title = titles.get(name, name)
-        # A decision's title is a sentence; a plain mention reads better.
-        return title[0].lower() + title[1:] if re.match(r"^\d{4}-", name) else title
-
-    return re.sub(r"\[\[([^\]]+)\]\]", link, markdown)
+def page_links(markdown):
+    """Links to pages and guides, written to their .md files, made to go
+    to the .html pages built from them."""
+    return re.sub(r"\]\(([a-z0-9-]+)\.md(#[^)]*)?\)", lambda m: f"]({m.group(1)}.html{m.group(2) or ''})", markdown)
 
 
 def to_html(markdown):
     """`markdown` as an HTML fragment, by pandoc."""
     return subprocess.run(
         ["pandoc", "--from", "gfm", "--to", "html"],
-        input=markdown, capture_output=True, text=True, check=True,
+        input=page_links(markdown), capture_output=True, text=True, check=True,
     ).stdout
 
 
-def sidebar(current, spec_titles):
+def sidebar(current, titles):
     """The list of every page, `current` marked."""
 
     def item(href, title):
@@ -108,14 +95,14 @@ def sidebar(current, spec_titles):
     out += [item(f"{stem}.html", title) for stem, title in GUIDE_PAGES if (GUIDES / f"{stem}.md").exists()]
     out.append("</ul>")
     for group, stems in GROUPS:
+        if not any(stem in titles for stem in stems):
+            continue
         out.append(f'<p class="docs-nav-head">{html.escape(group)}</p><ul>')
-        out += [item(f"{REF_PREFIX}{stem}.html", spec_titles[stem]) for stem in stems]
+        out += [item(f"{REF_PREFIX}{stem}.html", titles[stem]) for stem in stems if stem in titles]
         out.append("</ul>")
     out.append("</nav>")
     return "\n".join(out)
-
-
-def page(title, content, current, spec_titles):
+def page(title, content, current, titles):
     """A whole docs page in the site's look."""
     return f"""<!doctype html>
 <html lang="en">
@@ -151,7 +138,7 @@ def page(title, content, current, spec_titles):
 {content}
       </article>
     </main>
-{sidebar(current, spec_titles)}
+{sidebar(current, titles)}
   </div>
   <footer class="footer">
     <div class="wrap footer-inner">
@@ -169,64 +156,87 @@ def page(title, content, current, spec_titles):
 """
 
 
-def gaps_notice(gaps, spec_pages, titles):
-    """Known gaps as a notice: what this area can't do yet."""
-    if not gaps.strip():
-        return ""
-    items = to_html(resolve_links(gaps, spec_pages, titles))
-    return f'<aside class="notice" aria-label="Not yet in imp">\n<p class="notice-head">Not yet in imp</p>\n{items}</aside>\n'
-
-
-def spec_page(stem, spec_pages, titles):
-    """The reference page for spec `stem`: (title, HTML content)."""
-    meta, title, sections, _ = read_note(SPECS / f"{stem}.md")
+def reference_content(path):
+    """A reference page's HTML: its title, the paragraph under it as the
+    lede, "Not yet in imp" as a notice, then its sections."""
+    title, lede, sections = read_page(path)
     parts = [f"<h1>{html.escape(title)}</h1>"]
-    if meta.get("summary"):
-        parts.append(f'<p class="lede">{html.escape(meta["summary"])}</p>')
-    parts.append(gaps_notice(sections.get("Known gaps", ""), spec_pages, titles))
-    for heading, shown in [("Behaviour", "How it works"), ("Keys and options", "Keys and options")]:
-        if sections.get(heading):
-            parts.append(f"<h2>{shown}</h2>")
-            parts.append(to_html(resolve_links(sections[heading], spec_pages, titles)))
+    if lede:
+        parts.append(to_html(lede).replace("<p>", '<p class="lede">', 1))
+    for heading, body in sections:
+        if heading == "Not yet in imp":
+            parts.insert(2, f'<aside class="notice" aria-label="Not yet in imp">\n'
+                            f'<p class="notice-head">Not yet in imp</p>\n{to_html(body)}</aside>')
+        else:
+            parts.append(f"<h2>{html.escape(heading)}</h2>\n{to_html(body)}")
     return title, "\n".join(parts)
 
 
-def index_content(spec_titles):
+def index_content(titles):
     """The docs' front page: docs/guide/index.md, then the reference."""
     intro = GUIDES / "index.md"
     parts = [to_html(intro.read_text()) if intro.exists() else "<h1>imp docs</h1>"]
     parts.append("<h2>Reference</h2>")
     for group, stems in GROUPS:
+        if not any(s in titles for s in stems):
+            continue
         parts.append(f"<h3>{html.escape(group)}</h3><ul>")
-        parts += [f'<li><a href="{REF_PREFIX}{s}.html">{html.escape(spec_titles[s])}</a></li>' for s in stems]
+        parts += [f'<li><a href="{REF_PREFIX}{s}.html">{html.escape(titles[s])}</a></li>'
+                  for s in stems if s in titles]
         parts.append("</ul>")
     return "\n".join(parts)
 
 
-def main():
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "site" / "docs"
-    stems = {p.stem for p in SPECS.glob("*.md")} - SKIP
+def problems():
+    """What --check reports: the grouping, specs without pages, pages
+    without specs, and pages whose spec changed since they were written."""
+    specs = {p.stem for p in SPECS.glob("*.md")} - SKIP
     grouped = [s for _, ss in GROUPS for s in ss]
-    missing, unknown = stems - set(grouped), set(grouped) - stems
-    if missing or unknown or len(grouped) != len(set(grouped)):
-        sys.exit(f"site-docs: put each spec in one group of GROUPS: "
-                 f"missing {sorted(missing)}, unknown {sorted(unknown)}")
-    titles = note_titles()
-    spec_titles = {s: titles[s] for s in stems}
+    found = []
+    for s in sorted(specs - set(grouped)):
+        found.append(f"docs/specs/{s}.md: in no group of GROUPS in tools/site-docs.py")
+    for s in sorted(set(grouped) - specs):
+        found.append(f"tools/site-docs.py: GROUPS names {s}, which has no spec")
+    for s in sorted(specs):
+        if not (PAGES / f"{REF_PREFIX}{s}.md").exists():
+            found.append(f"docs/specs/{s}.md: no page; write docs/reference/{REF_PREFIX}{s}.md (docs-page skill)")
+    for p in sorted(PAGES.glob("*.md")):
+        if p.stem[len(REF_PREFIX):] not in specs:
+            found.append(f"docs/reference/{p.name}: no spec docs/specs/{p.stem[len(REF_PREFIX):]}.md")
+    lore = subprocess.run(["lore", "check"], cwd=ROOT, capture_output=True, text=True)
+    found += [line for line in lore.stdout.splitlines() if line.startswith("docs/reference/")]
+    return found
+
+
+def build(out):
+    """Writes every page into `out`."""
+    stems = [s for _, ss in GROUPS for s in ss]
+    titles = {s: read_page(PAGES / f"{REF_PREFIX}{s}.md")[0]
+              for s in stems if (PAGES / f"{REF_PREFIX}{s}.md").exists()}
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.html"):
         old.unlink()
-    (out / "index.html").write_text(page("Docs", index_content(spec_titles), "index.html", spec_titles))
+    (out / "index.html").write_text(page("Docs", index_content(titles), "index.html", titles))
     for stem, title in GUIDE_PAGES:
         source = GUIDES / f"{stem}.md"
         if source.exists():
-            content = to_html(resolve_links(source.read_text(), stems, titles))
-            (out / f"{stem}.html").write_text(page(title, content, f"{stem}.html", spec_titles))
-    for stem in grouped:
-        title, content = spec_page(stem, stems, titles)
+            (out / f"{stem}.html").write_text(page(title, to_html(source.read_text()), f"{stem}.html", titles))
+    for stem in titles:
         name = f"{REF_PREFIX}{stem}.html"
-        (out / name).write_text(page(title, content, name, spec_titles))
-    print(f"site-docs: {len(grouped) + 1} pages in {out}")
+        title, content = reference_content(PAGES / f"{REF_PREFIX}{stem}.md")
+        (out / name).write_text(page(title, content, name, titles))
+    print(f"site-docs: {len(titles) + 1} pages in {out}; {len(stems) - len(titles)} reference pages not written yet")
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] == ["--check"]:
+        found = problems()
+        print("\n".join(found) or "site-docs: every spec has an up-to-date page")
+        sys.exit(1 if found else 0)
+    if args[:1] == ["--stamp"] and len(args) == 2:
+        sys.exit(subprocess.run(["lore", "freeze", f"docs/reference/{REF_PREFIX}{args[1]}.md"], cwd=ROOT).returncode)
+    build(Path(args[0]) if args else ROOT / "site" / "docs")
 
 
 if __name__ == "__main__":

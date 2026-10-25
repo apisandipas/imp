@@ -24,3 +24,11 @@ types:
       status: { enum: [planned, active, done] }
       # The GitHub issue it closes, as a URL.
       issue: {}
+  # A page of the website's user reference, written in plain English
+  # from its spec; frozen against it, so lore check says when the spec
+  # has changed and the page needs rewriting (decision 0018).
+  Page:
+    dir: docs/reference
+    freeze: [spec]
+    fields:
+      spec: { link: Spec, required: true }
