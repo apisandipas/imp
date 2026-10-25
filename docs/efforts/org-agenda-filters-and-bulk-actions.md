@@ -18,7 +18,7 @@ Filters are predicates over agenda entries, kept in a buffer-local list that `or
 ## Tasks
 
 - [x] Filters `sc` (category), `st` (tag, `-tag` to exclude, completing), `se` (effort comparison), `sr` (title regexp), `s^` (top-level heading), adding up, shown as `Filter: …` in the title, kept through moving, `gr` and `gD`, empty sections left out, `S` clears them; with tests
-- [ ] Marks: `m` toggles and moves down, `~` toggles all, `*` marks all, `%` marks by title regexp, `M` unmarks all; the mark column and the marked face (every bundled theme, Modus included); with tests
+- [x] Marks: `m` toggles and moves down, `~` toggles all, `*` marks all, `%` marks by title regexp, `M` unmarks all; the mark column and the marked face (every bundled theme, Modus included); with tests
 - [ ] `x`, the bulk menu: `t` keyword, `s` schedule, `d` deadline, `+` and `-` tags, `r` refile, `$` archive, `S` shift dates by N days, `k` delete; asks once, acts on each marked entry, clears the marks; with tests
 - [ ] Read the reference page through against the spec and the keys, and check the which-key labels
 - [ ] The owner has looked at it

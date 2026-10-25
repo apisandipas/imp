@@ -93,6 +93,20 @@ Narrow the agenda to what you're working on. Filters add up, show at the right o
 
 A task with no effort is left out by `se`, except with `<>`. A section the filters leave empty is left out; the days always show. Opening another view starts without filters.
 
+## Acting on several tasks
+
+Mark tasks, then act on all of them at once. A marked task has a `▸` at the left of its line, and its title is highlighted.
+
+| Key | What it does |
+|---|---|
+| `m` | Mark the task under the cursor, or unmark it, and move down |
+| `*` | Mark every task the agenda shows |
+| `%` | Mark the tasks whose title matches a regexp |
+| `~` | Flip the marks: marked tasks are unmarked, the rest marked |
+| `M` | Unmark everything |
+
+Marks stay while you move and refresh; opening another view clears them.
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:

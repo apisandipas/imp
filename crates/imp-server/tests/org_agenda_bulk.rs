@@ -121,3 +121,67 @@ fn a_section_left_empty_by_a_filter_goes() {
     type_keys(&mut s, ":OrgAgenda<ret>a");
     assert!(!shows(&s, "Filter:") && shows(&s, "To do"));
 }
+
+/// The agenda's line holding `text`.
+fn line_with(s: &imp_server::Server, text: &str) -> String {
+    lines(s)
+        .into_iter()
+        .find(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("no {text} in {:#?}", lines(s)))
+}
+
+fn marked(s: &imp_server::Server, text: &str) -> bool {
+    line_with(s, text).contains('▸')
+}
+
+fn line_text(s: &mut imp_server::Server) -> String {
+    let n: usize = s.eval("(current-line)").unwrap().parse().unwrap();
+    lines(s)[n].clone()
+}
+
+#[test]
+fn marks_toggle_add_up_and_clear() {
+    let (mut s, _dir) = agenda_files("agenda-marks", &[("a.org", MIXED)]);
+    // m marks and moves down; again unmarks.
+    go_to(&mut s, "Report");
+    type_keys(&mut s, "m");
+    assert!(marked(&s, "Report") && !marked(&s, "Slides"));
+    assert!(
+        line_text(&mut s).contains("Slides"),
+        "{}",
+        line_text(&mut s)
+    );
+    type_keys(&mut s, "m");
+    assert!(marked(&s, "Slides"));
+    go_to(&mut s, "Report");
+    type_keys(&mut s, "m");
+    assert!(!marked(&s, "Report") && marked(&s, "Slides"));
+    // ~ flips every mark; M clears them; * marks every entry.
+    type_keys(&mut s, "~");
+    assert!(marked(&s, "Report") && marked(&s, "Garden") && !marked(&s, "Slides"));
+    type_keys(&mut s, "M");
+    assert!(lines(&s).iter().all(|l| !l.contains('▸')));
+    type_keys(&mut s, "*");
+    assert!(marked(&s, "Report") && marked(&s, "Groceries"));
+    type_keys(&mut s, "M");
+    // % marks the titles a regexp matches; marks last through gr.
+    type_keys(&mut s, "%^g<ret>gr");
+    assert!(marked(&s, "Garden") && marked(&s, "Groceries") && !marked(&s, "Report"));
+    // The mark is in the mark column, before the line's other parts.
+    assert!(
+        line_with(&s, "Garden").starts_with("  ▸ "),
+        "{}",
+        line_with(&s, "Garden")
+    );
+}
+
+#[test]
+fn the_marked_face_is_modus_s_selection_mark() {
+    let mut s = server("");
+    s.eval("(use-package! 'modus-themes) (load-theme! 'modus-vivendi)")
+        .unwrap();
+    assert_eq!(
+        s.eval("(face-spec \"org.agenda.marked\")").unwrap(),
+        "\"fg=#00d3d0 bg=#004065 bold\""
+    );
+}

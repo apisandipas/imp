@@ -142,6 +142,8 @@
      (list "org.agenda.upcoming" (fg 'yellow))
      (list "org.agenda.tag" (fg 'comment))
      (list "org.agenda.category" (fg 'dim))
+     ;; The agenda's bulk marks
+     (list "org.agenda.marked" (fg 'cyan "bold"))
      ;; Git and diffs
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))

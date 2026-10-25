@@ -461,6 +461,8 @@
    (list "org.agenda.upcoming" 'date-deadline-subtle #f "" #f)
    (list "org.agenda.tag" 'prose-tag #f "" #f)
    (list "org.agenda.category" 'fg-dim #f "" #f)
+   ;; The agenda's bulk marks: modus-themes-mark-sel.
+   (list "org.agenda.marked" 'fg-mark-select 'bg-mark-select "bold" #f)
    ;; Git: magit-section-heading, -branch-local, -branch-remote, -hash,
    ;; -dimmed; the key lines on the mode line's background
    (list "git.section" 'fg-alt #f "bold" #f)
