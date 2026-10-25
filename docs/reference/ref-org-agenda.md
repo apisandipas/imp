@@ -112,6 +112,10 @@ Change a task right from its line, without opening its file.
 | `SPC m p` | Set its priority: `a`, `b` or `c`, or space to remove it |
 | `ct` or `SPC m q` | Add or remove tags, as `C-c C-q` does in its file |
 | `ce` | Set its effort, such as `0:45` |
+| `SPC m r` | Refile it under another heading, as `C-c C-w` does |
+| `da` | Archive it, after asking |
+| `dA` | Archive it without asking |
+| `dd` | Delete it and everything under it, after asking |
 
 `H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
 

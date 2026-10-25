@@ -776,6 +776,44 @@
                          (lambda (v) (org-agenda-act! (lambda (line) (org-set-property! line "Effort" (trim v)))))
                          #f #f))))))
 
+(define (org-agenda-title-at)
+  "The title of the entry at the cursor, for questions about it."
+  (let ([e (org-agenda-entry-at)]) (if e (org-agenda-title-text e) "this entry")))
+
+(define (org-agenda-refile!)
+  "SPC m r: asks for a heading in the agenda files and moves the entry
+   there, with its subtree."
+  (when (org-agenda-entry-line? (current-line))
+    (let ([targets (org-refile-targets)])
+      (if (null? targets)
+          (message "no headings in the agenda files to refile under")
+          (completing-read "Refile under: " (map car targets)
+                           (lambda (choice)
+                             (let ([hit (assoc choice targets)])
+                               (when hit (org-agenda-act! (lambda (line) (org-refile-to! line hit)))))))))))
+
+(define (org-agenda-archive! ask?)
+  "Archives the entry with its subtree (org-archive-location), asking
+   first when `ask?`."
+  (when (org-agenda-entry-line? (current-line))
+    (let ([go (lambda ()
+                (org-agenda-act! (lambda (line) (message (string-append "archived in " (file-name-of (org-archive! line)))))))])
+      (if ask?
+          (confirm! (string-append "Archive \"" (org-agenda-title-at) "\"?") go)
+          (go)))))
+
+(define (org-agenda-delete!)
+  "dd: deletes the entry and its subtree from its file, asking first."
+  (when (org-agenda-entry-line? (current-line))
+    (confirm! (string-append "Delete \"" (org-agenda-title-at) "\" and everything under it?")
+              (lambda ()
+                (org-agenda-act!
+                 (lambda (line)
+                   (let ([end (org-subtree-end line)])
+                     (begin-change!)
+                     (replace-range! (line-start line) (min (buffer-length) (+ (line-end end) 1)) "")
+                     (message "deleted"))))))))
+
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
@@ -827,6 +865,10 @@
 (org-agenda-key! "ct" (lambda (n) (org-agenda-tags!)) "set tags")
 (define-mode-leader! 'org-agenda-mode "q" (lambda (n) (org-agenda-tags!)) "set tags")
 (org-agenda-key! "ce" (lambda (n) (org-agenda-effort!)) "set effort")
+(define-mode-leader! 'org-agenda-mode "r" (lambda (n) (org-agenda-refile!)) "refile")
+(org-agenda-key! "da" (lambda (n) (org-agenda-archive! #t)) "archive")
+(org-agenda-key! "dA" (lambda (n) (org-agenda-archive! #f)) "archive now")
+(org-agenda-key! "dd" (lambda (n) (org-agenda-delete!)) "delete")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

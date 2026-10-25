@@ -970,3 +970,34 @@ fn priority_tags_and_effort_from_the_agenda() {
         file(&dir, "a.org")
     );
 }
+
+#[test]
+fn refile_archive_and_delete_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-move",
+        &[
+            ("a.org", "* TODO Move\n** sub\n* TODO Archive\n* TODO Archive too\n* TODO Delete\nbody\n* TODO Keep\n"),
+            ("b.org", "* Target\n"),
+        ],
+    );
+    go_to(&mut s, "Move");
+    type_keys(&mut s, " mrb.org › Target<ret>");
+    assert_eq!(file(&dir, "b.org"), "* Target\n** TODO Move\n*** sub\n");
+    assert!(!file(&dir, "a.org").contains("Move"));
+    // da asks; n keeps it, y archives.
+    go_to(&mut s, "Archive too");
+    type_keys(&mut s, "dan");
+    assert!(file(&dir, "a.org").contains("Archive too"));
+    type_keys(&mut s, "day");
+    assert!(!file(&dir, "a.org").contains("Archive too"));
+    assert!(file(&dir, "a.org_archive").contains("* TODO Archive too"));
+    // dA doesn't ask.
+    go_to(&mut s, "Archive");
+    type_keys(&mut s, "dA");
+    assert!(file(&dir, "a.org_archive").contains("* TODO Archive\n"));
+    // dd asks, then deletes the subtree.
+    go_to(&mut s, "Delete");
+    type_keys(&mut s, "ddy");
+    assert_eq!(file(&dir, "a.org"), "* TODO Keep\n");
+    assert!(lines(&s).iter().all(|l| !l.contains("Delete")));
+}
