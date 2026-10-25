@@ -398,14 +398,14 @@ fn the_main_keys_are_at_the_bottom_of_the_status_window() {
     let right = |r: &String| r.split('│').nth(1).unwrap_or("").trim_end().to_string();
     assert_eq!(
         right(&rows[20]),
-        "s stage  u unstage  c commit  F pull  P push"
+        "     s stage  u unstage  c commit  F pull  l log"
     );
     assert_eq!(
         right(&rows[21]),
-        "<tab> diff  x discard  b branch  l log  ? all keys"
+        " <tab> diff   x discard  b branch  P push  ? keys"
     );
     // git-status-hints off leaves them out.
     s.eval("(set-option! 'git-status-hints #f)").unwrap();
     type_keys(&mut s, "gr");
-    assert!(!s.frame().text_rows().iter().any(|r| r.contains("all keys")));
+    assert!(!s.frame().text_rows().iter().any(|r| r.contains("? keys")));
 }

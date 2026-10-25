@@ -658,24 +658,30 @@
                                                    (list "u" "push, setting upstream" (lambda () (git-job! (git-root) "push -u origin HEAD")))))))
     (list "$" "git output" (lambda (n) (git-show-process!)))
     (list "gr" "refresh" (lambda (n) (git-refresh!)))
-    (list "?" "all keys" (lambda (n) (git-status-menu!)))))
+    (list "?" "keys" (lambda (n) (git-status-menu!)))))
 
-;; The keys the status buffer's footer shows, a line each.
-(define git-status-hint-keys '(("s" "u" "c" "F" "P") ("<tab>" "x" "b" "l" "?")))
+;; The keys the status buffer's footer shows: a column each, a related
+;; pair in it, the first on the top line.
+(define git-status-hint-columns '(("s" "<tab>") ("u" "x") ("c" "b") ("F" "P") ("l" "?")))
 
 (define (git-status-footer)
-  "The status buffer's footer: a line of keys and their labels, from
-   git-status-keys, for each list in git-status-hint-keys; none with
-   git-status-hints off."
-  (if (option 'git-status-hints)
-      (map (lambda (keys)
-             (cdr (apply append
-                         (map (lambda (key)
-                                (let ([k (list-find (lambda (k) (equal? (car k) key)) git-status-keys)])
-                                  (list (list "  " #f) (list key "git.key") (list (string-append " " (cadr k)) "git.head"))))
-                              keys))))
-           git-status-hint-keys)
-      '()))
+  "The status buffer's footer: two lines of keys and their labels, from
+   git-status-keys, in the columns of git-status-hint-columns. In each
+   column the keys are right-aligned and the labels left-aligned. The
+   lines are on a band of git.footer, padded past any window's width
+   (the window cuts them); none with git-status-hints off."
+  (define (label key) (cadr (list-find (lambda (k) (equal? (car k) key)) git-status-keys)))
+  (define (widest strings) (apply max (map string-length strings)))
+  (define (cell column row)
+    (let ([key (list-ref column row)])
+      (list (list (pad-left key (widest column)) "git.footer.key")
+            (list (string-append " " (pad-right (label key) (widest (map label column)))) "git.footer"))))
+  (define (line row)
+    (append (list (list " " "git.footer"))
+            (cdr (apply append (map (lambda (column) (cons (list "  " "git.footer") (cell column row)))
+                                    git-status-hint-columns)))
+            (list (list (make-string 300 #\space) "git.footer"))))
+  (if (option 'git-status-hints) (list (line 0) (line 1)) '()))
 
 (define (git-status-menu!)
   "Opens a menu of every status key, as Magit's ? does; the key pressed
