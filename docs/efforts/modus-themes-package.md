@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/modus-themes]]"]
 frozen:
   docs/specs/modus-themes.md: 1e594e46b053
@@ -23,4 +23,4 @@ The four new syntax faces aren't defined by the other themes: a capture's face f
 - [x] `modus-themes-toggle`, with a test
 - [x] Screenshots of the same files in both themes, compared with Modus's published samples, and fixes
 - [x] The reference page `ref-modus-themes.md` (docs-page skill) in the docs' groups, the Packages guide and `packages/CONTEXT.md` list it, the spec's anchors
-- [ ] The owner has looked at both themes
+- [x] The owner has looked at both themes
