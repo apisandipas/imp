@@ -352,7 +352,8 @@
             (draw-line! (list (if (eq? kind 'today) (list "▌" "org.agenda.today") (list " " #f)) (list " " #f)
                               (list text (list face (heights 2))))
                         #f)
-            (draw-line! (list (list "  " #f) (list (rule (string-length text)) "org.agenda.rule")) #f))]
+            ;; At the header's size, so the rule is as long as the header.
+            (draw-line! (list (list "  " #f) (list (rule (string-length text)) (list "org.agenda.rule" (heights 2)))) #f))]
          [(entry)
           (let* ([e (cadr r)] [time (caddr r)] [what (cadddr r)] [kind (list-ref r 4)]
                  [kw (caddr e)]
