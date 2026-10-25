@@ -14,8 +14,15 @@
 ;; The day of the week a week's agenda starts on: 0 for Sunday to 6 for
 ;; Saturday, or #f for today. Unset, it is calendar-week-start's day.
 (define-option! 'org-agenda-start-on-weekday 0 '())
-;; The line today's header was drawn on, or #f.
+;; The line today's header was drawn on, or #f, and each day's header's,
+;; as (day . line).
 (define *org-agenda-today-line* #f)
+(define *org-agenda-day-lines* '())
+;; The file buffers the agenda opened, which ZQ closes.
+(define *org-agenda-opened* '())
+;; Whether follow mode is on, and the line it last showed.
+(define *org-agenda-follow* #f)
+(define *org-agenda-followed* #f)
 ;; Draw a time grid on today, and on other days with something timed:
 ;; a line at each of org-agenda-time-grid's times, and on today a line
 ;; for now.
@@ -158,17 +165,20 @@
   (vector "Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
 
 (define (org-agenda-first-day)
-  "The first day the agenda shows: the one f and b moved to, or else
-   today, or with a span of 7 days and org-agenda-start-on-weekday a day,
-   the last such day."
-  (or *org-agenda-start*
-      (let ([today (calendar-today)]
-            [start (if (option-set? 'org-agenda-start-on-weekday)
-                       (option 'org-agenda-start-on-weekday)
-                       (option 'calendar-week-start))])
-        (if (and start (= (option 'org-agenda-span) 7))
-            (date-add-days today (- (modulo (- (date-weekday today) start) 7)))
-            today))))
+  "The first day the agenda shows: the one f and b moved to, or else the
+   first day of the span that shows today."
+  (or *org-agenda-start* (org-agenda-span-start (calendar-today))))
+
+(define (org-agenda-span-start day)
+  "The first day of the span that shows `day`: with a span of 7 days and
+   org-agenda-start-on-weekday a day, the last such day on or before it,
+   else `day` itself."
+  (let ([start (if (option-set? 'org-agenda-start-on-weekday)
+                   (option 'org-agenda-start-on-weekday)
+                   (option 'calendar-week-start))])
+    (if (and start (= (option 'org-agenda-span) 7))
+        (date-add-days day (- (modulo (- (date-weekday day) start) 7)))
+        day)))
 
 (define (org-stamp-days stamp first last)
   "The days from `first` to `last` that timestamp `stamp` falls on: its
@@ -267,9 +277,9 @@
   (let ([text (string-append (vector-ref *org-day-names* (date-weekday day)) " "
                              (number->string (caddr day)) " "
                              (vector-ref *calendar-month-names* (- (cadr day) 1)))])
-    (cond [(equal? day today) (list 'header (string-append text " · today") 'today)]
-          [(memv (date-weekday day) '(0 6)) (list 'header text 'weekend)]
-          [else (list 'header text 'date)])))
+    (cond [(equal? day today) (list 'header (string-append text " · today") 'today day)]
+          [(memv (date-weekday day) '(0 6)) (list 'header text 'weekend day)]
+          [else (list 'header text 'date day)])))
 
 ;; What an agenda line says its date is, and the face it says it in.
 (define (org-what-face what)
@@ -286,7 +296,7 @@
 ;; rows to what they hold and the window's width. A row is:
 ;;   (title NAME COVERS)         the view's name, what it covers under
 ;;                               it, then a rule
-;;   (header TEXT KIND)          a section or day, with a rule under it;
+;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
 ;;   (entry E TIME WHAT KIND)    entry E, TIME and WHAT strings (or ""),
 ;;                               KIND the what's kind (org-what-face)
@@ -312,10 +322,13 @@
          [heights (lambda (level) (string-append "org.height" (number->string level)))])
     (draw-begin!)
     (set! *org-agenda-today-line* #f)
+    (set! *org-agenda-day-lines* '())
     (for-each
      (lambda (r)
        (when (and (eq? (car r) 'header) (eq? (caddr r) 'today))
          (set! *org-agenda-today-line* (length *draw-lines*)))
+       (when (and (eq? (car r) 'header) (pair? (cdddr r)))
+         (set! *org-agenda-day-lines* (cons (cons (cadddr r) (length *draw-lines*)) *org-agenda-day-lines*)))
        (case (car r)
          [(title)
           (draw-line! (list (list " " #f) (list (cadr r) (list "org.agenda.title" (heights 1)))) #f)
@@ -564,19 +577,129 @@
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
+(define (org-agenda-entry-line? line)
+  "Whether agenda line `line` is an entry's."
+  (let ([items (buffer-local 'line-items)])
+    (and items (< line (vector-length items))
+         (let ([item (vector-ref items line)]) (and (pair? item) (eq? (car item) 'org))))))
+
+(define (org-agenda-next-entry! step count)
+  "Moves the cursor `count` entries down (`step` 1) or up (-1), skipping
+   headers, rules and the grid."
+  (let loop ([line (current-line)] [left (max 1 count)])
+    (let find ([l (+ line step)])
+      (cond [(or (< l 0) (> l (last-line))) (set-cursor! (line-start line))]
+            [(org-agenda-entry-line? l)
+             (if (= left 1) (set-cursor! (line-start l)) (loop l (- left 1)))]
+            [else (find (+ l step))]))))
+
+(define (org-agenda-go-to-date! date)
+  "Shows the span that has `date`, the cursor on its day."
+  (set! *org-agenda-start* (org-agenda-span-start date))
+  (org-render-agenda!)
+  (let ([line (assoc date *org-agenda-day-lines*)])
+    (set-cursor! (line-start (if line (cdr line) 0)))))
+
+(define (org-agenda-other-window!)
+  "Goes to a window other than the agenda's, splitting one off if there
+   is none, and returns the agenda's window."
+  (let* ([agenda (current-window)]
+         [other (list-find (lambda (w) (not (= w agenda))) (window-list))])
+    (leave-pending-states!)
+    (if other
+        (go-to-window! other)
+        (begin (split-window! (if (>= (window-text-width) 140) "right" "below"))
+               (after-window-change!)))
+    agenda))
+
+(define (org-agenda-open-entry! item)
+  "Opens the file of agenda `item` (org file line) in the current window,
+   on its heading, remembering the buffer if the agenda opened it."
+  (let* ([path (cadr item)] [was (buffer-for-path (absolute-path path))] [id (open-file! path)])
+    (when id
+      (unless (or was (memv id *org-agenda-opened*))
+        (set! *org-agenda-opened* (cons id *org-agenda-opened*)))
+      (set-cursor! (line-start (min (caddr item) (last-line)))))))
+
+(define (org-agenda-show!)
+  "Shows the entry at the cursor in another window, keeping the cursor
+   in the agenda."
+  (let ([item (line-item)])
+    (when (and item (eq? (car item) 'org))
+      (let ([agenda (org-agenda-other-window!)])
+        (org-agenda-open-entry! item)
+        (go-to-window! agenda)))))
+
+(define (org-agenda-follow!)
+  "After a command in the agenda with follow mode on: shows the entry
+   the cursor moved to."
+  (when (and *org-agenda-follow* (eq? (major-mode) 'org-agenda-mode)
+             (not (eqv? (current-line) *org-agenda-followed*)))
+    (set! *org-agenda-followed* (current-line))
+    (when (org-agenda-entry-line? (current-line)) (org-agenda-show!))))
+
+(add-hook! 'post-command org-agenda-follow!)
+
+(define (org-agenda-redraw-all!)
+  "Reads the files again and redraws every agenda buffer."
+  (for-each (lambda (id)
+              (with-buffer id (lambda () (when (eq? (major-mode) 'org-agenda-mode) (org-render-agenda!)))))
+            (buffer-list)))
+
+(define (org-agenda-quit! close-opened?)
+  "Leaves the agenda; with `close-opened?` also closes the file buffers
+   it opened, except ones with unsaved changes."
+  (let ([opened *org-agenda-opened*])
+    (set! *org-agenda-follow* #f)
+    (run-command 'quit-window)
+    (when close-opened?
+      (for-each (lambda (id) (when (and (memv id (buffer-list)) (not (buffer-modified-by-id? id)))
+                               (buffer-kill! id)))
+                opened)
+      (set! *org-agenda-opened* '())))
+  void)
+
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
     (when (and item (eq? (car item) 'org))
-      (when (open-file! (cadr item))
-        (set-cursor! (line-start (min (caddr item) (last-line))))))))
+      (org-agenda-open-entry! item))))
 
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
-(define-mode-key! 'org-agenda-mode 'normal "<ret>" (lambda (n) (org-agenda-visit!)))
-(define-mode-key! 'org-agenda-mode 'normal "gr" (lambda (n) (org-render-agenda!)) "refresh")
-(define-mode-key! 'org-agenda-mode 'normal "f" (lambda (n) (org-agenda-move! (* (max 1 n) (max 1 (option 'org-agenda-span))))) "later")
-(define-mode-key! 'org-agenda-mode 'normal "b" (lambda (n) (org-agenda-move! (- (* (max 1 n) (max 1 (option 'org-agenda-span)))))) "earlier")
-(define-mode-key! 'org-agenda-mode 'normal "." (lambda (n) (org-agenda-move! #f)) "this week")
+(define (org-agenda-key! key proc label)
+  "Binds `key` in the agenda, in normal state, labelled `label`."
+  (define-mode-key! 'org-agenda-mode 'normal key proc label))
+
+(define (org-agenda-span-days n)
+  "How far `n` spans go, in days."
+  (* (max 1 n) (max 1 (option 'org-agenda-span))))
+
+(org-agenda-key! "<ret>" (lambda (n) (org-agenda-visit!)) "go to entry")
+(org-agenda-key! "<tab>" (lambda (n) (org-agenda-show!)) "show entry")
+(org-agenda-key! "gr" (lambda (n) (org-render-agenda!)) "refresh")
+(org-agenda-key! "gR" (lambda (n) (org-agenda-redraw-all!)) "refresh all")
+(org-agenda-key! "f" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
+(org-agenda-key! "b" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
+(org-agenda-key! "]]" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
+(org-agenda-key! "[[" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
+(org-agenda-key! "." (lambda (n) (org-agenda-move! #f)) "today")
+(org-agenda-key! "gd" (lambda (n) (read-date "Go to date: " #f (lambda (d) (org-agenda-go-to-date! (take d 3)))))
+                 "go to date")
+(org-agenda-key! "gj" (lambda (n) (org-agenda-next-entry! 1 n)) "next entry")
+(org-agenda-key! "gk" (lambda (n) (org-agenda-next-entry! -1 n)) "previous entry")
+(org-agenda-key! "C-j" (lambda (n) (org-agenda-next-entry! 1 n)) "next entry")
+(org-agenda-key! "C-k" (lambda (n) (org-agenda-next-entry! -1 n)) "previous entry")
+(org-agenda-key! "gH" (lambda (n) (set-cursor! (line-start (window-top)))) "window top")
+(org-agenda-key! "gM" (lambda (n) (set-cursor! (line-start (+ (window-top) (quotient (- (window-bottom) (window-top)) 2)))))
+                 "window middle")
+(org-agenda-key! "gL" (lambda (n) (set-cursor! (line-start (window-bottom)))) "window bottom")
+(org-agenda-key! "F" (lambda (n)
+                       (set! *org-agenda-follow* (not *org-agenda-follow*))
+                       (set! *org-agenda-followed* #f)
+                       (message (if *org-agenda-follow* "follow mode on" "follow mode off")))
+                 "follow mode")
+(org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
+(org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 
 (define-command! 'org-agenda
   (lambda (count)

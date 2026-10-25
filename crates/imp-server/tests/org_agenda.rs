@@ -669,3 +669,101 @@ fn the_cursor_starts_on_today() {
     type_keys(&mut s, ".");
     assert_eq!(s.eval("(current-line)").unwrap(), today.to_string());
 }
+
+const MOVES: &str = "* TODO First\nSCHEDULED: <2026-10-19 Mon>\n* TODO Second\nSCHEDULED: <2026-10-21 Wed>\n* TODO Third\nDEADLINE: <2026-10-23 Fri>\n* TODO Far\nSCHEDULED: <2026-11-12 Thu>\n";
+
+fn line_text(s: &mut imp_server::Server) -> String {
+    let n: usize = s.eval("(current-line)").unwrap().parse().unwrap();
+    lines(s)[n].clone()
+}
+
+#[test]
+fn gj_and_gk_move_between_entries() {
+    let mut s = agenda("agenda-gj", MOVES);
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    // From today's header, past the rule and the next day's header.
+    type_keys(&mut s, "gj");
+    assert!(
+        line_text(&mut s).contains("Second"),
+        "{}",
+        line_text(&mut s)
+    );
+    type_keys(&mut s, "gj");
+    assert!(line_text(&mut s).contains("Third"));
+    type_keys(&mut s, "<C-k><C-k>");
+    assert!(line_text(&mut s).contains("First"));
+    type_keys(&mut s, "2gj");
+    assert!(line_text(&mut s).contains("Third"));
+    // ]] and [[ move by the span.
+    type_keys(&mut s, "]]");
+    assert_eq!(lines(&s)[1], " Week 44 · 25–31 Oct 2026");
+    type_keys(&mut s, "[[[[");
+    assert_eq!(lines(&s)[1], " Week 42 · 11–17 Oct 2026");
+}
+
+#[test]
+fn gd_goes_to_a_date() {
+    let mut s = agenda("agenda-gd", MOVES);
+    type_keys(&mut s, "gd11-12<ret>");
+    assert_eq!(lines(&s)[1], " Week 46 · 8–14 Nov 2026");
+    assert_eq!(line_text(&mut s), "  Thursday 12 November");
+}
+
+#[test]
+fn tab_shows_the_entry_in_another_window() {
+    let dir = org_dir("agenda-tab", &[("a.org", MOVES)]);
+    let mut s = agenda_server(&dir);
+    s.set_size(100, 40);
+    s.eval(TODAY).unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>gj");
+    type_keys(&mut s, "<tab>");
+    // The cursor stays in the agenda; the other window has the file, on
+    // the entry's heading.
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    let windows = s.eval("(length (window-list))").unwrap();
+    assert_eq!(windows, "2");
+    let other = s
+        .eval("(with-buffer (window-buffer (list-find (lambda (w) (not (= w (current-window)))) (window-list))) (lambda () (list (buffer-name) (current-line))))")
+        .unwrap();
+    assert!(other.contains("a.org") && other.ends_with(" 2)"), "{other}");
+    // Follow mode shows each entry the cursor moves to.
+    type_keys(&mut s, "Fgj");
+    let other = s
+        .eval("(with-buffer (window-buffer (list-find (lambda (w) (not (= w (current-window)))) (window-list))) current-line)")
+        .unwrap();
+    assert_eq!(other, "4");
+    // ZQ closes the agenda and the file it opened.
+    type_keys(&mut s, "ZQ");
+    let names = s.eval("(map buffer-name-of (buffer-list))").unwrap();
+    assert!(
+        !names.contains("a.org") && !names.contains("agenda*\" "),
+        "{names}"
+    );
+}
+
+#[test]
+fn zq_keeps_files_that_were_open_already() {
+    let dir = org_dir("agenda-zq", &[("a.org", MOVES)]);
+    let mut s = agenda_server(&dir);
+    s.eval(TODAY).unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("a.org").display()));
+    type_keys(&mut s, ":OrgAgenda<ret>gj<ret>:OrgAgenda<ret>ZQ");
+    let names = s.eval("(map buffer-name-of (buffer-list))").unwrap();
+    assert!(names.contains("a.org"), "{names}");
+}
+
+#[test]
+fn gh_gm_gl_go_to_the_window_s_top_middle_and_bottom() {
+    let mut s = agenda("agenda-hml", MOVES);
+    let line = |s: &mut imp_server::Server, keys: &str| -> usize {
+        type_keys(s, keys);
+        s.eval("(current-line)").unwrap().parse().unwrap()
+    };
+    let top = line(&mut s, "gH");
+    let middle = line(&mut s, "gM");
+    let bottom = line(&mut s, "gL");
+    assert_eq!(top, 0);
+    assert!(top < middle && middle < bottom, "{top} {middle} {bottom}");
+}
