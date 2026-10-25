@@ -59,7 +59,7 @@ Set your own with a Vim-style format string:
 | `%l` / `%c` | The line and column |
 | `%L` | How many lines the file has |
 | `%p` | How far through the file you are |
-| `%{name}` | A named value, such as `%{major}` for the major mode |
+| `%{name}` | A named value, such as `%{major}` for the major mode or `%{org-clock}` for Org's running clock |
 | `%#face#` | Draw what follows in that face; `%*` goes back |
 | `%=` | What follows goes on the right |
 

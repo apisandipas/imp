@@ -1232,6 +1232,182 @@
       [else (org-set-closed! heading #f)])
     void))
 
+;;; Clocking: C-c C-x C-i (SPC m c i) clocks in on the heading, C-c C-x
+;;; C-o (SPC m c o) clocks out, C-c C-x C-q (SPC m c c) cancels the
+;;; clock, C-c C-x C-j (SPC m c g) goes to its heading. One clock runs at
+;;; a time: an open CLOCK: line at the top of its heading's :LOGBOOK:.
+;;; The clock remembers its file and finds the open line there again, so
+;;; edits above it don't lose it; one left running in an agenda file is
+;;; picked up shortly after imp starts. %{org-clock} in the status line
+;;; shows it, as [0:23/1:00] Write report, the heading's effort after /.
+
+;; The running clock, as (path title start effort), or #f.
+(define *org-clock* #f)
+;; The timer that redraws %{org-clock} each minute, or #f.
+(define *org-clock-timer* #f)
+
+(define (org-stamp-minutes stamp)
+  "The minutes from day 0 inactive timestamp text `stamp` is at, as for
+   \"[2026-10-25 Sun 11:42]\", or #f without a date and time."
+  (let* ([n (string-length stamp)]
+         [date (and (>= n 12) (string->date (substring stamp 1 11)))]
+         [time (and date (>= n 18) (substring stamp (- n 6) (- n 1)))])
+    (and time (equal? (string-ref time 2) #\:)
+         (let ([h (string->number (substring time 0 2))] [m (string->number (substring time 3 5))])
+           (and h m (+ (* 1440 (date->days date)) (* 60 h) m))))))
+
+(define (org-duration minutes)
+  "`minutes` as Org writes a duration: 75 as \"1:15\"."
+  (string-append (number->string (quotient minutes 60)) ":" (two-digits (modulo minutes 60))))
+
+(define (org-clock-open-start text)
+  "The start stamp of line `text` when it is a running clock, \"CLOCK:
+   [2026-10-25 Sun 11:42]\" with no end, else #f."
+  (let ([t (trim text)])
+    (and (starts-with? t "CLOCK: [") (not (string-index-from t "]--[" 0))
+         (let ([close (string-index-from t "]" 0)])
+           (and close (substring t 7 (+ close 1)))))))
+
+(define (org-clock-line)
+  "The line of the current buffer's running clock, or #f."
+  (let loop ([l 0])
+    (cond [(> l (last-line)) #f]
+          [(org-clock-open-start (line-text l)) l]
+          [else (loop (+ l 1))])))
+
+(define (org-clock-buffer)
+  "The id of the buffer visiting the clock's file, opening it in the
+   background if none does, or #f after saying why."
+  (let ([path (car *org-clock*)])
+    (or (buffer-for-path path)
+        (let ([id (buffer-open! path)]) (if (string? id) (begin (message id) #f) id)))))
+
+(define (org-clock-elapsed)
+  "The minutes the running clock has run."
+  (max 0 (- (or (org-stamp-minutes (org-now-stamp)) 0) (or (org-stamp-minutes (caddr *org-clock*)) 0))))
+
+(define (org-clock-show!)
+  "Sets %{org-clock} in the status line to the running clock, or clears it."
+  (set-status-value! "org-clock"
+                     (if *org-clock*
+                         (let ([effort (cadddr *org-clock*)])
+                           (string-append "[" (org-duration (org-clock-elapsed))
+                                          (if effort (string-append "/" effort) "") "] " (cadr *org-clock*) "  "))
+                         "")
+                     #t))
+
+(define (org-clock-start! clock)
+  "Makes `clock`, a (path title start effort), the running one."
+  (set! *org-clock* clock)
+  (unless *org-clock-timer* (set! *org-clock-timer* (run-every! 60000 org-clock-show!)))
+  (org-clock-show!))
+
+(define (org-clock-stop!)
+  "Forgets the running clock."
+  (set! *org-clock* #f)
+  (when *org-clock-timer* (cancel-timer! *org-clock-timer*) (set! *org-clock-timer* #f))
+  (org-clock-show!))
+
+(define (org-clock-edit! proc)
+  "Runs (proc line) on the running clock's line in its file's buffer, as
+   one change, saving the buffer if it isn't the current one and had no
+   unsaved changes. Returns whether the line was found."
+  (let ([id (org-clock-buffer)])
+    (and id
+         (let ([clean? (not (buffer-modified-by-id? id))] [here? (= id (current-buffer))])
+           (let ([found (with-buffer id
+                                     (lambda ()
+                                       (let ([l (org-clock-line)])
+                                         (and l (with-undo-group (lambda () (begin-change!) (proc l) #t))))))])
+             (when (and found clean? (not here?)) (with-buffer id (lambda () (save-buffer!))))
+             found)))))
+
+(define (org-clock-in! heading)
+  "Clocks in on the heading on line `heading` of the current buffer,
+   clocking out the running clock first."
+  (cond
+    [(not (buffer-path)) (message "the buffer has no file")]
+    [else
+     (when *org-clock* (org-clock-out!))
+     (let ([stamp (org-now-stamp)]
+           [title (org-heading-title (line-text heading))]
+           [effort (org-entry-property heading "Effort")])
+       (with-undo-group
+        (lambda () (begin-change!) (org-logbook-insert! heading (string-append "CLOCK: " stamp))))
+       (org-clock-start! (list (absolute-path (buffer-path)) title stamp effort))
+       (message (string-append "clocked in: " title)))]))
+
+(define (org-clock-out!)
+  "Clocks out: ends the running clock's line with now and its length."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (let* ([now (org-now-stamp)]
+             [took (org-duration (org-clock-elapsed))]
+             [title (cadr *org-clock*)])
+        (org-clock-edit!
+         (lambda (l)
+           (let* ([text (line-text l)]
+                  [indent (substring text 0 (- (string-length text) (string-length (trim-start text))))])
+             (org-set-line! l (string-append indent "CLOCK: " (org-clock-open-start text) "--" now " => "
+                                             (make-string (max 0 (- 5 (string-length took))) #\space) took)))))
+        (org-clock-stop!)
+        (message (string-append "clocked out: " title " (" took ")")))))
+
+(define (org-clock-cancel!)
+  "Cancels the running clock, removing its line, and its :LOGBOOK: when
+   that leaves it empty."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (begin
+        (org-clock-edit!
+         (lambda (l)
+           (let ([empty? (and (> l 0) (< l (last-line))
+                              (equal? (string-upcase (trim (line-text (- l 1)))) ":LOGBOOK:")
+                              (equal? (string-upcase (trim (line-text (+ l 1)))) ":END:"))])
+             (if empty?
+                 (replace-range! (line-end (- l 2)) (line-end (+ l 1)) "")
+                 (replace-range! (line-end (- l 1)) (line-end l) "")))))
+        (org-clock-stop!)
+        (message "clock canceled"))))
+
+(define (org-clock-goto!)
+  "Goes to the running clock's heading, opening its file."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (let ([id (org-clock-buffer)])
+        (when id
+          (switch-to-buffer! id)
+          (let ([l (org-clock-line)])
+            (if l
+                (begin (set-cursor! (line-start (or (org-heading-line l) l)))
+                       (message (string-append "clocked: " (cadr *org-clock*))))
+                (message "the clock's line is gone")))))))
+
+(define (org-clock-resume!)
+  "Picks up a clock left running in an agenda file: the first open
+   CLOCK: line found."
+  (unless *org-clock*
+    (let loop ([files (org-agenda-file-list)])
+      (when (pair? files)
+        (let* ([file (car files)]
+               [lines (if (file-exists? file) (list->vector (split-many (org-file-text file) "\n")) (vector))]
+               [at (let find ([i 0])
+                     (cond [(>= i (vector-length lines)) #f]
+                           [(org-clock-open-start (vector-ref lines i)) i]
+                           [else (find (+ i 1))]))]
+               [h (and at (org-heading-above lines at))])
+          (if h
+              (org-clock-start! (list (absolute-path file) (org-heading-title (vector-ref lines h))
+                                      (org-clock-open-start (vector-ref lines at))
+                                      (org-lines-property lines h "Effort" #f)))
+              (loop (cdr files))))))))
+
+(add-hook! 'startup (lambda () (run-after! 1000 org-clock-resume!)))
+
+(define (org-clock-at-heading proc)
+  "Runs (proc heading) on the heading the cursor is under, or says it isn't."
+  (let ([h (org-heading-line (current-line))]) (if h (proc h) (message "not under a heading"))))
+
 (define (org-restamp old new)
   "Timestamp `new` with the repeater and warning of timestamp `old`, so
    picking a new date keeps them."
@@ -1967,6 +2143,10 @@
 (org-key! '(normal insert) "C-cC-xC-a" (lambda args (org-archive-prompt!)))
 (org-key! '(normal insert) "C-cC-w" (lambda args (org-refile-prompt! (lambda (moved?) void))))
 (org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
+(org-key! '(normal insert) "C-cC-xC-i" (lambda args (org-clock-at-heading org-clock-in!)))
+(org-key! '(normal insert) "C-cC-xC-o" (lambda args (org-clock-out!)))
+(org-key! '(normal insert) "C-cC-xC-q" (lambda args (org-clock-cancel!)))
+(org-key! '(normal insert) "C-cC-xC-j" (lambda args (org-clock-goto!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1981,6 +2161,10 @@
 (define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
 (define-mode-leader-group! 'org-mode "c" "clock")
 (define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
+(define-mode-leader! 'org-mode "ci" (lambda (n) (org-clock-at-heading org-clock-in!)) "clock in")
+(define-mode-leader! 'org-mode "co" (lambda (n) (org-clock-out!)) "clock out")
+(define-mode-leader! 'org-mode "cc" (lambda (n) (org-clock-cancel!)) "cancel clock")
+(define-mode-leader! 'org-mode "cg" (lambda (n) (org-clock-goto!)) "go to clock")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 

@@ -140,6 +140,28 @@ SCHEDULED: <2026-11-27 Fri +1w>
 
 Set `org-log-done` or `org-log-repeat` to `#f` to stop either.
 
+## Clocking
+
+Clock in on a heading to keep track of the time you spend on it.
+
+| Key | What it does |
+|---|---|
+| `C-c C-x C-i` or `SPC m c i` | Clock in on the heading the cursor is under |
+| `C-c C-x C-o` or `SPC m c o` | Clock out |
+| `C-c C-x C-q` or `SPC m c c` | Cancel the clock, as if you never clocked in |
+| `C-c C-x C-j` or `SPC m c g` | Go to the heading you're clocked in on |
+
+Clocking in adds a line to the heading's `:LOGBOOK:` drawer, and clocking out ends it with the time it ran:
+
+```org
+* TODO Write the report
+:LOGBOOK:
+CLOCK: [2026-10-25 Sun 11:42]--[2026-10-25 Sun 12:57] =>  1:15
+:END:
+```
+
+One clock runs at a time: clocking in on another heading clocks out of the first. While it runs, the status line shows how long it has run, the heading's effort if it has one, and its title, as `[0:23/1:00] Write the report`. If you quit with a clock running, imp picks it up again the next time it starts, as long as the file is one of your agenda files.
+
 ## Tags and effort
 
 Press `C-c C-q` or `SPC m q` to tag the heading the cursor is under. Pick a tag from the ones your Org files use, or type a new one, and press `<ret>`. A tag the heading has already is taken off instead. It asks again, so you can change several; press `<esc>` when you're done. Tags the heading has are marked `on`.

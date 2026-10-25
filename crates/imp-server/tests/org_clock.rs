@@ -89,3 +89,76 @@ fn a_repeat_logs_last_repeat_and_its_state_change() {
     assert!(!s.text().contains("12:00"));
 }
 
+#[test]
+fn clocking_in_and_out_writes_the_logbook() {
+    let mut s = org(
+        "clock.org",
+        "* TODO Write report\n:PROPERTIES:\n:Effort: 1:00\n:END:\nbody\n* Other\n",
+    );
+    type_keys(&mut s, "j<C-c><C-x><C-i>");
+    assert_eq!(
+        s.text(),
+        "* TODO Write report\n:PROPERTIES:\n:Effort: 1:00\n:END:\n:LOGBOOK:\n\
+         CLOCK: [2026-10-25 Sun 11:42]\n:END:\nbody\n* Other\n"
+    );
+    pin(&mut s, "12:05");
+    s.eval("(org-clock-show!)").unwrap();
+    assert!(status_row(&mut s).contains("[0:23/1:00] Write report"));
+    pin(&mut s, "12:57");
+    type_keys(&mut s, "<C-c><C-x><C-o>");
+    assert!(s.text().contains(
+        ":LOGBOOK:\nCLOCK: [2026-10-25 Sun 11:42]--[2026-10-25 Sun 12:57] =>  1:15\n:END:"
+    ));
+    assert!(!status_row(&mut s).contains("Write report"));
+}
+
+#[test]
+fn one_clock_runs_at_a_time() {
+    let mut s = org("clocks.org", "* A\n* B\n");
+    type_keys(&mut s, " mci");
+    pin(&mut s, "12:00");
+    type_keys(&mut s, "G mci");
+    assert_eq!(
+        s.text(),
+        "* A\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 11:42]--[2026-10-25 Sun 12:00] =>  0:18\n:END:\n\
+         * B\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 12:00]\n:END:\n"
+    );
+    // Going to it, then cancelling it, which takes its empty drawer too.
+    type_keys(&mut s, "gg mcg");
+    assert_eq!(s.eval("(current-line)").unwrap(), "4");
+    type_keys(&mut s, " mcc");
+    assert_eq!(
+        s.text(),
+        "* A\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 11:42]--[2026-10-25 Sun 12:00] =>  0:18\n:END:\n* B\n"
+    );
+    type_keys(&mut s, " mco");
+    let rows = s.frame().text_rows();
+    assert!(rows[rows.len() - 1].contains("no clock is running"));
+}
+
+#[test]
+fn a_running_clock_is_picked_up() {
+    let dir = temp_path("clock-resume");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("work.org"),
+        "* Done one\n:LOGBOOK:\nCLOCK: [2026-10-24 Sat 09:00]--[2026-10-24 Sat 10:00] =>  1:00\n:END:\n\
+         * Still going\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 11:00]\n:END:\n",
+    )
+    .unwrap();
+    let mut s = common::server("");
+    pin(&mut s, "11:42");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    s.eval("(org-clock-resume!)").unwrap();
+    assert!(status_row(&mut s).contains("[0:42] Still going"));
+    type_keys(&mut s, ":e x.txt<ret>");
+    s.eval("(org-clock-out!)").unwrap();
+    // Its file was clean, so clocking out from elsewhere saves it.
+    let text = std::fs::read_to_string(dir.join("work.org")).unwrap();
+    assert!(text.contains("CLOCK: [2026-10-25 Sun 11:00]--[2026-10-25 Sun 11:42] =>  0:42"));
+}
