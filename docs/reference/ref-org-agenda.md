@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: filters, bulk actions and clocking. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: filters and bulk actions. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -100,9 +100,22 @@ Press `gD` to change how much the agenda shows:
 | `t` | Its fortnight |
 | `m` | Its month, from the 1st |
 | `y` | Its year, from 1 January |
+| `l` | Turn log mode on or off: what you did each day |
 | `g` | Turn the time grid on or off |
 
 `f` and `b` then move by that much: a month at a time in a month's view. The agenda is back to a week the next time you open it.
+
+## Log mode
+
+Press `gD l` to see what you did on each day, alongside what's planned. Each line is at its time:
+
+| Line | What it shows |
+|---|---|
+| `Closed` | A task marked done, from its `CLOSED:` note |
+| `State` | A repeating task done, as `DONE from TODO` |
+| `Clocked` | Time clocked on a task, with how long, as `(1:15)` |
+
+Done tasks show too. Press `gD l` again to turn it off; it's off again the next time you open the agenda.
 
 ## Times and appointments
 

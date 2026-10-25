@@ -245,3 +245,70 @@ fn the_agenda_clocks_in_and_out() {
     let rows = s.frame().text_rows();
     assert!(rows[rows.len() - 1].contains("no clock is running"));
 }
+
+/// Whether some line of `lines` holds each of `parts`, in order.
+fn has_line(lines: &[String], parts: &[&str]) -> bool {
+    lines.iter().any(|l| {
+        let mut from = 0;
+        parts
+            .iter()
+            .all(|p| l[from..].find(p).map(|i| from += i + p.len()).is_some())
+    })
+}
+
+const LOGGED: &str = "* DONE Write report\n\
+CLOSED: [2026-10-23 Fri 16:00] SCHEDULED: <2026-10-22 Thu>\n\
+:LOGBOOK:\n\
+CLOCK: [2026-10-23 Fri 09:00]--[2026-10-23 Fri 10:15] =>  1:15\n\
+:END:\n\
+* TODO Water\n\
+SCHEDULED: <2026-10-27 Tue +1w>\n\
+:PROPERTIES:\n\
+:LAST_REPEAT: [2026-10-20 Tue 08:30]\n\
+:END:\n\
+:LOGBOOK:\n\
+- State \"DONE\"       from \"TODO\"       [2026-10-20 Tue 08:30]\n\
+CLOCK: [2026-10-24 Sat 10:00]\n\
+:END:\n";
+
+#[test]
+fn log_mode_shows_what_happened_each_day() {
+    let (mut s, _dir) = agenda("agenda-log", &[("a.org", LOGGED)]);
+    assert!(!lines(&s).iter().any(|l| l.contains("Clocked")));
+    // The week before, which the log is of.
+    type_keys(&mut s, "gDlb");
+    let ls = lines(&s);
+    let day = |name: &str| {
+        ls.iter()
+            .position(|l| l.contains(name))
+            .unwrap_or_else(|| panic!("no {name} in {ls:#?}"))
+    };
+    let (tue, wed, fri, sat) = (
+        day("Tuesday 20"),
+        day("Wednesday 21"),
+        day("Friday 23"),
+        day("Saturday 24"),
+    );
+    let tuesday = &ls[tue..wed];
+    assert!(
+        has_line(tuesday, &["08:30", "State", "DONE", "from TODO", "Water"]),
+        "{ls:#?}"
+    );
+    let friday = &ls[fri..sat];
+    // At their times: the clock first, then closing it, done though it is.
+    let clocked = friday.iter().position(|l| l.contains("Clocked")).unwrap();
+    let closed = friday.iter().position(|l| l.contains("Closed")).unwrap();
+    assert!(clocked < closed, "{ls:#?}");
+    assert!(has_line(
+        friday,
+        &["09:00", "Clocked", "DONE", "(1:15)", "Write report"]
+    ));
+    assert!(has_line(
+        friday,
+        &["16:00", "Closed", "DONE", "Write report"]
+    ));
+    // A clock still running isn't logged yet.
+    assert!(!ls[sat..].iter().any(|l| l.contains("Clocked")), "{ls:#?}");
+    type_keys(&mut s, "gDl");
+    assert!(!lines(&s).iter().any(|l| l.contains("Clocked")));
+}

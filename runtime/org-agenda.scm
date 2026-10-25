@@ -37,6 +37,10 @@
 ;; org-agenda-span days; and whether it turned the grid on or off
 ;; ('default for org-agenda-use-time-grid).
 (define *org-agenda-span* #f)
+;; Whether the dated view shows log mode's lines and the clock report,
+;; as gD's l and R set them until the agenda is opened again.
+(define *org-agenda-log* #f)
+(define *org-agenda-report* #f)
 (define *org-agenda-grid* 'default)
 ;; The line today's header was drawn on, or #f, and each day's header's,
 ;; as (day . line).
@@ -313,6 +317,9 @@
 ;;                               the occurrence shown (or #f), GRAPH a
 ;;                               habit's graph (org-habit-graph). The
 ;;                               line's item is (org file line kind date).
+;;                               A log mode line adds LOG, (KEYWORD
+;;                               NOTE): the keyword shown instead of E's,
+;;                               and a dim note before the title.
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
@@ -324,7 +331,7 @@
          [col (lambda (w) (if (> w 0) (+ w 2) 0))]
          [time-w (widest caddr 17)]
          [what-w (widest cadddr 10)]
-         [kw-w (widest (lambda (r) (or (caddr (cadr r)) "")) 12)]
+         [kw-w (widest (lambda (r) (or (org-row-keyword r) "")) 12)]
          [tags? (>= width 60)]
          [tags-w (if tags? (widest (lambda (r) (org-agenda-tags-text (cadr r))) 30) 0)]
          [cat-w (widest (lambda (r) (list-ref (cadr r) 7)) 14)]
@@ -359,20 +366,22 @@
             (draw-line! (list (list "  " #f) (list (rule (string-length text)) (list "org.agenda.rule" (heights 2)))) #f))]
          [(entry)
           (let* ([e (cadr r)] [time (caddr r)] [what (cadddr r)] [kind (list-ref r 4)]
-                 [kw (caddr e)]
+                 [kw (org-row-keyword r)]
+                 [note (if (> (length r) 7) (cadr (list-ref r 7)) "")]
                  [title (org-agenda-title-text e)]
                  [prio (and (>= (string-length title) 5) (starts-with? title "[#")
                             (equal? (substring title 3 5) "] ") (substring title 0 4))]
                  ;; A habit's graph goes after its title, when there's room.
                  [graph (and (> (length r) 6) (list-ref r 6))]
                  [graph (and graph (>= title-w (+ (length graph) 11)) graph)]
-                 [fitted (org-fit title (if graph (- title-w (length graph) 1) title-w))]
+                 [fitted (org-fit title (max 1 (- (if graph (- title-w (length graph) 1) title-w) (string-length note))))]
                  [cell (lambda (text w face) (if (> w 0) (list (list (org-fit text w) face) (list "  " #f)) '()))])
             (draw-line!
              (append (list (list "    " #f))
                      (cell time time-w "org.agenda.time")
                      (cell what what-w (org-what-face kind))
-                     (cell (or kw "") kw-w (if (org-entry-done? e) "org.done" "org.todo"))
+                     (cell (or kw "") kw-w (if (and kw (member kw (org-done-keywords))) "org.done" "org.todo"))
+                     (if (equal? note "") '() (list (list note "org.agenda.span")))
                      (if (and prio (> title-w 5))
                          (list (list prio "org.priority")
                                (list (substring fitted 4 (string-length fitted)) #f))
@@ -888,7 +897,8 @@
             (org-with-grid
              (append
               (by-time
-              (apply append
+              (append
+               (apply append
                      (map (lambda (x)
                             (let ([o (car x)])
                               (if (habit? x)
@@ -896,7 +906,8 @@
                                   (map (lambda (d) (list 'entry (org-diary-entry (cadr x) o (car d)) (if (cadr d) "" (time-of (car o)))
                                                          (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
                                        (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day))))))
-                          occs)))
+                          occs))
+               (if *org-agenda-log* (org-agenda-log-rows entries day) '())))
               (if (equal? day today) upcoming '()))
              (equal? day today)))]
          [later
@@ -1196,6 +1207,7 @@
                (list "t" "fortnight" (lambda () (org-agenda-view-span! 'fortnight)))
                (list "m" "month" (lambda () (org-agenda-view-span! 'month)))
                (list "y" "year" (lambda () (org-agenda-view-span! 'year)))
+               (list "l" "log mode" (lambda () (org-agenda-toggle-log!)))
                (list "g" "time grid" (lambda ()
                                        (set! *org-agenda-grid* (not (org-agenda-grid?)))
                                        (org-render-agenda!)
@@ -1215,6 +1227,8 @@
   (set! *org-agenda-start* #f)
   (set! *org-agenda-span* #f)
   (set! *org-agenda-grid* 'default)
+  (set! *org-agenda-log* #f)
+  (set! *org-agenda-report* #f)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
@@ -1628,6 +1642,74 @@
       (org-agenda-open-entry! item))))
 
 ;; Clocking, log mode and the clock report
+
+(define (org-row-keyword r)
+  "The keyword entry row `r` shows: a log line's own, else its entry's."
+  (if (> (length r) 7) (car (list-ref r 7)) (caddr (cadr r))))
+
+(define (org-entry-body e)
+  "The lines of agenda entry `e`'s text, up to the next heading."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)])
+    (let loop ([l (+ (cadr e) 1)] [acc '()])
+      (if (or (>= l n) (org-level-of (vector-ref lines l)))
+          (reverse acc)
+          (loop (+ l 1) (cons (vector-ref lines l) acc))))))
+
+(define (org-log-stamp text from)
+  "The (date time) of the timestamp at or after index `from` of `text`,
+   or #f."
+  (let ([b (and from (org-stamp-bounds-anywhere text from))])
+    (and b (let ([st (org-parse-stamp (substring text (car b) (cadr b)))])
+             (and st (list (cadr st) (caddr st)))))))
+
+(define (org-quoted text from)
+  "The text between the first two double quotes at or after index
+   `from` of `text`, and the index after them, or #f."
+  (let* ([open (string-index-from text "\"" from)]
+         [close (and open (string-index-from text "\"" (+ open 1)))])
+    (and close (list (substring text (+ open 1) close) (+ close 1)))))
+
+(define (org-entry-log e)
+  "What agenda entry `e`'s text logs, as (date time what keyword note):
+   its CLOSED: stamp, its state changes and its finished clocks."
+  (filter
+   (lambda (x) x)
+   (map (lambda (line)
+          (let ([t (trim line)])
+            (cond
+              [(and (org-planning-line? t) (string-index-from t "CLOSED:" 0))
+               => (lambda (at)
+                    (let ([st (org-log-stamp t (+ at 7))])
+                      (and st (list (car st) (cadr st) "Closed" (caddr e) ""))))]
+              [(starts-with? t "- State \"")
+               (let* ([new (org-quoted t 7)]
+                      [from (and new (string-index-from t "from" (cadr new)))]
+                      [old (and from (org-quoted t from))]
+                      [st (org-log-stamp t (if old (cadr old) 0))])
+                 (and new st (list (car st) (cadr st) "State" (car new)
+                                   (string-append "from " (if (and old (not (equal? (car old) ""))) (car old) "none") "  "))))]
+              [(and (starts-with? t "CLOCK: [") (string-index-from t "]--[" 0) (string-index-from t "=>" 0))
+               => (lambda (arrow)
+                    (let ([st (org-log-stamp t 7)])
+                      (and st (list (car st) (cadr st) "Clocked" (caddr e)
+                                    (string-append "(" (trim (substring t (+ arrow 2) (string-length t))) ")  ")))))]
+              [else #f])))
+        (org-entry-body e))))
+
+(define (org-agenda-log-rows entries day)
+  "Log mode's rows for `day`: what each of `entries` logs on it, done
+   entries included, each at its time."
+  (apply append
+         (map (lambda (e)
+                (map (lambda (x) (list 'entry e (or (cadr x) "") (caddr x) 'log #f #f (list (cadddr x) (list-ref x 4))))
+                     (filter (lambda (x) (equal? (car x) day)) (org-entry-log e))))
+              entries)))
+
+(define (org-agenda-toggle-log!)
+  "gD l: turns log mode on or off."
+  (set! *org-agenda-log* (not *org-agenda-log*))
+  (org-render-agenda!)
+  (message (if *org-agenda-log* "log mode on" "log mode off")))
 
 (define (org-agenda-clock-redraw!)
   "Redraws the agenda after a clock change, the cursor where it was."
