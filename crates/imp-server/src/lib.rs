@@ -127,6 +127,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "git-gutter",
         include_str!("../../../packages/git-gutter/git-gutter.scm"),
     ),
+    (
+        "org-export",
+        include_str!("../../../packages/org-export/org-export.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from
