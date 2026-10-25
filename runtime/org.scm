@@ -1883,6 +1883,7 @@
 (define-mode-leader! 'org-mode "q" (lambda (n) (org-tags-prompt!)) "set tags")
 (define-mode-leader! 'org-mode "A" (lambda (n) (org-archive-prompt!)) "archive")
 (define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
+(define-mode-leader-group! 'org-mode "c" "clock")
 (define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")

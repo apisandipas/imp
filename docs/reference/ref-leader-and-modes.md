@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: f86f363277a8
+  docs/specs/leader-and-modes.md: e3fcce9e04c2
 ---
 # Leader and modes
 
@@ -63,7 +63,7 @@ Add a leader key, and name a group so the popup shows it:
 (define-leader! "xr" 'recent-files "recent files")
 ```
 
-`define-mode-leader!` adds a key under `SPC m` for one major mode. `define-mode-key!` binds a key for one mode in one state:
+`define-mode-leader!` adds a key under `SPC m` for one major mode, and `define-mode-leader-group!` names a group of them, as `(define-mode-leader-group! 'org-mode "c" "clock")` shows `c → +clock`. `define-mode-key!` binds a key for one mode in one state:
 
 ```scheme
 (define-mode-key! 'lua-mode 'normal "K" 'describe-function "describe")

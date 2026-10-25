@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: day to year views, a dispatcher with TODO lists, tag matches and search, more ways to change tasks from the agenda, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: day to year views, a dispatcher with TODO lists, tag matches and search, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 

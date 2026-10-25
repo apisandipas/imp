@@ -892,6 +892,7 @@
                  "follow mode")
 (org-agenda-key! "t" (lambda (n) (org-agenda-act! org-todo-cycle!)) "cycle TODO")
 (define-mode-leader! 'org-agenda-mode "t" (lambda (n) (org-agenda-set-todo!)) "set TODO")
+(define-mode-leader-group! 'org-agenda-mode "d" "dates")
 (define-mode-leader! 'org-agenda-mode "ds" (lambda (n) (org-agenda-plan! "SCHEDULED:" "Schedule: ")) "schedule")
 (define-mode-leader! 'org-agenda-mode "dd" (lambda (n) (org-agenda-plan! "DEADLINE:" "Deadline: ")) "deadline")
 (org-agenda-key! "H" (lambda (n) (org-agenda-shift-date! (- (max 1 n)))) "date earlier")

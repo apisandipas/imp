@@ -1055,3 +1055,27 @@ fn c_captures_for_the_line_s_day() {
         file(&dir, "inbox.org")
     );
 }
+
+#[test]
+fn spc_m_names_the_agenda_s_groups() {
+    let (mut s, _) = agenda_files("agenda-wk-groups", &[("a.org", "* TODO X\n")]);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " m");
+    let shown = s.frame().text_rows().join("\n");
+    assert!(
+        shown.contains("d → +dates") && shown.contains("t → set TODO"),
+        "{shown}"
+    );
+    // An Org buffer's SPC m d is its own: the agenda's group name goes.
+    type_keys(&mut s, "<esc>");
+    let dir = temp_path("agenda-wk-groups");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret> m", dir.join("a.org").display()),
+    );
+    let shown = s.frame().text_rows().join("\n");
+    assert!(
+        shown.contains("d → deadline") && shown.contains("c → +clock"),
+        "{shown}"
+    );
+}
