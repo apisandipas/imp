@@ -441,6 +441,26 @@
    (list "org.priority" 'prose-tag #f "" #f)
    (list "org.code" 'fg-prose-code 'bg-prose-code "" #f)
    (list "org.link" 'fg-link 'bg-link "underline" #f)
+   ;; The agenda: org-agenda-structure (bold) and -structure-secondary,
+   ;; org-agenda-date, -date-weekend, -date-today (underlined),
+   ;; org-time-grid, org-agenda-current-time, org-scheduled-today,
+   ;; org-imminent-deadline (bold), org-upcoming-deadline, org-tag.
+   (list "org.agenda.title" 'fg-alt #f "bold" #f)
+   (list "org.agenda.span" 'docstring #f "" #f)
+   (list "org.agenda.rule" 'border #f "" #f)
+   (list "org.agenda.section" 'fg-alt #f "bold" #f)
+   (list "org.agenda.date" 'date-weekday #f "bold" #f)
+   (list "org.agenda.weekend" 'date-weekend #f "bold" #f)
+   (list "org.agenda.today" 'date-weekday #f "bold underline" #f)
+   (list "org.agenda.time" 'date-common #f "" #f)
+   (list "org.agenda.grid" 'fg-dim #f "" #f)
+   (list "org.agenda.now" 'date-now #f "" #f)
+   (list "org.agenda.scheduled" 'date-scheduled #f "" #f)
+   (list "org.agenda.deadline" 'date-deadline #f "bold" #f)
+   (list "org.agenda.overdue" 'date-deadline #f "" #f)
+   (list "org.agenda.upcoming" 'date-deadline-subtle #f "" #f)
+   (list "org.agenda.tag" 'prose-tag #f "" #f)
+   (list "org.agenda.category" 'fg-dim #f "" #f)
    ;; Git: magit-section-heading, -branch-local, -branch-remote, -hash,
    ;; -dimmed; the key lines on the mode line's background
    (list "git.section" 'fg-alt #f "bold" #f)

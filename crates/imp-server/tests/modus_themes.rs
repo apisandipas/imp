@@ -213,3 +213,26 @@ fn the_toggle_switches_between_the_two() {
         assert_eq!(s.status(), want);
     }
 }
+
+#[test]
+fn the_agenda_is_in_modus_s_agenda_colors() {
+    // Against Modus Vivendi's org-agenda-structure, -date, -date-weekend,
+    // -date-today, org-time-grid, org-scheduled-today,
+    // org-imminent-deadline and org-upcoming-deadline.
+    let mut s = modus("modus-vivendi");
+    for (face, want) in [
+        ("org.agenda.title", "fg=#c6daff bold"),
+        ("org.agenda.span", "fg=#9ac8e0"),
+        ("org.agenda.date", "fg=#00d3d0 bold"),
+        ("org.agenda.weekend", "fg=#feacd0 bold"),
+        ("org.agenda.today", "fg=#00d3d0 bold underline"),
+        ("org.agenda.grid", "fg=#989898"),
+        ("org.agenda.now", "fg=#ffffff"),
+        ("org.agenda.scheduled", "fg=#dfaf7a"),
+        ("org.agenda.deadline", "fg=#ff7f86 bold"),
+        ("org.agenda.upcoming", "fg=#ff9580"),
+        ("org.agenda.tag", "fg=#caa6df"),
+    ] {
+        assert_eq!(spec(&mut s, face), want, "{face}");
+    }
+}

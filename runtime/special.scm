@@ -286,14 +286,17 @@
   void)
 
 (define (draw-line! parts item)
-  "Adds a line made of (text face) parts, about `item`."
+  "Adds a line made of (text face) parts, about `item`. A part's face may
+   be a list of faces, drawn one over the other (a color and a height)."
   (let loop ([parts parts] [at *draw-at*] [text ""])
     (if (null? parts)
         (begin (set! *draw-lines* (cons text *draw-lines*))
                (set! *draw-items* (cons item *draw-items*))
                (set! *draw-at* (+ at 1)))
         (let* ([t (car (car parts))] [face (cadr (car parts))] [n (string-length t)])
-          (when (and face (> n 0)) (set! *draw-faces* (cons (list at (+ at n) face) *draw-faces*)))
+          (when (and face (> n 0))
+            (for-each (lambda (f) (when f (set! *draw-faces* (cons (list at (+ at n) f) *draw-faces*))))
+                      (if (list? face) face (list face))))
           (loop (cdr parts) (+ at n) (string-append text t)))))
   void)
 
