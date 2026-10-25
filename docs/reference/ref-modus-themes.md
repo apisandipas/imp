@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/modus-themes]]"
 frozen:
-  docs/specs/modus-themes.md: 211c2d3666b3
+  docs/specs/modus-themes.md: 0d74217f9610
 ---
 # Modus themes
 
