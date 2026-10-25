@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/57
+anchors: [packages/modus-themes/modus-themes.scm, crates/imp-server/tests/modus_themes.rs]
 summary: "The modus-themes package: Emacs's Modus Vivendi and Modus Operandi themes, highly legible (WCAG AAA), with their own color for each part of the text, their options, palette overrides and a toggle."
 ---
 # Modus themes

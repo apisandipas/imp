@@ -35,10 +35,10 @@ It has no key of its own. To put it on one:
 
 Both are off, as in Emacs. Turn them on in `init.scm`:
 
-| Option | Default | What it does |
-|---|---|---|
-| `modus-themes-bold-constructs` | `#f` | Keywords, builtins, types, labels and modules in bold |
-| `modus-themes-italic-constructs` | `#f` | Comments and docstrings in italic |
+```scheme
+(set-option! 'modus-themes-bold-constructs #t)   ; keywords, builtins, types, labels, modules
+(set-option! 'modus-themes-italic-constructs #t) ; comments and docstrings
+```
 
 ## Changing the colors
 

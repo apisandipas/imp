@@ -22,5 +22,5 @@ The four new syntax faces aren't defined by the other themes: a capture's face f
 - [x] Palette overrides (common and per theme, per theme winning), redrawing, an unknown name an error naming it, with tests
 - [x] `modus-themes-toggle`, with a test
 - [x] Screenshots of the same files in both themes, compared with Modus's published samples, and fixes
-- [ ] The reference page `ref-modus-themes.md` (docs-page skill) in the docs' groups, the Packages guide and `packages/CONTEXT.md` list it, the spec's anchors
+- [x] The reference page `ref-modus-themes.md` (docs-page skill) in the docs' groups, the Packages guide and `packages/CONTEXT.md` list it, the spec's anchors
 - [ ] The owner has looked at both themes
