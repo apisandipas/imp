@@ -96,7 +96,7 @@ kbd {
 .nav nav { margin-left: auto; }
 .nav-links { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; }
 .nav-links a { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; }
-.nav-links a:hover { color: var(--fg); }
+.nav-links a:hover, .nav-links a[aria-current] { color: var(--fg); }
 
 /* Buttons */
 .btn {
@@ -420,7 +420,8 @@ h3 { margin: 0 0 10px; font-size: 19px; letter-spacing: -0.01em; font-weight: 60
 }
 @media (max-width: 720px) {
   body { font-size: 16px; }
-  .nav-links li:not(:last-child) { display: none; }
+  /* The home page's own sections go; Docs and GitHub stay. */
+  .nav-links li:not(:last-child):not(.nav-docs) { display: none; }
   .nav-links { gap: 16px; }
   .nav .btn-small { display: none; }
   .demo-window {

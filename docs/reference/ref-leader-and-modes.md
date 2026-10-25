@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: 84debab29544
+  docs/specs/leader-and-modes.md: 6f6173563533
 ---
 # Leader and modes
 

@@ -389,7 +389,8 @@ fn the_main_keys_are_at_the_bottom_of_the_status_window() {
     let dir = repo("git-hints");
     let mut s = status(&dir);
     // A 120x24 screen, so the half-width status window fits the lines:
-    // its status line is row 22, its footer the two rows above.
+    // its status line is row 22, its footer the four rows above: a blank
+    // line, the two key lines, a blank line.
     s.handle(imp_core::ClientMsg::Resize {
         width: 120,
         height: 24,
@@ -397,15 +398,17 @@ fn the_main_keys_are_at_the_bottom_of_the_status_window() {
     let rows = s.frame().text_rows();
     let right = |r: &String| r.split('│').nth(1).unwrap_or("").trim_end().to_string();
     assert_eq!(
-        right(&rows[20]),
-        "s stage  u unstage  c commit  F pull  P push"
+        right(&rows[19]),
+        "     s stage  u unstage  c commit  F pull  l log"
     );
     assert_eq!(
-        right(&rows[21]),
-        "<tab> diff  x discard  b branch  l log  ? all keys"
+        right(&rows[20]),
+        " <tab> diff   x discard  b branch  P push  ? keys"
     );
+    assert_eq!(right(&rows[18]), "");
+    assert_eq!(right(&rows[21]), "");
     // git-status-hints off leaves them out.
     s.eval("(set-option! 'git-status-hints #f)").unwrap();
     type_keys(&mut s, "gr");
-    assert!(!s.frame().text_rows().iter().any(|r| r.contains("all keys")));
+    assert!(!s.frame().text_rows().iter().any(|r| r.contains("? keys")));
 }

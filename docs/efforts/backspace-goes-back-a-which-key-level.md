@@ -3,7 +3,7 @@ type: Effort
 status: done
 specs: ["[[spec/leader-and-modes]]"]
 frozen:
-  docs/specs/leader-and-modes.md: 84debab29544
+  docs/specs/leader-and-modes.md: 6f6173563533
 ---
 # Backspace goes back a which-key level
 
