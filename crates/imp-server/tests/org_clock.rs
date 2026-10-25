@@ -312,3 +312,58 @@ fn log_mode_shows_what_happened_each_day() {
     type_keys(&mut s, "gDl");
     assert!(!lines(&s).iter().any(|l| l.contains("Clocked")));
 }
+
+#[test]
+fn the_clock_report_sums_the_span_s_clocks() {
+    let (mut s, _dir) = agenda(
+        "agenda-report",
+        &[
+            (
+                "work.org",
+                "* Project\n\
+                 :LOGBOOK:\n\
+                 CLOCK: [2026-10-26 Mon 09:00]--[2026-10-26 Mon 09:30] =>  0:30\n\
+                 :END:\n\
+                 ** Draft\n\
+                 :LOGBOOK:\n\
+                 CLOCK: [2026-10-27 Tue 10:00]--[2026-10-27 Tue 11:15] =>  1:15\n\
+                 CLOCK: [2026-10-01 Thu 10:00]--[2026-10-01 Thu 12:00] =>  2:00\n\
+                 :END:\n\
+                 *** Deep\n\
+                 :LOGBOOK:\n\
+                 CLOCK: [2026-10-28 Wed 10:00]--[2026-10-28 Wed 10:10] =>  0:10\n\
+                 :END:\n\
+                 * Idle\n",
+            ),
+            (
+                "home.org",
+                "* Garden\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 08:00]--[2026-10-25 Sun 09:00] =>  1:00\n:END:\n",
+            ),
+        ],
+    );
+    assert!(!lines(&s).iter().any(|l| l.contains("Clock report")));
+    type_keys(&mut s, "gDR");
+    let ls = lines(&s);
+    let at = ls
+        .iter()
+        .position(|l| l.contains("Clock report"))
+        .unwrap_or_else(|| panic!("no report in {ls:#?}"));
+    let report = &ls[at..];
+    // Only this week's clocks; a heading's time holds those under it, and
+    // a third level counts in its parent.
+    assert!(
+        has_line(report, &["home.org", "File time", "1:00"]),
+        "{ls:#?}"
+    );
+    assert!(has_line(report, &["Garden", "1:00"]));
+    assert!(has_line(report, &["work.org", "File time", "1:55"]));
+    assert!(has_line(report, &["Project", "1:55"]));
+    assert!(has_line(report, &["  Draft", "1:25"]));
+    assert!(!report
+        .iter()
+        .any(|l| l.contains("Deep") || l.contains("Idle")));
+    assert!(has_line(report, &["Total", "2:55"]));
+    // cr hides it again.
+    type_keys(&mut s, "cr");
+    assert!(!lines(&s).iter().any(|l| l.contains("Clock report")));
+}

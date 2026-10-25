@@ -218,7 +218,8 @@ fn the_toggle_switches_between_the_two() {
 fn the_agenda_is_in_modus_s_agenda_colors() {
     // Against Modus Vivendi's org-agenda-structure, -date, -date-weekend,
     // -date-today, org-time-grid, org-scheduled-today,
-    // org-imminent-deadline and org-upcoming-deadline.
+    // org-imminent-deadline and org-upcoming-deadline, and the clock
+    // report as an org-table.
     let mut s = modus("modus-vivendi");
     for (face, want) in [
         ("org.agenda.title", "fg=#c6daff bold"),
@@ -232,6 +233,7 @@ fn the_agenda_is_in_modus_s_agenda_colors() {
         ("org.agenda.deadline", "fg=#ff7f86 bold"),
         ("org.agenda.upcoming", "fg=#ff9580"),
         ("org.agenda.tag", "fg=#caa6df"),
+        ("org.agenda.clock-report", "fg=#c6daff"),
     ] {
         assert_eq!(spec(&mut s, face), want, "{face}");
     }

@@ -461,6 +461,8 @@
    (list "org.agenda.upcoming" 'date-deadline-subtle #f "" #f)
    (list "org.agenda.tag" 'prose-tag #f "" #f)
    (list "org.agenda.category" 'fg-dim #f "" #f)
+   ;; The clock report, as org-clock-report's table (org-table).
+   (list "org.agenda.clock-report" 'prose-table #f "" #f)
    ;; org-habit-clear-face and co.: the graph colors, in black.
    (list "org.agenda.habit.clear" "#000000" 'bg-graph-blue-0 "" #f)
    (list "org.agenda.habit.clear-future" "#000000" 'bg-graph-blue-1 "" #f)

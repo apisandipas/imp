@@ -321,6 +321,8 @@
 ;;                               NOTE): the keyword shown instead of E's,
 ;;                               and a dim note before the title.
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
+;;   (report TEXT KIND)          a line of the clock report: KIND rule,
+;;                               head, row or total
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
 
@@ -407,6 +409,13 @@
                                     "org.agenda.now"))
                         #f))]
          [(note) (draw-line! (list (list "  " #f) (list (cadr r) "org.agenda.span")) #f)]
+         [(report)
+          (draw-line! (list (list "  " #f)
+                            (list (cadr r) (case (caddr r)
+                                             [(rule) "org.agenda.rule"]
+                                             [(head total) (list "org.agenda.clock-report" "bold")]
+                                             [else "org.agenda.clock-report"])))
+                      #f)]
          [else (draw-line! '() #f)]))
      rows)
     (draw-finish!)))
@@ -1158,6 +1167,7 @@
                        '()
                        (cons (append (list '(blank) (list 'header (org-agenda-block-name (car bs)) 'block)) (cadr (car ds)))
                              (loop (cdr bs) (cdr ds)))))))
+      (if *org-agenda-report* (org-agenda-clock-report entries) '())
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
@@ -1208,6 +1218,7 @@
                (list "m" "month" (lambda () (org-agenda-view-span! 'month)))
                (list "y" "year" (lambda () (org-agenda-view-span! 'year)))
                (list "l" "log mode" (lambda () (org-agenda-toggle-log!)))
+               (list "R" "clock report" (lambda () (org-agenda-toggle-report!)))
                (list "g" "time grid" (lambda ()
                                        (set! *org-agenda-grid* (not (org-agenda-grid?)))
                                        (org-render-agenda!)
@@ -1711,6 +1722,87 @@
   (org-render-agenda!)
   (message (if *org-agenda-log* "log mode on" "log mode off")))
 
+(define (org-entry-clocked e first last)
+  "The minutes agenda entry `e`'s own finished clocks ran that started
+   from day `first` to `last`."
+  (foldl (lambda (line sum)
+           (let* ([t (trim line)] [mid (and (starts-with? t "CLOCK: [") (string-index-from t "]--[" 0))])
+             (if (not mid)
+                 sum
+                 (let* ([start (substring t 7 (+ mid 1))]
+                        [close (string-index-from t "]" (+ mid 3))]
+                        [end (and close (substring t (+ mid 3) (+ close 1)))]
+                        [day (string->date (substring start 1 11))]
+                        [a (org-stamp-minutes start)] [b (and end (org-stamp-minutes end))])
+                   (if (and day a b (not (date<? day first)) (not (date<? last day)))
+                       (+ sum (max 0 (- b a)))
+                       sum)))))
+         0 (org-entry-body e)))
+
+(define (org-clock-report-files entries first last)
+  "The clock report's figures: for each file of `entries` with time
+   clocked from `first` to `last`, (file total headings), headings
+   being (level title minutes) for levels 1 and 2, each with the time of
+   the headings under it."
+  (let loop ([es entries] [acc '()])
+    (if (null? es)
+        (reverse acc)
+        (let* ([file (car (car es))]
+               [mine (let take ([es es] [acc '()])
+                       (if (and (pair? es) (equal? (car (car es)) file)) (take (cdr es) (cons (car es) acc)) (reverse acc)))]
+               [rest (list-tail es (length mine))]
+               [own (map (lambda (e) (cons e (org-entry-clocked e first last))) mine)]
+               ;; Each heading's time with the time of those under it.
+               [totals (let walk ([xs own] [acc '()])
+                         (if (null? xs)
+                             (reverse acc)
+                             (let* ([level (org-entry-level (car (car xs)))]
+                                    [under (let span ([ys (cdr xs)] [sum 0])
+                                             (if (and (pair? ys) (> (org-entry-level (car (car ys))) level))
+                                                 (span (cdr ys) (+ sum (cdr (car ys))))
+                                                 sum))])
+                               (walk (cdr xs) (cons (list level (org-heading-title (vector-ref (list-ref (car (car xs)) 11) (cadr (car (car xs)))))
+                                                          (+ (cdr (car xs)) under))
+                                                    acc)))))]
+               [total (foldl (lambda (x sum) (+ sum (cdr x))) 0 own)])
+          (loop rest (if (> total 0)
+                         (cons (list file total (filter (lambda (h) (and (<= (car h) 2) (> (caddr h) 0))) totals)) acc)
+                         acc))))))
+
+(define (org-agenda-clock-report entries)
+  "The clock report's rows, as Org's clocktable: for the dated view's
+   span, the time clocked on each file and on each heading under it,
+   two levels deep, with each file's total and the total for all."
+  (let* ([first (org-agenda-first-day)]
+         [last (date-add-days first (- (org-agenda-span) 1))]
+         [files (org-clock-report-files entries first last)]
+         [total (foldl (lambda (f sum) (+ sum (cadr f))) 0 files)]
+         [cells (apply append
+                       (map (lambda (f)
+                              (cons (list (file-name-of (car f)) "File time" (org-duration (cadr f)) 'head)
+                                    (map (lambda (h) (list "" (string-append (if (= (car h) 2) "  " "") (cadr h))
+                                                           (org-duration (caddr h)) 'row))
+                                         (caddr f))))
+                            files))]
+         [w1 (foldl (lambda (c m) (max m (string-length (car c)))) 4 cells)]
+         [w2 (min 50 (foldl (lambda (c m) (max m (string-length (cadr c)))) 7 cells))]
+         [w3 (foldl (lambda (c m) (max m (string-length (caddr c)))) 4 cells)]
+         [line (lambda (a b c kind)
+                 (list 'report (string-append (pad-right a w1) "  " (pad-right (org-fit b w2) w2) "  " (org-pad-left c w3)) kind))]
+         [rule (list 'report (make-string (+ w1 w2 w3 4) #\─) 'rule)])
+    (append
+     (list '(blank) (list 'header "Clock report" 'section)
+           (line "File" "Heading" "Time" 'head) rule)
+     (map (lambda (c) (line (car c) (cadr c) (caddr c) (cadddr c))) cells)
+     (if (null? cells) '() (list rule))
+     (list (line "Total" "" (org-duration total) 'total)))))
+
+(define (org-agenda-toggle-report!)
+  "gD R and cr: shows or hides the clock report."
+  (set! *org-agenda-report* (not *org-agenda-report*))
+  (org-render-agenda!)
+  (message (if *org-agenda-report* "clock report on" "clock report off")))
+
 (define (org-agenda-clock-redraw!)
   "Redraws the agenda after a clock change, the cursor where it was."
   (org-agenda-redraw-at! (line-item) (current-line)))
@@ -1787,6 +1879,7 @@
 (org-agenda-key! "O" (lambda (n) (org-agenda-clock-out!)) "clock out")
 (org-agenda-key! "cc" (lambda (n) (org-agenda-clock-cancel!)) "cancel clock")
 (org-agenda-key! "cg" (lambda (n) (org-clock-goto!)) "go to clock")
+(org-agenda-key! "cr" (lambda (n) (org-agenda-toggle-report!)) "clock report")
 
 (define-command! 'org-agenda-list
   (lambda (count)
