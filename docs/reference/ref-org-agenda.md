@@ -31,7 +31,7 @@ Each task is one line, and its parts line up down the agenda:
     14:00   Sched.    TODO  [#A] Review the pull request    :work:  imp
 ```
 
-From the left: its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
+From the left: its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A habit has its graph after its title (see [Habits](#habits)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
 
 In the window client, the agenda's title and the day headers are drawn larger, at the sizes `org-heading-heights` gives Org's headings.
 

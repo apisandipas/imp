@@ -19,5 +19,5 @@ Diary dates are parsed from `<%%(...)>` timestamps into a predicate over dates, 
 
 - [x] Diary dates: `diary-anniversary` (with `%d`), `diary-float`, `diary-block`, `diary-cyclic`, `diary-date`, in `calendar-date-style` order; other sexps skipped and counted on the last line; with tests
 - [x] Habits: on today only, never in `Overdue` or `Later`, with the graph (`org-habit-preceding-days`, `org-habit-following-days`; Org's four colors, `*` done, `!` today) in habit faces every bundled theme sets, Modus included; with tests
-- [ ] Read the reference page through against the spec, and check the agenda against the whole spec before #59 closes
+- [x] Read the reference page through against the spec, and check the agenda against the whole spec before #59 closes
 - [ ] The owner has looked at it
