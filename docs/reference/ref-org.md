@@ -128,6 +128,10 @@ Tags line up to end at column 77, as in Emacs. Set `org-tags-column` to change t
 
 Press `C-c C-x e` or `SPC m c E` to set the heading's effort: how long it should take, such as `0:45` or `1:30`. It's kept as the `Effort` property. An empty answer removes it.
 
+## Moving a heading elsewhere
+
+Press `C-c C-w` or `SPC m r` to refile the heading the cursor is under: pick any heading in your agenda files, and the heading moves there with everything under it. It goes at the end of what's under the new heading, one level below it. Undo puts it back when it moves within the same file.
+
 ## Properties
 
 A heading's properties live in a drawer under it:

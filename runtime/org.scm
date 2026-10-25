@@ -1552,7 +1552,8 @@
   "Every heading in the agenda files, as (\"file › outline path\" path line)."
   (apply append
          (map (lambda (path)
-                (let loop ([lines (if (file-exists? path) (text-lines (read-file path)) '())] [n 0] [stack '()] [acc '()])
+                (let loop ([lines (if (or (buffer-for-path path) (file-exists? path)) (text-lines (org-file-text path)) '())]
+                           [n 0] [stack '()] [acc '()])
                   (if (null? lines)
                       (reverse acc)
                       (let ([level (org-level-of (car lines))])
@@ -1577,6 +1578,46 @@
                            (let ([hit (assoc choice targets)])
                              (when hit
                                (capture-finish-at! (list 'heading (cadr hit) (caddr hit) (last (split-many (car hit) " › ")))))))))))
+
+(define (org-refile-to! h target)
+  "Moves the heading on line `h` of the current buffer, with its subtree,
+   under `target` (label path line), at the end of that heading's
+   subtree and a level below it. Returns #f after saying why when the
+   target is inside the subtree."
+  (let* ([end (org-subtree-end h)]
+         [level (org-level h)]
+         [path (cadr target)]
+         [same? (equal? (and (buffer-path) (absolute-path (buffer-path))) (absolute-path path))]
+         [tline (caddr target)])
+    (if (and same? (<= h tline end))
+        (begin (message "can't refile a heading under itself") #f)
+        (let* ([text (buffer-substring (line-start h) (min (buffer-length) (+ (line-end end) 1)))]
+               [text (if (ends-with? text "\n") text (string-append text "\n"))]
+               ;; As a level-1 subtree, which filing demotes to fit.
+               [entry (apply string-append
+                             (map (lambda (l) (string-append (if (org-level-of l) (substring l (- level 1) (string-length l)) l) "\n"))
+                                  (text-lines text)))]
+               [tline (if (and same? (> tline end)) (- tline (+ (- end h) 1)) tline)])
+          (with-undo-group
+           (lambda ()
+             (begin-change!)
+             (replace-range! (line-start h) (min (buffer-length) (+ (line-end end) 1)) "")
+             (capture-file! (list 'heading path tline (last (split-many (car target) " › ")))
+                            entry #f)))
+          (message (string-append "refiled to " (car target)))
+          #t))))
+
+(define (org-refile-prompt! then)
+  "C-c C-w: asks for a heading in the agenda files and moves the heading
+   the cursor is under there, with its subtree. `then` runs after, with
+   whether it moved."
+  (let ([h (org-heading-line (current-line))] [targets (org-refile-targets)])
+    (cond [(not h) (message "not under a heading")]
+          [(null? targets) (message "no headings in the agenda files to refile under")]
+          [else (completing-read "Refile under: " (map car targets)
+                                 (lambda (choice)
+                                   (let ([hit (assoc choice targets)])
+                                     (then (and hit (org-refile-to! h hit))))))])))
 
 (define-minor-mode! 'org-capture-mode #f #f)
 (for-each (lambda (state)
@@ -1695,6 +1736,7 @@
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
 (org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
 (org-key! '(normal insert) "C-cC-q" (lambda args (org-tags-prompt!)))
+(org-key! '(normal insert) "C-cC-w" (lambda args (org-refile-prompt! (lambda (moved?) void))))
 (org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
@@ -1706,6 +1748,7 @@
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
 (define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
 (define-mode-leader! 'org-mode "q" (lambda (n) (org-tags-prompt!)) "set tags")
+(define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
 (define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")

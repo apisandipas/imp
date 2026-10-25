@@ -573,3 +573,77 @@ fn c_c_c_x_e_sets_the_effort() {
     type_keys(&mut s, " mcE<C-u><ret>");
     assert_eq!(s.text(), "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n");
 }
+
+/// A directory holding `files`, as org-directory, and `name` open.
+fn org_files(
+    dir: &str,
+    files: &[(&str, &str)],
+    name: &str,
+) -> (imp_server::Server, std::path::PathBuf) {
+    let dir = temp_path(dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (f, text) in files {
+        std::fs::write(dir.join(f), text).unwrap();
+    }
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join(name).display()));
+    (s, dir)
+}
+
+#[test]
+fn c_c_c_w_refiles_a_subtree_in_the_same_file() {
+    let (mut s, _) = org_files(
+        "org-refile-same",
+        &[(
+            "a.org",
+            "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n* Projects\n** Garden\nplan\n* Later\n",
+        )],
+        "a.org",
+    );
+    // Under Projects, at the end of its subtree, one level below it.
+    type_keys(&mut s, "j<C-c><C-w>Projects<ret>");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n* Projects\n** Garden\nplan\n** TODO Call Ann\nnotes\n*** Sub\n* Later\n"
+    );
+    // One undo step.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n* Projects\n** Garden\nplan\n* Later\n"
+    );
+    // Not under itself.
+    type_keys(&mut s, "gg5j<C-c><C-w>Garden<ret>");
+    assert!(s.status().contains("under itself"), "{}", s.status());
+    // A level-2 heading under a level-1 one stays level 2.
+    type_keys(&mut s, "gg5j mrInbox<ret>");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n** Garden\nplan\n* Projects\n* Later\n"
+    );
+}
+
+#[test]
+fn c_c_c_w_refiles_into_another_file() {
+    let (mut s, dir) = org_files(
+        "org-refile-other",
+        &[
+            ("a.org", "* TODO Move me\nbody\n* Stay\n"),
+            ("b.org", "* Target\n** Old\n"),
+        ],
+        "a.org",
+    );
+    type_keys(&mut s, "<C-c><C-w>b.org › Target<ret>");
+    assert_eq!(s.text(), "* Stay\n");
+    // b.org wasn't open: it is written.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("b.org")).unwrap(),
+        "* Target\n** Old\n** TODO Move me\nbody\n"
+    );
+}
