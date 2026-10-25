@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
-  docs/specs/org-agenda.md: 7188e85aaf98
+  docs/specs/org-agenda.md: 9736e77a7cbe
   docs/specs/org.md: eacefd3dbd04
 ---
 # Org agenda: acting on entries
@@ -26,6 +26,6 @@ Each task updates the reference pages it changes (`ref-org`, `ref-org-agenda`) i
 - [x] `SPC m d s` and `SPC m d d` schedule and set a deadline from the calendar; `H` and `L` move the line's date a day; with tests
 - [x] `+` and `-` raise and lower the priority, `SPC m p` sets it; `ct` (`SPC m q`) sets tags, `ce` the effort; with tests
 - [x] `SPC m r` refiles, `da` archives asking first and `dA` without, `dd` deletes the entry and its subtree asking first; with tests
-- [ ] `C` captures with the line's date; `u` undoes the last change made from the agenda; with tests
+- [x] `C` captures with the line's date; `u` undoes the last change made from the agenda; with tests
 - [ ] Read the reference pages through against the specs and the keys, and check the which-key labels
 - [ ] The owner has looked at acting from the agenda

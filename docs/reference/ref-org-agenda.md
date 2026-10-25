@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: 7188e85aaf98
+  docs/specs/org-agenda.md: 9736e77a7cbe
 ---
 # Org agenda
 
@@ -116,10 +116,12 @@ Change a task right from its line, without opening its file.
 | `da` | Archive it, after asking |
 | `dA` | Archive it without asking |
 | `dd` | Delete it and everything under it, after asking |
+| `C` | Capture a new task for the day the cursor is on |
+| `u` | Undo the last change made from the agenda |
 
 `H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
 
-The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda.
+The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
 
 ## Choosing the files
 

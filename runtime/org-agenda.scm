@@ -674,17 +674,19 @@
   "Redraws the agenda, the cursor on `item` if it is still there, or the
    same date of the same entry moved, else on line `at`."
   (org-render-agenda!)
-  (unless (equal? (line-item) item)
-    (let* ([items (buffer-local 'line-items)]
-           [find (lambda (n)
-                   (let loop ([i 0])
-                     (cond [(>= i (vector-length items)) #f]
-                           [(let ([it (vector-ref items i)])
-                              (and (pair? it) (eq? (car it) 'org) (equal? (take it n) (take item n))))
-                            i]
-                           [else (loop (+ i 1))])))])
-      ;; The same date of the entry, else the entry's first line.
-      (set-cursor! (line-start (or (find 4) (find 3) (min at (last-line))))))))
+  (if (not (and (pair? item) (eq? (car item) 'org)))
+      (set-cursor! (line-start (min at (last-line))))
+      (unless (equal? (line-item) item)
+        (let* ([items (buffer-local 'line-items)]
+               [find (lambda (n)
+                       (let loop ([i 0])
+                         (cond [(>= i (vector-length items)) #f]
+                               [(let ([it (vector-ref items i)])
+                                  (and (pair? it) (eq? (car it) 'org) (equal? (take it n) (take item n))))
+                                i]
+                               [else (loop (+ i 1))])))])
+          ;; The same date of the entry, else the entry's first line.
+          (set-cursor! (line-start (or (find 4) (find 3) (min at (last-line)))))))))
 
 (define (org-agenda-set-todo!)
   "SPC m t: asks for a TODO keyword, or none, for the entry at the cursor."
@@ -790,14 +792,28 @@
           (completing-read "Refile under: " (map car targets)
                            (lambda (choice)
                              (let ([hit (assoc choice targets)])
-                               (when hit (org-agenda-act! (lambda (line) (org-refile-to! line hit)))))))))))
+                               (when hit
+                                 (org-agenda-act! (lambda (line) (org-refile-to! line hit)))
+                                 (org-agenda-forget-change-to-other-file! (cadr hit))))))))))
+
+(define (org-agenda-forget-change-to-other-file! path)
+  "After a change that also wrote `path`: when that is another file than
+   the changed buffer's, u can't undo it (it would leave the entry in
+   both), so it is forgotten."
+  (let ([last *org-agenda-last-change*])
+    (when (and last (not (equal? (buffer-for-path (absolute-path path)) (car last))))
+      (set! *org-agenda-last-change* #f)))
+  void)
 
 (define (org-agenda-archive! ask?)
   "Archives the entry with its subtree (org-archive-location), asking
    first when `ask?`."
   (when (org-agenda-entry-line? (current-line))
     (let ([go (lambda ()
-                (org-agenda-act! (lambda (line) (message (string-append "archived in " (file-name-of (org-archive! line)))))))])
+                (let ([file #f])
+                  (org-agenda-act! (lambda (line) (set! file (org-archive! line))
+                                     (message (string-append "archived in " (file-name-of file)))))
+                  (when file (org-agenda-forget-change-to-other-file! file))))])
       (if ask?
           (confirm! (string-append "Archive \"" (org-agenda-title-at) "\"?") go)
           (go)))))
@@ -813,6 +829,27 @@
                      (begin-change!)
                      (replace-range! (line-start line) (min (buffer-length) (+ (line-end end) 1)) "")
                      (message "deleted"))))))))
+
+(define (org-agenda-line-date)
+  "The day the line at the cursor is under, or today."
+  (let* ([at (current-line)]
+         [above (filter (lambda (d) (<= (cdr d) at)) *org-agenda-day-lines*)])
+    (if (null? above)
+        (calendar-today)
+        (car (car (sort above (lambda (a b) (> (cdr a) (cdr b)))))))))
+
+(define (org-agenda-undo!)
+  "u: undoes the last change made from the agenda, in its file's buffer,
+   saving it again if the change saved it."
+  (let ([last *org-agenda-last-change*])
+    (if (not (and last (memv (car last) (buffer-list))))
+        (message "no change from the agenda to undo")
+        (let ([at (current-line)] [item (line-item)])
+          (set! *org-agenda-last-change* #f)
+          (with-buffer (car last) (lambda () (undo!)))
+          (when (cadr last) (with-buffer (car last) (lambda () (save-buffer!))))
+          (org-agenda-redraw-at! item at)
+          (message "undone")))))
 
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
@@ -869,6 +906,8 @@
 (org-agenda-key! "da" (lambda (n) (org-agenda-archive! #t)) "archive")
 (org-agenda-key! "dA" (lambda (n) (org-agenda-archive! #f)) "archive now")
 (org-agenda-key! "dd" (lambda (n) (org-agenda-delete!)) "delete")
+(org-agenda-key! "C" (lambda (n) (org-capture! (org-agenda-line-date))) "capture")
+(org-agenda-key! "u" (lambda (n) (org-agenda-undo!)) "undo")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

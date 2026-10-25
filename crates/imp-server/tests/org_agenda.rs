@@ -1001,3 +1001,57 @@ fn refile_archive_and_delete_from_the_agenda() {
     assert_eq!(file(&dir, "a.org"), "* TODO Keep\n");
     assert!(lines(&s).iter().all(|l| !l.contains("Delete")));
 }
+
+#[test]
+fn u_undoes_the_last_change_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-undo",
+        &[
+            ("a.org", "* TODO Write\nSCHEDULED: <2026-10-21 Wed>\n"),
+            ("b.org", "* Target\n"),
+        ],
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "Ltt");
+    // The last change only, saved again.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* NEXT Write\nSCHEDULED: <2026-10-22 Thu>\n"
+    );
+    assert!(s.status().contains("undone"), "{}", s.status());
+    type_keys(&mut s, "u");
+    assert!(s.status().contains("no change"), "{}", s.status());
+    // A refile into another file can't be undone.
+    go_to(&mut s, "Write");
+    type_keys(&mut s, " mrb.org › Target<ret>u");
+    assert!(s.status().contains("no change"), "{}", s.status());
+    assert!(file(&dir, "b.org").contains("Write") && !file(&dir, "a.org").contains("Write"));
+}
+
+#[test]
+fn c_captures_for_the_line_s_day() {
+    let (mut s, dir) = agenda_files(
+        "agenda-capture",
+        &[("a.org", "* TODO Thing\nSCHEDULED: <2026-10-23 Fri>\n")],
+    );
+    s.eval(
+        r#"(define (capture-clock) (list "2026-10-21" "Wed" "09:15" "Wednesday" "October"))
+           (set! *capture-templates* '())
+           (define-capture-template! "t" "Todo" '(file "inbox.org") "* TODO %?\nSCHEDULED: %t")"#,
+    )
+    .unwrap();
+    go_to(&mut s, "Thing");
+    type_keys(&mut s, "CCall Ann<C-c><C-c>");
+    assert_eq!(
+        file(&dir, "inbox.org"),
+        "* TODO Call Ann\nSCHEDULED: <2026-10-23 Fri>\n"
+    );
+    // A capture from anywhere else is for today again.
+    type_keys(&mut s, ":OrgCapture<ret>Later<C-c><C-c>");
+    assert!(
+        file(&dir, "inbox.org").ends_with("* TODO Later\nSCHEDULED: <2026-10-21 Wed>\n"),
+        "{}",
+        file(&dir, "inbox.org")
+    );
+}

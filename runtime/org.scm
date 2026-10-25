@@ -1320,9 +1320,21 @@
   (let ([parts (split-many (trim (cadr (run-shell "date '+%Y-%m-%d|%a|%H:%M|%A|%B'" ""))) "|")])
     (if (= (length parts) 5) parts (list "1970-01-01" "Thu" "00:00" "Thursday" "January"))))
 
+;; The date a capture is for instead of today's, as the agenda's C sets
+;; it, or #f.
+(define *capture-date* #f)
+
+(define (capture-day-clock clock date)
+  "`clock` (as capture-clock gives it) on `date` instead, at its time."
+  (list (date->string date) (vector-ref *calendar-day-names* (date-weekday date)) (caddr clock)
+        (vector-ref (vector "Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")
+                    (date-weekday date))
+        (vector-ref *calendar-month-names* (- (cadr date) 1))))
+
 (define (capture-context)
-  "What a template can refer to, gathered where capture starts."
-  (list (cons 'clock (capture-clock))
+  "What a template can refer to, gathered where capture starts: on
+   *capture-date* when it is set."
+  (list (cons 'clock (if *capture-date* (capture-day-clock (capture-clock) *capture-date*) (capture-clock)))
         (cons 'path (and (buffer-path) (absolute-path (buffer-path))))
         (cons 'line (+ (current-line) 1))
         (cons 'region (if (eq? *mode* 'visual)
@@ -1554,9 +1566,11 @@
   (string-append (file-name-of (org-path (cadr target)))
                  (if (eq? (car target) 'file+headline) (string-append " › " (caddr target)) "")))
 
-(define (org-capture!)
+(define (org-capture! . date)
   "Starts a capture, asking which template when there is more than one.
-   When a capture is already in progress, shows it instead."
+   When a capture is already in progress, shows it instead. With a
+   `date`, the capture is for that day rather than today."
+  (set! *capture-date* (and (pair? date) (car date)))
   (cond
     [(list-find (lambda (id) (equal? (car (buffer-info id)) "*capture*")) (buffer-list))
      => (lambda (id) (display-buffer! id) (message "a capture is in progress: C-c C-c files it, C-c C-k cancels"))]
