@@ -13,7 +13,8 @@
 ;;; Palette names: bg (text background), bg-alt (status line, popups),
 ;;; bg-hl (cursor line), selection, border, fg, dim, comment, punct, red,
 ;;; orange, yellow, green, cyan, blue, magenta, debug-bg, and black and
-;;; white for terminal buffers (dim and fg if left out).
+;;; white for terminal buffers (dim and fg if left out), with bright-black
+;;; ... bright-white for their bright colors (the plain ones if left out).
 
 (define *themes* (hash))  ; name -> (palette extra-faces)
 (define *theme* #f)       ; the theme loaded
@@ -183,12 +184,19 @@
 
 (define (terminal-palette p)
   "The 16 colors programs in a terminal buffer ask for by number: black,
-   red, green, yellow, blue, magenta, cyan, white, then the bright ones."
+   red, green, yellow, blue, magenta, cyan, white, then the bright ones.
+   A bright color is the palette's bright-red and so on, else the plain
+   one (bright black: dim)."
   (let* ([get (lambda (k fallback) (or (hash-try-get p k) (hash-ref p fallback)))]
          [colors (cons (get 'black 'dim)
                        (append (map (lambda (k) (hash-ref p k)) '(red green yellow blue magenta cyan))
-                               (list (get 'white 'fg))))])
-    (append colors (cons (hash-ref p 'dim) (cdr colors)))))
+                               (list (get 'white 'fg))))]
+         [bright (lambda (k plain) (or (hash-try-get p k) plain))])
+    (append colors
+            (let loop ([keys '(bright-black bright-red bright-green bright-yellow bright-blue
+                               bright-magenta bright-cyan bright-white)]
+                       [plain (cons (hash-ref p 'dim) (cdr colors))])
+              (if (null? keys) '() (cons (bright (car keys) (car plain)) (loop (cdr keys) (cdr plain))))))))
 
 (define (load-theme! name)
   "Switches to theme `name`, a symbol, setting every face and the

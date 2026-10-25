@@ -80,3 +80,51 @@ fn a_modus_theme_is_drawn_in_its_colors_and_leaves_nothing_behind() {
     assert_eq!(spec(&mut s, "syntax.function.builtin"), "#false");
     assert_eq!(spec(&mut s, "normal"), "fg=#abb2bf bg=#282c34");
 }
+
+#[test]
+fn the_rest_of_imp_is_in_modus_s_colors_too() {
+    // A face or two from each part, against Modus Vivendi's mode-line,
+    // corfu, which-key, flymake, dired, org, magit, diff and diff-hl.
+    let mut s = modus("modus-vivendi");
+    for (face, want) in [
+        ("status", "fg=#ffffff bg=#505050"),
+        ("status-inactive", "fg=#969696 bg=#2d2d2d"),
+        ("status.mode.insert", "fg=#9fefff bg=#505050 bold"),
+        ("popup", "fg=#ffffff bg=#0c0c0c"),
+        ("which-key.key", "fg=#00bcff bold"),
+        ("diagnostic.error", "fg=#ff5f5f underline"),
+        ("dired.directory", "fg=#00bcff"),
+        ("calendar.today", "fg=#000000 bg=#ffffff"),
+        ("org.level1", "fg=#ffffff bold"),
+        ("org.todo", "fg=#ff5f59"),
+        ("git.branch", "fg=#00bcff"),
+        ("start.key", "fg=#00bcff bold"),
+        ("diff.added", "fg=#a0e0a0 bg=#00381f"),
+        ("git-gutter.added", "fg=#237f3f"),
+    ] {
+        assert_eq!(spec(&mut s, face), want, "{face}");
+    }
+    let mut s = modus("modus-operandi");
+    for (face, want) in [
+        ("status", "fg=#000000 bg=#c8c8c8"),
+        ("popup", "fg=#000000 bg=#f3f3f3"),
+        ("diagnostic.error", "fg=#d00000 underline"),
+        ("diff.added", "fg=#005000 bg=#c1f2d1"),
+    ] {
+        assert_eq!(spec(&mut s, face), want, "{face}");
+    }
+}
+
+#[test]
+fn terminal_colors_are_modus_s_term_colors() {
+    let mut s = modus("modus-vivendi");
+    let colors = s
+        .eval("(terminal-palette (car (hash-ref *themes* 'modus-vivendi)))")
+        .unwrap();
+    // red, then bright black and bright red.
+    let colors: Vec<&str> = colors.split('"').filter(|c| c.starts_with('#')).collect();
+    assert_eq!(colors.len(), 16, "{colors:?}");
+    assert_eq!(colors[1], "#ff5f59");
+    assert_eq!(colors[8], "#595959");
+    assert_eq!(colors[9], "#ff6b55");
+}
