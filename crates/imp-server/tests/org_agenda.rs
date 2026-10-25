@@ -1167,3 +1167,91 @@ fn the_todo_list_has_every_undone_todo() {
     type_keys(&mut s, "t");
     assert_eq!(lines(&s)[1], " NEXT · 0 entries");
 }
+
+const MATCHING: &str = "#+FILETAGS: :org:
+* Work :work:
+** TODO [#A] Urgent report :urgent:
+:PROPERTIES:
+:Effort: 0:30
+:END:
+** NEXT Plan
+:PROPERTIES:
+:Effort: 2:00
+:END:
+** DONE Shipped
+* Home :home:
+** TODO Garden
+";
+
+/// The titles a tags match `text` shows, in order.
+fn matched(s: &mut imp_server::Server, text: &str, todo_only: bool) -> Vec<String> {
+    s.eval(&format!(
+        "(org-tags-view! {text:?} {})",
+        if todo_only { "#t" } else { "#f" }
+    ))
+    .unwrap();
+    lines(s)[3..]
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            words[..words.len() - 1]
+                .iter()
+                .filter(|w| !w.starts_with(':') && !["TODO", "NEXT", "DONE"].contains(w))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+#[test]
+fn tags_matches_in_org_s_syntax() {
+    let (mut s, _) = agenda_files("agenda-match", &[("m.org", MATCHING)]);
+    // Inherited tags count; - excludes; | is or.
+    assert_eq!(
+        matched(&mut s, "work", false),
+        ["Work", "[#A] Urgent report", "Plan", "Shipped"]
+    );
+    assert_eq!(
+        matched(&mut s, "+work-urgent", false),
+        ["Work", "Plan", "Shipped"]
+    );
+    assert_eq!(
+        matched(&mut s, "urgent|home", false),
+        ["[#A] Urgent report", "Home", "Garden"]
+    );
+    assert_eq!(matched(&mut s, "org&home", false), ["Home", "Garden"]);
+    assert_eq!(matched(&mut s, "{^ho}", false), ["Home", "Garden"]);
+    // Special properties and the drawer's.
+    assert_eq!(matched(&mut s, "TODO=\"NEXT\"", false), ["Plan"]);
+    assert_eq!(matched(&mut s, "LEVEL>1+home", false), ["Garden"]);
+    assert_eq!(
+        matched(&mut s, "PRIORITY=\"A\"", false),
+        ["[#A] Urgent report"]
+    );
+    assert_eq!(
+        matched(&mut s, "work+Effort<\"1:00\"", false),
+        ["[#A] Urgent report"]
+    );
+    assert_eq!(matched(&mut s, "Effort={^2}", false), ["Plan"]);
+    assert_eq!(
+        matched(&mut s, "CATEGORY=\"m\"-LEVEL>1", false),
+        ["Work", "Home"]
+    );
+    // M: undone TODOs only.
+    assert_eq!(
+        matched(&mut s, "work", true),
+        ["[#A] Urgent report", "Plan"]
+    );
+    assert_eq!(lines(&s)[0], " Tags: work");
+    assert_eq!(lines(&s)[1], " TODOs · 2 entries");
+}
+
+#[test]
+fn spc_o_a_m_asks_for_a_match() {
+    let (mut s, _) = agenda_files("agenda-match-key", &[("m.org", MATCHING)]);
+    type_keys(&mut s, " oamhome<ret>");
+    assert_eq!(lines(&s)[0], " Tags: home");
+    assert_eq!(lines(&s)[1], " 2 entries");
+}

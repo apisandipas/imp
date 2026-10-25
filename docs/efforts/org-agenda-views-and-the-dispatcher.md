@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]"]
 frozen:
-  docs/specs/org-agenda.md: 646e5fc328fd
+  docs/specs/org-agenda.md: d283f91acd0d
 ---
 # Org agenda: views and the dispatcher
 
@@ -21,7 +21,7 @@ Each task updates the reference page in the same commit.
 - [x] Views as data: the agenda buffer holds a view of blocks, the dated view one of them, drawn as now; `SPC o a` becomes a prefix (`SPC o a a`, `M-x org-agenda-list`); with tests
 - [x] `gD`: a day, week, fortnight, month (from its first day) or year (from 1 January), and the grid on or off, kept until the agenda is opened again; with tests
 - [x] The TODO list, by priority then file order, and `T`'s list for one keyword; with tests
-- [ ] Tags matches in Org's syntax (tags with `+ - & |`; `TODO`, `LEVEL`, `PRIORITY`, `CATEGORY` and properties compared with `= <> < > <= >=` against numbers, strings and regexps), done entries in or out; with tests
+- [x] Tags matches in Org's syntax (tags with `+ - & |`; `TODO`, `LEVEL`, `PRIORITY`, `CATEGORY` and properties compared with `= <> < > <= >=` against numbers, strings and regexps), done entries in or out; with tests
 - [ ] Search: words in a heading or its text, ignoring case, with `+word`, `-word`, `"phrase"` and `{regexp}`; with tests
 - [ ] The dispatcher (`SPC o A`, `M-x org-agenda`, `:OrgAgenda`): `a t T m M s n`, `<` and `< <` to limit to the file or subtree; `SPC o a t`, `SPC o a m`, `SPC o a s`; with tests
 - [ ] Custom commands and block agendas: `define-agenda-command!` with `agenda`, `todo`, `tags`, `tags-todo` and `search` blocks and their `span` and `header` settings, in the dispatcher; `[[` and `]]` move the dated blocks; with tests

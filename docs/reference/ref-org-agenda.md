@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: 646e5fc328fd
+  docs/specs/org-agenda.md: d283f91acd0d
 ---
 # Org agenda
 
@@ -83,6 +83,24 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 ## Lists of TODOs
 
 `SPC o a t` (or `M-x org-todo-list`) lists every undone TODO in your agenda files, dated or not, by priority and then in the order they're written. The same keys work on it as in the agenda, so you can change a task from the list.
+
+## Matching tags and properties
+
+`SPC o a m` (or `M-x org-tags-view`) asks for a match and lists every heading it fits, done ones too:
+
+| Match | Finds headings |
+|---|---|
+| `work` | tagged `work`, or under a heading or file that is |
+| `+work-urgent` | tagged `work` but not `urgent` |
+| `work\|home` | tagged either |
+| `{^pro}` | with a tag matching a regexp |
+| `TODO="NEXT"` | with the keyword `NEXT` |
+| `PRIORITY="A"` | with priority `A` |
+| `LEVEL>1` | below the top level |
+| `CATEGORY="work"` | in the category `work` |
+| `+work+Effort<"1:00"` | tagged `work`, with an `Effort` property under `1:00` |
+
+Compare properties with `=`, `<>`, `<`, `>`, `<=` or `>=`, against a number, a `"string"` or a `{regexp}`. A heading without the property matches only `<>`.
 
 ## Days, weeks, months
 

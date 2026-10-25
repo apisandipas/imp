@@ -83,9 +83,10 @@
                              acc))))))))
 
 ;; An agenda entry is a list: (file line keyword title scheduled deadline
-;; priority category tags appointments). The title is without its keyword
-;; and tags; tags are (name . own?), own ones first; appointments are
-;; (start end) as org-line-appointments gives them.
+;; priority category tags appointments level lines). The title is without
+;; its keyword and tags; tags are (name . own?), own ones first;
+;; appointments are (start end) as org-line-appointments gives them;
+;; level is the heading's, lines the file's, a vector, for properties.
 (define (org-entry-tags e)
   "Agenda entry `e`'s tags, as (name . own?) pairs, its own first."
   (list-ref e 8))
@@ -93,6 +94,14 @@
 (define (org-entry-appointments e)
   "Agenda entry `e`'s appointments, as (start end) timestamps."
   (list-ref e 9))
+
+(define (org-entry-level e)
+  "Agenda entry `e`'s heading level."
+  (list-ref e 10))
+
+(define (org-entry-prop e name)
+  "Agenda entry `e`'s property `name` (any case), not inherited, or #f."
+  (org-lines-property (list-ref e 11) (cadr e) name #f))
 
 (define (org-file-entries file)
   "Agenda entries in `file`, from its buffer when one visits it: one per
@@ -125,14 +134,15 @@
                    (loop (cdr lines) (+ n 1) (finish acc)
                          (list file n kw (org-without-tags title) #f #f (org-priority-in title)
                                (or (org-lines-property vec n "CATEGORY" #t) file-category)
-                               tags (org-line-appointments title))
+                               tags (org-line-appointments title) level vec)
                          (cons (cons level own) above)))]
                 [current
                  (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
                         [current (list (car current) (cadr current) (caddr current) (cadddr current)
                                        (or (list-ref current 4) s) (or (list-ref current 5) d) (list-ref current 6)
                                        (list-ref current 7) (list-ref current 8)
-                                       (append (list-ref current 9) (org-line-appointments text)))])
+                                       (append (list-ref current 9) (org-line-appointments text))
+                                       (list-ref current 10) (list-ref current 11))])
                    (loop (cdr lines) (+ n 1) acc current above))]
                 [else (loop (cdr lines) (+ n 1) acc current above)])))))))
 
@@ -586,18 +596,132 @@
     (list (string-append (if keyword keyword "Every keyword") " · " (number->string n) (if (= n 1) " entry" " entries"))
           (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) todos)))))
 
+;;; Tags matches, in Org's syntax: +work-urgent|home, LEVEL>1,
+;;; TODO="NEXT", Effort<"1:00", PRIORITY="A", {regexp}.
+
+(define (org-match-split text char)
+  "`text` split at each `char` outside \"strings\" and {regexps}."
+  (let loop ([chars (string->list text)] [quote? #f] [brace 0] [part '()] [acc '()])
+    (let ([piece (lambda () (list->string (reverse part)))])
+      (cond
+        [(null? chars) (reverse (cons (piece) acc))]
+        [(and (equal? (car chars) char) (not quote?) (= brace 0)) (loop (cdr chars) #f 0 '() (cons (piece) acc))]
+        [else (let ([c (car chars)])
+                (loop (cdr chars) (if (and (equal? c #\") (= brace 0)) (not quote?) quote?)
+                      (cond [quote? brace] [(equal? c #\{) (+ brace 1)] [(equal? c #\}) (max 0 (- brace 1))] [else brace])
+                      (cons c part) acc))]))))
+
+(define (org-match-terms text)
+  "The terms of one alternative of a match, as (must? term) where term
+   is (tag NAME), (tag-re REGEXP) or (prop NAME OP VALUE)."
+  (let loop ([chars (string->list text)] [must? #t] [quote? #f] [brace 0] [part '()] [acc '()])
+    (let* ([word (list->string (reverse part))]
+           [flush (lambda () (if (equal? word "") acc (cons (list must? (org-match-term word)) acc)))])
+      (cond
+        [(null? chars) (reverse (flush))]
+        [(and (memv (car chars) '(#\+ #\- #\&)) (not quote?) (= brace 0)
+              ;; A sign starts a term, unless it follows a comparison.
+              (not (and (pair? part) (memv (car part) '(#\= #\< #\>)))))
+         (loop (cdr chars) (not (equal? (car chars) #\-)) #f 0 '() (flush))]
+        [else (let ([c (car chars)])
+                (loop (cdr chars) must? (if (and (equal? c #\") (= brace 0)) (not quote?) quote?)
+                      (cond [quote? brace] [(equal? c #\{) (+ brace 1)] [(equal? c #\}) (max 0 (- brace 1))] [else brace])
+                      (cons c part) acc))]))))
+
+(define (org-match-term word)
+  "One term of a match: a comparison, a {regexp} over tags, or a tag."
+  (let ([op-at (let loop ([i 0])
+                 (cond [(>= i (string-length word)) #f]
+                       [(memv (string-ref word i) '(#\= #\< #\>)) i]
+                       [(memv (string-ref word i) '(#\" #\{)) #f]
+                       [else (loop (+ i 1))]))])
+    (cond
+      [op-at
+       (let* ([two (and (< (+ op-at 1) (string-length word)) (substring word op-at (+ op-at 2)))]
+              [op (if (member two '("<>" "<=" ">=")) two (substring word op-at (+ op-at 1)))])
+         (list 'prop (substring word 0 op-at) op (substring word (+ op-at (string-length op)) (string-length word))))]
+      [(and (starts-with? word "{") (ends-with? word "}")) (list 'tag-re (substring word 1 (- (string-length word) 1)))]
+      [else (list 'tag word)])))
+
+(define (org-parse-match text)
+  "Match `text` parsed: a list of alternatives, each a list of terms."
+  (map org-match-terms (filter (lambda (a) (not (equal? (trim a) ""))) (org-match-split (trim text) #\|))))
+
+(define (org-entry-match-value e name)
+  "What property `name` of entry `e` is for a match: the special TODO,
+   LEVEL, PRIORITY and CATEGORY, or a property of its drawer, or #f
+   when it has none."
+  (case (string->symbol (string-upcase name))
+    [(TODO) (or (caddr e) "")]
+    [(LEVEL) (number->string (org-entry-level e))]
+    [(PRIORITY) (or (list-ref e 6) "B")]
+    [(CATEGORY) (list-ref e 7)]
+    [else (org-entry-prop e name)]))
+
+(define (org-match-term? e term)
+  "Whether entry `e` has `term`."
+  (case (car term)
+    [(tag) (and (member (cadr term) (map car (org-entry-tags e))) #t)]
+    [(tag-re) (ormap (lambda (t) (regexp-match? (cadr term) t)) (map car (org-entry-tags e)))]
+    [else
+     (let* ([have (org-entry-match-value e (cadr term))] [op (caddr term)] [want (cadddr term)]
+            [n (string-length want)])
+       (cond
+         ;; A property it hasn't matches only <>.
+         [(not have) (equal? op "<>")]
+         [(and (> n 1) (starts-with? want "{") (ends-with? want "}"))
+          (let ([hit (regexp-match? (substring want 1 (- n 1)) have)]) (if (equal? op "<>") (not hit) hit))]
+         [(and (> n 1) (starts-with? want "\"") (ends-with? want "\""))
+          (let ([w (substring want 1 (- n 1))])
+            (org-compare-with op (string<? have w) (equal? have w)))]
+         [(and (string->number want) (string->number have))
+          (let ([a (string->number have)] [b (string->number want)])
+            (org-compare-with op (< a b) (= a b)))]
+         [else (equal? op "<>")]))]))
+
+(define (org-compare-with op less? same?)
+  "Whether a comparison `op` holds, given whether the value is `less?`
+   than the one asked for or the `same?`."
+  (cond [(equal? op "=") same?]
+        [(equal? op "<>") (not same?)]
+        [(equal? op "<") less?]
+        [(equal? op "<=") (or less? same?)]
+        [(equal? op ">") (not (or less? same?))]
+        [(equal? op ">=") (not less?)]
+        [else #f]))
+
+(define (org-entry-matches? e match)
+  "Whether entry `e` matches `match`, as org-parse-match gives it."
+  (ormap (lambda (terms) (andmap (lambda (t) (eq? (and (org-match-term? e (cadr t)) #t) (car t))) terms)) match))
+
+(define (org-agenda-tags-block entries text todo-only?)
+  "The headings among `entries` matching `text`: (covers rows). With
+   `todo-only?`, only undone TODO entries; else done ones too."
+  (let* ([match (org-parse-match text)]
+         [hits (filter (lambda (e) (and (or (not todo-only?) (and (caddr e) (not (org-entry-done? e))))
+                                        (org-entry-matches? e match)))
+                       entries)]
+         [n (length hits)])
+    (list (string-append (if todo-only? "TODOs · " "") (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) hits)))))
+
 (define (org-agenda-block entries block)
   "The (covers rows) of `block` over `entries`."
   (case (car block)
     [(agenda) (org-agenda-dated-block entries (cadr block))]
     [(todo) (org-agenda-todo-block entries (caddr block))]
+    [(tags) (org-agenda-tags-block entries (caddr block) #f)]
+    [(tags-todo) (org-agenda-tags-block entries (caddr block) #t)]
     [else (list "" '())]))
 
 (define (org-agenda-block-name block)
   "What a block of a block agenda is headed: its header setting, else
    its kind's name."
   (org-agenda-setting (cadr block) 'header
-                      (case (car block) [(agenda) "Agenda"] [(todo) "To do"] [else (symbol->string (car block))])))
+                      (case (car block)
+                        [(agenda) "Agenda"] [(todo) "To do"]
+                        [(tags tags-todo) (string-append "Tags: " (or (caddr block) ""))]
+                        [else (symbol->string (car block))])))
 
 (define (org-render-agenda!)
   "Redraws the agenda's view from the agenda files: its name and what it
@@ -680,6 +804,17 @@
    `keyword` when it isn't #f."
   (org-agenda-show-view! (list (if keyword (string-append "To do: " keyword) "To do")
                                (list (list 'todo '() keyword)))))
+
+(define (org-tags-view! text todo-only?)
+  "Shows the headings matching tags match `text`; with `todo-only?`
+   only the undone TODOs."
+  (org-agenda-show-view! (list (string-append "Tags: " text)
+                               (list (list (if todo-only? 'tags-todo 'tags) '() text)))))
+
+(define (org-tags-view-prompt! todo-only?)
+  "Asks for a tags match and shows what matches it."
+  (open-cmdline! (if todo-only? "Match TODOs: " "Match: ") ""
+                 (lambda (text) (unless (equal? (trim text) "") (org-tags-view! (trim text) todo-only?))) #f #f))
 
 (define (org-todo-list-prompt!)
   "Asks for a TODO keyword and shows the TODO list for it."
@@ -1053,5 +1188,10 @@
     (org-todo-list! #f)))
 (define-leader-group! "oa" "agenda")
 (define-leader! "oat" 'org-todo-list "TODO list")
+(define-command! 'org-tags-view
+  (lambda (count)
+    "Show the headings matching a tags match, as +work-urgent|home."
+    (org-tags-view-prompt! #f)))
+(define-leader! "oam" 'org-tags-view "tags match")
 (define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))
