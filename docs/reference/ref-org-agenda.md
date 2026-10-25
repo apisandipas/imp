@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: day to year views, a dispatcher with TODO lists, tag matches and search, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: day to year views, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -79,6 +79,23 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 ```
 
 `Plant the bulbs` shows as `:autumn:outside:home:`.
+
+## The dispatcher
+
+`SPC o A` (or `M-x org-agenda`, or `:OrgAgenda`) shows a menu of views, as Org's agenda dispatcher does:
+
+| Key | View |
+|---|---|
+| `a` | The agenda for the week |
+| `t` | Every undone TODO |
+| `T` | The TODOs with one keyword, asked for |
+| `m` | Headings matching tags and properties |
+| `M` | The same, undone TODOs only |
+| `s` | A search |
+| `n` | The week's agenda and every TODO, one after the other |
+| `<` | Limit the next view to the file you're in; press it again for the heading the cursor is under and everything below it |
+
+A limited view says so in its title, and keeps the limit when you press `gr`.
 
 ## Lists of TODOs
 

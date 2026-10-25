@@ -29,6 +29,10 @@
 ;; arg): kind agenda (the dated view), todo, tags, tags-todo or search,
 ;; its settings as org-agenda-setting reads them.
 (define *org-agenda-view* (list "Agenda" (list (list 'agenda '() #f))))
+;; What the next view shown is limited to, as the dispatcher's < sets it:
+;; (file) or (file first-line last-line), or #f; and the view's own.
+(define *org-agenda-pending-restriction* #f)
+(define *org-agenda-restriction* #f)
 ;; The span gD chose: day, week, fortnight, month or year, or #f for
 ;; org-agenda-span days; and whether it turned the grid on or off
 ;; ('default for org-agenda-use-time-grid).
@@ -781,7 +785,11 @@
   "Redraws the agenda's view from the agenda files: its name and what it
    covers, then each block's sections, a block agenda's each under its
    own header."
-  (let* ([entries (apply append (map org-file-entries (org-agenda-file-list)))]
+  (let* ([r *org-agenda-restriction*]
+         [entries (if r
+                      (filter (lambda (e) (or (null? (cdr r)) (<= (cadr r) (cadr e) (caddr r))))
+                              (org-file-entries (car r)))
+                      (apply append (map org-file-entries (org-agenda-file-list))))]
          [blocks (cadr *org-agenda-view*)]
          [drawn (map (lambda (b) (org-agenda-block entries b)) blocks)])
     (org-agenda-draw!
@@ -846,7 +854,13 @@
   "Shows `view` (see *org-agenda-view*) in the agenda's buffer, freshly
    read from the files, from this week and at org-agenda-span."
   (go-to-buffer! (special-buffer "*org agenda*" 'org-agenda-mode))
-  (set! *org-agenda-view* view)
+  (set! *org-agenda-restriction* *org-agenda-pending-restriction*)
+  (set! *org-agenda-pending-restriction* #f)
+  (set! *org-agenda-view* (if *org-agenda-restriction*
+                              (list (string-append (car view) " · " (file-name-of (car *org-agenda-restriction*))
+                                                   (if (pair? (cdr *org-agenda-restriction*)) ", one subtree" ""))
+                                    (cadr view))
+                              view))
   (set! *org-agenda-start* #f)
   (set! *org-agenda-span* #f)
   (set! *org-agenda-grid* 'default)
@@ -883,6 +897,50 @@
   "Asks for a TODO keyword and shows the TODO list for it."
   (completing-read "Keyword: " (filter (lambda (k) (not (member k (org-done-keywords)))) (org-keywords))
                    (lambda (kw) (org-todo-list! kw))))
+
+(define (org-agenda-dispatch! . restriction)
+  "The dispatcher (Org's C-c a): a menu of views. < limits the next view
+   to the current file, < < to the subtree the cursor is in."
+  (let* ([r (if (pair? restriction) (car restriction) #f)]
+         [show (lambda (thunk) (lambda () (set! *org-agenda-pending-restriction* r) (thunk)))]
+         [title (cond [(not r) "Agenda"]
+                      [(null? (cdr r)) (string-append "Agenda (" (file-name-of (car r)) ")")]
+                      [else (string-append "Agenda (" (file-name-of (car r)) ", subtree)")])])
+    (menu! title
+           (append
+            (list (list "a" "agenda for the week" (show org-agenda!))
+                  (list "t" "TODO list" (show (lambda () (org-todo-list! #f))))
+                  (list "T" "TODO list for a keyword" (show org-todo-list-prompt!))
+                  (list "m" "match tags and properties" (show (lambda () (org-tags-view-prompt! #f))))
+                  (list "M" "match, TODOs only" (show (lambda () (org-tags-view-prompt! #t))))
+                  (list "s" "search" (show org-search-view-prompt!))
+                  (list "n" "agenda and every TODO" (show (lambda () (org-agenda-show-view!
+                                                                       (list "Agenda and TODOs"
+                                                                             (list (list 'agenda '() #f) (list 'todo '() #f))))))))
+            (org-agenda-custom-entries show)
+            (list (list "<" (cond [(not r) "limit to this file"] [(null? (cdr r)) "limit to this subtree"] [else "no limit"])
+                        (lambda () (org-agenda-dispatch! (org-agenda-next-restriction r)))))))))
+
+(define (org-agenda-next-restriction r)
+  "What < moves the dispatcher's limit to from `r`: the current file,
+   then its subtree under the cursor, then none."
+  (let ([path (and (buffer-path) (eq? (major-mode) 'org-mode) (absolute-path (buffer-path)))])
+    (cond [(not path) (message "< limits to an Org file: open one first") #f]
+          [(not r) (list path)]
+          [(null? (cdr r))
+           (let ([h (org-heading-line (current-line))])
+             (if h (list path h (org-subtree-end h)) (begin (message "not under a heading") r)))]
+          [else #f])))
+
+;; Custom commands: (key description blocks), as define-agenda-command!
+;; adds them.
+(define *org-agenda-commands* '())
+
+(define (org-agenda-custom-entries show)
+  "The dispatcher's entries for the custom commands."
+  (map (lambda (c) (list (car c) (cadr c)
+                         (show (lambda () (org-agenda-show-view! (list (cadr c) (caddr c)))))))
+       (reverse *org-agenda-commands*)))
 
 (define (org-agenda!)
   "Shows the agenda: this week's dated view."
@@ -1243,8 +1301,8 @@
     (org-agenda!)))
 (define-command! 'org-agenda
   (lambda (count)
-    "Show the agenda: this week's scheduled, due and timed entries."
-    (org-agenda!)))
+    "Show the agenda dispatcher: a menu of views."
+    (org-agenda-dispatch!)))
 (define-command! 'org-todo-list
   (lambda (count)
     "Show every undone TODO entry in the agenda files."
@@ -1262,4 +1320,5 @@
     (org-search-view-prompt!)))
 (define-leader! "oas" 'org-search-view "search")
 (define-leader! "oaa" 'org-agenda-list "agenda")
-(define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))
+(define-ex! '("OrgAgenda") (lambda (ex) (org-agenda-dispatch!)))
+(define-leader! "oA" 'org-agenda "agenda dispatcher")
