@@ -2,7 +2,7 @@
 ;;; do in the agenda files (org-agenda-files, or every .org file under
 ;;; org-directory), as Org's week view, in aligned columns.
 ;;;
-;;; SPC o a shows it, a week (org-agenda-span days) with Overdue above
+;;; SPC o a a shows it, a week (org-agenda-span days) with Overdue above
 ;;; and Later and To do below. Today has a time grid and a now line, and
 ;;; the deadlines coming soon. In it (normal state):
 ;;;
@@ -25,6 +25,19 @@
 ;; The day of the week a week's agenda starts on: 0 for Sunday to 6 for
 ;; Saturday, or #f for today. Unset, it is calendar-week-start's day.
 (define-option! 'org-agenda-start-on-weekday 0 '())
+;; The view the agenda shows: (name blocks). A block is (kind settings
+;; arg): kind agenda (the dated view), todo, tags, tags-todo or search,
+;; its settings as org-agenda-setting reads them.
+(define *org-agenda-view* (list "Agenda" (list (list 'agenda '() #f))))
+;; What the next view shown is limited to, as the dispatcher's < sets it:
+;; (file) or (file first-line last-line), or #f; and the view's own.
+(define *org-agenda-pending-restriction* #f)
+(define *org-agenda-restriction* #f)
+;; The span gD chose: day, week, fortnight, month or year, or #f for
+;; org-agenda-span days; and whether it turned the grid on or off
+;; ('default for org-agenda-use-time-grid).
+(define *org-agenda-span* #f)
+(define *org-agenda-grid* 'default)
 ;; The line today's header was drawn on, or #f, and each day's header's,
 ;; as (day . line).
 (define *org-agenda-today-line* #f)
@@ -74,9 +87,10 @@
                              acc))))))))
 
 ;; An agenda entry is a list: (file line keyword title scheduled deadline
-;; priority category tags appointments). The title is without its keyword
-;; and tags; tags are (name . own?), own ones first; appointments are
-;; (start end) as org-line-appointments gives them.
+;; priority category tags appointments level lines). The title is without
+;; its keyword and tags; tags are (name . own?), own ones first;
+;; appointments are (start end) as org-line-appointments gives them;
+;; level is the heading's, lines the file's, a vector, for properties.
 (define (org-entry-tags e)
   "Agenda entry `e`'s tags, as (name . own?) pairs, its own first."
   (list-ref e 8))
@@ -84,6 +98,14 @@
 (define (org-entry-appointments e)
   "Agenda entry `e`'s appointments, as (start end) timestamps."
   (list-ref e 9))
+
+(define (org-entry-level e)
+  "Agenda entry `e`'s heading level."
+  (list-ref e 10))
+
+(define (org-entry-prop e name)
+  "Agenda entry `e`'s property `name` (any case), not inherited, or #f."
+  (org-lines-property (list-ref e 11) (cadr e) name #f))
 
 (define (org-file-entries file)
   "Agenda entries in `file`, from its buffer when one visits it: one per
@@ -116,14 +138,15 @@
                    (loop (cdr lines) (+ n 1) (finish acc)
                          (list file n kw (org-without-tags title) #f #f (org-priority-in title)
                                (or (org-lines-property vec n "CATEGORY" #t) file-category)
-                               tags (org-line-appointments title))
+                               tags (org-line-appointments title) level vec)
                          (cons (cons level own) above)))]
                 [current
                  (let* ([s (org-stamp-after text "SCHEDULED:")] [d (org-stamp-after text "DEADLINE:")]
                         [current (list (car current) (cadr current) (caddr current) (cadddr current)
                                        (or (list-ref current 4) s) (or (list-ref current 5) d) (list-ref current 6)
                                        (list-ref current 7) (list-ref current 8)
-                                       (append (list-ref current 9) (org-line-appointments text)))])
+                                       (append (list-ref current 9) (org-line-appointments text))
+                                       (list-ref current 10) (list-ref current 11))])
                    (loop (cdr lines) (+ n 1) acc current above))]
                 [else (loop (cdr lines) (+ n 1) acc current above)])))))))
 
@@ -150,13 +173,13 @@
   (or *org-agenda-start* (org-agenda-span-start (calendar-today))))
 
 (define (org-agenda-span-start day)
-  "The first day of the span that shows `day`: with a span of 7 days and
-   org-agenda-start-on-weekday a day, the last such day on or before it,
-   else `day` itself."
+  "The first day of the span that shows `day`: with a span of 7 or 14
+   days and org-agenda-start-on-weekday a day, the last such day on or
+   before it, else `day` itself."
   (let ([start (if (option-set? 'org-agenda-start-on-weekday)
                    (option 'org-agenda-start-on-weekday)
                    (option 'calendar-week-start))])
-    (if (and start (= (option 'org-agenda-span) 7))
+    (if (and start (memv (org-agenda-span) '(7 14)))
         (date-add-days day (- (modulo (- (date-weekday day) start) 7)))
         day)))
 
@@ -319,7 +342,8 @@
          [(header)
           (let* ([text (cadr r)] [kind (caddr r)]
                  [face (case kind [(today) "org.agenda.today"] [(weekend) "org.agenda.weekend"]
-                                  [(date) "org.agenda.date"] [else "org.agenda.section"])])
+                                  [(date) "org.agenda.date"] [(block) "org.agenda.title"]
+                                  [else "org.agenda.section"])])
             (draw-line! (list (if (eq? kind 'today) (list "▌" "org.agenda.today") (list " " #f)) (list " " #f)
                               (list text (list face (heights 2))))
                         #f)
@@ -391,7 +415,7 @@
   (let* ([minutes (lambda (r) (org-time-minutes (caddr r)))]
          [timed (filter minutes rows)]
          [untimed (filter (lambda (r) (not (minutes r))) rows)])
-    (if (or (not (option 'org-agenda-use-time-grid)) (and (not today?) (null? timed)))
+    (if (or (not (org-agenda-grid?)) (and (not today?) (null? timed)))
         rows
         (let* ([taken (map minutes timed)]
                [grid (filter (lambda (m) (not (memv m taken)))
@@ -443,19 +467,52 @@
   "What an occurrence of `kind` says it is on its day."
   (case kind [(scheduled) "Sched."] [(deadline) "Deadline"] [else ""]))
 
-(define (org-render-agenda!)
-  "Redraws the agenda from the agenda files, as Org's week view: the
-   undone entries scheduled or due before today, then org-agenda-span
+(define (org-agenda-setting settings name default)
+  "Block setting `name` from `settings`, ((span . 1) (header . \"Work\")),
+   else `default`."
+  (let ([hit (assq name settings)]) (if hit (cdr hit) default)))
+
+(define (org-agenda-span)
+  "How many days a dated block shows: the span gD chose (a month's or a
+   year's from the first day shown), else the view's first dated
+   block's span setting, else org-agenda-span."
+  (let ([first (or *org-agenda-start* (calendar-today))])
+    (case *org-agenda-span*
+      [(day) 1] [(week) 7] [(fortnight) 14]
+      [(month) (days-in-month (car first) (cadr first))]
+      [(year) (if (= (days-in-month (car first) 2) 29) 366 365)]
+      [else (let ([dated (filter (lambda (b) (eq? (car b) 'agenda)) (cadr *org-agenda-view*))])
+              ;; A custom command's first dated block may give its span.
+              (max 1 (if (pair? dated)
+                         (org-agenda-setting (cadr (car dated)) 'span (option 'org-agenda-span))
+                         (option 'org-agenda-span))))])))
+
+(define (org-agenda-grid?)
+  "Whether dated blocks draw the time grid: as gD set it, else
+   org-agenda-use-time-grid."
+  (if (eq? *org-agenda-grid* 'default) (option 'org-agenda-use-time-grid) *org-agenda-grid*))
+
+(define (org-agenda-span-first day)
+  "The first day of the span gD chose that holds `day`: the month's or
+   year's first, else as org-agenda-span-start."
+  (case *org-agenda-span*
+    [(month) (list (car day) (cadr day) 1)]
+    [(year) (list (car day) 1 1)]
+    [(day) day]
+    [else (org-agenda-span-start day)]))
+
+(define (org-agenda-dated-block entries settings)
+  "The dated block over `entries`, as Org's week view: (covers rows).
+   The undone entries scheduled or due before today, then the span's
    days with what falls on each (repeats and ranges included, timed
    entries first, and on today the deadlines coming), then what is dated
    after the span, then the TODOs with no date. Done entries are left
-   out."
+   out. `settings` may give its span."
   (let* ([today (calendar-today)]
+         [span (max 1 (org-agenda-setting settings 'span (org-agenda-span)))]
          [first (org-agenda-first-day)]
-         [span (max 1 (option 'org-agenda-span))]
          [last (date-add-days first (- span 1))]
          [today-shown? (and (not (date<? today first)) (not (date<? last today)))]
-         [entries (apply append (map org-file-entries (org-agenda-file-list)))]
          [open (filter (lambda (e) (not (org-entry-done? e))) entries)]
          [rank (lambda (e) (org-priority-rank (list-ref e 6)))]
          ;; (occurrence entry) for each date an open entry has, in priority order.
@@ -522,11 +579,10 @@
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
          [section (lambda (name items)
                     (if (null? items) '() (append (list '(blank) (list 'header name 'section)) items)))])
-    (org-agenda-draw!
+    (list
+     (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
+                    (org-span-text first last))
      (append
-      (list (list 'title "Agenda"
-                  (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
-                                 (org-span-text first last))))
       (section "Overdue" (if today-shown? overdue '()))
       (apply append
              (map (lambda (n)
@@ -534,7 +590,224 @@
                       (append (list '(blank) (org-day-header day today)) (day-rows day))))
                   (range 0 span)))
       (section "Later" later)
-      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))
+      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))))))
+
+
+(define (org-agenda-todo-block entries keyword)
+  "The TODO list over `entries`: (covers rows), every undone TODO entry
+   (with `keyword` only, unless it is #f), by priority, then in file
+   order."
+  (let* ([todos (filter (lambda (e) (and (caddr e) (not (org-entry-done? e))
+                                         (or (not keyword) (equal? (caddr e) keyword))))
+                        entries)]
+         [todos (org-sort-entries todos (lambda (e) (org-priority-rank (list-ref e 6))))]
+         [n (length todos)])
+    (list (string-append (if keyword keyword "Every keyword") " · " (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) todos)))))
+
+;;; Tags matches, in Org's syntax: +work-urgent|home, LEVEL>1,
+;;; TODO="NEXT", Effort<"1:00", PRIORITY="A", {regexp}.
+
+(define (org-match-split text char)
+  "`text` split at each `char` outside \"strings\" and {regexps}."
+  (let loop ([chars (string->list text)] [quote? #f] [brace 0] [part '()] [acc '()])
+    (let ([piece (lambda () (list->string (reverse part)))])
+      (cond
+        [(null? chars) (reverse (cons (piece) acc))]
+        [(and (equal? (car chars) char) (not quote?) (= brace 0)) (loop (cdr chars) #f 0 '() (cons (piece) acc))]
+        [else (let ([c (car chars)])
+                (loop (cdr chars) (if (and (equal? c #\") (= brace 0)) (not quote?) quote?)
+                      (cond [quote? brace] [(equal? c #\{) (+ brace 1)] [(equal? c #\}) (max 0 (- brace 1))] [else brace])
+                      (cons c part) acc))]))))
+
+(define (org-match-terms text)
+  "The terms of one alternative of a match, as (must? term) where term
+   is (tag NAME), (tag-re REGEXP) or (prop NAME OP VALUE)."
+  (let loop ([chars (string->list text)] [must? #t] [quote? #f] [brace 0] [part '()] [acc '()])
+    (let* ([word (list->string (reverse part))]
+           [flush (lambda () (if (equal? word "") acc (cons (list must? (org-match-term word)) acc)))])
+      (cond
+        [(null? chars) (reverse (flush))]
+        [(and (memv (car chars) '(#\+ #\- #\&)) (not quote?) (= brace 0)
+              ;; A sign starts a term, unless it follows a comparison.
+              (not (and (pair? part) (memv (car part) '(#\= #\< #\>)))))
+         (loop (cdr chars) (not (equal? (car chars) #\-)) #f 0 '() (flush))]
+        [else (let ([c (car chars)])
+                (loop (cdr chars) must? (if (and (equal? c #\") (= brace 0)) (not quote?) quote?)
+                      (cond [quote? brace] [(equal? c #\{) (+ brace 1)] [(equal? c #\}) (max 0 (- brace 1))] [else brace])
+                      (cons c part) acc))]))))
+
+(define (org-match-term word)
+  "One term of a match: a comparison, a {regexp} over tags, or a tag."
+  (let ([op-at (let loop ([i 0])
+                 (cond [(>= i (string-length word)) #f]
+                       [(memv (string-ref word i) '(#\= #\< #\>)) i]
+                       [(memv (string-ref word i) '(#\" #\{)) #f]
+                       [else (loop (+ i 1))]))])
+    (cond
+      [op-at
+       (let* ([two (and (< (+ op-at 1) (string-length word)) (substring word op-at (+ op-at 2)))]
+              [op (if (member two '("<>" "<=" ">=")) two (substring word op-at (+ op-at 1)))])
+         (list 'prop (substring word 0 op-at) op (substring word (+ op-at (string-length op)) (string-length word))))]
+      [(and (starts-with? word "{") (ends-with? word "}")) (list 'tag-re (substring word 1 (- (string-length word) 1)))]
+      [else (list 'tag word)])))
+
+(define (org-parse-match text)
+  "Match `text` parsed: a list of alternatives, each a list of terms."
+  (map org-match-terms (filter (lambda (a) (not (equal? (trim a) ""))) (org-match-split (trim text) #\|))))
+
+(define (org-entry-match-value e name)
+  "What property `name` of entry `e` is for a match: the special TODO,
+   LEVEL, PRIORITY and CATEGORY, or a property of its drawer, or #f
+   when it has none."
+  (case (string->symbol (string-upcase name))
+    [(TODO) (or (caddr e) "")]
+    [(LEVEL) (number->string (org-entry-level e))]
+    [(PRIORITY) (or (list-ref e 6) "B")]
+    [(CATEGORY) (list-ref e 7)]
+    [else (org-entry-prop e name)]))
+
+(define (org-match-term? e term)
+  "Whether entry `e` has `term`."
+  (case (car term)
+    [(tag) (and (member (cadr term) (map car (org-entry-tags e))) #t)]
+    [(tag-re) (ormap (lambda (t) (regexp-match? (cadr term) t)) (map car (org-entry-tags e)))]
+    [else
+     (let* ([have (org-entry-match-value e (cadr term))] [op (caddr term)] [want (cadddr term)]
+            [n (string-length want)])
+       (cond
+         ;; A property it hasn't matches only <>.
+         [(not have) (equal? op "<>")]
+         [(and (> n 1) (starts-with? want "{") (ends-with? want "}"))
+          (let ([hit (regexp-match? (substring want 1 (- n 1)) have)]) (if (equal? op "<>") (not hit) hit))]
+         [(and (> n 1) (starts-with? want "\"") (ends-with? want "\""))
+          (let ([w (substring want 1 (- n 1))])
+            (org-compare-with op (string<? have w) (equal? have w)))]
+         [(and (string->number want) (string->number have))
+          (let ([a (string->number have)] [b (string->number want)])
+            (org-compare-with op (< a b) (= a b)))]
+         [else (equal? op "<>")]))]))
+
+(define (org-compare-with op less? same?)
+  "Whether a comparison `op` holds, given whether the value is `less?`
+   than the one asked for or the `same?`."
+  (cond [(equal? op "=") same?]
+        [(equal? op "<>") (not same?)]
+        [(equal? op "<") less?]
+        [(equal? op "<=") (or less? same?)]
+        [(equal? op ">") (not (or less? same?))]
+        [(equal? op ">=") (not less?)]
+        [else #f]))
+
+(define (org-entry-matches? e match)
+  "Whether entry `e` matches `match`, as org-parse-match gives it."
+  (ormap (lambda (terms) (andmap (lambda (t) (eq? (and (org-match-term? e (cadr t)) #t) (car t))) terms)) match))
+
+(define (org-agenda-tags-block entries text todo-only?)
+  "The headings among `entries` matching `text`: (covers rows). With
+   `todo-only?`, only undone TODO entries; else done ones too."
+  (let* ([match (org-parse-match text)]
+         [hits (filter (lambda (e) (and (or (not todo-only?) (and (caddr e) (not (org-entry-done? e))))
+                                        (org-entry-matches? e match)))
+                       entries)]
+         [n (length hits)])
+    (list (string-append (if todo-only? "TODOs · " "") (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) hits)))))
+
+;;; Search: words in a heading or its text.
+
+(define (org-search-terms text)
+  "The words of a search, as (must? kind value): kind word, phrase or
+   regexp. +word and plain words must be there, -word mustn't;
+   \"a phrase\" is as written, {regexp} a regexp."
+  (let loop ([chars (string->list (trim text))] [acc '()])
+    (cond
+      [(null? chars) (reverse acc)]
+      [(char-whitespace? (car chars)) (loop (cdr chars) acc)]
+      [else
+       (let* ([must? (not (equal? (car chars) #\-))]
+              [chars (if (memv (car chars) '(#\+ #\-)) (cdr chars) chars)]
+              [close (cond [(null? chars) #f] [(equal? (car chars) #\") #\"] [(equal? (car chars) #\{) #\}] [else #f])])
+         (if close
+             (let take ([cs (cdr chars)] [word '()])
+               (if (or (null? cs) (equal? (car cs) close))
+                   (loop (if (null? cs) cs (cdr cs))
+                         (cons (list must? (if (equal? close #\") 'phrase 'regexp) (list->string (reverse word))) acc))
+                   (take (cdr cs) (cons (car cs) word))))
+             (let take ([cs chars] [word '()])
+               (if (or (null? cs) (char-whitespace? (car cs)))
+                   (loop cs (if (null? word) acc (cons (list must? 'word (list->string (reverse word))) acc)))
+                   (take (cdr cs) (cons (car cs) word))))))])))
+
+(define (org-entry-text e)
+  "Agenda entry `e`'s heading and text, up to the next heading."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)])
+    (let loop ([l (+ (cadr e) 1)] [acc (list (vector-ref lines (cadr e)))])
+      (if (or (>= l n) (org-level-of (vector-ref lines l)))
+          (string-join (reverse acc) "\n")
+          (loop (+ l 1) (cons (vector-ref lines l) acc))))))
+
+(define (org-entry-found? e terms)
+  "Whether entry `e`'s heading and text hold `terms`, ignoring case."
+  (let ([text (string-downcase (org-entry-text e))])
+    (andmap (lambda (t)
+              (let ([hit (if (eq? (cadr t) 'regexp)
+                             (regexp-match? (caddr t) text)
+                             (string-contains? text (string-downcase (caddr t))))])
+                (eq? (and hit #t) (car t))))
+            terms)))
+
+(define (org-agenda-search-block entries text)
+  "The entries whose heading or text hold the words of `text`: (covers
+   rows), in file order."
+  (let* ([terms (org-search-terms text)]
+         [hits (if (null? terms) '() (filter (lambda (e) (org-entry-found? e terms)) entries))]
+         [n (length hits)])
+    (list (string-append (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) hits)))))
+
+(define (org-agenda-block entries block)
+  "The (covers rows) of `block` over `entries`."
+  (case (car block)
+    [(agenda) (org-agenda-dated-block entries (cadr block))]
+    [(todo) (org-agenda-todo-block entries (caddr block))]
+    [(tags) (org-agenda-tags-block entries (caddr block) #f)]
+    [(tags-todo) (org-agenda-tags-block entries (caddr block) #t)]
+    [(search) (org-agenda-search-block entries (caddr block))]
+    [else (list "" '())]))
+
+(define (org-agenda-block-name block)
+  "What a block of a block agenda is headed: its header setting, else
+   its kind's name."
+  (org-agenda-setting (cadr block) 'header
+                      (case (car block)
+                        [(agenda) "Agenda"] [(todo) "To do"]
+                        [(tags tags-todo) (string-append "Tags: " (or (caddr block) ""))]
+                        [(search) (string-append "Search: " (or (caddr block) ""))]
+                        [else (symbol->string (car block))])))
+
+(define (org-render-agenda!)
+  "Redraws the agenda's view from the agenda files: its name and what it
+   covers, then each block's sections, a block agenda's each under its
+   own header."
+  (let* ([r *org-agenda-restriction*]
+         [entries (if r
+                      (filter (lambda (e) (or (null? (cdr r)) (<= (cadr r) (cadr e) (caddr r))))
+                              (org-file-entries (car r)))
+                      (apply append (map org-file-entries (org-agenda-file-list))))]
+         [blocks (cadr *org-agenda-view*)]
+         [drawn (map (lambda (b) (org-agenda-block entries b)) blocks)])
+    (org-agenda-draw!
+     (append
+      (list (list 'title (car *org-agenda-view*) (car (car drawn))))
+      (if (null? (cdr blocks))
+          (cadr (car drawn))
+          (apply append
+                 (let loop ([bs blocks] [ds drawn])
+                   (if (null? bs)
+                       '()
+                       (cons (append (list '(blank) (list 'header (org-agenda-block-name (car bs)) 'block)) (cadr (car ds)))
+                             (loop (cdr bs) (cdr ds)))))))
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
@@ -546,19 +819,167 @@
    its first line."
   (set-cursor! (line-start (or *org-agenda-today-line* 0))))
 
-(define (org-agenda-move! days)
-  "Moves the agenda `days` on, or back to this week when `days` is #f."
-  (set! *org-agenda-start* (and days (date-add-days (org-agenda-first-day) days)))
+(define (org-agenda-move! n)
+  "Moves the agenda `n` spans on (back when negative): months or years
+   in a month's or year's view, else days. #f goes back to the span that
+   has today."
+  (let ([first (org-agenda-first-day)])
+    (set! *org-agenda-start*
+          (cond [(not n) (org-agenda-span-first (calendar-today))]
+                [(eq? *org-agenda-span* 'month) (date-add-months first n)]
+                [(eq? *org-agenda-span* 'year) (date-add-months first (* 12 n))]
+                [else (date-add-days first (* n (org-agenda-span)))])))
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
-(define (org-agenda!)
-  "Shows the agenda in its own buffer, freshly read from the files, from
-   this week."
+(define (org-agenda-view-span! kind)
+  "gD: shows the span `kind` (day, week, fortnight, month or year) that
+   holds the day the cursor is on."
+  (let ([day (org-agenda-line-date)])
+    (set! *org-agenda-span* kind)
+    (set! *org-agenda-start* (org-agenda-span-first day))
+    (org-render-agenda!)
+    (let ([line (assoc day *org-agenda-day-lines*)])
+      (set-cursor! (line-start (if line (cdr line) 0))))))
+
+(define (org-agenda-view-menu!)
+  "gD: asks how the agenda's dated view shows."
+  (menu! "View"
+         (list (list "d" "day" (lambda () (org-agenda-view-span! 'day)))
+               (list "w" "week" (lambda () (org-agenda-view-span! 'week)))
+               (list "t" "fortnight" (lambda () (org-agenda-view-span! 'fortnight)))
+               (list "m" "month" (lambda () (org-agenda-view-span! 'month)))
+               (list "y" "year" (lambda () (org-agenda-view-span! 'year)))
+               (list "g" "time grid" (lambda ()
+                                       (set! *org-agenda-grid* (not (org-agenda-grid?)))
+                                       (org-render-agenda!)
+                                       (message (if *org-agenda-grid* "time grid on" "time grid off")))))))
+
+(define (org-agenda-show-view! view)
+  "Shows `view` (see *org-agenda-view*) in the agenda's buffer, freshly
+   read from the files, from this week and at org-agenda-span."
   (go-to-buffer! (special-buffer "*org agenda*" 'org-agenda-mode))
+  (set! *org-agenda-restriction* *org-agenda-pending-restriction*)
+  (set! *org-agenda-pending-restriction* #f)
+  (set! *org-agenda-view* (if *org-agenda-restriction*
+                              (list (string-append (car view) " · " (file-name-of (car *org-agenda-restriction*))
+                                                   (if (pair? (cdr *org-agenda-restriction*)) ", one subtree" ""))
+                                    (cadr view))
+                              view))
   (set! *org-agenda-start* #f)
+  (set! *org-agenda-span* #f)
+  (set! *org-agenda-grid* 'default)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
+
+(define (org-todo-list! keyword)
+  "Shows the TODO list: every undone TODO entry, or those with
+   `keyword` when it isn't #f."
+  (org-agenda-show-view! (list (if keyword (string-append "To do: " keyword) "To do")
+                               (list (list 'todo '() keyword)))))
+
+(define (org-tags-view! text todo-only?)
+  "Shows the headings matching tags match `text`; with `todo-only?`
+   only the undone TODOs."
+  (org-agenda-show-view! (list (string-append "Tags: " text)
+                               (list (list (if todo-only? 'tags-todo 'tags) '() text)))))
+
+(define (org-tags-view-prompt! todo-only?)
+  "Asks for a tags match and shows what matches it."
+  (open-cmdline! (if todo-only? "Match TODOs: " "Match: ") ""
+                 (lambda (text) (unless (equal? (trim text) "") (org-tags-view! (trim text) todo-only?))) #f #f))
+
+(define (org-search-view! text)
+  "Shows the entries whose heading or text hold the words of `text`."
+  (org-agenda-show-view! (list (string-append "Search: " text) (list (list 'search '() text)))))
+
+(define (org-search-view-prompt!)
+  "Asks for words and shows the entries that hold them."
+  (open-cmdline! "Search: " ""
+                 (lambda (text) (unless (equal? (trim text) "") (org-search-view! (trim text)))) #f #f))
+
+(define (org-todo-list-prompt!)
+  "Asks for a TODO keyword and shows the TODO list for it."
+  (completing-read "Keyword: " (filter (lambda (k) (not (member k (org-done-keywords)))) (org-keywords))
+                   (lambda (kw) (org-todo-list! kw))))
+
+(define (org-agenda-dispatch! . restriction)
+  "The dispatcher (Org's C-c a): a menu of views. < limits the next view
+   to the current file, < < to the subtree the cursor is in."
+  (let* ([r (if (pair? restriction) (car restriction) #f)]
+         [show (lambda (thunk) (lambda () (set! *org-agenda-pending-restriction* r) (thunk)))]
+         [title (cond [(not r) "Agenda"]
+                      [(null? (cdr r)) (string-append "Agenda (" (file-name-of (car r)) ")")]
+                      [else (string-append "Agenda (" (file-name-of (car r)) ", subtree)")])])
+    (menu! title
+           (append
+            (list (list "a" "agenda for the week" (show org-agenda!))
+                  (list "t" "TODO list" (show (lambda () (org-todo-list! #f))))
+                  (list "T" "TODO list for a keyword" (show org-todo-list-prompt!))
+                  (list "m" "match tags and properties" (show (lambda () (org-tags-view-prompt! #f))))
+                  (list "M" "match, TODOs only" (show (lambda () (org-tags-view-prompt! #t))))
+                  (list "s" "search" (show org-search-view-prompt!))
+                  (list "n" "agenda and every TODO" (show (lambda () (org-agenda-show-view!
+                                                                       (list "Agenda and TODOs"
+                                                                             (list (list 'agenda '() #f) (list 'todo '() #f))))))))
+            (org-agenda-custom-entries show)
+            (list (list "<" (cond [(not r) "limit to this file"] [(null? (cdr r)) "limit to this subtree"] [else "no limit"])
+                        (lambda () (org-agenda-dispatch! (org-agenda-next-restriction r)))))))))
+
+(define (org-agenda-next-restriction r)
+  "What < moves the dispatcher's limit to from `r`: the current file,
+   then its subtree under the cursor, then none."
+  (let ([path (and (buffer-path) (eq? (major-mode) 'org-mode) (absolute-path (buffer-path)))])
+    (cond [(not path) (message "< limits to an Org file: open one first") #f]
+          [(not r) (list path)]
+          [(null? (cdr r))
+           (let ([h (org-heading-line (current-line))])
+             (if h (list path h (org-subtree-end h)) (begin (message "not under a heading") r)))]
+          [else #f])))
+
+;; Custom commands: (key description blocks), as define-agenda-command!
+;; adds them.
+(define *org-agenda-commands* '())
+
+(define (org-agenda-command-block form)
+  "A block of a custom command as written, (tags-todo \"+work\" (header
+   \"Work\")), as a view's block: (kind settings arg)."
+  (let* ([kind (car form)]
+         [args (cdr form)]
+         [arg (let ([strings (filter string? args)]) (if (pair? strings) (car strings) #f))]
+         [settings (map (lambda (s) (cons (car s) (cadr s))) (filter pair? args))])
+    (unless (memq kind '(agenda todo tags tags-todo search))
+      (error (string-append "define-agenda-command!: no block kind " (symbol->string kind))))
+    (list kind settings arg)))
+
+(define (define-agenda-command! key description blocks)
+  "Adds a view to the agenda dispatcher on `key`. `blocks` are shown
+   one after another, each one of:
+
+     (agenda)              the dated view; (agenda (span 1)) for a day
+     (todo) (todo \"NEXT\")  the TODO list, or one keyword's
+     (tags \"+work\")        a tags match; tags-todo for undone TODOs
+     (search \"words\")      a search
+
+   each with optional settings, (span N) and (header \"Name\"):
+
+     (define-agenda-command! \"w\" \"Work\"
+       '((agenda (span 1)) (tags-todo \"+work\" (header \"Work to do\"))))"
+  (let ([parsed (map org-agenda-command-block blocks)])
+    (set! *org-agenda-commands*
+          (cons (list key description parsed)
+                (filter (lambda (c) (not (equal? (car c) key))) *org-agenda-commands*))))
+  void)
+
+(define (org-agenda-custom-entries show)
+  "The dispatcher's entries for the custom commands."
+  (map (lambda (c) (list (car c) (cadr c)
+                         (show (lambda () (org-agenda-show-view! (list (cadr c) (caddr c)))))))
+       (reverse *org-agenda-commands*)))
+
+(define (org-agenda!)
+  "Shows the agenda: this week's dated view."
+  (org-agenda-show-view! (list "Agenda" (list (list 'agenda '() #f)))))
 
 (define (org-agenda-entry-line? line)
   "Whether agenda line `line` is an entry's."
@@ -578,7 +999,7 @@
 
 (define (org-agenda-go-to-date! date)
   "Shows the span that has `date`, the cursor on its day."
-  (set! *org-agenda-start* (org-agenda-span-start date))
+  (set! *org-agenda-start* (org-agenda-span-first date))
   (org-render-agenda!)
   (let ([line (assoc date *org-agenda-day-lines*)])
     (set-cursor! (line-start (if line (cdr line) 0)))))
@@ -862,19 +1283,16 @@
   "Binds `key` in the agenda, in normal state, labelled `label`."
   (define-mode-key! 'org-agenda-mode 'normal key proc label))
 
-(define (org-agenda-span-days n)
-  "How far `n` spans go, in days."
-  (* (max 1 n) (max 1 (option 'org-agenda-span))))
-
 (org-agenda-key! "<ret>" (lambda (n) (org-agenda-visit!)) "go to entry")
 (org-agenda-key! "<tab>" (lambda (n) (org-agenda-show!)) "show entry")
 (org-agenda-key! "gr" (lambda (n) (org-render-agenda!)) "refresh")
 (org-agenda-key! "gR" (lambda (n) (org-agenda-redraw-all!)) "refresh all")
-(org-agenda-key! "f" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
-(org-agenda-key! "b" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
-(org-agenda-key! "]]" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
-(org-agenda-key! "[[" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
+(org-agenda-key! "f" (lambda (n) (org-agenda-move! (max 1 n))) "later")
+(org-agenda-key! "b" (lambda (n) (org-agenda-move! (- (max 1 n)))) "earlier")
+(org-agenda-key! "]]" (lambda (n) (org-agenda-move! (max 1 n))) "later")
+(org-agenda-key! "[[" (lambda (n) (org-agenda-move! (- (max 1 n)))) "earlier")
 (org-agenda-key! "." (lambda (n) (org-agenda-move! #f)) "today")
+(org-agenda-key! "gD" (lambda (n) (org-agenda-view-menu!)) "view")
 (org-agenda-key! "gd" (lambda (n) (read-date "Go to date: " #f (lambda (d) (org-agenda-go-to-date! (take d 3)))))
                  "go to date")
 (org-agenda-key! "gj" (lambda (n) (org-agenda-next-entry! 1 n)) "next entry")
@@ -912,9 +1330,30 @@
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 
+(define-command! 'org-agenda-list
+  (lambda (count)
+    "Show the agenda: this week's scheduled, due and timed entries."
+    (org-agenda!)))
 (define-command! 'org-agenda
   (lambda (count)
-    "Show the agenda: TODOs and SCHEDULED and DEADLINE dates."
-    (org-agenda!)))
-(define-leader! "oa" 'org-agenda "agenda")
-(define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))
+    "Show the agenda dispatcher: a menu of views."
+    (org-agenda-dispatch!)))
+(define-command! 'org-todo-list
+  (lambda (count)
+    "Show every undone TODO entry in the agenda files."
+    (org-todo-list! #f)))
+(define-leader-group! "oa" "agenda")
+(define-leader! "oat" 'org-todo-list "TODO list")
+(define-command! 'org-tags-view
+  (lambda (count)
+    "Show the headings matching a tags match, as +work-urgent|home."
+    (org-tags-view-prompt! #f)))
+(define-leader! "oam" 'org-tags-view "tags match")
+(define-command! 'org-search-view
+  (lambda (count)
+    "Show the entries whose heading or text hold some words."
+    (org-search-view-prompt!)))
+(define-leader! "oas" 'org-search-view "search")
+(define-leader! "oaa" 'org-agenda-list "agenda")
+(define-ex! '("OrgAgenda") (lambda (ex) (org-agenda-dispatch!)))
+(define-leader! "oA" 'org-agenda "agenda dispatcher")

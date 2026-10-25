@@ -174,7 +174,7 @@ In `init.scm`, `(org-entry-property line "OWNER")` gives a heading's property, a
 
 ## The agenda
 
-`SPC o a` opens the agenda: this week's TODOs and dates from your agenda files. See [Org agenda](ref-org-agenda.md).
+`SPC o a a` opens the agenda: this week's TODOs and dates from your agenda files. See [Org agenda](ref-org-agenda.md).
 
 ## Capture
 

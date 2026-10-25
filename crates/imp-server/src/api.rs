@@ -1337,6 +1337,17 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("socket-path", |name: String| {
         crate::daemon::socket_path(&name).display().to_string()
     });
+    // Whether regexp `pattern` (Rust's syntax, ignoring case) matches
+    // somewhere in `text`; a bad pattern is an error naming it. For the
+    // agenda's {regexp} matches.
+    engine.register_fn("regexp-match?", |pattern: String, text: String| {
+        regex::RegexBuilder::new(&pattern)
+            .case_insensitive(true)
+            .build()
+            .map(|re| re.is_match(&text))
+            .map_err(|e| format!("bad regexp {pattern}: {e}"))
+    });
+
     // Char offsets of every match of `pattern` in the buffer, up to `limit`.
     engine.register_fn("search-all", |pattern: String, limit: isize| {
         let re = search::compile(&pattern)?;

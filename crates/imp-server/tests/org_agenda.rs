@@ -62,7 +62,7 @@ fn the_agenda_sorts_by_priority() {
         )],
     );
     let mut s = agenda_server(&dir);
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     let text = s.text();
     let at = |what: &str| {
         text.find(what)
@@ -89,7 +89,7 @@ fn agenda_and_capture() {
         )],
     );
     let mut s = agenda_server(&dir);
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     let text = s.text();
     let overdue = text.find("Overdue").unwrap();
     let todo = text.find("To do").unwrap();
@@ -129,7 +129,7 @@ fn the_agenda_leaves_out_every_done_keyword() {
     let mut s = agenda_server(&dir);
     s.eval(r#"(set-option! 'org-todo-keywords '("TODO" "NEXT" "|" "DONE" "CANCELLED"))"#)
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     let text = s.text();
     find_line(&text, &["TODO", "Write"]);
     find_line(&text, &["NEXT", "Plan"]);
@@ -214,7 +214,7 @@ fn an_open_file_is_read_from_its_buffer() {
         ),
     );
     // Not saved: the agenda reads the buffer.
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     let text = s.text();
     assert!(text.contains("Unsaved"), "{text}");
     assert!(!text.contains("On disk"), "{text}");
@@ -245,7 +245,7 @@ fn week(name: &str, width: u16) -> (imp_server::Server, Vec<String>) {
     s.eval(TODAY).unwrap();
     s.eval(r#"(set-option! 'org-todo-keywords '("TODO" "NEXT" "|" "DONE"))"#)
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     let lines = s.text().lines().map(str::to_string).collect();
     (s, lines)
 }
@@ -407,7 +407,7 @@ fn agenda(name: &str, text: &str) -> imp_server::Server {
     let mut s = agenda_server(&dir);
     s.set_size(72, 60);
     s.eval(TODAY).unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     s
 }
 
@@ -490,7 +490,7 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
     assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
     // A span of 3 days starts on today, and has no week number.
     s.eval("(set-option! 'org-agenda-span 3)").unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     assert_eq!(lines(&s)[1], " 21–23 Oct 2026");
 }
 
@@ -650,11 +650,11 @@ fn the_week_starts_on_org_agenda_start_on_weekday() {
     assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
     s.eval("(set-option! 'org-agenda-start-on-weekday 1)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     assert_eq!(lines(&s)[1], " Week 43 · 19–25 Oct 2026");
     s.eval("(set-option! 'org-agenda-start-on-weekday #f)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     assert_eq!(lines(&s)[1], " Week 43 · 21–27 Oct 2026");
 }
 
@@ -682,7 +682,7 @@ fn gj_and_gk_move_between_entries() {
     let mut s = agenda("agenda-gj", MOVES);
     s.eval("(set-option! 'org-agenda-use-time-grid #f)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     // From today's header, past the rule and the next day's header.
     type_keys(&mut s, "gj");
     assert!(
@@ -717,7 +717,7 @@ fn tab_shows_the_entry_in_another_window() {
     let mut s = agenda_server(&dir);
     s.set_size(100, 40);
     s.eval(TODAY).unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>gj");
+    type_keys(&mut s, ":OrgAgenda<ret>agj");
     type_keys(&mut s, "<tab>");
     // The cursor stays in the agenda; the other window has the file, on
     // the entry's heading.
@@ -749,7 +749,7 @@ fn zq_keeps_files_that_were_open_already() {
     let mut s = agenda_server(&dir);
     s.eval(TODAY).unwrap();
     type_keys(&mut s, &format!(":e {}<ret>", dir.join("a.org").display()));
-    type_keys(&mut s, ":OrgAgenda<ret>gj<ret>:OrgAgenda<ret>ZQ");
+    type_keys(&mut s, ":OrgAgenda<ret>agj<ret>:OrgAgenda<ret>aZQ");
     let names = s.eval("(map buffer-name-of (buffer-list))").unwrap();
     assert!(names.contains("a.org"), "{names}");
 }
@@ -790,7 +790,7 @@ fn agenda_files(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std:
         .unwrap();
     s.eval("(set-option! 'org-agenda-use-time-grid #f)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
     (s, dir)
 }
 
@@ -846,7 +846,7 @@ fn a_buffer_with_unsaved_changes_is_changed_but_not_saved() {
     type_keys(
         &mut s,
         &format!(
-            ":e {}<ret>Gcc* TODO Kept<esc>:OrgAgenda<ret>",
+            ":e {}<ret>Gcc* TODO Kept<esc>:OrgAgenda<ret>a",
             path.display()
         ),
     );
@@ -1078,4 +1078,319 @@ fn spc_m_names_the_agenda_s_groups() {
         shown.contains("d → deadline") && shown.contains("c → +clock"),
         "{shown}"
     );
+}
+
+#[test]
+fn spc_o_a_a_opens_the_agenda() {
+    let dir = org_dir("agenda-spc", &[("a.org", "* TODO Thing\n")]);
+    let mut s = agenda_server(&dir);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " oa");
+    assert!(s.frame().text_rows().join("\n").contains("a → agenda"));
+    type_keys(&mut s, "a");
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    type_keys(&mut s, "q");
+    s.eval("(run-command 'org-agenda-list)").unwrap();
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+}
+
+#[test]
+fn gd_changes_the_span() {
+    let (mut s, _) = agenda_files(
+        "agenda-gD",
+        &[("a.org", "* TODO Thing\nSCHEDULED: <2026-10-23 Fri 10:00>\n")],
+    );
+    // A day: the one the cursor is on (today).
+    type_keys(&mut s, "gDd");
+    assert_eq!(lines(&s)[1], " 21 Oct 2026");
+    type_keys(&mut s, "f");
+    assert_eq!(lines(&s)[1], " 22 Oct 2026");
+    // A fortnight, a month from its first, a year from 1 January; f moves
+    // a month or a year.
+    type_keys(&mut s, ".gDt");
+    assert_eq!(lines(&s)[1], " 18–31 Oct 2026");
+    type_keys(&mut s, "gDm");
+    assert_eq!(lines(&s)[1], " 1–31 Oct 2026");
+    type_keys(&mut s, "f");
+    assert_eq!(lines(&s)[1], " 1–30 Nov 2026");
+    type_keys(&mut s, "gDy");
+    assert_eq!(lines(&s)[1], " 1 Jan – 31 Dec 2026");
+    type_keys(&mut s, "b");
+    assert_eq!(lines(&s)[1], " 1 Jan – 31 Dec 2025");
+    type_keys(&mut s, ".gDw");
+    assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
+    // The grid: off in these tests, on with gD g; opening again resets both.
+    assert!(!lines(&s).iter().any(|l| l.contains('┄')));
+    type_keys(&mut s, "gDg");
+    assert!(lines(&s).iter().any(|l| l.contains('┄')));
+    type_keys(&mut s, "gDm:OrgAgenda<ret>a");
+    assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
+    assert!(!lines(&s).iter().any(|l| l.contains('┄')));
+}
+
+#[test]
+fn the_todo_list_has_every_undone_todo() {
+    let (mut s, _) = agenda_files(
+        "agenda-todo-list",
+        &[(
+            "a.org",
+            "* TODO [#C] Low\nSCHEDULED: <2026-10-21 Wed>\n* NEXT Next one\n* Notes\n* TODO [#A] High\n* DONE Done\n* TODO Plain\n",
+        )],
+    );
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " oat");
+    let shown = lines(&s);
+    assert_eq!(shown[0], " To do");
+    assert_eq!(shown[1], " Every keyword · 4 entries");
+    // By priority, none as B, then file order; dated ones too; no plain
+    // headings or done ones.
+    let rest: Vec<String> = shown[3..]
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    assert_eq!(
+        rest,
+        [
+            "TODO [#A] High a",
+            "NEXT Next one a",
+            "TODO Plain a",
+            "TODO [#C] Low a"
+        ]
+    );
+    // One keyword.
+    s.eval("(org-todo-list! \"NEXT\")").unwrap();
+    assert_eq!(lines(&s)[0], " To do: NEXT");
+    assert_eq!(lines(&s)[1], " NEXT · 1 entry");
+    // t on it still acts, and the list redraws.
+    go_to(&mut s, "Next one");
+    type_keys(&mut s, "t");
+    assert_eq!(lines(&s)[1], " NEXT · 0 entries");
+}
+
+const MATCHING: &str = "#+FILETAGS: :org:
+* Work :work:
+** TODO [#A] Urgent report :urgent:
+:PROPERTIES:
+:Effort: 0:30
+:END:
+** NEXT Plan
+:PROPERTIES:
+:Effort: 2:00
+:END:
+** DONE Shipped
+* Home :home:
+** TODO Garden
+";
+
+/// The titles a tags match `text` shows, in order.
+fn matched(s: &mut imp_server::Server, text: &str, todo_only: bool) -> Vec<String> {
+    s.eval(&format!(
+        "(org-tags-view! {text:?} {})",
+        if todo_only { "#t" } else { "#f" }
+    ))
+    .unwrap();
+    lines(s)[3..]
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let words: Vec<&str> = l.split_whitespace().collect();
+            words[..words.len() - 1]
+                .iter()
+                .filter(|w| !w.starts_with(':') && !["TODO", "NEXT", "DONE"].contains(w))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+#[test]
+fn tags_matches_in_org_s_syntax() {
+    let (mut s, _) = agenda_files("agenda-match", &[("m.org", MATCHING)]);
+    // Inherited tags count; - excludes; | is or.
+    assert_eq!(
+        matched(&mut s, "work", false),
+        ["Work", "[#A] Urgent report", "Plan", "Shipped"]
+    );
+    assert_eq!(
+        matched(&mut s, "+work-urgent", false),
+        ["Work", "Plan", "Shipped"]
+    );
+    assert_eq!(
+        matched(&mut s, "urgent|home", false),
+        ["[#A] Urgent report", "Home", "Garden"]
+    );
+    assert_eq!(matched(&mut s, "org&home", false), ["Home", "Garden"]);
+    assert_eq!(matched(&mut s, "{^ho}", false), ["Home", "Garden"]);
+    // Special properties and the drawer's.
+    assert_eq!(matched(&mut s, "TODO=\"NEXT\"", false), ["Plan"]);
+    assert_eq!(matched(&mut s, "LEVEL>1+home", false), ["Garden"]);
+    assert_eq!(
+        matched(&mut s, "PRIORITY=\"A\"", false),
+        ["[#A] Urgent report"]
+    );
+    assert_eq!(
+        matched(&mut s, "work+Effort<\"1:00\"", false),
+        ["[#A] Urgent report"]
+    );
+    assert_eq!(matched(&mut s, "Effort={^2}", false), ["Plan"]);
+    assert_eq!(
+        matched(&mut s, "CATEGORY=\"m\"-LEVEL>1", false),
+        ["Work", "Home"]
+    );
+    // M: undone TODOs only.
+    assert_eq!(
+        matched(&mut s, "work", true),
+        ["[#A] Urgent report", "Plan"]
+    );
+    assert_eq!(lines(&s)[0], " Tags: work");
+    assert_eq!(lines(&s)[1], " TODOs · 2 entries");
+}
+
+#[test]
+fn spc_o_a_m_asks_for_a_match() {
+    let (mut s, _) = agenda_files("agenda-match-key", &[("m.org", MATCHING)]);
+    type_keys(&mut s, " oamhome<ret>");
+    assert_eq!(lines(&s)[0], " Tags: home");
+    assert_eq!(lines(&s)[1], " 2 entries");
+}
+
+#[test]
+fn search_finds_words_in_headings_and_text() {
+    let (mut s, _) = agenda_files(
+        "agenda-search",
+        &[(
+            "s.org",
+            "* TODO Call the Bank\nabout the loan\n* Garden\nplant bulbs; ask the bank later\n* DONE Bank holiday plans\n* Other\nnothing\n",
+        )],
+    );
+    let found = |s: &mut imp_server::Server, text: &str| -> Vec<String> {
+        s.eval(&format!("(org-search-view! {text:?})")).unwrap();
+        lines(s)[3..]
+            .iter()
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                l.split_whitespace()
+                    .filter(|w| !["TODO", "DONE", "s"].contains(w))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect()
+    };
+    // Ignoring case, in the text too, done entries included.
+    assert_eq!(
+        found(&mut s, "bank"),
+        ["Call the Bank", "Garden", "Bank holiday plans"]
+    );
+    assert_eq!(found(&mut s, "bank -holiday"), ["Call the Bank", "Garden"]);
+    assert_eq!(found(&mut s, "+bank +loan"), ["Call the Bank"]);
+    assert_eq!(found(&mut s, "\"the bank later\""), ["Garden"]);
+    assert_eq!(found(&mut s, "{bulbs?;}"), ["Garden"]);
+    assert_eq!(lines(&s)[0], " Search: {bulbs?;}");
+    // SPC o a s asks.
+    type_keys(&mut s, " oasnothing<ret>");
+    assert_eq!(lines(&s)[1], " 1 entry");
+}
+
+#[test]
+fn the_dispatcher_offers_each_view() {
+    let (mut s, dir) = agenda_files(
+        "agenda-dispatch",
+        &[("m.org", MATCHING), ("o.org", "* TODO Elsewhere\n")],
+    );
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " oA");
+    let shown = s.frame().text_rows().join("\n");
+    for entry in [
+        "agenda for the week",
+        "TODO list",
+        "match tags",
+        "search",
+        "limit to this file",
+    ] {
+        assert!(shown.contains(entry), "{entry} in\n{shown}");
+    }
+    type_keys(&mut s, "t");
+    assert_eq!(lines(&s)[0], " To do");
+    type_keys(&mut s, ":OrgAgenda<ret>TNEXT<ret>");
+    assert_eq!(lines(&s)[0], " To do: NEXT");
+    type_keys(&mut s, ":OrgAgenda<ret>Mwork<ret>");
+    assert_eq!(lines(&s)[1], " TODOs · 2 entries");
+    type_keys(&mut s, ":OrgAgenda<ret>sgarden<ret>");
+    assert_eq!(lines(&s)[0], " Search: garden");
+    // n: the week, then every TODO, each block under its header.
+    type_keys(&mut s, ":OrgAgenda<ret>n");
+    let shown = lines(&s);
+    assert_eq!(shown[0], " Agenda and TODOs");
+    let agenda = shown.iter().position(|l| l == "  Agenda").unwrap();
+    let todo = shown.iter().position(|l| l == "  To do").unwrap();
+    assert!(agenda < todo, "{shown:#?}");
+    // < limits to the current file; < < to the subtree under the cursor.
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("m.org").display()));
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    s.keys(&["<"]);
+    type_keys(&mut s, "t");
+    assert_eq!(lines(&s)[0], " To do · m.org");
+    assert!(!lines(&s).iter().any(|l| l.contains("Elsewhere")));
+    // gr keeps the limit.
+    type_keys(&mut s, "gr");
+    assert!(!lines(&s).iter().any(|l| l.contains("Elsewhere")));
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>/Home<ret>", dir.join("m.org").display()),
+    );
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    s.keys(&["<", "<"]);
+    type_keys(&mut s, "t");
+    assert_eq!(lines(&s)[0], " To do · m.org, one subtree");
+    assert!(lines(&s).iter().any(|l| l.contains("Garden")));
+    assert!(!lines(&s).iter().any(|l| l.contains("Urgent")));
+    // A view shown again without < isn't limited.
+    type_keys(&mut s, ":OrgAgenda<ret>t");
+    assert!(lines(&s).iter().any(|l| l.contains("Elsewhere")));
+}
+
+#[test]
+fn custom_commands_make_block_agendas() {
+    let (mut s, _) = agenda_files(
+        "agenda-custom",
+        &[
+            ("m.org", MATCHING),
+            ("d.org", "* TODO Today's\nSCHEDULED: <2026-10-21 Wed>\n"),
+        ],
+    );
+    s.eval(
+        r#"(define-agenda-command! "w" "Work day"
+             '((agenda (span 1)) (tags-todo "+work" (header "Work to do")) (search "garden")))"#,
+    )
+    .unwrap();
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    assert!(s.frame().text_rows().join("\n").contains("w → Work day"));
+    type_keys(&mut s, "w");
+    let shown = lines(&s);
+    assert_eq!(shown[0], " Work day");
+    assert_eq!(shown[1], " 21 Oct 2026");
+    // Each block under its header, in order.
+    let at = |h: &str| {
+        shown
+            .iter()
+            .position(|l| l == h)
+            .unwrap_or_else(|| panic!("{h} in {shown:#?}"))
+    };
+    assert!(at("  Agenda") < at("  Work to do") && at("  Work to do") < at("  Search: garden"));
+    assert!(shown.iter().any(|l| l.contains("Today's")));
+    assert!(
+        shown.iter().any(|l| l.contains("Urgent report"))
+            && shown.iter().any(|l| l.contains("Garden"))
+    );
+    // ]] moves the dated block by its span: a day.
+    type_keys(&mut s, "]]");
+    assert_eq!(lines(&s)[1], " 22 Oct 2026");
+    // A bad block kind is an error naming it.
+    let err = s
+        .eval(r#"(define-agenda-command! "x" "X" '((nope)))"#)
+        .unwrap_err();
+    assert!(err.contains("no block kind nope"), "{err}");
 }
