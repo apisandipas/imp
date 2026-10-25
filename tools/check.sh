@@ -22,4 +22,7 @@ fi
   [ $f -eq 0 ] && echo FMT-OK || echo FMT-FAIL
   [ $t -eq 0 ] && [ -z "$c" ] && [ $f -eq 0 ]
 ' 2>&1 | grep -v "Git tree"
-exit ${PIPESTATUS[0]}
+t=${PIPESTATUS[0]}
+# Every spec has a reference page, written from its current version.
+python3 tools/site-docs.py --check || t=1
+exit $t
