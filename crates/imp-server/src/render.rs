@@ -500,6 +500,8 @@ struct View<'a> {
     buffer_layers: &'a [Layer],
     /// The buffer's gutter signs, if it has any.
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
+    /// The buffer's change marks, if it has a change column.
+    changes: Option<&'a BTreeMap<usize, (String, String)>>,
     /// The buffer's margin text, and the margin's width.
     margin: Option<(&'a BTreeMap<usize, crate::editor::MarginText>, usize)>,
     /// The first line of each fold, outermost, and whether it's closed,
@@ -648,6 +650,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: shown_signs(e, buffer_id),
         fold_starts: shown_fold_starts(e, buffer_id),
+        changes: e.change_marks.get(&buffer_id),
         margin: e
             .margins
             .get(&buffer_id)
@@ -1166,6 +1169,9 @@ impl View<'_> {
                 }
                 let margin = self.margin.map_or(0, |(_, w)| w);
                 numbers -= margin;
+                if self.changes.is_some() {
+                    numbers -= CHANGE_WIDTH;
+                }
                 if self.fold_starts.is_some() {
                     numbers -= FOLD_WIDTH;
                 }
@@ -1196,6 +1202,19 @@ impl View<'_> {
                         &" ".repeat(width.saturating_sub(used)),
                         Style::default(),
                     );
+                }
+                if let Some(changes) = self.changes {
+                    match changes.get(&line).filter(|_| i == 0) {
+                        Some((text, face)) => {
+                            let text: String = text.chars().take(CHANGE_WIDTH).collect();
+                            let pad = CHANGE_WIDTH.saturating_sub(text_width(&text));
+                            row.push(Span::new(
+                                format!("{text}{}", " ".repeat(pad)),
+                                e.face(face),
+                            ));
+                        }
+                        None => row.push(Span::new(" ".repeat(CHANGE_WIDTH), Style::default())),
+                    }
                 }
                 if let Some(starts) = self.fold_starts {
                     let chevron = match starts.get(&line).filter(|_| i == 0) {
@@ -1269,6 +1288,8 @@ const SIGN_WIDTH: usize = 2;
 
 /// Cells of the fold column: a chevron and a space.
 const FOLD_WIDTH: usize = 2;
+/// Cells of the change column (git-gutter's bars).
+const CHANGE_WIDTH: usize = 1;
 
 static NO_FOLD_STARTS: BTreeMap<usize, bool> = BTreeMap::new();
 
@@ -1315,6 +1336,11 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
     } + margin_width(e, buffer_id)
         + if shown_fold_starts(e, buffer_id).is_some() {
             FOLD_WIDTH
+        } else {
+            0
+        }
+        + if e.change_marks.contains_key(&buffer_id) {
+            CHANGE_WIDTH
         } else {
             0
         };

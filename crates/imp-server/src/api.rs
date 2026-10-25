@@ -996,6 +996,20 @@ pub fn register(engine: &mut Engine) {
             e.fold_starts.insert(id, starts);
         })
     });
+    // The blocks of lines that differ between two texts, as a list of
+    // (old-start old-count new-start new-count), lines counted from 0.
+    engine.register_fn("line-diff", |old: String, new: String| {
+        crate::diff::line_hunks(&old, &new)
+            .into_iter()
+            .map(|h| {
+                vec![h.old_start, h.old_count, h.new_start, h.new_count]
+                    .into_iter()
+                    .map(|n| SteelVal::IntV(n as isize))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+
     // Gutter signs for the current buffer: a list of (line text face);
     // '() removes them, and the sign column with them.
     engine.register_fn("set-signs!", |signs: Vec<Vec<SteelVal>>| {
@@ -1011,6 +1025,36 @@ pub fn register(engine: &mut Engine) {
             let id = e.current;
             e.signs.insert(id, map);
         })
+    });
+
+    // The current buffer's change column: a list of (line text face), or
+    // #f to take the column away. '() keeps the column with no marks.
+    engine.register_fn("set-change-marks!", |marks: SteelVal| {
+        let marks = match marks {
+            SteelVal::BoolV(false) => None,
+            SteelVal::ListV(list) => Some(
+                list.iter()
+                    .filter_map(|mark| match mark {
+                        SteelVal::ListV(m) => match m.iter().collect::<Vec<_>>().as_slice() {
+                            [SteelVal::IntV(line), SteelVal::StringV(text), SteelVal::StringV(face)] => {
+                                Some((clamp(*line), (text.to_string(), face.to_string())))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            ),
+            _ => return Err("set-change-marks!: expected a list or #f".to_string()),
+        };
+        editor::with(|e| {
+            let id = e.current;
+            match marks {
+                Some(marks) => e.change_marks.insert(id, marks),
+                None => e.change_marks.remove(&id),
+            };
+        });
+        Ok(())
     });
 
     // Display-only text before lines of the current buffer: a list of

@@ -149,3 +149,40 @@ fn a_file_on_the_command_line_gets_its_folds() {
     assert_eq!(s.eval("(option 'foldmethod)").unwrap(), r#""indent""#);
     assert!(rows(&mut s)[0].starts_with("▾ fn a"), "{:?}", rows(&mut s));
 }
+
+/// Gives the buffer a change column with `marks`, Scheme (line text face)s.
+fn change_marks(s: &mut imp_server::Server, marks: &str) {
+    s.eval(&format!("(set-change-marks! {marks})")).unwrap();
+}
+
+#[test]
+fn the_change_column_sits_between_the_numbers_and_the_folds() {
+    let mut s = indented(CODE);
+    type_keys(&mut s, ":set nu<ret>");
+    change_marks(
+        &mut s,
+        "'((0 \"┃\" \"git-gutter.added\") (2 \"▁\" \"git-gutter.removed\"))",
+    );
+    let r = rows(&mut s);
+    assert_eq!(r[0], "  1 ┃▾ fn a");
+    assert_eq!(r[1], "  2        one");
+    assert_eq!(r[2], "  3 ▁▾     if x");
+    // With no marks the column stays, so the text doesn't move.
+    change_marks(&mut s, "'()");
+    assert_eq!(rows(&mut s)[0], "  1  ▾ fn a");
+    // #f takes it away.
+    change_marks(&mut s, "#f");
+    assert_eq!(rows(&mut s)[0], "  1 ▾ fn a");
+}
+
+#[test]
+fn clicks_on_chevrons_still_land_beside_the_change_column() {
+    let mut s = indented(CODE);
+    change_marks(&mut s, "'((4 \"┃\" \"git-gutter.changed\"))");
+    assert_eq!(rows(&mut s)[4], "┃▾ fn b");
+    click(&mut s, 1, 4);
+    assert_eq!(rows(&mut s)[4], "┃▸ fn b ··· 2 lines");
+    // A click on the change column itself isn't on a chevron.
+    click(&mut s, 0, 4);
+    assert_eq!(rows(&mut s)[4], "┃▸ fn b ··· 2 lines");
+}

@@ -142,6 +142,10 @@
      (list "diff.removed" (fg 'red))
      (list "diff.hunk" (fg 'cyan))
      (list "diff.header" "bold")
+     ;; The git-gutter package's bars
+     (list "git-gutter.added" (fg 'green))
+     (list "git-gutter.changed" (fg 'orange))
+     (list "git-gutter.removed" (fg 'red))
      ;; Code (tree-sitter captures)
      (list "syntax.keyword" (fg 'magenta))
      (list "syntax.string" (fg 'green))

@@ -11,6 +11,7 @@ mod complete;
 mod crdt;
 #[cfg(unix)]
 pub mod daemon;
+mod diff;
 mod docs;
 mod editor;
 mod events;
@@ -121,6 +122,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
     (
         "git-blame",
         include_str!("../../../packages/git-blame/git-blame.scm"),
+    ),
+    (
+        "git-gutter",
+        include_str!("../../../packages/git-gutter/git-gutter.scm"),
     ),
 ];
 
