@@ -103,7 +103,8 @@
   (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e))) (leader-continuations prefix))))
 
 (define (which-key-table entries)
-  "Popup rows for (key . description) pairs, in columns down then across.
+  "Popup rows for (key . description) pairs, in columns down then across,
+   and a blank row under them, so they don't sit on the command line.
    Keys, the arrow, groups (+name) and commands each have a face."
   (let* ([key-width (apply max (cons 3 (map (lambda (e) (string-length (car e))) entries)))]
          [width (max 22 (+ key-width 6 (apply max (cons 0 (map (lambda (e) (string-length (cdr e))) entries)))))]
@@ -115,14 +116,16 @@
                          (list " → " "which-key.separator")
                          (list (pad-right (cdr e) (- width key-width 3))
                                (if group? "which-key.group" "which-key.command")))))])
-    (map (lambda (r)
+    (append
+     (map (lambda (r)
            (cons " "
                  (apply append
                         (map (lambda (c)
                                (let ([i (+ (* c rows) r)])
                                  (if (< i (length entries)) (cell (list-ref entries i)) '())))
                              (range 0 columns)))))
-         (range 0 rows))))
+         (range 0 rows))
+     (list (list " ")))))
 
 ;; M-x describes a command with no doc comment by its which-key label
 ;; (completion.scm).

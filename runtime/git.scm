@@ -668,20 +668,22 @@
   "The status buffer's footer: two lines of keys and their labels, from
    git-status-keys, in the columns of git-status-hint-columns. In each
    column the keys are right-aligned and the labels left-aligned. The
-   lines are on a band of git.footer, padded past any window's width
-   (the window cuts them); none with git-status-hints off."
+   lines are on a band of git.footer, with a blank line of it above and
+   below, padded past any window's width (the window cuts them); none
+   with git-status-hints off."
   (define (label key) (cadr (list-find (lambda (k) (equal? (car k) key)) git-status-keys)))
   (define (widest strings) (apply max (map string-length strings)))
   (define (cell column row)
     (let ([key (list-ref column row)])
       (list (list (pad-left key (widest column)) "git.footer.key")
             (list (string-append " " (pad-right (label key) (widest (map label column)))) "git.footer"))))
+  (define blank (list (list (make-string 300 #\space) "git.footer")))
   (define (line row)
     (append (list (list " " "git.footer"))
             (cdr (apply append (map (lambda (column) (cons (list "  " "git.footer") (cell column row)))
                                     git-status-hint-columns)))
             (list (list (make-string 300 #\space) "git.footer"))))
-  (if (option 'git-status-hints) (list (line 0) (line 1)) '()))
+  (if (option 'git-status-hints) (list blank (line 0) (line 1) blank) '()))
 
 (define (git-status-menu!)
   "Opens a menu of every status key, as Magit's ? does; the key pressed
