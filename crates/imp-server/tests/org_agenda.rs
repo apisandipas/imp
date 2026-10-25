@@ -224,7 +224,8 @@ fn an_open_file_is_read_from_its_buffer() {
 /// The title's rule, 71 wide in a 72-column window.
 const RULE: &str = "───────────────────────────────────────────────────────────────────────";
 
-const TODAY: &str = "(define (calendar-today) (list 2026 10 21))";
+const TODAY: &str =
+    r#"(define (calendar-today) (list 2026 10 21)) (define (org-agenda-now) "11:42")"#;
 
 const WEEK: &str = "#+CATEGORY: work
 * TODO [#A] Send the invoice :money:
@@ -418,6 +419,10 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
         "agenda-week",
         "* TODO Pay\nSCHEDULED: <2026-10-20 Tue>\n* TODO Water\nSCHEDULED: <2026-10-01 Thu +1w>\n* TODO Ship\nDEADLINE: <2026-10-23 Fri>\n* TODO Later\nDEADLINE: <2026-12-01 Tue>\n* TODO Someday\n* DONE Gone\nSCHEDULED: <2026-10-22 Thu>\n",
     );
+    // The grid has its own test.
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, "gr");
     assert_eq!(
         lines(&s),
         [
@@ -515,6 +520,7 @@ fn under(lines: &[String], header: &str) -> Vec<String> {
     lines[at + 2..]
         .iter()
         .take_while(|l| !l.is_empty())
+        .filter(|l| !l.contains('┄') && !l.contains('━'))
         .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
         .collect()
 }
@@ -580,4 +586,58 @@ fn appointments_and_ranges_show_on_their_days() {
     assert_eq!(under(&lines, "Later"), ["Sat 7 Nov 20:00 Party a"]);
     // A TODO with an appointment isn't undated.
     assert_eq!(under(&lines, "To do"), ["TODO Done is out a"]);
+}
+
+#[test]
+fn today_has_a_time_grid_and_a_now_line() {
+    let mut s = agenda(
+        "agenda-grid",
+        "* Stand-up\n<2026-10-21 Wed 9:30-10:00>\n* Lunch <2026-10-21 Wed 12:00>\n* TODO Untimed\nSCHEDULED: <2026-10-21 Wed>\n* Call <2026-10-23 Fri 15:00>\n* TODO Plain\nSCHEDULED: <2026-10-22 Thu>\n",
+    );
+    let shown = lines(&s);
+    let today = shown.iter().position(|l| l.contains("Wednesday")).unwrap();
+    let day: Vec<String> = shown[today + 2..]
+        .iter()
+        .take_while(|l| !l.is_empty())
+        .map(|l| l.trim_end_matches(['┄', '━']).trim_end().to_string())
+        .collect();
+    // In time order; no 12:00 line, as Lunch is at 12:00; now after the
+    // entries before it. Grid times line up with the entries' times.
+    assert_eq!(
+        day,
+        [
+            "    08:00",
+            "    9:30-10:00                Stand-up                                a",
+            "    10:00",
+            "    11:42       ━━━━━━━━━━━━━━━━ now",
+            "    12:00                     Lunch                                   a",
+            "    14:00",
+            "    16:00",
+            "    18:00",
+            "    20:00",
+            "                Sched.  TODO  Untimed                                 a",
+        ],
+        "{shown:#?}"
+    );
+    assert!(shown[today + 2].ends_with('┄'), "{}", shown[today + 2]);
+    // Another day has the grid only with something timed.
+    let after = |day: &str| {
+        let at = shown.iter().position(|l| l.contains(day)).unwrap();
+        shown[at + 2].clone()
+    };
+    assert!(after("Friday").contains("08:00"), "{shown:#?}");
+    assert!(after("Thursday").contains("Plain"), "{shown:#?}");
+    // Off, and the timed entries still sort by time.
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, "gr");
+    assert_eq!(
+        under(&lines(&s), "Wednesday 21 October · today"),
+        [
+            "9:30-10:00 Stand-up a",
+            "12:00 Lunch a",
+            "Sched. TODO Untimed a"
+        ]
+    );
+    assert!(!lines(&s).iter().any(|l| l.contains('┄')));
 }

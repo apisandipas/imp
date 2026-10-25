@@ -134,6 +134,8 @@
      (list "org.agenda.weekend" (fg 'dim "bold"))
      (list "org.agenda.today" (fg 'yellow "bold"))
      (list "org.agenda.time" (fg 'cyan))
+     (list "org.agenda.grid" (fg 'border))
+     (list "org.agenda.now" (fg 'orange "bold"))
      (list "org.agenda.scheduled" (fg 'green))
      (list "org.agenda.deadline" (fg 'red "bold"))
      (list "org.agenda.overdue" (fg 'red))

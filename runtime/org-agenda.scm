@@ -11,6 +11,12 @@
 
 ;; How many days the agenda shows.
 (define-option! 'org-agenda-span 7 '())
+;; Draw a time grid on today, and on other days with something timed:
+;; a line at each of org-agenda-time-grid's times, and on today a line
+;; for now.
+(define-option! 'org-agenda-use-time-grid #t '())
+;; The grid's times, as Org writes them: 800 is 08:00.
+(define-option! 'org-agenda-time-grid '(800 1000 1200 1400 1600 1800 2000) '())
 ;; How many days ahead a deadline shows on today, as "In 3 d.". A
 ;; deadline's own warning, as -3d in its timestamp, wins.
 (define-option! 'org-deadline-warning-days 14 '())
@@ -273,6 +279,7 @@
 ;;                               KIND is section, date, weekend or today
 ;;   (entry E TIME WHAT KIND)    entry E, TIME and WHAT strings (or ""),
 ;;                               KIND the what's kind (org-what-face)
+;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
 
@@ -330,6 +337,20 @@
                          '())
                      (list (list "  " #f) (list (pad-right (list-ref e 7) cat-w) "org.agenda.category")))
              (list 'org (car e) (cadr e))))]
+         [(grid)
+          (let ([time (pad-right (cadr r) (max 5 time-w))])
+            (draw-line! (list (list "    " #f) (list time "org.agenda.time")
+                              (list (string-append "  " (make-string (max 0 (- width 7 (string-length time))) #\┄))
+                                    "org.agenda.grid"))
+                        #f))]
+         [(now)
+          (let* ([time (pad-right (cadr r) (max 5 time-w))]
+                 [n (max 0 (- width 7 (string-length time)))] [before (quotient (max 0 (- n 5)) 3)])
+            (draw-line! (list (list "    " #f) (list time "org.agenda.now")
+                              (list (string-append "  " (make-string before #\━) " now "
+                                                   (make-string (max 0 (- n before 5)) #\━))
+                                    "org.agenda.now"))
+                        #f))]
          [(note) (draw-line! (list (list "  " #f) (list (cadr r) "org.agenda.span")) #f)]
          [else (draw-line! '() #f)]))
      rows)
@@ -343,6 +364,38 @@
          (let ([h (string->number (substring time 0 colon))]
                [m (string->number (substring time (+ colon 1) (+ colon 3)))])
            (and h m (+ (* 60 h) m))))))
+
+(define (org-agenda-now)
+  "The time now, as \"11:42\"."
+  (trim (cadr (run-shell "date +%H:%M" ""))))
+
+(define (org-hhmm minutes)
+  "`minutes` after midnight as \"08:00\"."
+  (string-append (two-digits (quotient minutes 60)) ":" (two-digits (modulo minutes 60))))
+
+(define (org-with-grid rows today?)
+  "A day's entry `rows` with the time grid among the timed ones, when
+   org-agenda-use-time-grid is on and it is today or something is timed:
+   a (grid TIME) row at each grid time no entry has, and on today a (now
+   TIME) row, all in time order before the untimed entries."
+  (let* ([minutes (lambda (r) (org-time-minutes (caddr r)))]
+         [timed (filter minutes rows)]
+         [untimed (filter (lambda (r) (not (minutes r))) rows)])
+    (if (or (not (option 'org-agenda-use-time-grid)) (and (not today?) (null? timed)))
+        rows
+        (let* ([taken (map minutes timed)]
+               [grid (filter (lambda (m) (not (memv m taken)))
+                             (map (lambda (t) (+ (* 60 (quotient t 100)) (modulo t 100)))
+                                  (option 'org-agenda-time-grid)))]
+               [now (and today? (org-time-minutes (org-agenda-now)))]
+               ;; (minutes order row): at the same minute, entries come
+               ;; first, then the now line.
+               [all (append (map (lambda (r) (list (minutes r) 0 r)) timed)
+                            (map (lambda (m) (list m 1 (list 'grid (org-hhmm m)))) grid)
+                            (if now (list (list now 2 (list 'now (org-hhmm now)))) '()))])
+          (append (map caddr (sort all (lambda (a b) (or (< (car a) (car b))
+                                                          (and (= (car a) (car b)) (< (cadr a) (cadr b)))))))
+                  untimed)))))
 
 (define (org-warning-days stamp)
   "How many days ahead deadline `stamp` warns: its own warning, as -3d
@@ -428,8 +481,9 @@
                        occs))]
          [day-rows
           (lambda (day)
-            (append
-             (by-time
+            (org-with-grid
+             (append
+              (by-time
               (apply append
                      (map (lambda (x)
                             (let ([o (car x)])
@@ -437,7 +491,8 @@
                                                      (or (cadr d) (org-occurrence-label (cadr o))) (cadr o)))
                                    (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
                           occs)))
-             (if (equal? day today) upcoming '())))]
+              (if (equal? day today) upcoming '()))
+             (equal? day today)))]
          [later
           (map cdr
                (org-sort-entries
