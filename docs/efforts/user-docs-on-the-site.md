@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/user-docs]]"]
 issue: https://github.com/apisandipas/imp/issues/20
 frozen:
@@ -16,7 +16,7 @@ A docs section on the website: four guides, and a reference page per area genera
 
 ## Tasks
 
-- [ ] `tools/site-docs.py` builds `site/docs/` from the specs: the site's look, a grouped sidebar, the Known gaps notice, spec links between pages and other links as plain text; `site/docs/` ignored by git; checked in a browser on the Org page.
+- [x] `tools/site-docs.py` builds `site/docs/` from the specs: the site's look, a grouped sidebar, the Known gaps notice, spec links between pages and other links as plain text; `site/docs/` ignored by git; checked in a browser on the Org page.
 - [ ] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
 - [ ] Guide: Configuring init.scm.
 - [ ] Guide: Packages.
