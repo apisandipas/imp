@@ -89,7 +89,7 @@ fn exports_the_buffer_beside_its_file() {
     let mut s = visiting(&dir);
     // Unsaved edits are exported too.
     type_keys(&mut s, "Gotyped<esc>");
-    s.eval("(org-export! \"html\")").unwrap();
+    s.eval("(org-export! \"html\" 'file)").unwrap();
     wait_for_message(&mut s, "exported notes.html");
     assert_eq!(
         std::fs::read_to_string(dir.join("notes.html")).unwrap(),
@@ -130,7 +130,7 @@ fn each_format_has_its_pandoc_format_and_extension() {
         ("odt", "odt", "odt"),
         ("text", "plain", "txt"),
     ] {
-        s.eval(&format!("(org-export! \"{name}\")")).unwrap();
+        s.eval(&format!("(org-export! \"{name}\" 'file)")).unwrap();
         wait_for_message(&mut s, &format!("exported notes.{ext}"));
         let a = args(&dir);
         assert_eq!(a[3], to, "{name}");
@@ -144,7 +144,7 @@ fn pdf_uses_the_engine_option_and_extra_args_go_to_every_run() {
     let mut s = visiting(&dir);
     s.eval("(set-option! 'org-export-pandoc-args \"--toc\")")
         .unwrap();
-    s.eval("(org-export! \"pdf\")").unwrap();
+    s.eval("(org-export! \"pdf\" 'file)").unwrap();
     wait_for_message(&mut s, "exported notes.pdf");
     assert_eq!(
         args(&dir)[..7],
@@ -160,7 +160,7 @@ fn pdf_uses_the_engine_option_and_extra_args_go_to_every_run() {
     );
     s.eval("(set-option! 'org-export-pdf-engine \"lualatex\")")
         .unwrap();
-    s.eval("(org-export! \"pdf\")").unwrap();
+    s.eval("(org-export! \"pdf\" 'file)").unwrap();
     wait_for_message(&mut s, "exported notes.pdf");
     assert_eq!(args(&dir)[5], "--pdf-engine=lualatex");
 }
@@ -170,7 +170,7 @@ fn failures_say_why() {
     let dir = setup("export-fail");
     let mut s = visiting(&dir);
     std::fs::write(dir.join("fail"), "").unwrap();
-    s.eval("(org-export! \"html\")").unwrap();
+    s.eval("(org-export! \"html\" 'file)").unwrap();
     wait_for_message(&mut s, "export failed: see *org-export*");
     type_keys(&mut s, ":b *org-export*<ret>");
     assert_eq!(s.text(), "pandoc: it went wrong\n");
@@ -178,12 +178,12 @@ fn failures_say_why() {
     let mut s = visiting(&dir);
     s.eval("(set! *org-export-pandoc* \"imp-no-such-pandoc\")")
         .unwrap();
-    s.eval("(org-export! \"html\")").unwrap();
+    s.eval("(org-export! \"html\" 'file)").unwrap();
     assert_eq!(message(&mut s), "org-export needs pandoc");
 
     let mut s = server("* One\n");
     s.eval("(use-package! 'org-export)").unwrap();
-    s.eval("(org-export! \"html\")").unwrap();
+    s.eval("(org-export! \"html\" 'file)").unwrap();
     assert_eq!(message(&mut s), "the buffer has no file to export beside");
 }
 
@@ -203,9 +203,75 @@ fn the_real_pandoc_makes_html() {
         &mut s,
         &format!(":e {}<ret>", dir.join("notes.org").display()),
     );
-    s.eval("(org-export! \"html\")").unwrap();
+    s.eval("(org-export! \"html\" 'file)").unwrap();
     wait_for_message(&mut s, "exported notes.html");
     let html = std::fs::read_to_string(dir.join("notes.html")).unwrap();
     assert!(html.contains("<title>Notes</title>"), "{html}");
     assert!(html.contains(">One</h1>"), "{html}");
+}
+
+#[test]
+fn text_formats_export_into_a_buffer() {
+    let dir = setup("export-buffer");
+    let mut s = visiting(&dir);
+    s.eval("(org-export! \"markdown\" 'buffer)").unwrap();
+    let start = Instant::now();
+    while s.eval("(buffer-name)").unwrap() != "\"*Org Export: Markdown*\"" {
+        s.pump(Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_secs(5), "no export buffer");
+    }
+    assert_eq!(s.text(), "made\n");
+    // No file is written, and pandoc writes to stdout.
+    assert!(!dir.join("notes.md").exists());
+    assert!(!args(&dir).contains(&"--output".to_string()));
+    assert_eq!(s.eval("(major-mode)").unwrap(), "markdown-mode");
+
+    // A buffer with no file can go to a buffer, but not to a file.
+    let mut s = server("* One\n");
+    s.eval("(use-package! 'org-export)").unwrap();
+    s.eval(&format!(
+        "(set! *org-export-pandoc* \"{}\")",
+        dir.join("pandoc").display()
+    ))
+    .unwrap();
+    s.eval("(org-export! \"html\" 'buffer)").unwrap();
+    let start = Instant::now();
+    while s.eval("(buffer-name)").unwrap() != "\"*Org Export: HTML*\"" {
+        s.pump(Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_secs(5), "no export buffer");
+    }
+
+    let mut s = visiting(&dir);
+    s.eval("(org-export! \"pdf\" 'buffer)").unwrap();
+    assert_eq!(message(&mut s), "PDF can't be exported to a buffer");
+}
+
+#[test]
+fn open_writes_the_file_then_opens_it() {
+    let dir = setup("export-open");
+    let opener = dir.join("open");
+    std::fs::write(
+        &opener,
+        format!("#!/bin/sh\necho \"$1\" > '{}/opened'\n", dir.display()),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut s = visiting(&dir);
+    s.eval(&format!(
+        "(set! *org-export-open* \"{}\")",
+        opener.display()
+    ))
+    .unwrap();
+    s.eval("(org-export! \"html\" 'open)").unwrap();
+    wait_for_message(&mut s, "exported notes.html");
+    let start = Instant::now();
+    while !dir.join("opened").exists() {
+        s.pump(Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_secs(5), "not opened");
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("opened")).unwrap().trim(),
+        dir.join("notes.html").to_str().unwrap()
+    );
 }
