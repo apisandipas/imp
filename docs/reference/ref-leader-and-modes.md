@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: 4de0428a6aca
+  docs/specs/leader-and-modes.md: 6f6173563533
 ---
 # Leader and modes
 
@@ -29,6 +29,8 @@ For example, `SPC f f` finds a file and `SPC w v` splits the window to the right
 ## The which-key popup
 
 Pause after `SPC` and a popup lists the keys that can come next and what each does. It updates as you type, so you can learn the tree by looking. `which-key-delay` sets how long it waits.
+
+Press `<bs>` to go back a level: `SPC g <bs>` shows the `SPC` popup again. At `SPC` alone, `<bs>` closes it, as `<esc>` does.
 
 Vim's prefix keys show the same popup: `g`, `z`, `Z`, `[`, `]` and `C-w`. Its title is what you've typed so far, count included, such as `3g`. It lists only keys that do something here, including the buffer's mode keys. Typing the next key closes it.
 

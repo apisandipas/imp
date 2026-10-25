@@ -9,6 +9,7 @@ anchors: [runtime/leader.scm, runtime/modes.scm, "symbol:binding-label", "symbol
 ## Behaviour
 
 - **Leader**: space in normal and visual mode, a Doom-like tree: files, buffers, eval, help, search, toggles, windows, quit, and `SPC m` for the major mode. Typing it shows a which-key popup of the next keys after `which-key-delay`, updated as keys are typed. The popup has a blank line under its entries, so they don't sit on the command line.
+- `<bs>` in a leader sequence takes back the last key typed and shows the popup for the keys before it, at once: `SPC g <bs>` is back at `SPC`. `<bs>` at `SPC` alone cancels the sequence, as `<esc>` does.
 - **Vim prefixes**: `g`, `z`, `Z`, `[`, `]` and `C-w`, and any prefix declared with `define-prefix!`, show the same which-key popup after `which-key-delay` in normal and visual state, titled with the keys typed so far, count included (`3g`). It lists only keys imp binds after that prefix in the current state, the buffer's mode keys included; a mode key's label wins over a Vim key of the same name. Each entry shows the key's label, else the name of the command it is bound to, else nothing beside the key. The popup closes when the next key is typed or the prefix is cancelled. `"` and char motions such as `f` show no popup, nor does operator-pending state (`dg`, `gu`).
 - **Major modes**: one per buffer, picked by file name when it opens, for about 20 languages; each sets indentation and its comment string. **Minor modes**: any number per buffer.
 - Key lookup goes minor modes' keymaps, then the major mode's and its parents', then the state's. Insert mode checks mode keymaps first, so a mode can rebind `<ret>`.
@@ -24,5 +25,6 @@ anchors: [runtime/leader.scm, runtime/modes.scm, "symbol:binding-label", "symbol
 ## Out of scope
 
 - Which-key in operator-pending state, for registers (`"`), and for char motions.
+- `<bs>` after a Vim prefix (`g`, `z`, `C-w`): those are one key deep, so there is no level to go back to.
 - Vim keys imp does not bind; the popup never lists a key that would do nothing.
 - An option to turn the Vim-prefix popup off apart from the leader's; a large `which-key-delay` delays both.
