@@ -53,9 +53,6 @@ SKIP = {"user-docs"}
 REF_PREFIX = "ref-"
 
 
-REF_PREFIX = "ref-"
-
-
 def read_page(path):
     """A page's (title, lede markdown, [(heading, markdown)]), frontmatter
     dropped."""
@@ -83,6 +80,16 @@ def to_html(markdown):
     ).stdout
 
 
+def site_nav():
+    """The home page's navigation bar, so the docs share it: its links made
+    to go from site/docs/ to the home page, and Docs marked current."""
+    home = (ROOT / "site" / "index.html").read_text()
+    nav = re.search(r'^ *<header class="nav">.*?</header>', home, re.S | re.M).group(0)
+    nav = nav.replace('href="#top"', 'href="../index.html"')
+    nav = re.sub(r'href="#([^"]+)"', r'href="../index.html#\1"', nav)
+    return nav.replace('href="docs/"', 'href="index.html" aria-current="true"')
+
+
 def sidebar(current, titles):
     """The list of every page, `current` marked."""
 
@@ -102,6 +109,8 @@ def sidebar(current, titles):
         out.append("</ul>")
     out.append("</nav>")
     return "\n".join(out)
+
+
 def page(title, content, current, titles):
     """A whole docs page in the site's look."""
     return f"""<!doctype html>
@@ -119,18 +128,7 @@ def page(title, content, current, titles):
 </head>
 <body class="docs">
   <a class="skip" href="#main">Skip to content</a>
-  <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
-      <nav aria-label="Main">
-        <ul class="nav-links">
-          <li><a href="index.html" aria-current="true">Docs</a></li>
-          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
-        </ul>
-      </nav>
-      <a class="btn btn-small" href="../index.html#install">Get imp</a>
-    </div>
-  </header>
+{site_nav()}
   <div class="wrap docs-layout">
     <main id="main" class="docs-main">
       <a class="docs-jump" href="#pages">All pages</a>
