@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/org-export]]", "[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/54
 frozen:
@@ -21,4 +21,4 @@ All Scheme, in a bundled package `packages/org-export` ([[0011-non-essential-fea
 - [x] Exporting into a `*Org Export: FORMAT*` buffer for the text formats, and writing then opening with `xdg-open`, with tests.
 - [x] The toggles: subtree only (the heading's title becomes the document's, its children promoted), body only (no `--standalone`) and visible only (closed folds left out), with tests.
 - [x] `C-c C-e` and `SPC m e` open the two-level menu, the toggles flipping and showing in its title, and `:OrgExport FORMAT` exports with completion, with tests.
-- [ ] The package's header comment says how to use it, the Org spec's known gaps no longer list export, and the owner has tried it by hand.
+- [x] The package's header comment says how to use it, the Org spec's known gaps no longer list export, and the owner has tried it by hand.
