@@ -427,8 +427,8 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
             "",
             "  Overdue",
             "  ───────",
-            "    Thu 1 Oct   Sched.    TODO  Water                                 a",
-            "    Tue 20 Oct  Sched.    TODO  Pay                                   a",
+            "                Sched. 20x  TODO  Water                               a",
+            "                Sched. 1x   TODO  Pay                                 a",
             "",
             "  Sunday 18 October",
             "  ─────────────────",
@@ -438,30 +438,31 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
             "",
             "  Tuesday 20 October",
             "  ──────────────────",
-            "                Sched.    TODO  Pay                                   a",
+            "                Sched.      TODO  Pay                                 a",
             "",
             "▌ Wednesday 21 October · today",
             "  ────────────────────────────",
+            "                In 2 d.     TODO  Ship                                a",
             "",
             "  Thursday 22 October",
             "  ───────────────────",
-            "                Sched.    TODO  Water                                 a",
+            "                Sched.      TODO  Water                               a",
             "",
             "  Friday 23 October",
             "  ─────────────────",
-            "                Deadline  TODO  Ship                                  a",
+            "                Deadline    TODO  Ship                                a",
             "",
             "  Saturday 24 October",
             "  ───────────────────",
             "",
             "  Later",
             "  ─────",
-            "    Thu 29 Oct  Sched.    TODO  Water                                 a",
-            "    Tue 1 Dec   Deadline  TODO  Later                                 a",
+            "    Thu 29 Oct  Sched.      TODO  Water                               a",
+            "    Tue 1 Dec   Deadline    TODO  Later                               a",
             "",
             "  To do",
             "  ─────",
-            "                          TODO  Someday                               a",
+            "                            TODO  Someday                             a",
         ]
     );
     // f shows the next week, the repeat on its Thursday; . comes back.
@@ -470,7 +471,12 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
     assert_eq!(next[1], " Week 44 · 25–31 Oct 2026");
     let thu = next.iter().position(|l| l.contains("Thursday")).unwrap();
     assert_eq!(next[thu], "  Thursday 29 October");
-    assert!(next[thu + 2].contains("Sched.    TODO  Water"), "{next:#?}");
+    assert!(
+        next[thu + 2].contains("Sched.") && next[thu + 2].contains("Water"),
+        "{next:#?}"
+    );
+    // Overdue is only there when the span has today.
+    assert!(!next.iter().any(|l| l.contains("Overdue")), "{next:#?}");
     type_keys(&mut s, "bb");
     assert_eq!(lines(&s)[1], " Week 42 · 11–17 Oct 2026");
     type_keys(&mut s, ".");
@@ -498,4 +504,80 @@ fn the_agenda_shows_each_entry_s_category() {
             .any(|l| l.contains("TODO  Report") && l.ends_with(" job")),
         "{text:?}"
     );
+}
+
+/// The lines under `header` in `lines`, up to the next blank one.
+fn under(lines: &[String], header: &str) -> Vec<String> {
+    let at = lines
+        .iter()
+        .position(|l| l.trim_start_matches(['▌', ' ']) == header)
+        .unwrap_or_else(|| panic!("no {header} in {lines:#?}"));
+    lines[at + 2..]
+        .iter()
+        .take_while(|l| !l.is_empty())
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+#[test]
+fn timed_entries_come_first_by_time() {
+    let s = agenda(
+        "agenda-times",
+        "* TODO [#A] Untimed first\nSCHEDULED: <2026-10-21 Wed>\n* Lunch <2026-10-21 Wed 12:30>\n* TODO Late\nSCHEDULED: <2026-10-21 Wed 16:00>\n* Stand-up\n<2026-10-21 Wed 9:30-10:00>\n* TODO Untimed\nSCHEDULED: <2026-10-21 Wed>\n",
+    );
+    assert_eq!(
+        under(&lines(&s), "Wednesday 21 October · today"),
+        [
+            "9:30-10:00 Stand-up a",
+            "12:30 Lunch a",
+            "16:00 Sched. TODO Late a",
+            "Sched. TODO [#A] Untimed first a",
+            "Sched. TODO Untimed a",
+        ]
+    );
+}
+
+#[test]
+fn deadlines_warn_on_today() {
+    let mut s = agenda(
+        "agenda-warnings",
+        "* TODO Soon\nDEADLINE: <2026-10-31 Sat>\n* TODO Too far\nDEADLINE: <2026-11-10 Tue>\n* TODO Own warning\nDEADLINE: <2026-10-25 Sun -3d>\n* TODO Own warning, close\nDEADLINE: <2026-10-23 Fri -3d>\n",
+    );
+    let shown = lines(&s);
+    // 14 days by default; an entry's -3d wins. Each also shows on its day
+    // when that is in the span.
+    assert_eq!(
+        under(&shown, "Wednesday 21 October · today"),
+        ["In 10 d. TODO Soon a", "In 2 d. TODO Own warning, close a"]
+    );
+    assert_eq!(
+        under(&shown, "Friday 23 October"),
+        ["Deadline TODO Own warning, close a"]
+    );
+    s.eval("(set-option! 'org-deadline-warning-days 30)")
+        .unwrap();
+    type_keys(&mut s, "gr");
+    assert!(under(&lines(&s), "Wednesday 21 October · today")
+        .contains(&"In 20 d. TODO Too far a".to_string()));
+}
+
+#[test]
+fn appointments_and_ranges_show_on_their_days() {
+    let s = agenda(
+        "agenda-ranges",
+        "* Trip\n<2026-10-20 Tue>--<2026-10-22 Thu>\n* Past meeting <2026-10-19 Mon 15:00>\n* Party <2026-11-07 Sat 20:00>\n* TODO Done is out\n* DONE Gone <2026-10-21 Wed>\n",
+    );
+    let lines = lines(&s);
+    assert_eq!(under(&lines, "Tuesday 20 October"), ["(1/3) Trip a"]);
+    assert_eq!(
+        under(&lines, "Wednesday 21 October · today"),
+        ["(2/3) Trip a"]
+    );
+    assert_eq!(under(&lines, "Thursday 22 October"), ["(3/3) Trip a"]);
+    assert_eq!(under(&lines, "Monday 19 October"), ["15:00 Past meeting a"]);
+    // A past appointment isn't overdue; a later one is under Later.
+    assert!(!lines.iter().any(|l| l.contains("Overdue")), "{lines:#?}");
+    assert_eq!(under(&lines, "Later"), ["Sat 7 Nov 20:00 Party a"]);
+    // A TODO with an appointment isn't undated.
+    assert_eq!(under(&lines, "To do"), ["TODO Done is out a"]);
 }

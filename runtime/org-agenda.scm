@@ -11,6 +11,9 @@
 
 ;; How many days the agenda shows.
 (define-option! 'org-agenda-span 7 '())
+;; How many days ahead a deadline shows on today, as "In 3 d.". A
+;; deadline's own warning, as -3d in its timestamp, wins.
+(define-option! 'org-deadline-warning-days 14 '())
 
 (define (org-stamp-after text key)
   "The timestamp after `key` on `text`, parsed (org-parse-stamp), or #f."
@@ -278,7 +281,7 @@
   (let* ([entries (filter (lambda (r) (eq? (car r) 'entry)) rows)]
          [widest (lambda (f cap) (min cap (foldl (lambda (r m) (max m (string-length (f r)))) 0 entries)))]
          [col (lambda (w) (if (> w 0) (+ w 2) 0))]
-         [time-w (widest caddr 14)]
+         [time-w (widest caddr 17)]
          [what-w (widest cadddr 10)]
          [kw-w (widest (lambda (r) (or (caddr (cadr r)) "")) 12)]
          [tags? (>= width 60)]
@@ -312,7 +315,7 @@
                  [prio (and (>= (string-length title) 5) (starts-with? title "[#")
                             (equal? (substring title 3 5) "] ") (substring title 0 4))]
                  [fitted (org-fit title title-w)]
-                 [cell (lambda (text w face) (if (> w 0) (list (list (pad-right text w) face) (list "  " #f)) '()))])
+                 [cell (lambda (text w face) (if (> w 0) (list (list (org-fit text w) face) (list "  " #f)) '()))])
             (draw-line!
              (append (list (list "    " #f))
                      (cell time time-w "org.agenda.time")
@@ -332,39 +335,126 @@
      rows)
     (draw-finish!)))
 
+(define (org-time-minutes time)
+  "The minutes after midnight time `time` starts at, as 600 for \"10:00\"
+   or \"10:00-11:00\" (\"9:30\" too), or #f."
+  (let ([colon (and time (string-index-from time ":" 0))])
+    (and colon (<= (+ colon 3) (string-length time))
+         (let ([h (string->number (substring time 0 colon))]
+               [m (string->number (substring time (+ colon 1) (+ colon 3)))])
+           (and h m (+ (* 60 h) m))))))
+
+(define (org-warning-days stamp)
+  "How many days ahead deadline `stamp` warns: its own warning, as -3d
+   or -1w, else org-deadline-warning-days."
+  (let ([w (list-ref stamp 4)])
+    (if w
+        (* (cadr w) (case (string->symbol (caddr w)) [(w) 7] [(m) 30] [(y) 365] [else 1]))
+        (option 'org-deadline-warning-days))))
+
+(define (org-entry-occurrences e)
+  "Agenda entry `e`'s dates, as (stamp kind end): kind is scheduled,
+   deadline or appointment, end a date range's last timestamp or #f."
+  (append (if (list-ref e 4) (list (list (list-ref e 4) 'scheduled #f)) '())
+          (if (list-ref e 5) (list (list (list-ref e 5) 'deadline #f)) '())
+          (map (lambda (a) (list (car a) 'appointment
+                                 (and (cadr a) (date<? (cadr (car a)) (cadr (cadr a))) (cadr a))))
+               (org-entry-appointments e))))
+
+(define (org-occurrence-days o first last)
+  "The days from `first` to `last` occurrence `o` falls on, as (day
+   label): a range's with its place in it, \"(2/3)\", else its date and
+   repeats with #f."
+  (let ([stamp (car o)] [end (caddr o)])
+    (if end
+        (let* ([start (cadr stamp)] [n (+ 1 (- (date->days (cadr end)) (date->days start)))])
+          (filter (lambda (d) d)
+                  (map (lambda (k)
+                         (let ([day (date-add-days start k)])
+                           (and (not (date<? day first)) (not (date<? last day))
+                                (list day (string-append "(" (number->string (+ k 1)) "/" (number->string n) ")")))))
+                       (range 0 n))))
+        (map (lambda (d) (list d #f)) (org-stamp-days stamp first last)))))
+
+(define (org-occurrence-label kind)
+  "What an occurrence of `kind` says it is on its day."
+  (case kind [(scheduled) "Sched."] [(deadline) "Deadline"] [else ""]))
+
 (define (org-render-agenda!)
   "Redraws the agenda from the agenda files, as Org's week view: the
-   undone entries dated before today, then org-agenda-span days with what
-   is scheduled or due on each (repeats included), then those dated
+   undone entries scheduled or due before today, then org-agenda-span
+   days with what falls on each (repeats and ranges included, timed
+   entries first, and on today the deadlines coming), then what is dated
    after the span, then the TODOs with no date. Done entries are left
-   out; entries on the same day sort by priority."
+   out."
   (let* ([today (calendar-today)]
          [first (org-agenda-first-day)]
          [span (max 1 (option 'org-agenda-span))]
          [last (date-add-days first (- span 1))]
+         [today-shown? (and (not (date<? today first)) (not (date<? last today)))]
          [entries (apply append (map org-file-entries (org-agenda-file-list)))]
          [open (filter (lambda (e) (not (org-entry-done? e))) entries)]
          [rank (lambda (e) (org-priority-rank (list-ref e 6)))]
-         ;; (stamp what entry) for each date an entry has.
-         [dated (apply append (map (lambda (e)
-                                     (append (if (list-ref e 4) (list (list (list-ref e 4) 'scheduled e)) '())
-                                             (if (list-ref e 5) (list (list (list-ref e 5) 'deadline e)) '())))
-                                   open))]
-         [overdue (org-sort-entries (filter (lambda (d) (date<? (cadr (car d)) today)) dated)
-                                    (lambda (d) (+ (* 100 (date->days (cadr (car d)))) (rank (caddr d)))))]
-         [dated (org-sort-entries dated (lambda (d) (rank (caddr d))))]
-         ;; (day what entry) for each day in the span an entry falls on.
-         [shown (apply append (map (lambda (d) (map (lambda (day) (list day (cadr d) (caddr d)))
-                                                    (org-stamp-days (car d) first last)))
-                                   dated))]
-         ;; (day what entry) for each date an entry next has after the span.
-         [later (org-sort-entries
-                 (filter (lambda (d) (car d))
-                         (map (lambda (d) (list (org-stamp-after-day (car d) last) (cadr d) (caddr d))) dated))
-                 (lambda (d) (+ (* 100 (date->days (car d))) (rank (caddr d)))))]
-         [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)
-                                  rank)]
-         [label (lambda (what) (if (eq? what 'scheduled) "Sched." "Deadline"))]
+         ;; (occurrence entry) for each date an open entry has, in priority order.
+         [occs (org-sort-entries
+                (apply append (map (lambda (e) (map (lambda (o) (list o e)) (org-entry-occurrences e))) open))
+                (lambda (x) (rank (cadr x))))]
+         [time-of (lambda (stamp) (or (caddr stamp) ""))]
+         [by-time (lambda (rows)
+                    (org-sort-entries rows (lambda (r) (let ([m (org-time-minutes (caddr r))])
+                                                         (if m (+ (* m 100) (rank (cadr r))) (+ 200000 (rank (cadr r))))))))]
+         [days-since (lambda (d) (- (date->days today) (date->days d)))]
+         [overdue
+          (map (lambda (x)
+                 (let* ([o (car x)] [stamp (car o)] [n (days-since (cadr stamp))])
+                   (list 'entry (cadr x) (time-of stamp)
+                         (if (eq? (cadr o) 'scheduled)
+                             (string-append "Sched. " (number->string n) "x")
+                             (string-append (number->string n) " d. ago"))
+                         'overdue)))
+               (org-sort-entries
+                (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline))
+                                         (date<? (cadr (car (car x))) today)))
+                        occs)
+                (lambda (x) (date->days (cadr (car (car x)))))))]
+         [upcoming
+          (filter (lambda (r) r)
+                  (map (lambda (x)
+                         (let* ([o (car x)] [next (and (eq? (cadr o) 'deadline) (org-stamp-after-day (car o) today))]
+                                [n (and next (- (date->days next) (date->days today)))])
+                           (and n (<= n (org-warning-days (car o)))
+                                (list 'entry (cadr x) (time-of (car o))
+                                      (string-append "In " (number->string n) " d.") 'upcoming))))
+                       occs))]
+         [day-rows
+          (lambda (day)
+            (append
+             (by-time
+              (apply append
+                     (map (lambda (x)
+                            (let ([o (car x)])
+                              (map (lambda (d) (list 'entry (cadr x) (if (cadr d) "" (time-of (car o)))
+                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o)))
+                                   (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
+                          occs)))
+             (if (equal? day today) upcoming '())))]
+         [later
+          (map cdr
+               (org-sort-entries
+                (filter (lambda (r) r)
+                        (map (lambda (x)
+                               (let* ([o (car x)] [next (if (caddr o)
+                                                            (and (date<? last (cadr (car o))) (cadr (car o)))
+                                                            (org-stamp-after-day (car o) last))])
+                                 (and next
+                                      (cons (date->days next)
+                                            (list 'entry (cadr x)
+                                                  (string-append (org-short-date next)
+                                                                 (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
+                                                  (org-occurrence-label (cadr o)) (cadr o))))))
+                             occs))
+                car))]
+         [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
          [section (lambda (name items)
                     (if (null? items) '() (append (list '(blank) (list 'header name 'section)) items)))])
     (org-agenda-draw!
@@ -372,18 +462,13 @@
       (list (list 'title "Agenda"
                   (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
                                  (org-span-text first last))))
-      (section "Overdue"
-               (map (lambda (d) (list 'entry (caddr d) (org-short-date (cadr (car d))) (label (cadr d)) 'overdue))
-                    overdue))
+      (section "Overdue" (if today-shown? overdue '()))
       (apply append
              (map (lambda (n)
                     (let ([day (date-add-days first n)])
-                      (append (list '(blank) (org-day-header day today))
-                              (map (lambda (d) (list 'entry (caddr d) "" (label (cadr d)) (cadr d)))
-                                   (filter (lambda (d) (equal? (car d) day)) shown)))))
+                      (append (list '(blank) (org-day-header day today)) (day-rows day))))
                   (range 0 span)))
-      (section "Later"
-               (map (lambda (d) (list 'entry (caddr d) (org-short-date (car d)) (label (cadr d)) (cadr d))) later))
+      (section "Later" later)
       (section "To do" (map (lambda (e) (list 'entry e "" "" #f)) todos))
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
