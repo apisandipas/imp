@@ -89,7 +89,7 @@ fn exports_the_buffer_beside_its_file() {
     let mut s = visiting(&dir);
     // Unsaved edits are exported too.
     type_keys(&mut s, "Gotyped<esc>");
-    s.eval("(org-export! \"html\" 'file)").unwrap();
+    s.eval("(org-export! \"html\" 'file '())").unwrap();
     wait_for_message(&mut s, "exported notes.html");
     assert_eq!(
         std::fs::read_to_string(dir.join("notes.html")).unwrap(),
@@ -130,7 +130,8 @@ fn each_format_has_its_pandoc_format_and_extension() {
         ("odt", "odt", "odt"),
         ("text", "plain", "txt"),
     ] {
-        s.eval(&format!("(org-export! \"{name}\" 'file)")).unwrap();
+        s.eval(&format!("(org-export! \"{name}\" 'file '())"))
+            .unwrap();
         wait_for_message(&mut s, &format!("exported notes.{ext}"));
         let a = args(&dir);
         assert_eq!(a[3], to, "{name}");
@@ -144,7 +145,7 @@ fn pdf_uses_the_engine_option_and_extra_args_go_to_every_run() {
     let mut s = visiting(&dir);
     s.eval("(set-option! 'org-export-pandoc-args \"--toc\")")
         .unwrap();
-    s.eval("(org-export! \"pdf\" 'file)").unwrap();
+    s.eval("(org-export! \"pdf\" 'file '())").unwrap();
     wait_for_message(&mut s, "exported notes.pdf");
     assert_eq!(
         args(&dir)[..7],
@@ -160,7 +161,7 @@ fn pdf_uses_the_engine_option_and_extra_args_go_to_every_run() {
     );
     s.eval("(set-option! 'org-export-pdf-engine \"lualatex\")")
         .unwrap();
-    s.eval("(org-export! \"pdf\" 'file)").unwrap();
+    s.eval("(org-export! \"pdf\" 'file '())").unwrap();
     wait_for_message(&mut s, "exported notes.pdf");
     assert_eq!(args(&dir)[5], "--pdf-engine=lualatex");
 }
@@ -170,7 +171,7 @@ fn failures_say_why() {
     let dir = setup("export-fail");
     let mut s = visiting(&dir);
     std::fs::write(dir.join("fail"), "").unwrap();
-    s.eval("(org-export! \"html\" 'file)").unwrap();
+    s.eval("(org-export! \"html\" 'file '())").unwrap();
     wait_for_message(&mut s, "export failed: see *org-export*");
     type_keys(&mut s, ":b *org-export*<ret>");
     assert_eq!(s.text(), "pandoc: it went wrong\n");
@@ -178,12 +179,12 @@ fn failures_say_why() {
     let mut s = visiting(&dir);
     s.eval("(set! *org-export-pandoc* \"imp-no-such-pandoc\")")
         .unwrap();
-    s.eval("(org-export! \"html\" 'file)").unwrap();
+    s.eval("(org-export! \"html\" 'file '())").unwrap();
     assert_eq!(message(&mut s), "org-export needs pandoc");
 
     let mut s = server("* One\n");
     s.eval("(use-package! 'org-export)").unwrap();
-    s.eval("(org-export! \"html\" 'file)").unwrap();
+    s.eval("(org-export! \"html\" 'file '())").unwrap();
     assert_eq!(message(&mut s), "the buffer has no file to export beside");
 }
 
@@ -203,7 +204,7 @@ fn the_real_pandoc_makes_html() {
         &mut s,
         &format!(":e {}<ret>", dir.join("notes.org").display()),
     );
-    s.eval("(org-export! \"html\" 'file)").unwrap();
+    s.eval("(org-export! \"html\" 'file '())").unwrap();
     wait_for_message(&mut s, "exported notes.html");
     let html = std::fs::read_to_string(dir.join("notes.html")).unwrap();
     assert!(html.contains("<title>Notes</title>"), "{html}");
@@ -214,7 +215,7 @@ fn the_real_pandoc_makes_html() {
 fn text_formats_export_into_a_buffer() {
     let dir = setup("export-buffer");
     let mut s = visiting(&dir);
-    s.eval("(org-export! \"markdown\" 'buffer)").unwrap();
+    s.eval("(org-export! \"markdown\" 'buffer '())").unwrap();
     let start = Instant::now();
     while s.eval("(buffer-name)").unwrap() != "\"*Org Export: Markdown*\"" {
         s.pump(Duration::from_millis(50));
@@ -234,7 +235,7 @@ fn text_formats_export_into_a_buffer() {
         dir.join("pandoc").display()
     ))
     .unwrap();
-    s.eval("(org-export! \"html\" 'buffer)").unwrap();
+    s.eval("(org-export! \"html\" 'buffer '())").unwrap();
     let start = Instant::now();
     while s.eval("(buffer-name)").unwrap() != "\"*Org Export: HTML*\"" {
         s.pump(Duration::from_millis(50));
@@ -242,7 +243,7 @@ fn text_formats_export_into_a_buffer() {
     }
 
     let mut s = visiting(&dir);
-    s.eval("(org-export! \"pdf\" 'buffer)").unwrap();
+    s.eval("(org-export! \"pdf\" 'buffer '())").unwrap();
     assert_eq!(message(&mut s), "PDF can't be exported to a buffer");
 }
 
@@ -263,7 +264,7 @@ fn open_writes_the_file_then_opens_it() {
         opener.display()
     ))
     .unwrap();
-    s.eval("(org-export! \"html\" 'open)").unwrap();
+    s.eval("(org-export! \"html\" 'open '())").unwrap();
     wait_for_message(&mut s, "exported notes.html");
     let start = Instant::now();
     while !dir.join("opened").exists() {
@@ -274,4 +275,63 @@ fn open_writes_the_file_then_opens_it() {
         std::fs::read_to_string(dir.join("opened")).unwrap().trim(),
         dir.join("notes.html").to_str().unwrap()
     );
+}
+
+fn input(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("input")).unwrap()
+}
+
+#[test]
+fn subtree_only_exports_the_heading_at_the_cursor() {
+    let dir = setup("export-subtree");
+    std::fs::write(
+        dir.join("notes.org"),
+        "#+TITLE: Notes\n#+AUTHOR: Ada\n* One\nfirst\n* Two :work:\nsecond\n** Deeper\nthird\n* Three\n",
+    )
+    .unwrap();
+    let mut s = visiting(&dir);
+    type_keys(&mut s, "6G");
+    s.eval("(org-export! \"html\" 'file '(subtree))").unwrap();
+    wait_for_message(&mut s, "exported notes.html");
+    // Its title is the document's, and its children move up a level.
+    assert_eq!(
+        input(&dir),
+        "#+AUTHOR: Ada\n#+TITLE: Two\nsecond\n* Deeper\nthird\n"
+    );
+
+    type_keys(&mut s, "1G");
+    s.eval("(org-export! \"html\" 'file '(subtree))").unwrap();
+    assert_eq!(message(&mut s), "not under a heading");
+}
+
+#[test]
+fn body_only_leaves_out_the_surrounding_document() {
+    let dir = setup("export-body");
+    let mut s = visiting(&dir);
+    s.eval("(org-export! \"html\" 'file '(body))").unwrap();
+    wait_for_message(&mut s, "exported notes.html");
+    assert!(!args(&dir).contains(&"--standalone".to_string()));
+    assert_eq!(input(&dir), "#+TITLE: Notes\n* One\ntext\n");
+}
+
+#[test]
+fn visible_only_leaves_out_closed_folds() {
+    let dir = setup("export-visible");
+    std::fs::write(
+        dir.join("notes.org"),
+        "* One\nfirst\n* Two\nsecond\nmore\n* Three\nthird\n",
+    )
+    .unwrap();
+    let mut s = visiting(&dir);
+    // Close Two's subtree with <tab> on its heading.
+    type_keys(&mut s, "3G<tab>");
+    s.eval("(org-export! \"html\" 'file '(visible))").unwrap();
+    wait_for_message(&mut s, "exported notes.html");
+    assert_eq!(input(&dir), "* One\nfirst\n* Two\n* Three\nthird\n");
+
+    // With subtree only too, from inside the closed fold's heading.
+    s.eval("(org-export! \"html\" 'file '(subtree visible))")
+        .unwrap();
+    wait_for_message(&mut s, "exported notes.html");
+    assert_eq!(input(&dir), "#+TITLE: Two\n");
 }

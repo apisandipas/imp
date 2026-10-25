@@ -41,11 +41,55 @@
          [stem (if old (substring path 0 (- (string-length path) (string-length old) 1)) path)])
     (string-append stem "." ext)))
 
-(define (org-export-command format out)
+(define (org-export-hidden? line)
+  "Whether `line` is hidden inside a closed fold."
+  (and (list-find (lambda (f) (and (fold-closed? f) (> line (fold-first f)) (<= line (fold-last f))))
+                  (buffer-folds))
+       #t))
+
+(define (org-export-first-heading)
+  "The current buffer's first heading line, or the line after the last."
+  (let loop ([l 0]) (cond [(> l (last-line)) l] [(org-level l) l] [else (loop (+ l 1))])))
+
+(define (org-export-text toggles)
+  "The current buffer's text to export, as `toggles` say: with 'subtree,
+   the heading at the cursor and what is under it, its title the
+   document's (after the file's other #+ settings) and its headings
+   promoted so its children are at level 1; with 'visible, without the
+   text closed folds hide. #f when 'subtree is asked for outside any heading."
+  (let* ([subtree? (memq 'subtree toggles)]
+         [visible? (memq 'visible toggles)]
+         [h (and subtree? (org-heading-line (current-line)))])
+    (cond
+      [(and subtree? (not h)) #f]
+      [(not (or subtree? visible?)) (buffer-substring 0 (buffer-length))]
+      [else
+       (let* ([first (if h (+ h 1) 0)]
+              [last (if h (org-subtree-end h) (last-line))]
+              [lines (filter (lambda (l) (not (and visible? (org-export-hidden? l)))) (range first (+ last 1)))]
+              [up (if h (org-level h) 0)]
+              [promote (lambda (text)
+                         (if (and (> up 0) (org-level-of text)) (substring text up (string-length text)) text))]
+              [settings (if h
+                            (filter (lambda (text) (and (starts-with? text "#+")
+                                                        (not (starts-with? text "#+TITLE:"))
+                                                        (not (starts-with? text "#+title:"))))
+                                    (map line-text (range 0 (org-export-first-heading))))
+                            '())]
+              [header (if h
+                          (append settings (list (string-append "#+TITLE: " (org-heading-title (line-text h)))))
+                          '())])
+         (apply string-append
+                (map (lambda (text) (string-append text "\n"))
+                     (append header (map (lambda (l) (promote (line-text l))) lines)))))])))
+
+(define (org-export-command format out toggles)
   "The shell command that has pandoc turn Org on its stdin into `format`,
-   written to file `out`, or to stdout when `out` is #f."
+   written to file `out`, or to stdout when `out` is #f; a whole document
+   unless `toggles` has 'body."
   (let ([args (option 'org-export-pandoc-args)])
-    (string-append (shell-quote *org-export-pandoc*) " --from org --to " (cadr format) " --standalone"
+    (string-append (shell-quote *org-export-pandoc*) " --from org --to " (cadr format)
+                   (if (memq 'body toggles) "" " --standalone")
                    (if (equal? (car format) "pdf")
                        (string-append " --pdf-engine=" (shell-quote (option 'org-export-pdf-engine)))
                        "")
@@ -66,28 +110,32 @@
     (with-buffer id (lambda () (set-buffer-contents! text) (set-cursor! 0)))
     (display-buffer! id)))
 
-(define (org-export! name target)
+(define (org-export! name target toggles)
   "Exports the current buffer's text, unsaved edits included, in format
    `name` (one of *org-export-formats*), with pandoc running in the
    background from the file's directory. `target` says where it goes:
    'file, a file beside the buffer's; 'open, that file, then opened with
-   xdg-open; 'buffer, an *Org Export: LABEL* buffer."
+   xdg-open; 'buffer, an *Org Export: LABEL* buffer. `toggles` lists the
+   menu's toggles that are on: 'subtree, 'body, 'visible (see
+   org-export-text)."
   (let* ([format (org-export-format name)]
          [path (and (buffer-path) (expand-path (buffer-path)))]
-         [buffer? (eq? target 'buffer)])
+         [buffer? (eq? target 'buffer)]
+         [text (org-export-text toggles)])
     (cond
       [(not format) (message (string-append "no export format " name))]
       [(and buffer? (not (org-export-text? format)))
        (message (string-append (org-export-label format) " can't be exported to a buffer"))]
       [(and (not buffer?) (not path)) (message "the buffer has no file to export beside")]
+      [(not text) (message "not under a heading")]
       [(not (= (car (run-shell (string-append "command -v " (shell-quote *org-export-pandoc*) " >/dev/null") "")) 0))
        (message "org-export needs pandoc")]
       [else
        (let ([out (and (not buffer?) (org-export-file-for path (caddr format)))] [output ""] [errors ""])
          (message (string-append "exporting " (if out (file-name-of out) (org-export-label format)) "..."))
          (start-job! (string-append (if path (string-append "cd " (shell-quote (directory-of path)) " && ") "")
-                                    (org-export-command format out))
-                     (buffer-substring 0 (buffer-length))
+                                    (org-export-command format out toggles))
+                     text
                      (lambda (text stream)
                        (if (equal? stream "stderr")
                            (set! errors (string-append errors text))
