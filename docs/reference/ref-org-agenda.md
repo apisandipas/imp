@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: bulk actions and clocking. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: clocking, log mode and the clock report. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -106,6 +106,21 @@ Mark tasks, then act on all of them at once. A marked task has a `▸` at the le
 | `M` | Unmark everything |
 
 Marks stay while you move and refresh; opening another view clears them.
+
+Then press `x` and pick what to do to every marked task:
+
+| Key | What it does |
+|---|---|
+| `t` | Set their TODO keyword, or none |
+| `s` | Schedule them, on a date from the calendar |
+| `d` | Give them a deadline |
+| `+` / `-` | Add a tag, or remove one they have |
+| `r` | Refile them under another heading |
+| `$` | Archive them |
+| `S` | Move their dates by a number of days, such as `3` or `-1` |
+| `k` | Delete them and everything under them, after asking |
+
+It asks once, acts on each task, then clears the marks. `S` moves a task's scheduled date and deadline, or its first appointment when it has neither. `u` undoes the whole action when it changed a single file, but not a refile or an archive.
 
 ## Days, weeks, months
 

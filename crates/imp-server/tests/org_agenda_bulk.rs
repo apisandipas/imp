@@ -185,3 +185,98 @@ fn the_marked_face_is_modus_s_selection_mark() {
         "\"fg=#00d3d0 bg=#004065 bold\""
     );
 }
+
+fn file(dir: &std::path::Path, name: &str) -> String {
+    std::fs::read_to_string(dir.join(name)).unwrap()
+}
+
+/// Marks the agenda lines holding each of `titles`.
+fn mark(s: &mut imp_server::Server, titles: &[&str]) {
+    for t in titles {
+        go_to(s, t);
+        type_keys(s, "m");
+    }
+}
+
+#[test]
+fn x_sets_keywords_dates_and_tags_on_the_marked_entries() {
+    let (mut s, dir) = agenda_files("agenda-bulk", &[("a.org", MIXED)]);
+    // Nothing marked: x says so.
+    type_keys(&mut s, "x");
+    assert!(s.status().contains("no marked"), "{}", s.status());
+    // A keyword, once for both; the marks clear; u undoes it all.
+    mark(&mut s, &["Report", "Garden"]);
+    type_keys(&mut s, "xtNEXT<ret>");
+    let a = file(&dir, "a.org");
+    assert!(
+        a.contains("** NEXT Report")
+            && a.contains("** NEXT Garden")
+            && a.contains("** TODO Slides"),
+        "{a}"
+    );
+    assert!(lines(&s).iter().all(|l| !l.contains('▸')));
+    assert!(s.status().contains("2 entries"), "{}", s.status());
+    type_keys(&mut s, "u");
+    assert_eq!(file(&dir, "a.org"), MIXED);
+    // Schedule, then move the dates by two days.
+    mark(&mut s, &["Slides", "Groceries"]);
+    type_keys(&mut s, "xsfri<ret>");
+    let a = file(&dir, "a.org");
+    assert!(a.matches("SCHEDULED: <2026-10-23 Fri>").count() == 2, "{a}");
+    mark(&mut s, &["Slides", "Groceries"]);
+    type_keys(&mut s, "xS2<ret>");
+    let a = file(&dir, "a.org");
+    assert!(a.matches("SCHEDULED: <2026-10-25 Sun>").count() == 2, "{a}");
+    // A deadline.
+    mark(&mut s, &["Report"]);
+    type_keys(&mut s, "xdfri<ret>");
+    assert!(file(&dir, "a.org").contains("DEADLINE: <2026-10-23 Fri>"));
+    // Add a tag, then remove one.
+    mark(&mut s, &["Report", "Garden"]);
+    type_keys(&mut s, "x+big<ret>");
+    let a = file(&dir, "a.org");
+    assert!(
+        a.lines()
+            .any(|l| l.starts_with("** TODO Report") && l.ends_with(":office:big:"))
+            && a.lines()
+                .any(|l| l.starts_with("** TODO Garden") && l.ends_with(":outside:big:")),
+        "{a}"
+    );
+    mark(&mut s, &["Report", "Garden"]);
+    type_keys(&mut s, "x-big<ret>");
+    assert!(
+        !file(&dir, "a.org").contains("big"),
+        "{}",
+        file(&dir, "a.org")
+    );
+}
+
+#[test]
+fn x_refiles_archives_and_deletes_the_marked_entries() {
+    let (mut s, dir) = agenda_files(
+        "agenda-bulk-move",
+        &[
+            (
+                "a.org",
+                "* TODO One\n* TODO Two\n* TODO Three\n* TODO Four\n* TODO Five\n* TODO Keep\n",
+            ),
+            ("b.org", "* Target\n"),
+        ],
+    );
+    mark(&mut s, &["One", "Two"]);
+    type_keys(&mut s, "xrb.org › Target<ret>");
+    assert_eq!(file(&dir, "b.org"), "* Target\n** TODO One\n** TODO Two\n");
+    mark(&mut s, &["Three", "Four"]);
+    type_keys(&mut s, "x$");
+    let archive = file(&dir, "a.org_archive");
+    assert!(
+        archive.contains("* TODO Three") && archive.contains("* TODO Four"),
+        "{archive}"
+    );
+    // Delete asks first.
+    mark(&mut s, &["Five"]);
+    type_keys(&mut s, "xkn");
+    assert!(file(&dir, "a.org").contains("Five"));
+    type_keys(&mut s, "xky");
+    assert_eq!(file(&dir, "a.org"), "* TODO Keep\n");
+}

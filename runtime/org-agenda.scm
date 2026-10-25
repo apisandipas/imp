@@ -1838,6 +1838,141 @@
                            [else (org-agenda-mark-all! (lambda (e) (regexp-match? re (org-agenda-title-text e))))])))
                  #f #f))
 
+(define (org-dedupe-strings items)
+  "`items` with each string once, in order."
+  (let loop ([xs items] [acc '()])
+    (cond [(null? xs) (reverse acc)]
+          [(member (car xs) acc) (loop (cdr xs) acc)]
+          [else (loop (cdr xs) (cons (car xs) acc))])))
+
+(define (org-agenda-marked-entries)
+  "The marked entries the agenda shows, each once."
+  (filter org-agenda-marked? (org-agenda-shown-entries)))
+
+(define (org-agenda-bulk! proc verb)
+  "Runs (proc entry) on each marked entry, read afresh from its file's
+   buffer, one file at a time and each file's changes as one undo; saves
+   each buffer that had no unsaved changes before, clears the marks and
+   redraws. `verb` says what was done, as \"scheduled\"."
+  (let* ([marked (org-agenda-marked-entries)]
+         [files (let loop ([es marked] [acc '()])
+                  (cond [(null? es) (reverse acc)]
+                        [(member (car (car es)) acc) (loop (cdr es) acc)]
+                        [else (loop (cdr es) (cons (car (car es)) acc))]))]
+         [item (line-item)] [at (current-line)]
+         [changed '()])
+    (for-each
+     (lambda (file)
+       (let ([id (org-agenda-entry-buffer! file)]
+             [keys (map org-agenda-mark-key (filter (lambda (e) (equal? (car e) file)) marked))])
+         (when id
+           (let ([clean? (not (buffer-modified-by-id? id))])
+             (with-buffer id
+               (lambda ()
+                 (with-undo-group
+                  (lambda ()
+                    ;; Each found again, as the changes before it move lines.
+                    (for-each (lambda (key)
+                                (let ([e (list-find (lambda (x) (equal? (org-agenda-mark-key x) key))
+                                                    (org-file-entries file))])
+                                  (when e (proc e))))
+                              keys)))))
+             (when clean? (with-buffer id (lambda () (save-buffer!))))
+             (set! changed (cons (list id clean?) changed))))))
+     files)
+    ;; One file's changes undo together; several files' can't.
+    (set! *org-agenda-last-change* (if (= (length changed) 1) (car changed) #f))
+    (set! *org-agenda-marks* '())
+    (org-agenda-redraw-at! item at)
+    (message (string-append verb " " (number->string (length marked))
+                            (if (= (length marked) 1) " entry" " entries")))))
+
+(define (org-agenda-bulk-shift! e days)
+  "Moves agenda entry `e`'s SCHEDULED: and DEADLINE: dates `days` days
+   on, or its first appointment's when it has neither."
+  (let ([line (cadr e)])
+    (when (list-ref e 4) (org-shift-planning! line "SCHEDULED:" days))
+    (when (list-ref e 5) (org-shift-planning! line "DEADLINE:" days))
+    (when (and (not (list-ref e 4)) (not (list-ref e 5)) (pair? (org-entry-appointments e)))
+      (org-shift-appointment! line (cadr (car (car (org-entry-appointments e)))) days))))
+
+(define (org-agenda-bulk-tag! e tag add?)
+  "Adds `tag` to agenda entry `e`'s heading, or with `add?` #f removes it."
+  (let* ([line (cadr e)] [now (org-heading-tags line)])
+    (cond [(and add? (not (member tag now))) (org-set-heading-tags! line (append now (list tag)))]
+          [(and (not add?) (member tag now)) (org-set-heading-tags! line (filter (lambda (t) (not (equal? t tag))) now))]
+          [else void])))
+
+(define (org-agenda-bulk-plan! key prompt verb)
+  "Asks for a date and sets each marked entry's `key` to it."
+  (read-date prompt #f
+             (lambda (d)
+               (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                 (org-agenda-bulk! (lambda (e) (org-set-planning! (cadr e) key stamp)) verb)))))
+
+(define (org-agenda-bulk-menu!)
+  "x: a menu of actions on the marked entries. Each asks once for what it
+   needs, then acts on each one."
+  (let* ([marked (org-agenda-marked-entries)] [n (length marked)])
+    (if (= n 0)
+        (message "no marked entries (m marks one)")
+        (menu! (string-append "On " (number->string n) (if (= n 1) " marked entry" " marked entries"))
+               (list
+                (list "t" "set TODO keyword"
+                      (lambda ()
+                        (completing-read "Keyword: " (append (org-keywords) (list "(none)"))
+                                         (lambda (kw)
+                                           (org-agenda-bulk! (lambda (e) (org-todo-set! (cadr e) (if (equal? kw "(none)") #f kw)))
+                                                             "changed")))))
+                (list "s" "schedule" (lambda () (org-agenda-bulk-plan! "SCHEDULED:" "Schedule: " "scheduled")))
+                (list "d" "deadline" (lambda () (org-agenda-bulk-plan! "DEADLINE:" "Deadline: " "gave a deadline to")))
+                (list "+" "add a tag"
+                      (lambda ()
+                        (completing-read "Add tag: " (org-known-tags)
+                                         (lambda (tag)
+                                           (let ([tag (trim (org-trim-colons tag))])
+                                             (unless (equal? tag "")
+                                               (org-agenda-bulk! (lambda (e) (org-agenda-bulk-tag! e tag #t)) "tagged")))))))
+                (list "-" "remove a tag"
+                      (lambda ()
+                        (completing-read "Remove tag: "
+                                         (org-dedupe-strings (apply append (map (lambda (e) (map car (filter cdr (org-entry-tags e)))) marked)))
+                                         (lambda (tag)
+                                           (org-agenda-bulk! (lambda (e) (org-agenda-bulk-tag! e (trim (org-trim-colons tag)) #f)) "untagged")))))
+                (list "r" "refile"
+                      (lambda ()
+                        (let ([targets (org-refile-targets)])
+                          (completing-read "Refile under: " (map car targets)
+                                           (lambda (choice)
+                                             (let ([hit (assoc choice targets)])
+                                               (when hit
+                                                 (org-agenda-bulk! (lambda (e) (org-refile-to! (cadr e) hit)) "refiled")
+                                                 (set! *org-agenda-last-change* #f))))))))
+                (list "$" "archive"
+                      (lambda ()
+                        (org-agenda-bulk! (lambda (e) (org-archive! (cadr e))) "archived")
+                        (set! *org-agenda-last-change* #f)))
+                (list "S" "move dates by days"
+                      (lambda ()
+                        (open-cmdline! "Move dates by days: " ""
+                                       (lambda (text)
+                                         (let ([days (string->number (trim text))])
+                                           (if (and days (integer? days))
+                                               (org-agenda-bulk! (lambda (e) (org-agenda-bulk-shift! e days)) "moved")
+                                               (message (string-append "not a number of days: " text)))))
+                                       #f #f)))
+                (list "k" "delete"
+                      (lambda ()
+                        (confirm! (string-append "Delete " (number->string n) (if (= n 1) " entry" " entries")
+                                                 " and everything under them?")
+                                  (lambda ()
+                                    (org-agenda-bulk!
+                                     (lambda (e)
+                                       (let* ([line (cadr e)] [end (org-subtree-end line)])
+                                         (begin-change!)
+                                         (replace-range! (line-start line) (min (buffer-length) (+ (line-end end) 1)) "")))
+                                     "deleted"))))))))))
+
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
 (define (org-agenda-key! key proc label)
   "Binds `key` in the agenda, in normal state, labelled `label`."
@@ -1928,3 +2063,4 @@
 (org-agenda-key! "*" (lambda (n) (org-agenda-mark-all! (lambda (e) #t))) "mark all")
 (org-agenda-key! "%" (lambda (n) (org-agenda-mark-regexp!)) "mark by regexp")
 (org-agenda-key! "M" (lambda (n) (org-agenda-set-marks! '())) "unmark all")
+(org-agenda-key! "x" (lambda (n) (org-agenda-bulk-menu!)) "bulk action")
