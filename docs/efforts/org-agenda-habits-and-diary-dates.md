@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
-  docs/specs/org-agenda.md: d283f91acd0d
+  docs/specs/org-agenda.md: b6ab81427154
   docs/specs/org.md: eacefd3dbd04
 ---
 # Org agenda: habits and diary dates
@@ -18,6 +18,6 @@ Diary dates are parsed from `<%%(...)>` timestamps into a predicate over dates, 
 ## Tasks
 
 - [x] Diary dates: `diary-anniversary` (with `%d`), `diary-float`, `diary-block`, `diary-cyclic`, `diary-date`, in `calendar-date-style` order; other sexps skipped and counted on the last line; with tests
-- [ ] Habits: on today only, never in `Overdue` or `Later`, with the graph (`org-habit-preceding-days`, `org-habit-following-days`; Org's four colors, `*` done, `!` today) in habit faces every bundled theme sets, Modus included; with tests
+- [x] Habits: on today only, never in `Overdue` or `Later`, with the graph (`org-habit-preceding-days`, `org-habit-following-days`; Org's four colors, `*` done, `!` today) in habit faces every bundled theme sets, Modus included; with tests
 - [ ] Read the reference page through against the spec, and check the agenda against the whole spec before #59 closes
 - [ ] The owner has looked at it

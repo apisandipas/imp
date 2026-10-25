@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: d283f91acd0d
+  docs/specs/org-agenda.md: b6ab81427154
 ---
 # Org agenda
 
@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: filters, bulk actions, clocking and habits. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: filters, bulk actions and clocking. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -106,6 +106,28 @@ Any other active date in a heading or its text is an appointment, shown on its d
 ```
 
 A date range shows on each of its days, as `(2/3)` on the second.
+
+## Habits
+
+A habit is a task you mean to do regularly. Give it a repeating scheduled date and a `STYLE` property of `habit`:
+
+```org
+* TODO Exercise
+SCHEDULED: <2026-10-21 Wed .+2d>
+:PROPERTIES:
+:STYLE:    habit
+:END:
+```
+
+A habit shows on today only, once it's due, never under Overdue or Later. After its title is a graph of the last three weeks and the week to come, a cell a day:
+
+```
+    Sched.   TODO  Exercise          *      * * !
+```
+
+A `*` is a day you did it, `!` is today. The colors say how you were doing on each day, as in Org: blue before it was due, green while it could be done, yellow on its last day, red once it was overdue. Days to come, and past days you didn't do it, are drawn lighter.
+
+A repeater can give the longest you may wait after a slash: `.+2d/4d` is due two days after you last did it, and overdue after four. The days you did it come from the state changes logged when you marked it done, and its `LAST_REPEAT` property (see [Org](ref-org.md)).
 
 ## Diary dates
 
@@ -252,4 +274,6 @@ Set the files to read in `init.scm`. Relative names are looked up in `org-direct
 | `org-agenda-use-time-grid` | `#t` | Draw the time grid |
 | `org-agenda-time-grid` | `'(800 1000 1200 1400 1600 1800 2000)` | The grid's times, `800` being 08:00 |
 | `calendar-week-start` | `0` | The day weeks start on: 0 is Sunday |
+| `org-habit-preceding-days` | `21` | How many days before today a habit's graph shows |
+| `org-habit-following-days` | `7` | How many days from today on a habit's graph shows |
 | `calendar-date-style` | `'american` | The order of a diary form's dates: `'american` (month day year), `'european` (day month year) or `'iso` |

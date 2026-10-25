@@ -172,3 +172,139 @@ fn a_diary_date_can_t_be_moved() {
     type_keys(&mut s, "L");
     assert!(s.status().contains("can't be moved"), "{}", s.status());
 }
+
+const HABITS: &str = "* TODO Exercise
+SCHEDULED: <2026-10-21 Wed .+2d>
+:PROPERTIES:
+:STYLE:    habit
+:END:
+:LOGBOOK:
+- State \"DONE\"       from \"TODO\"       [2026-10-19 Mon 08:00]
+- State \"DONE\"       from \"TODO\"       [2026-10-17 Sat 08:00]
+- State \"DONE\"       from \"TODO\"       [2026-10-10 Sat 08:00]
+:END:
+* TODO Stretch
+SCHEDULED: <2026-10-18 Sun .+1d>
+:PROPERTIES:
+:STYLE:    habit
+:END:
+* TODO Water the plants
+SCHEDULED: <2026-10-23 Fri ++1w>
+:PROPERTIES:
+:STYLE:    habit
+:END:
+* TODO Not a habit
+SCHEDULED: <2026-10-18 Sun +1d>
+";
+
+#[test]
+fn habits_show_on_today_only_with_a_graph() {
+    let s = agenda("org-habits", HABITS, 100, "");
+    let lines = lines(&s);
+    let today = under(&lines, "Wednesday 21 October · today");
+    // Due today, and 3 days late; Water the plants isn't due until
+    // Friday. Not a habit repeats, so it is on each day too.
+    assert_eq!(today.len(), 3, "{lines:#?}");
+    assert!(today[0].starts_with("Sched. TODO Exercise *"), "{today:?}");
+    assert!(
+        today
+            .iter()
+            .any(|l| l.starts_with("Sched. 3x TODO Stretch")),
+        "{today:?}"
+    );
+    assert!(today
+        .iter()
+        .any(|l| l.starts_with("Sched. TODO Not a habit")));
+    // The graph: done on the 10th, 17th and 19th, ! today.
+    let exercise = lines.iter().find(|l| l.contains("Exercise")).unwrap();
+    assert!(exercise.contains("*      * * !      "), "{exercise}");
+    // Never overdue or later, nor on another day.
+    assert_eq!(
+        under(&lines, "Overdue"),
+        ["Sched. 3x TODO Not a habit a"],
+        "{lines:#?}"
+    );
+    assert_eq!(
+        under(&lines, "Later"),
+        ["Sun 25 Oct Sched. TODO Not a habit a"]
+    );
+    assert!(!s.text().contains("Water"), "{lines:#?}");
+}
+
+/// The faces of habit `title`'s graph on TODAY, as names after
+/// org.agenda.habit.
+fn graph_faces(s: &mut imp_server::Server, title: &str) -> Vec<String> {
+    let out = s
+        .eval(&format!(
+            "(map cadr (org-habit-graph (car (filter (lambda (e) (equal? (cadddr e) {title:?})) \
+             (apply append (map org-file-entries (org-agenda-file-list))))) (list 2026 10 21)))"
+        ))
+        .unwrap();
+    out.split('"')
+        .filter(|p| p.starts_with("org.agenda.habit."))
+        .map(|p| p["org.agenda.habit.".len()..].to_string())
+        .collect()
+}
+
+#[test]
+fn the_graph_is_colored_as_org_s() {
+    let mut s = agenda("org-habit-faces", HABITS, 100, "");
+    let mut want: Vec<&str> = vec!["clear-future"; 10]; // 30 Sep to 9 Oct
+    want.push("ready"); // done on the 10th, its first
+    want.push("clear-future"); // the 11th, before it was due again
+    want.push("alert-future"); // the 12th, its last day, not done
+    want.extend(["overdue"; 4]); // the 13th to 16th
+    want.push("overdue"); // done late on the 17th
+    want.push("clear-future"); // the 18th
+    want.push("ready"); // done on the 19th, when due
+    want.push("clear-future"); // the 20th
+    want.push("alert"); // today, its last day
+    want.extend(["overdue-future"; 6]); // the days after
+    assert_eq!(graph_faces(&mut s, "Exercise"), want);
+}
+
+#[test]
+fn a_habit_may_give_the_most_it_may_wait() {
+    let mut s = agenda(
+        "org-habit-most",
+        "* TODO Run\nSCHEDULED: <2026-10-21 Wed .+2d/4d>\n:PROPERTIES:\n:STYLE: habit\n:END:\n",
+        100,
+        "",
+    );
+    // Due from today until two days on: ready today, alert on the 23rd.
+    let faces = graph_faces(&mut s, "Run");
+    assert_eq!(&faces[21..24], ["ready", "ready-future", "alert-future"]);
+    // The repeater is kept as written.
+    assert_eq!(
+        s.eval(r#"(org-stamp->string (org-parse-stamp "<2026-10-21 Wed .+2d/4d>"))"#)
+            .unwrap(),
+        r#""<2026-10-21 Wed .+2d/4d>""#
+    );
+}
+
+#[test]
+fn every_theme_colors_the_habit_graph() {
+    let mut s = agenda("org-habit-themes", HABITS, 100, "");
+    let themes = s.eval("(hash-keys->list *themes*)").unwrap();
+    for theme in themes
+        .trim_matches(|c| c == '(' || c == ')')
+        .split_whitespace()
+    {
+        s.eval(&format!("(load-theme! '{theme})")).unwrap();
+        for face in ["clear", "ready", "alert", "overdue"] {
+            for name in [face.to_string(), format!("{face}-future")] {
+                let spec = s
+                    .eval(&format!("(face-spec \"org.agenda.habit.{name}\")"))
+                    .unwrap();
+                assert!(spec.contains("bg=#"), "{theme} {name}: {spec}");
+            }
+        }
+    }
+    // Modus Vivendi's org-habit faces.
+    s.eval("(use-package! 'modus-themes) (load-theme! 'modus-vivendi)")
+        .unwrap();
+    assert_eq!(
+        s.eval("(face-spec \"org.agenda.habit.clear\")").unwrap(),
+        "\"fg=#000000 bg=#2fafef\""
+    );
+}

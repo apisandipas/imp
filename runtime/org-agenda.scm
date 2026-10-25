@@ -307,10 +307,12 @@
 ;;                               it, then a rule
 ;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
-;;   (entry E TIME WHAT KIND O)  entry E, TIME and WHAT strings (or ""),
+;;   (entry E TIME WHAT KIND O [GRAPH])
+;;                               entry E, TIME and WHAT strings (or ""),
 ;;                               KIND the what's kind (org-what-face), O
-;;                               the occurrence shown (or #f). The line's
-;;                               item is (org file line kind date).
+;;                               the occurrence shown (or #f), GRAPH a
+;;                               habit's graph (org-habit-graph). The
+;;                               line's item is (org file line kind date).
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
@@ -361,7 +363,10 @@
                  [title (org-agenda-title-text e)]
                  [prio (and (>= (string-length title) 5) (starts-with? title "[#")
                             (equal? (substring title 3 5) "] ") (substring title 0 4))]
-                 [fitted (org-fit title title-w)]
+                 ;; A habit's graph goes after its title, when there's room.
+                 [graph (and (> (length r) 6) (list-ref r 6))]
+                 [graph (and graph (>= title-w (+ (length graph) 11)) graph)]
+                 [fitted (org-fit title (if graph (- title-w (length graph) 1) title-w))]
                  [cell (lambda (text w face) (if (> w 0) (list (list (org-fit text w) face) (list "  " #f)) '()))])
             (draw-line!
              (append (list (list "    " #f))
@@ -372,6 +377,7 @@
                          (list (list prio "org.priority")
                                (list (substring fitted 4 (string-length fitted)) #f))
                          (list (list fitted #f)))
+                     (if graph (cons (list " " #f) (org-habit-parts graph)) '())
                      (if (> tags-w 0)
                          (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
                          '())
@@ -667,6 +673,135 @@
   (length (filter (lambda (a) (org-diary-unknown? (car a)))
                   (apply append (map org-entry-appointments entries)))))
 
+;; A habit is an entry whose STYLE property is habit, with a repeating
+;; SCHEDULED: date. It shows on today only, with a graph of the days
+;; around it, as Org's org-habit draws it.
+(define-option! 'org-habit-preceding-days 21 '())
+(define-option! 'org-habit-following-days 7 '())
+
+(define (org-habit? e)
+  "Whether agenda entry `e` is a habit."
+  (let ([s (list-ref e 4)])
+    (and s (cadddr s) (not (org-diary-stamp? s))
+         (equal? (org-entry-prop e "STYLE") "habit"))))
+
+(define (org-interval-days n unit)
+  "How many days `n` of `unit` (\"d\" \"w\" \"m\" \"y\") are, as Org's
+   habits count them: a month 30 days, a year 365."
+  (* n (case (string->symbol unit) [(w) 7] [(m) 30] [(y) 365] [else 1])))
+
+(define (org-habit-done-days e)
+  "The days, as day numbers (date->days), habit `e` was done, oldest
+   first: from the state changes to a done keyword logged in its text,
+   and its LAST_REPEAT property."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)]
+         [stamp-day (lambda (text)
+                      (let ([b (org-stamp-bounds-anywhere text 0)])
+                        (and b (let ([s (org-parse-stamp (substring text (car b) (cadr b)))])
+                                 (and s (date->days (cadr s)))))))]
+         [logged
+          (let loop ([i (+ (cadr e) 1)] [acc '()])
+            (if (or (>= i n) (org-level-of (vector-ref lines i)))
+                acc
+                (let* ([t (trim (vector-ref lines i))]
+                       [kw (and (starts-with? t "- State \"")
+                                (let ([close (string-index-from t "\"" 9)]) (and close (substring t 9 close))))]
+                       [day (and kw (member kw (org-done-keywords)) (stamp-day t))])
+                  (loop (+ i 1) (if day (cons day acc) acc)))))]
+         [last (let ([p (org-entry-prop e "LAST_REPEAT")]) (and p (stamp-day p)))]
+         [all (sort (if last (cons last logged) logged) <)])
+    (let loop ([ds all] [acc '()])
+      (cond [(null? ds) (reverse acc)]
+            [(and (pair? acc) (= (car acc) (car ds))) (loop (cdr ds) acc)]
+            [else (loop (cdr ds) (cons (car ds) acc))]))))
+
+(define (org-habit-faces day scheduled deadline donep)
+  "The (past . future) faces of habit graph cell `day`, with the habit
+   due from `scheduled` to `deadline` (day numbers), as Org's
+   org-habit-get-faces: clear before it is due, ready while it may be
+   done, alert on its last day, overdue after."
+  (cond [(< day scheduled) (cons "clear" "clear-future")]
+        [(< day deadline) (cons "ready" "ready-future")]
+        [(= day deadline) (if donep (cons "ready" "ready-future") (cons "alert" "alert-future"))]
+        [else (cons "overdue" "overdue-future")]))
+
+(define (org-habit-graph e today)
+  "Habit `e`'s graph on `today`: a (glyph face) cell for each of the
+   org-habit-preceding-days before today, today, and the days after up
+   to org-habit-following-days, as Org's org-habit-build-graph. A * is
+   a day it was done, ! today."
+  (let* ([stamp (list-ref e 4)] [r (cadddr stamp)] [type (car r)]
+         [s-repeat (org-interval-days (cadr r) (caddr r))]
+         [d-repeat (if (= (length r) 4) (org-interval-days (car (cadddr r)) (cadr (cadddr r))) s-repeat)]
+         [scheduled (date->days (cadr stamp))]
+         [deadline (+ scheduled (- d-repeat s-repeat))]
+         [all (org-habit-done-days e)]
+         [now (date->days today)]
+         [start (- now (option 'org-habit-preceding-days))]
+         [end (+ now (option 'org-habit-following-days))]
+         ;; Where the habit was scheduled when `day` was today, `done`
+         ;; the done days not yet passed and `last` the last one passed.
+         [scheduled-then
+          (lambda (done last)
+            (cond [(null? done) scheduled]
+                  [(equal? type ".+") (+ last s-repeat)]
+                  [(equal? type "+") (- scheduled (* (length done) s-repeat))]
+                  [else
+                   ;; ++: from the first done day, each later one moves
+                   ;; it on by as many whole repeats as get it past.
+                   (let* ([first (car all)] [shift (modulo (- scheduled first) s-repeat)]
+                          [s (+ first (if (= shift 0) s-repeat shift))])
+                     (if (= first last)
+                         s
+                         (let loop ([ds (cdr all)] [s s])
+                           (if (null? ds)
+                               s
+                               (let ([s (+ s (* (+ 1 (quotient (max (- (car ds) s) 0) s-repeat)) s-repeat))])
+                                 (if (= (car ds) last) s (loop (cdr ds) s)))))))]))])
+    (let skip ([done all] [last #f])
+      (if (and (pair? done) (< (car done) start))
+          (skip (cdr done) (car done))
+          (let loop ([day start] [done done] [last last] [acc '()])
+            (if (>= day end)
+                (reverse acc)
+                (let* ([past? (< day now)] [today? (= day now)]
+                       [done? (and (pair? done) (= day (car done)))]
+                       [faces (if (and past? (not last) (not (< scheduled now)))
+                                  (if (and (pair? all) (= (car all) day))
+                                      (cons "ready" "ready-future")
+                                      (cons "clear" "clear-future"))
+                                  (let ([s (if (and past? last) (scheduled-then done last) scheduled)])
+                                    (org-habit-faces day s (+ s (- deadline scheduled)) done?)))]
+                       [face (if (or past? today?) (car faces) (cdr faces))]
+                       ;; A past day it wasn't done on, not overdue, is drawn lighter.
+                       [face (if (and past? (not (equal? face "overdue")) (not done?)) (cdr faces) face)])
+                  (loop (+ day 1)
+                        (if done? (filter (lambda (d) (> d day)) done) done)
+                        (if done? day last)
+                        (cons (list (cond [done? "*"] [today? "!"] [else " "])
+                                    (string-append "org.agenda.habit." face))
+                              acc)))))))))
+
+(define (org-habit-parts cells)
+  "Graph `cells` as draw-line! parts, a run of one face as one part."
+  (let loop ([cs cells] [acc '()])
+    (cond [(null? cs) (reverse acc)]
+          [(and (pair? acc) (equal? (cadr (car acc)) (cadr (car cs))))
+           (loop (cdr cs) (cons (list (string-append (car (car acc)) (car (car cs))) (cadr (car cs))) (cdr acc)))]
+          [else (loop (cdr cs) (cons (car cs) acc))])))
+
+(define (org-habit-rows x day today)
+  "The rows habit occurrence `x`, (occurrence entry), has on `day`: on
+   today only, once it is due, with its graph; Sched. 3x when it was
+   due 3 days ago."
+  (let* ([o (car x)] [e (cadr x)] [date (cadr (car o))])
+    (if (and (equal? day today) (not (date<? today date)))
+        (let ([n (- (date->days today) (date->days date))])
+          (list (list 'entry e (or (caddr (car o)) "")
+                      (if (> n 0) (string-append "Sched. " (number->string n) "x") "Sched.")
+                      'scheduled o (org-habit-graph e today))))
+        '())))
+
 (define (org-agenda-setting settings name default)
   "Block setting `name` from `settings`, ((span . 1) (header . \"Work\")),
    else `default`."
@@ -724,6 +859,8 @@
                     (org-sort-entries rows (lambda (r) (let ([m (org-time-minutes (caddr r))])
                                                          (if m (+ (* m 100) (rank (cadr r))) (+ 200000 (rank (cadr r))))))))]
          [days-since (lambda (d) (- (date->days today) (date->days d)))]
+         ;; A habit's SCHEDULED: shows on today only, with its graph.
+         [habit? (lambda (x) (and (eq? (cadr (car x)) 'scheduled) (org-habit? (cadr x))))]
          [overdue
           (map (lambda (x)
                  (let* ([o (car x)] [stamp (car o)] [n (days-since (cadr stamp))])
@@ -733,7 +870,7 @@
                              (string-append (number->string n) " d. ago"))
                          'overdue o)))
                (org-sort-entries
-                (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline))
+                (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline)) (not (habit? x))
                                          (date<? (cadr (car (car x))) today)))
                         occs)
                 (lambda (x) (date->days (cadr (car (car x)))))))]
@@ -754,9 +891,11 @@
               (apply append
                      (map (lambda (x)
                             (let ([o (car x)])
-                              (map (lambda (d) (list 'entry (org-diary-entry (cadr x) o (car d)) (if (cadr d) "" (time-of (car o)))
-                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
-                                   (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
+                              (if (habit? x)
+                                  (org-habit-rows x day today)
+                                  (map (lambda (d) (list 'entry (org-diary-entry (cadr x) o (car d)) (if (cadr d) "" (time-of (car o)))
+                                                         (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
+                                       (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day))))))
                           occs)))
               (if (equal? day today) upcoming '()))
              (equal? day today)))]
@@ -774,7 +913,7 @@
                                                   (string-append (org-short-date next)
                                                                  (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
                                                   (org-occurrence-label (cadr o)) (cadr o) o)))))
-                             occs))
+                             (filter (lambda (x) (not (habit? x))) occs)))
                 car))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
          [section (lambda (name items)
