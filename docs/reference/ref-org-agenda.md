@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: 7188e85aaf98
+  docs/specs/org-agenda.md: 9736e77a7cbe
 ---
 # Org agenda
 
@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: day to year views, a dispatcher with TODO lists, tag matches and search, changing tasks from the agenda, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: day to year views, a dispatcher with TODO lists, tag matches and search, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -96,6 +96,32 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 | `gR` | Read the files again, in every agenda buffer |
 | `q` / `ZZ` | Leave the agenda |
 | `ZQ` | Leave the agenda and close the files it opened (not ones with unsaved changes) |
+
+## Changing tasks from the agenda
+
+Change a task right from its line, without opening its file.
+
+| Key | What it does |
+|---|---|
+| `t` | Cycle its TODO keyword, as `<ret>` does on its heading |
+| `SPC m t` | Pick its TODO keyword, or none |
+| `SPC m d s` | Schedule it, picking the date from the calendar |
+| `SPC m d d` | Give it a deadline, from the calendar |
+| `H` / `L` | Move the date on the line a day earlier or later; `3L` is three days |
+| `+` / `-` | Raise or lower its priority; a task without one counts as `B` |
+| `SPC m p` | Set its priority: `a`, `b` or `c`, or space to remove it |
+| `ct` or `SPC m q` | Add or remove tags, as `C-c C-q` does in its file |
+| `ce` | Set its effort, such as `0:45` |
+| `SPC m r` | Refile it under another heading, as `C-c C-w` does |
+| `da` | Archive it, after asking |
+| `dA` | Archive it without asking |
+| `dd` | Delete it and everything under it, after asking |
+| `C` | Capture a new task for the day the cursor is on |
+| `u` | Undo the last change made from the agenda |
+
+`H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
+
+The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
 
 ## Choosing the files
 

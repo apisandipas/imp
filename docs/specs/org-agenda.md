@@ -85,7 +85,7 @@ The agenda gathers what's scheduled, due, timed and to do in the agenda files in
   - `I` clocks in on it, `O` clocks out, `cc` cancels the clock, `cg` goes to the clocked entry.
   - `C` captures, with the line's date as the capture's date.
 - A change edits the file's buffer, opening the file in the background if it isn't open, and saves it, unless the buffer had unsaved changes already, which then stay unsaved. The line redraws in place to show it; an entry no longer in the view (done, or moved off the span) goes.
-- `u` undoes the last change made from the agenda, in its file's buffer, and redraws.
+- `u` undoes the last change made from the agenda, in its file's buffer, and redraws. A refile or archive into another file isn't undone, as undoing one file would leave the entry in both.
 
 ### Filters
 

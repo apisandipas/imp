@@ -329,6 +329,7 @@
 ;;; The local leader: SPC m runs the major mode's own bindings.
 
 (define *mode-leaders* (hash))  ; mode -> hash of keys -> (command description)
+(define *mode-leader-groups* (hash))  ; mode -> hash of keys -> group name
 
 (define (define-mode-leader! mode keys command description)
   "Binds `keys` under SPC m for buffers in major mode `mode`.
@@ -340,6 +341,15 @@
     (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description)))))
   void)
 
+(define (define-mode-leader-group! mode keys name)
+  "Names the group of `mode`'s SPC m keys that start with `keys`, as
+   define-leader-group! does for SPC:
+
+     (define-mode-leader-group! 'org-agenda-mode \"d\" \"dates\")"
+  (let ([table (or (hash-try-get *mode-leader-groups* mode) (hash))])
+    (set! *mode-leader-groups* (hash-insert *mode-leader-groups* mode (hash-insert table keys name))))
+  void)
+
 (define-command! 'local-leader
   (lambda (count)
     "Show the SPC m bindings of the buffer's major mode and its parents."
@@ -349,8 +359,22 @@
           (message (string-append "no SPC m bindings for " (symbol->string (major-mode))))
           (begin
             ;; Install them under "m" for this sequence, then continue it.
-            (for-each (lambda (keys) (when (starts-with? keys "m") (undefine-leader! keys)))
+            ;; Not m itself, which must run this again for the next buffer.
+            (for-each (lambda (keys) (when (and (starts-with? keys "m") (> (string-length keys) 1)) (undefine-leader! keys)))
                       (hash-keys->list *leader-bindings*))
+            ;; And the mode's group names, the last mode's going.
+            (set! *leader-groups*
+                  (foldl (lambda (keys groups)
+                           (if (and (starts-with? keys "m") (> (string-length keys) 1)) (hash-remove groups keys) groups))
+                         *leader-groups* (hash-keys->list *leader-groups*)))
+            (for-each (lambda (m)
+                        (let ([groups (hash-try-get *mode-leader-groups* m)])
+                          (when groups
+                            (for-each (lambda (keys)
+                                        (unless (hash-contains? *leader-groups* (string-append "m" keys))
+                                          (define-leader-group! (string-append "m" keys) (hash-ref groups keys))))
+                                      (hash-keys->list groups)))))
+                      (mode-lineage (major-mode)))
             (for-each (lambda (table)
                         (for-each (lambda (keys)
                                     (let ([b (hash-ref table keys)])

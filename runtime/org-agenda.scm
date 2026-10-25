@@ -31,6 +31,8 @@
 (define *org-agenda-day-lines* '())
 ;; The file buffers the agenda opened, which ZQ closes.
 (define *org-agenda-opened* '())
+;; The last change made from the agenda: (buffer saved?), for u.
+(define *org-agenda-last-change* #f)
 ;; Whether follow mode is on, and the line it last showed.
 (define *org-agenda-follow* #f)
 (define *org-agenda-followed* #f)
@@ -50,39 +52,6 @@
     (and (pair? parts) (pair? (cdr parts))
          (let* ([rest (cadr parts)] [b (org-stamp-bounds rest 0)])
            (and b (org-parse-stamp (substring rest (car b) (cadr b))))))))
-
-(define (org-file-text file)
-  "The text of `file`: its buffer's, unsaved changes included, when a
-   buffer visits it, else what is on the disk."
-  (let ([id (buffer-for-path (absolute-path file))])
-    (if id
-        (with-buffer id (lambda () (buffer-substring 0 (buffer-length))))
-        (read-file file))))
-
-(define (org-tags-of text)
-  "The tags at the end of heading text `text`, as (\"work\" \"urgent\")
-   from \"* TODO Write :work:urgent:\", or '()."
-  (let* ([words (split-whitespace text)] [w (and (pair? words) (last words))])
-    (if (and w (> (string-length w) 2) (starts-with? w ":") (ends-with? w ":")
-             (andmap org-tag-char? (string->list w)))
-        (filter (lambda (t) (not (equal? t ""))) (split-many (substring w 1 (- (string-length w) 1)) ":"))
-        '())))
-
-(define (org-without-tags text)
-  "Heading text `text` without the tags at its end."
-  (let ([t (trim-end text)])
-    (if (null? (org-tags-of t))
-        t
-        (trim-end (substring t 0 (- (string-length t) (string-length (last (split-whitespace t)))))))))
-
-(define (org-file-tags lines)
-  "The tags `#+FILETAGS:` gives in `lines` (a vector), as (\"a\" \"b\")
-   from \":a:b:\" (or \"a b\")."
-  (let ([v (org-file-setting lines "#+FILETAGS:")])
-    (if v
-        (filter (lambda (t) (not (equal? t "")))
-                (apply append (map (lambda (w) (split-many w ":")) (split-whitespace v))))
-        '())))
 
 (define (org-line-appointments text)
   "The active timestamps on `text`, parsed, other than its SCHEDULED: and
@@ -309,8 +278,10 @@
 ;;                               it, then a rule
 ;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
-;;   (entry E TIME WHAT KIND)    entry E, TIME and WHAT strings (or ""),
-;;                               KIND the what's kind (org-what-face)
+;;   (entry E TIME WHAT KIND O)  entry E, TIME and WHAT strings (or ""),
+;;                               KIND the what's kind (org-what-face), O
+;;                               the occurrence shown (or #f). The line's
+;;                               item is (org file line kind date).
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
@@ -375,7 +346,7 @@
                          (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
                          '())
                      (list (list "  " #f) (list (pad-right (list-ref e 7) cat-w) "org.agenda.category")))
-             (list 'org (car e) (cadr e))))]
+             (let ([o (list-ref r 5)]) (list 'org (car e) (cadr e) (and o (cadr o)) (and o (cadr (car o)))))))]
          [(grid)
           (let ([time (pad-right (cadr r) (max 5 time-w))])
             (draw-line! (list (list "    " #f) (list time "org.agenda.time")
@@ -503,7 +474,7 @@
                          (if (eq? (cadr o) 'scheduled)
                              (string-append "Sched. " (number->string n) "x")
                              (string-append (number->string n) " d. ago"))
-                         'overdue)))
+                         'overdue o)))
                (org-sort-entries
                 (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline))
                                          (date<? (cadr (car (car x))) today)))
@@ -516,7 +487,7 @@
                                 [n (and next (- (date->days next) (date->days today)))])
                            (and n (<= n (org-warning-days (car o)))
                                 (list 'entry (cadr x) (time-of (car o))
-                                      (string-append "In " (number->string n) " d.") 'upcoming))))
+                                      (string-append "In " (number->string n) " d.") 'upcoming o))))
                        occs))]
          [day-rows
           (lambda (day)
@@ -527,7 +498,7 @@
                      (map (lambda (x)
                             (let ([o (car x)])
                               (map (lambda (d) (list 'entry (cadr x) (if (cadr d) "" (time-of (car o)))
-                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o)))
+                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
                                    (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
                           occs)))
               (if (equal? day today) upcoming '()))
@@ -545,7 +516,7 @@
                                             (list 'entry (cadr x)
                                                   (string-append (org-short-date next)
                                                                  (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
-                                                  (org-occurrence-label (cadr o)) (cadr o))))))
+                                                  (org-occurrence-label (cadr o)) (cadr o) o)))))
                              occs))
                 car))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
@@ -563,7 +534,7 @@
                       (append (list '(blank) (org-day-header day today)) (day-rows day))))
                   (range 0 span)))
       (section "Later" later)
-      (section "To do" (map (lambda (e) (list 'entry e "" "" #f)) todos))
+      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
@@ -671,6 +642,215 @@
       (set! *org-agenda-opened* '())))
   void)
 
+;;; Acting on entries: each change goes through the entry's file buffer,
+;;; as the same command does in an Org buffer.
+
+(define (org-agenda-entry-buffer! path)
+  "The id of the buffer visiting `path`, opening it in the background
+   (remembered for ZQ) if none does, or #f after saying why."
+  (or (buffer-for-path (absolute-path path))
+      (let ([id (buffer-open! path)])
+        (if (string? id)
+            (begin (message id) #f)
+            (begin (set! *org-agenda-opened* (cons id *org-agenda-opened*)) id)))))
+
+(define (org-agenda-act! proc)
+  "Runs (proc line) on the heading of the entry at the cursor, in its
+   file's buffer, then saves the buffer unless it had unsaved changes
+   before, and redraws the agenda. Returns whether there was an entry."
+  (let ([item (line-item)])
+    (if (not (and item (eq? (car item) 'org)))
+        (begin (message "not on an agenda entry") #f)
+        (let ([id (org-agenda-entry-buffer! (cadr item))])
+          (when id
+            (let ([clean? (not (buffer-modified-by-id? id))] [at (current-line)])
+              (with-buffer id (lambda () (with-undo-group (lambda () (proc (caddr item))))))
+              (when clean? (with-buffer id (lambda () (save-buffer!))))
+              (set! *org-agenda-last-change* (list id clean?))
+              (org-agenda-redraw-at! item at)))
+          #t))))
+
+(define (org-agenda-redraw-at! item at)
+  "Redraws the agenda, the cursor on `item` if it is still there, or the
+   same date of the same entry moved, else on line `at`."
+  (org-render-agenda!)
+  (if (not (and (pair? item) (eq? (car item) 'org)))
+      (set-cursor! (line-start (min at (last-line))))
+      (unless (equal? (line-item) item)
+        (let* ([items (buffer-local 'line-items)]
+               [find (lambda (n)
+                       (let loop ([i 0])
+                         (cond [(>= i (vector-length items)) #f]
+                               [(let ([it (vector-ref items i)])
+                                  (and (pair? it) (eq? (car it) 'org) (equal? (take it n) (take item n))))
+                                i]
+                               [else (loop (+ i 1))])))])
+          ;; The same date of the entry, else the entry's first line.
+          (set-cursor! (line-start (or (find 4) (find 3) (min at (last-line)))))))))
+
+(define (org-agenda-set-todo!)
+  "SPC m t: asks for a TODO keyword, or none, for the entry at the cursor."
+  (when (org-agenda-entry-line? (current-line))
+    (completing-read "Keyword: " (append (org-keywords) (list "(none)"))
+                     (lambda (kw)
+                       (org-agenda-act! (lambda (line) (org-todo-set! line (if (equal? kw "(none)") #f kw))))))))
+
+(define (org-agenda-plan! key prompt)
+  "Asks for a date with `prompt` (the calendar) and sets the entry's
+   `key` (\"SCHEDULED:\" or \"DEADLINE:\") to it."
+  (let ([item (line-item)])
+    (when (org-agenda-entry-line? (current-line))
+      (read-date prompt #f
+                 (lambda (d)
+                   (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                     (org-agenda-act! (lambda (line) (org-set-planning! line key stamp)))
+                     (message (string-append key " " stamp))))))))
+
+(define (org-agenda-shift-date! days)
+  "Moves the date the line at the cursor shows `days` days on (back when
+   negative)."
+  (let ([item (line-item)])
+    (if (not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
+        (message "no date on this line")
+        (org-agenda-act!
+         (lambda (line)
+           (case (list-ref item 3)
+             [(scheduled) (org-shift-planning! line "SCHEDULED:" days)]
+             [(deadline) (org-shift-planning! line "DEADLINE:" days)]
+             [else (org-shift-appointment! line (list-ref item 4) days)]))))))
+
+(define (org-agenda-entry-at)
+  "The agenda entry (as org-file-entries gives it) of the line at the
+   cursor, read afresh from its file, or #f."
+  (let ([item (line-item)])
+    (and (pair? item) (eq? (car item) 'org)
+         (let ([found (filter (lambda (e) (= (cadr e) (caddr item))) (org-file-entries (cadr item)))])
+           (and (pair? found) (car found))))))
+
+(define (org-agenda-priority-step! step)
+  "Raises (`step` -1) or lowers (1) the entry's priority a letter, a
+   heading without one counting as B; A and C are the ends."
+  (let ([e (org-agenda-entry-at)])
+    (when e
+      (let* ([now (char->integer (string-ref (or (list-ref e 6) "B") 0))]
+             [next (string (integer->char (max 65 (min 67 (+ now step)))))])
+        (org-agenda-act! (lambda (line) (org-set-priority! line next)))
+        (message (string-append "priority " next))))))
+
+(define (org-agenda-priority-menu!)
+  "SPC m p: asks for the entry's priority."
+  (when (org-agenda-entry-line? (current-line))
+    (menu! "Priority"
+           (append (map (lambda (p) (list (string-downcase p) p
+                                          (lambda () (org-agenda-act! (lambda (line) (org-set-priority! line p))))))
+                        '("A" "B" "C"))
+                   (list (list " " "remove" (lambda () (org-agenda-act! (lambda (line) (org-set-priority! line #f))))))))))
+
+(define (org-agenda-tags!)
+  "ct: sets the entry's tags as C-c C-q does: each tag picked is added,
+   or removed if it has it, asking again until <esc>."
+  (let ([e (org-agenda-entry-at)])
+    (when e
+      (let ([own (map car (filter cdr (org-entry-tags e)))])
+        (completing-read (string-append "Tags " (if (null? own) "(none)" (string-append ":" (string-join own ":") ":"))
+                                        " (<esc> when done): ")
+                         (org-known-tags)
+                         (lambda (tag)
+                           (let ([tag (trim (org-trim-colons tag))])
+                             (unless (equal? tag "")
+                               (org-agenda-act!
+                                (lambda (line)
+                                  (let ([now (org-heading-tags line)])
+                                    (org-set-heading-tags! line (if (member tag now)
+                                                                    (filter (lambda (t) (not (equal? t tag))) now)
+                                                                    (append now (list tag)))))))
+                               (org-agenda-tags!))))
+                         (lambda (tag) (and (member tag own) "on")))))))
+
+(define (org-agenda-effort!)
+  "ce: sets the entry's Effort property; empty removes it."
+  (let ([item (line-item)])
+    (when (org-agenda-entry-line? (current-line))
+      (let* ([id (org-agenda-entry-buffer! (cadr item))]
+             [now (and id (with-buffer id (lambda () (org-entry-property (caddr item) "Effort"))))])
+        (when id
+          (open-cmdline! "Effort: " (or now "")
+                         (lambda (v) (org-agenda-act! (lambda (line) (org-set-property! line "Effort" (trim v)))))
+                         #f #f))))))
+
+(define (org-agenda-title-at)
+  "The title of the entry at the cursor, for questions about it."
+  (let ([e (org-agenda-entry-at)]) (if e (org-agenda-title-text e) "this entry")))
+
+(define (org-agenda-refile!)
+  "SPC m r: asks for a heading in the agenda files and moves the entry
+   there, with its subtree."
+  (when (org-agenda-entry-line? (current-line))
+    (let ([targets (org-refile-targets)])
+      (if (null? targets)
+          (message "no headings in the agenda files to refile under")
+          (completing-read "Refile under: " (map car targets)
+                           (lambda (choice)
+                             (let ([hit (assoc choice targets)])
+                               (when hit
+                                 (org-agenda-act! (lambda (line) (org-refile-to! line hit)))
+                                 (org-agenda-forget-change-to-other-file! (cadr hit))))))))))
+
+(define (org-agenda-forget-change-to-other-file! path)
+  "After a change that also wrote `path`: when that is another file than
+   the changed buffer's, u can't undo it (it would leave the entry in
+   both), so it is forgotten."
+  (let ([last *org-agenda-last-change*])
+    (when (and last (not (equal? (buffer-for-path (absolute-path path)) (car last))))
+      (set! *org-agenda-last-change* #f)))
+  void)
+
+(define (org-agenda-archive! ask?)
+  "Archives the entry with its subtree (org-archive-location), asking
+   first when `ask?`."
+  (when (org-agenda-entry-line? (current-line))
+    (let ([go (lambda ()
+                (let ([file #f])
+                  (org-agenda-act! (lambda (line) (set! file (org-archive! line))
+                                     (message (string-append "archived in " (file-name-of file)))))
+                  (when file (org-agenda-forget-change-to-other-file! file))))])
+      (if ask?
+          (confirm! (string-append "Archive \"" (org-agenda-title-at) "\"?") go)
+          (go)))))
+
+(define (org-agenda-delete!)
+  "dd: deletes the entry and its subtree from its file, asking first."
+  (when (org-agenda-entry-line? (current-line))
+    (confirm! (string-append "Delete \"" (org-agenda-title-at) "\" and everything under it?")
+              (lambda ()
+                (org-agenda-act!
+                 (lambda (line)
+                   (let ([end (org-subtree-end line)])
+                     (begin-change!)
+                     (replace-range! (line-start line) (min (buffer-length) (+ (line-end end) 1)) "")
+                     (message "deleted"))))))))
+
+(define (org-agenda-line-date)
+  "The day the line at the cursor is under, or today."
+  (let* ([at (current-line)]
+         [above (filter (lambda (d) (<= (cdr d) at)) *org-agenda-day-lines*)])
+    (if (null? above)
+        (calendar-today)
+        (car (car (sort above (lambda (a b) (> (cdr a) (cdr b)))))))))
+
+(define (org-agenda-undo!)
+  "u: undoes the last change made from the agenda, in its file's buffer,
+   saving it again if the change saved it."
+  (let ([last *org-agenda-last-change*])
+    (if (not (and last (memv (car last) (buffer-list))))
+        (message "no change from the agenda to undo")
+        (let ([at (current-line)] [item (line-item)])
+          (set! *org-agenda-last-change* #f)
+          (with-buffer (car last) (lambda () (undo!)))
+          (when (cadr last) (with-buffer (car last) (lambda () (save-buffer!))))
+          (org-agenda-redraw-at! item at)
+          (message "undone")))))
+
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
@@ -710,6 +890,25 @@
                        (set! *org-agenda-followed* #f)
                        (message (if *org-agenda-follow* "follow mode on" "follow mode off")))
                  "follow mode")
+(org-agenda-key! "t" (lambda (n) (org-agenda-act! org-todo-cycle!)) "cycle TODO")
+(define-mode-leader! 'org-agenda-mode "t" (lambda (n) (org-agenda-set-todo!)) "set TODO")
+(define-mode-leader-group! 'org-agenda-mode "d" "dates")
+(define-mode-leader! 'org-agenda-mode "ds" (lambda (n) (org-agenda-plan! "SCHEDULED:" "Schedule: ")) "schedule")
+(define-mode-leader! 'org-agenda-mode "dd" (lambda (n) (org-agenda-plan! "DEADLINE:" "Deadline: ")) "deadline")
+(org-agenda-key! "H" (lambda (n) (org-agenda-shift-date! (- (max 1 n)))) "date earlier")
+(org-agenda-key! "L" (lambda (n) (org-agenda-shift-date! (max 1 n))) "date later")
+(org-agenda-key! "+" (lambda (n) (org-agenda-priority-step! -1)) "priority up")
+(org-agenda-key! "-" (lambda (n) (org-agenda-priority-step! 1)) "priority down")
+(define-mode-leader! 'org-agenda-mode "p" (lambda (n) (org-agenda-priority-menu!)) "priority")
+(org-agenda-key! "ct" (lambda (n) (org-agenda-tags!)) "set tags")
+(define-mode-leader! 'org-agenda-mode "q" (lambda (n) (org-agenda-tags!)) "set tags")
+(org-agenda-key! "ce" (lambda (n) (org-agenda-effort!)) "set effort")
+(define-mode-leader! 'org-agenda-mode "r" (lambda (n) (org-agenda-refile!)) "refile")
+(org-agenda-key! "da" (lambda (n) (org-agenda-archive! #t)) "archive")
+(org-agenda-key! "dA" (lambda (n) (org-agenda-archive! #f)) "archive now")
+(org-agenda-key! "dd" (lambda (n) (org-agenda-delete!)) "delete")
+(org-agenda-key! "C" (lambda (n) (org-capture! (org-agenda-line-date))) "capture")
+(org-agenda-key! "u" (lambda (n) (org-agenda-undo!)) "undo")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

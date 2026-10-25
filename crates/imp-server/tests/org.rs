@@ -532,3 +532,167 @@ fn c_c_c_x_p_sets_and_removes_properties() {
         "* TODO Task\nSCHEDULED: <2026-10-24 Sat>\nbody\n* Next\n"
     );
 }
+
+#[test]
+fn c_c_c_q_adds_and_removes_tags() {
+    let mut s = org(
+        "tags.org",
+        "* TODO Write the report\nbody\n* Other :home:\n",
+    );
+    s.eval("(set-option! 'org-agenda-files '())").unwrap();
+    // A new tag, then one completed from the file's, then the first again
+    // to take it off; <esc> ends.
+    type_keys(&mut s, "j<C-c><C-q>work<ret>hom<ret>work<ret><esc>");
+    let first = s.text().lines().next().unwrap().to_string();
+    assert_eq!(
+        first,
+        format!("* TODO Write the report{}:home:", " ".repeat(77 - 23 - 6))
+    );
+    assert_eq!(first.chars().count(), 77);
+    // A title too long for the column gets one space.
+    s.eval("(set-option! 'org-tags-column -20)").unwrap();
+    type_keys(&mut s, "gg<C-c><C-q>work<ret><esc>");
+    assert_eq!(
+        s.text().lines().next().unwrap(),
+        "* TODO Write the report :home:work:"
+    );
+    // SPC m q too; taking every tag off leaves the title alone.
+    type_keys(&mut s, " mqhome<ret>work<ret><esc>");
+    assert_eq!(s.text().lines().next().unwrap(), "* TODO Write the report");
+}
+
+#[test]
+fn c_c_c_x_e_sets_the_effort() {
+    let mut s = org("effort.org", "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n");
+    type_keys(&mut s, "<C-c><C-x>e0:45<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n:PROPERTIES:\n:Effort: 0:45\n:END:\n"
+    );
+    // SPC m c E shows the effort to change; empty removes it.
+    type_keys(&mut s, " mcE<C-u><ret>");
+    assert_eq!(s.text(), "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n");
+}
+
+/// A directory holding `files`, as org-directory, and `name` open.
+fn org_files(
+    dir: &str,
+    files: &[(&str, &str)],
+    name: &str,
+) -> (imp_server::Server, std::path::PathBuf) {
+    let dir = temp_path(dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (f, text) in files {
+        std::fs::write(dir.join(f), text).unwrap();
+    }
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join(name).display()));
+    (s, dir)
+}
+
+#[test]
+fn c_c_c_w_refiles_a_subtree_in_the_same_file() {
+    let (mut s, _) = org_files(
+        "org-refile-same",
+        &[(
+            "a.org",
+            "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n* Projects\n** Garden\nplan\n* Later\n",
+        )],
+        "a.org",
+    );
+    // Under Projects, at the end of its subtree, one level below it.
+    type_keys(&mut s, "j<C-c><C-w>Projects<ret>");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n* Projects\n** Garden\nplan\n** TODO Call Ann\nnotes\n*** Sub\n* Later\n"
+    );
+    // One undo step.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n* Projects\n** Garden\nplan\n* Later\n"
+    );
+    // Not under itself.
+    type_keys(&mut s, "gg5j<C-c><C-w>Garden<ret>");
+    assert!(s.status().contains("under itself"), "{}", s.status());
+    // A level-2 heading under a level-1 one stays level 2.
+    type_keys(&mut s, "gg5j mrInbox<ret>");
+    assert_eq!(
+        s.text(),
+        "* Inbox\n** TODO Call Ann\nnotes\n*** Sub\n** Garden\nplan\n* Projects\n* Later\n"
+    );
+}
+
+#[test]
+fn c_c_c_w_refiles_into_another_file() {
+    let (mut s, dir) = org_files(
+        "org-refile-other",
+        &[
+            ("a.org", "* TODO Move me\nbody\n* Stay\n"),
+            ("b.org", "* Target\n** Old\n"),
+        ],
+        "a.org",
+    );
+    type_keys(&mut s, "<C-c><C-w>b.org › Target<ret>");
+    assert_eq!(s.text(), "* Stay\n");
+    // b.org wasn't open: it is written.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("b.org")).unwrap(),
+        "* Target\n** Old\n** TODO Move me\nbody\n"
+    );
+}
+
+#[test]
+fn c_c_c_x_c_a_archives_a_subtree() {
+    let (mut s, dir) = org_files(
+        "org-archive",
+        &[(
+            "work.org",
+            "#+CATEGORY: job\n* Projects\n** TODO Old task\nnotes\n*** Sub\n* Keep\n",
+        )],
+        "work.org",
+    );
+    s.eval(r#"(define (capture-clock) (list "2026-10-25" "Sun" "11:42" "Sunday" "October"))"#)
+        .unwrap();
+    type_keys(&mut s, "jj<C-c><C-x><C-a>");
+    assert_eq!(s.text(), "#+CATEGORY: job\n* Projects\n* Keep\n");
+    let path = dir.join("work.org").display().to_string();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("work.org_archive")).unwrap(),
+        format!(
+            "#    -*- mode: org -*-\n\n\nArchived entries from file {path}\n\n\n* TODO Old task\n:PROPERTIES:\n:ARCHIVE_TIME: 2026-10-25 Sun 11:42\n:ARCHIVE_FILE: {path}\n:ARCHIVE_OLPATH: Projects\n:ARCHIVE_CATEGORY: job\n:ARCHIVE_TODO: TODO\n:END:\nnotes\n** Sub\n"
+        )
+    );
+    // One undo puts it back, properties and all.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        s.text(),
+        "#+CATEGORY: job\n* Projects\n** TODO Old task\nnotes\n*** Sub\n* Keep\n"
+    );
+    // Under a heading of a file of its own; the agenda doesn't read it.
+    s.eval(r#"(set-option! 'org-archive-location "archive.org::* From %s")"#)
+        .unwrap();
+    type_keys(&mut s, "G mA");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("archive.org"))
+            .unwrap()
+            .split("\n\n\n")
+            .last()
+            .unwrap(),
+        "* From work.org\n** Keep\n:PROPERTIES:\n:ARCHIVE_TIME: 2026-10-25 Sun 11:42\n:ARCHIVE_FILE: "
+            .to_string()
+            + &path
+            + "\n:ARCHIVE_CATEGORY: job\n:END:\n"
+    );
+    let files = s.eval("(org-agenda-file-list)").unwrap();
+    assert!(
+        files.contains("work.org") && !files.contains("archive.org"),
+        "{files}"
+    );
+}

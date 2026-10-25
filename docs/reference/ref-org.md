@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org]]"
 frozen:
-  docs/specs/org.md: 2a4bc3dc93d6
+  docs/specs/org.md: eacefd3dbd04
 ---
 # Org
 
@@ -116,6 +116,45 @@ End a timestamp with a repeater to make the task come back. When you mark it don
 
 Use `d`, `w`, `m` or `y` for days, weeks, months or years. A warning period such as `-3d` goes after the repeater. Picking a new date from the calendar keeps the repeater.
 
+## Tags and effort
+
+Press `C-c C-q` or `SPC m q` to tag the heading the cursor is under. Pick a tag from the ones your Org files use, or type a new one, and press `<ret>`. A tag the heading has already is taken off instead. It asks again, so you can change several; press `<esc>` when you're done. Tags the heading has are marked `on`.
+
+```org
+* TODO Write the report                                    :work:urgent:
+```
+
+Tags line up to end at column 77, as in Emacs. Set `org-tags-column` to change that.
+
+Press `C-c C-x e` or `SPC m c E` to set the heading's effort: how long it should take, such as `0:45` or `1:30`. It's kept as the `Effort` property. An empty answer removes it.
+
+## Moving a heading elsewhere
+
+Press `C-c C-w` or `SPC m r` to refile the heading the cursor is under: pick any heading in your agenda files, and the heading moves there with everything under it. It goes at the end of what's under the new heading, one level below it. Undo puts it back when it moves within the same file.
+
+## Archiving
+
+Press `C-c C-x C-a` or `SPC m A` to archive the heading the cursor is under, with everything under it. It moves to the end of an archive file next to yours, `work.org_archive` for `work.org`, made if it doesn't exist. The agenda doesn't read archives.
+
+The heading keeps a note of where it came from, in properties:
+
+```org
+* TODO Old task
+:PROPERTIES:
+:ARCHIVE_TIME: 2026-10-25 Sun 11:42
+:ARCHIVE_FILE: /home/you/org/work.org
+:ARCHIVE_OLPATH: Projects
+:ARCHIVE_CATEGORY: work
+:ARCHIVE_TODO: TODO
+:END:
+```
+
+To archive somewhere else, set `org-archive-location`: a file name, where `%s` is your file's name, then `::` and a heading to file under, if you want one.
+
+```scheme
+(set-option! 'org-archive-location "archive.org::* From %s")
+```
+
 ## Properties
 
 A heading's properties live in a drawer under it:
@@ -168,6 +207,8 @@ Your notes file is `inbox.org` in `org-directory`, unless you set `org-default-n
 | `org-agenda-files` | `'()` | The files the agenda reads |
 | `org-default-notes-file` | `""` | Where capture saves; empty means `inbox.org` in `org-directory` |
 | `org-todo-keywords` | `'("TODO" "DONE")` | The keywords a heading cycles through |
+| `org-archive-location` | `"%s_archive::"` | Where archiving moves a heading: a file, then `::` and a heading |
+| `org-tags-column` | `-77` | Where tags go: negative ends them at that column, positive starts them there |
 | `org-link-descriptive` | `#t` | Show links as their descriptions away from the cursor |
 | `org-fold-drawers` | `#t` | Start drawers folded |
 | `org-indent` | `#f` | Indented display; `SPC m i` toggles it |

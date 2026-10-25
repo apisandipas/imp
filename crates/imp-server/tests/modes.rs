@@ -195,3 +195,23 @@ fn options_are_read_and_set_by_their_short_names_too() {
         "{err:?}"
     );
 }
+
+#[test]
+fn a_mode_s_keys_may_start_with_a_plain_key() {
+    let mut s = server("one two\n");
+    s.eval(
+        r#"(define-major-mode! 'plain-mode #f '() #f)
+           (define-mode-key! 'plain-mode 'normal "ct" (lambda (n) (message "ct ran")))
+           (set-major-mode! 'plain-mode)"#,
+    )
+    .unwrap();
+    // c waits for the mode's t instead of changing to a t.
+    type_keys(&mut s, "ct");
+    assert_eq!(s.status(), "ct ran");
+    assert_eq!(s.text(), "one two\n");
+    // Vim's g prefix is still Vim's; c alone with another key is undefined.
+    type_keys(&mut s, "wgg");
+    assert_eq!(s.eval("(cursor)").unwrap(), "0");
+    type_keys(&mut s, "cw");
+    assert!(s.status().contains("cw is undefined"), "{}", s.status());
+}

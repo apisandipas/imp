@@ -279,19 +279,16 @@
                    rest)])
     (org-normalize-title rest)))
 
-(define (org-todo-cycle! line)
-  "Moves the heading on `line` to the next TODO keyword (none after the last)."
+(define (org-todo-set! line next)
+  "Gives the heading on `line` TODO keyword `next`, or none when it is
+   #f. Done with a repeating date, the date moves on instead and the
+   keyword goes back to the first."
   (let* ([text (line-text line)]
          [level (org-level line)]
          [rest (substring text (+ level 1) (string-length text))]
          [kws (org-keywords)]
          [current (org-keyword-in rest)]
          [title (if current (trim-start (substring rest (string-length current) (string-length rest))) rest)]
-         [next (cond [(not current) (car kws)]
-                     [(member current kws)
-                      (let ([after (cdr (member current kws))]) (if (null? after) #f (car after)))]
-                     [else #f])]
-         ;; Done with a repeating date: the date moves on instead.
          [repeat? (and next (member next (org-done-keywords))
                        (pair? (org-repeating-stamps line (org-body-end line))))]
          [next (if repeat? (car kws) next)])
@@ -300,6 +297,17 @@
     (let ([moved (and repeat? (org-repeat-entry! line))])
       (set-cursor! (line-start line))
       (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))
+
+(define (org-todo-cycle! line)
+  "Moves the heading on `line` to the next TODO keyword (none after the last)."
+  (let* ([text (line-text line)]
+         [rest (substring text (+ (org-level line) 1) (string-length text))]
+         [kws (org-keywords)]
+         [current (org-keyword-in rest)])
+    (org-todo-set! line (cond [(not current) (car kws)]
+                              [(member current kws)
+                               (let ([after (cdr (member current kws))]) (if (null? after) #f (car after)))]
+                              [else #f]))))
 
 (define (org-priority-in text)
   "The priority letter `text` starts with, as in \"[#A] title\", or #f."
@@ -839,6 +847,123 @@
                                (open-cmdline! (string-append name ": ") (or (org-entry-property h name) "")
                                               (lambda (v) (org-set-property! h name (trim v))) #f #f)))))))
 
+;;; Tags
+
+(define (org-file-text file)
+  "The text of `file`: its buffer's, unsaved changes included, when a
+   buffer visits it, else what is on the disk."
+  (let ([id (buffer-for-path (absolute-path file))])
+    (if id
+        (with-buffer id (lambda () (buffer-substring 0 (buffer-length))))
+        (read-file file))))
+
+(define (org-tags-of text)
+  "The tags at the end of heading text `text`, as (\"work\" \"urgent\")
+   from \"* TODO Write :work:urgent:\", or '()."
+  (let* ([words (split-whitespace text)] [w (and (pair? words) (last words))])
+    (if (and w (> (string-length w) 2) (starts-with? w ":") (ends-with? w ":")
+             (andmap org-tag-char? (string->list w)))
+        (filter (lambda (t) (not (equal? t ""))) (split-many (substring w 1 (- (string-length w) 1)) ":"))
+        '())))
+
+(define (org-without-tags text)
+  "Heading text `text` without the tags at its end."
+  (let ([t (trim-end text)])
+    (if (null? (org-tags-of t))
+        t
+        (trim-end (substring t 0 (- (string-length t) (string-length (last (split-whitespace t)))))))))
+
+(define (org-file-tags lines)
+  "The tags `#+FILETAGS:` gives in `lines` (a vector), as (\"a\" \"b\")
+   from \":a:b:\" (or \"a b\")."
+  (let ([v (org-file-setting lines "#+FILETAGS:")])
+    (if v
+        (filter (lambda (t) (not (equal? t "")))
+                (apply append (map (lambda (w) (split-many w ":")) (split-whitespace v))))
+        '())))
+
+;; Where a heading's tags go: a negative number right-aligns them to end
+;; at that column, a positive one starts them there, as Org's
+;; org-tags-column.
+(define-option! 'org-tags-column -77 '())
+;; Where archiving moves a heading: a file, %s for the file's name, then
+;; :: and an optional heading to go under, as Org's.
+(define-option! 'org-archive-location "%s_archive::" '())
+
+(define (org-heading-tags line)
+  "The tags of the heading on `line`, as (\"work\" \"urgent\")."
+  (org-tags-of (line-text line)))
+
+(define (org-with-tags text tags)
+  "Heading text `text` with `tags` (a list) at its end in place of any it
+   had, placed by org-tags-column."
+  (let* ([base (org-without-tags text)]
+         [tag-text (string-append ":" (string-join tags ":") ":")]
+         [col (option 'org-tags-column)]
+         [start (if (< col 0) (- (- col) (string-length tag-text)) col)]
+         [pad (max 1 (- start (string-length base)))])
+    (if (null? tags) base (string-append base (make-string pad #\space) tag-text))))
+
+(define (org-set-heading-tags! line tags)
+  "Gives the heading on `line` exactly `tags` (a list)."
+  (begin-change!)
+  (org-set-line! line (org-with-tags (line-text line) tags)))
+
+(define (org-known-tags)
+  "Every tag in the agenda files and the current buffer, each once."
+  (let* ([texts (cons (buffer-substring 0 (buffer-length))
+                      (map (lambda (f) (with-handler (lambda (e) "") (org-file-text f))) (org-agenda-file-list)))]
+         [tags (apply append
+                      (map (lambda (t)
+                             (let ([lines (text-lines t)])
+                               (append (org-file-tags (list->vector lines))
+                                       (apply append (map (lambda (l) (if (org-level-of l) (org-tags-of l) '())) lines)))))
+                           texts))])
+    (let loop ([ts tags] [acc '()])
+      (cond [(null? ts) (reverse acc)]
+            [(member (car ts) acc) (loop (cdr ts) acc)]
+            [else (loop (cdr ts) (cons (car ts) acc))]))))
+
+(define (org-tags-prompt!)
+  "C-c C-q: sets the tags of the heading the cursor is under. Each tag
+   picked, completing from the agenda files' tags, or a new one typed, is
+   added, or removed if the heading has it; it asks again until <esc>."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (let ask ()
+          (let ([now (org-heading-tags h)])
+            (completing-read (string-append "Tags " (if (null? now) "(none)" (string-append ":" (string-join now ":") ":"))
+                                            " (<esc> when done): ")
+                             (org-known-tags)
+                             (lambda (tag)
+                               (let ([tag (trim (org-trim-colons tag))])
+                                 (cond [(equal? tag "") void]
+                                       [(not (andmap org-tag-char? (string->list tag)))
+                                        (message (string-append "not a tag: " tag))]
+                                       [else
+                                        (org-set-heading-tags! h (if (member tag now)
+                                                                     (filter (lambda (t) (not (equal? t tag))) now)
+                                                                     (append now (list tag))))
+                                        (ask)])))
+                             (lambda (tag) (and (member tag now) "on"))))))))
+
+(define (org-trim-colons text)
+  "`text` without colons at either end."
+  (let loop ([t text])
+    (cond [(starts-with? t ":") (loop (substring t 1 (string-length t)))]
+          [(ends-with? t ":") (loop (substring t 0 (- (string-length t) 1)))]
+          [else t])))
+
+(define (org-effort-prompt!)
+  "C-c C-x e: sets the Effort property of the heading the cursor is
+   under, as 0:45 or 1:30; an empty answer removes it."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (open-cmdline! "Effort: " (or (org-entry-property h "Effort") "")
+                       (lambda (v) (org-set-property! h "Effort" (trim v))) #f #f))))
+
 ;;; The agenda files, which capture and refile use too
 
 (define (org-notes-file)
@@ -852,14 +977,19 @@
 (define (org-agenda-file-list)
   "The full paths of the files the agenda reads.
    They are org-agenda-files, or when that is empty every .org file
-   under org-directory (none if it doesn't exist)."
+   under org-directory (none if it doesn't exist) but the archives
+   org-archive-location names."
   (let ([files (option 'org-agenda-files)])
     (if (pair? files)
         (map org-path files)
         (let ([dir (expand-path (option 'org-directory))])
           (if (file-exists? dir)
-              (map (lambda (f) (string-append dir "/" f))
-                   (filter (lambda (f) (ends-with? f ".org")) (list-files dir 10000)))
+              (let* ([all (map (lambda (f) (string-append dir "/" f))
+                               (filter (lambda (f) (ends-with? f ".org")) (list-files dir 10000)))]
+                     ;; Not the files archiving moves headings to.
+                     [archives (filter (lambda (t) t)
+                                       (map (lambda (f) (let ([t (car (org-archive-target f))]) (and (not (equal? t f)) t))) all))])
+                (filter (lambda (f) (not (member f archives))) all))
               '())))))
 
 (define (org-date-after text key)
@@ -1032,6 +1162,44 @@
             [else (buffer-insert! (line-end next) (string-append " " key " " stamp))]))
         (buffer-insert! (line-end heading) (string-append "\n" key " " stamp)))))
 
+(define (org-shift-stamp-at! line bounds days)
+  "Moves the timestamp at `bounds` (start end) of `line`'s text `days`
+   days on, keeping its time, repeater and warning."
+  (let* ([text (line-text line)]
+         [stamp (org-parse-stamp (substring text (car bounds) (cadr bounds)))])
+    (when stamp
+      (begin-change!)
+      (replace-range! (+ (line-start line) (car bounds)) (+ (line-start line) (cadr bounds))
+                      (org-stamp->string (list (car stamp) (date-add-days (cadr stamp) days)
+                                               (caddr stamp) (cadddr stamp) (list-ref stamp 4)))))))
+
+(define (org-shift-planning! heading key days)
+  "Moves `key`'s date (\"SCHEDULED:\" or \"DEADLINE:\") of the heading
+   on line `heading` `days` days on."
+  (let ([next (+ heading 1)])
+    (when (and (<= next (last-line)) (org-planning-line? (line-text next)))
+      (let* ([text (line-text next)] [at (string-index-from text key 0)]
+             [bounds (and at (org-stamp-bounds text (+ at (string-length key))))])
+        (when bounds (org-shift-stamp-at! next bounds days))))))
+
+(define (org-shift-appointment! heading date days)
+  "Moves the first active timestamp dated `date` in the entry of the
+   heading on line `heading`, other than its SCHEDULED: and DEADLINE:,
+   `days` days on."
+  (let loop ([line heading])
+    (when (<= line (org-body-end heading))
+      (let ([text (line-text line)])
+        (let find ([from 0])
+          (let ([b (org-stamp-bounds-anywhere text from)])
+            (cond
+              [(not b) (loop (+ line 1))]
+              [(let ([st (org-parse-stamp (substring text (car b) (cadr b)))]
+                     [before (trim-end (substring text 0 (car b)))])
+                 (and st (car st) (equal? (cadr st) date)
+                      (not (ends-with? before "SCHEDULED:")) (not (ends-with? before "DEADLINE:"))))
+               (org-shift-stamp-at! line b days)]
+              [else (find (cadr b))])))))))
+
 (define (org-planning-date heading key)
   "The date `key` gives the heading on line `heading`, or #f."
   (let ([next (+ heading 1)])
@@ -1152,9 +1320,21 @@
   (let ([parts (split-many (trim (cadr (run-shell "date '+%Y-%m-%d|%a|%H:%M|%A|%B'" ""))) "|")])
     (if (= (length parts) 5) parts (list "1970-01-01" "Thu" "00:00" "Thursday" "January"))))
 
+;; The date a capture is for instead of today's, as the agenda's C sets
+;; it, or #f.
+(define *capture-date* #f)
+
+(define (capture-day-clock clock date)
+  "`clock` (as capture-clock gives it) on `date` instead, at its time."
+  (list (date->string date) (vector-ref *calendar-day-names* (date-weekday date)) (caddr clock)
+        (vector-ref (vector "Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")
+                    (date-weekday date))
+        (vector-ref *calendar-month-names* (- (cadr date) 1))))
+
 (define (capture-context)
-  "What a template can refer to, gathered where capture starts."
-  (list (cons 'clock (capture-clock))
+  "What a template can refer to, gathered where capture starts: on
+   *capture-date* when it is set."
+  (list (cons 'clock (if *capture-date* (capture-day-clock (capture-clock) *capture-date*) (capture-clock)))
         (cons 'path (and (buffer-path) (absolute-path (buffer-path))))
         (cons 'line (+ (current-line) 1))
         (cons 'region (if (eq? *mode* 'visual)
@@ -1386,9 +1566,11 @@
   (string-append (file-name-of (org-path (cadr target)))
                  (if (eq? (car target) 'file+headline) (string-append " › " (caddr target)) "")))
 
-(define (org-capture!)
+(define (org-capture! . date)
   "Starts a capture, asking which template when there is more than one.
-   When a capture is already in progress, shows it instead."
+   When a capture is already in progress, shows it instead. With a
+   `date`, the capture is for that day rather than today."
+  (set! *capture-date* (and (pair? date) (car date)))
   (cond
     [(list-find (lambda (id) (equal? (car (buffer-info id)) "*capture*")) (buffer-list))
      => (lambda (id) (display-buffer! id) (message "a capture is in progress: C-c C-c files it, C-c C-k cancels"))]
@@ -1438,7 +1620,8 @@
   "Every heading in the agenda files, as (\"file › outline path\" path line)."
   (apply append
          (map (lambda (path)
-                (let loop ([lines (if (file-exists? path) (text-lines (read-file path)) '())] [n 0] [stack '()] [acc '()])
+                (let loop ([lines (if (or (buffer-for-path path) (file-exists? path)) (text-lines (org-file-text path)) '())]
+                           [n 0] [stack '()] [acc '()])
                   (if (null? lines)
                       (reverse acc)
                       (let ([level (org-level-of (car lines))])
@@ -1463,6 +1646,110 @@
                            (let ([hit (assoc choice targets)])
                              (when hit
                                (capture-finish-at! (list 'heading (cadr hit) (caddr hit) (last (split-many (car hit) " › ")))))))))))
+
+(define (org-refile-to! h target)
+  "Moves the heading on line `h` of the current buffer, with its subtree,
+   under `target` (label path line), at the end of that heading's
+   subtree and a level below it. Returns #f after saying why when the
+   target is inside the subtree."
+  (let* ([end (org-subtree-end h)]
+         [level (org-level h)]
+         [path (cadr target)]
+         [same? (equal? (and (buffer-path) (absolute-path (buffer-path))) (absolute-path path))]
+         [tline (caddr target)])
+    (if (and same? (<= h tline end))
+        (begin (message "can't refile a heading under itself") #f)
+        (let* ([text (buffer-substring (line-start h) (min (buffer-length) (+ (line-end end) 1)))]
+               [text (if (ends-with? text "\n") text (string-append text "\n"))]
+               ;; As a level-1 subtree, which filing demotes to fit.
+               [entry (apply string-append
+                             (map (lambda (l) (string-append (if (org-level-of l) (substring l (- level 1) (string-length l)) l) "\n"))
+                                  (text-lines text)))]
+               [tline (if (and same? (> tline end)) (- tline (+ (- end h) 1)) tline)])
+          (with-undo-group
+           (lambda ()
+             (begin-change!)
+             (replace-range! (line-start h) (min (buffer-length) (+ (line-end end) 1)) "")
+             (capture-file! (list 'heading path tline (last (split-many (car target) " › ")))
+                            entry #f)))
+          (message (string-append "refiled to " (car target)))
+          #t))))
+
+(define (org-refile-prompt! then)
+  "C-c C-w: asks for a heading in the agenda files and moves the heading
+   the cursor is under there, with its subtree. `then` runs after, with
+   whether it moved."
+  (let ([h (org-heading-line (current-line))] [targets (org-refile-targets)])
+    (cond [(not h) (message "not under a heading")]
+          [(null? targets) (message "no headings in the agenda files to refile under")]
+          [else (completing-read "Refile under: " (map car targets)
+                                 (lambda (choice)
+                                   (let ([hit (assoc choice targets)])
+                                     (then (and hit (org-refile-to! h hit))))))])))
+
+(define (org-archive-target path)
+  "Where org-archive-location sends a heading of file `path`: (file
+   heading-or-#f). %s anywhere in the location is the file's name; an empty file
+   part is the file itself; after :: an optional heading, as \"* Archive\"."
+  (let* ([name (file-name-of path)]
+         [loc (let loop ([t (option 'org-archive-location)])
+                (let ([i (string-index-from t "%s" 0)])
+                  (if i (loop (string-append (substring t 0 i) name (substring t (+ i 2) (string-length t)))) t)))]
+         [parts (let ([i (string-index-from loc "::" 0)])
+                  (if i (list (substring loc 0 i) (substring loc (+ i 2) (string-length loc))) (list loc "")))]
+         [file (car parts)]
+         [file (cond [(equal? file "") path]
+                     [(or (starts-with? file "/") (starts-with? file "~")) (expand-path file)]
+                     [else (string-append (directory-of path) "/" file)])]
+         [heading (trim (cadr parts))]
+         [heading (let ([lv (org-level-of heading)])
+                    (if lv (trim (substring heading (min (string-length heading) (+ lv 1)) (string-length heading))) heading))])
+    (list file (if (equal? heading "") #f heading))))
+
+(define (org-archive! h)
+  "Moves the heading on line `h`, with its subtree, to its archive
+   (org-archive-location), with Org's ARCHIVE_TIME, ARCHIVE_FILE,
+   ARCHIVE_OLPATH, ARCHIVE_CATEGORY and ARCHIVE_TODO properties. The
+   archive file is made if needed. Returns the archive's path."
+  (let* ([path (absolute-path (buffer-path))]
+         [target (org-archive-target path)]
+         [file (car target)]
+         [lines (org-buffer-lines)]
+         [clock (capture-clock)]
+         [olpath (let loop ([p (org-parent-heading lines h)] [acc '()])
+                   (if p (loop (org-parent-heading lines p) (cons (org-heading-title (vector-ref lines p)) acc)) acc))]
+         [base (let ([b (file-name-of path)]) (if (ends-with? b ".org") (substring b 0 (- (string-length b) 4)) b))]
+         [category (or (org-lines-property lines h "CATEGORY" #t) (org-file-setting lines "#+CATEGORY:") base)]
+         [rest (substring (line-text h) (+ (org-level h) 1) (string-length (line-text h)))]
+         [keyword (org-keyword-in rest)])
+    (with-undo-group
+     (lambda ()
+       (org-set-property! h "ARCHIVE_TIME" (string-append (car clock) " " (cadr clock) " " (caddr clock)))
+       (org-set-property! h "ARCHIVE_FILE" path)
+       (when (pair? olpath) (org-set-property! h "ARCHIVE_OLPATH" (string-join olpath "/")))
+       (org-set-property! h "ARCHIVE_CATEGORY" category)
+       (when keyword (org-set-property! h "ARCHIVE_TODO" keyword))
+       (let* ([end (org-subtree-end h)]
+              [level (org-level h)]
+              [text (buffer-substring (line-start h) (min (buffer-length) (+ (line-end end) 1)))]
+              [entry (apply string-append
+                            (map (lambda (l) (string-append (if (org-level-of l) (substring l (- level 1) (string-length l)) l) "\n"))
+                                 (text-lines text)))])
+         (begin-change!)
+         (replace-range! (line-start h) (min (buffer-length) (+ (line-end end) 1)) "")
+         (unless (or (buffer-for-path file) (file-exists? file))
+           (write-text-file! file (string-append "#    -*- mode: org -*-\n\n\nArchived entries from file " path "\n\n\n")))
+         (capture-file! (if (cadr target) (list 'file+headline file (cadr target)) (list 'file file)) entry #f))))
+    file))
+
+(define (org-archive-prompt!)
+  "C-c C-x C-a: archives the heading the cursor is under, with its
+   subtree (org-archive-location)."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (let ([file (org-archive! h)])
+          (message (string-append "archived in " (file-name-of file)))))))
 
 (define-minor-mode! 'org-capture-mode #f #f)
 (for-each (lambda (state)
@@ -1580,6 +1867,10 @@
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
 (org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
+(org-key! '(normal insert) "C-cC-q" (lambda args (org-tags-prompt!)))
+(org-key! '(normal insert) "C-cC-xC-a" (lambda args (org-archive-prompt!)))
+(org-key! '(normal insert) "C-cC-w" (lambda args (org-refile-prompt! (lambda (moved?) void))))
+(org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1589,6 +1880,11 @@
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
 (define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
+(define-mode-leader! 'org-mode "q" (lambda (n) (org-tags-prompt!)) "set tags")
+(define-mode-leader! 'org-mode "A" (lambda (n) (org-archive-prompt!)) "archive")
+(define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
+(define-mode-leader-group! 'org-mode "c" "clock")
+(define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 

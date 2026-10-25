@@ -778,3 +778,304 @@ fn which_key_names_the_agenda_s_keys() {
         assert!(shown.contains(label), "{label} in\n{shown}");
     }
 }
+
+/// The agenda over `files` in a fresh directory, today TODAY, the grid
+/// off; returns the directory too.
+fn agenda_files(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std::path::PathBuf) {
+    let dir = org_dir(name, files);
+    let mut s = agenda_server(&dir);
+    s.set_size(100, 50);
+    s.eval(TODAY).unwrap();
+    s.eval(r#"(set-option! 'org-todo-keywords '("TODO" "NEXT" "|" "DONE"))"#)
+        .unwrap();
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    (s, dir)
+}
+
+/// Puts the cursor on the agenda line holding `text`.
+fn go_to(s: &mut imp_server::Server, text: &str) {
+    let at = lines(s)
+        .iter()
+        .position(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("no {text} in {:#?}", lines(s)));
+    s.eval(&format!("(set-cursor! (line-start {at}))")).unwrap();
+}
+
+#[test]
+fn t_changes_the_entry_s_keyword_in_its_file() {
+    let (mut s, dir) = agenda_files(
+        "agenda-t",
+        &[(
+            "a.org",
+            "* TODO Write\nSCHEDULED: <2026-10-21 Wed>\n* TODO Other\n",
+        )],
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "t");
+    // Not open before: opened in the background, changed and saved.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.org")).unwrap(),
+        "* NEXT Write\nSCHEDULED: <2026-10-21 Wed>\n* TODO Other\n"
+    );
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    assert!(line_text(&mut s).contains("NEXT") && line_text(&mut s).contains("Write"));
+    // Done: it leaves the view, the cursor staying where it was.
+    type_keys(&mut s, "t");
+    assert!(
+        !lines(&s).iter().any(|l| l.contains("Write")),
+        "{:#?}",
+        lines(&s)
+    );
+    // SPC m t picks one.
+    go_to(&mut s, "Other");
+    type_keys(&mut s, " mtNEXT<ret>");
+    assert!(std::fs::read_to_string(dir.join("a.org"))
+        .unwrap()
+        .contains("* NEXT Other"));
+}
+
+#[test]
+fn a_buffer_with_unsaved_changes_is_changed_but_not_saved() {
+    let (mut s, dir) = agenda_files(
+        "agenda-unsaved",
+        &[("a.org", "* TODO Write\n* TODO Keep\n")],
+    );
+    let path = dir.join("a.org");
+    type_keys(
+        &mut s,
+        &format!(
+            ":e {}<ret>Gcc* TODO Kept<esc>:OrgAgenda<ret>",
+            path.display()
+        ),
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "t");
+    // The file is as it was; the buffer has both changes.
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "* TODO Write\n* TODO Keep\n"
+    );
+    let id = s
+        .eval(&format!(
+            "(buffer-for-path {:?})",
+            path.display().to_string()
+        ))
+        .unwrap();
+    assert_eq!(
+        s.eval(&format!(
+            "(with-buffer {id} (lambda () (buffer-substring 0 (buffer-length))))"
+        ))
+        .unwrap(),
+        "\"* NEXT Write\\n* TODO Kept\\n\""
+    );
+}
+
+fn file(dir: &std::path::Path, name: &str) -> String {
+    std::fs::read_to_string(dir.join(name)).unwrap()
+}
+
+#[test]
+fn schedule_and_deadline_from_the_agenda() {
+    let (mut s, dir) = agenda_files("agenda-plan", &[("a.org", "* TODO Write\n")]);
+    go_to(&mut s, "Write");
+    type_keys(&mut s, " mdsfri<ret>");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-23 Fri>\n"
+    );
+    // It moved from To do to Friday, and the cursor went with it.
+    assert!(
+        lines(&s).iter().all(|l| !l.contains("To do")),
+        "{:#?}",
+        lines(&s)
+    );
+    assert!(line_text(&mut s).contains("Write"), "{}", line_text(&mut s));
+    type_keys(&mut s, " mdd+3<ret>");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-23 Fri> DEADLINE: <2026-10-24 Sat>\n"
+    );
+}
+
+#[test]
+fn h_and_l_move_the_line_s_date() {
+    let (mut s, dir) = agenda_files(
+        "agenda-hl",
+        &[(
+            "a.org",
+            "* TODO Write\nSCHEDULED: <2026-10-21 Wed 10:00 +1w> DEADLINE: <2026-10-23 Fri>\n* Lunch\nwith Ann <2026-10-22 Thu 12:30>\n",
+        )],
+    );
+    // The scheduled line: its date, keeping time and repeater.
+    go_to(&mut s, "Sched.");
+    type_keys(&mut s, "L");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-22 Thu 10:00 +1w> DEADLINE: <2026-10-23 Fri>\n* Lunch\nwith Ann <2026-10-22 Thu 12:30>\n"
+    );
+    // The deadline's line moves the deadline; 2H is two days.
+    go_to(&mut s, "Deadline");
+    type_keys(&mut s, "2H");
+    assert!(
+        file(&dir, "a.org").contains("DEADLINE: <2026-10-21 Wed>"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    // An appointment.
+    go_to(&mut s, "Lunch");
+    type_keys(&mut s, "L");
+    assert!(
+        file(&dir, "a.org").ends_with("with Ann <2026-10-23 Fri 12:30>\n"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    assert!(line_text(&mut s).contains("Lunch"));
+}
+
+#[test]
+fn priority_tags_and_effort_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-prio",
+        &[("a.org", "* Area :home:\n** TODO Write :work:\n")],
+    );
+    go_to(&mut s, "Write");
+    // None counts as B: up is A, and A is the top.
+    type_keys(&mut s, "++");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* Area :home:\n** TODO [#A] Write :work:\n"
+    );
+    type_keys(&mut s, "---");
+    assert!(file(&dir, "a.org").contains("[#C] Write"));
+    type_keys(&mut s, " mp ");
+    assert!(
+        file(&dir, "a.org").contains("** TODO Write"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    // Tags: own ones toggle, inherited ones aren't the entry's to remove.
+    type_keys(&mut s, "ctwork<ret>urgent<ret><esc>");
+    let heading = file(&dir, "a.org").lines().nth(1).unwrap().to_string();
+    assert!(
+        heading.starts_with("** TODO Write ") && heading.ends_with(" :urgent:"),
+        "{heading}"
+    );
+    // Effort.
+    type_keys(&mut s, "ce1:30<ret>");
+    assert!(
+        file(&dir, "a.org").contains(":Effort: 1:30"),
+        "{}",
+        file(&dir, "a.org")
+    );
+}
+
+#[test]
+fn refile_archive_and_delete_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-move",
+        &[
+            ("a.org", "* TODO Move\n** sub\n* TODO Archive\n* TODO Archive too\n* TODO Delete\nbody\n* TODO Keep\n"),
+            ("b.org", "* Target\n"),
+        ],
+    );
+    go_to(&mut s, "Move");
+    type_keys(&mut s, " mrb.org › Target<ret>");
+    assert_eq!(file(&dir, "b.org"), "* Target\n** TODO Move\n*** sub\n");
+    assert!(!file(&dir, "a.org").contains("Move"));
+    // da asks; n keeps it, y archives.
+    go_to(&mut s, "Archive too");
+    type_keys(&mut s, "dan");
+    assert!(file(&dir, "a.org").contains("Archive too"));
+    type_keys(&mut s, "day");
+    assert!(!file(&dir, "a.org").contains("Archive too"));
+    assert!(file(&dir, "a.org_archive").contains("* TODO Archive too"));
+    // dA doesn't ask.
+    go_to(&mut s, "Archive");
+    type_keys(&mut s, "dA");
+    assert!(file(&dir, "a.org_archive").contains("* TODO Archive\n"));
+    // dd asks, then deletes the subtree.
+    go_to(&mut s, "Delete");
+    type_keys(&mut s, "ddy");
+    assert_eq!(file(&dir, "a.org"), "* TODO Keep\n");
+    assert!(lines(&s).iter().all(|l| !l.contains("Delete")));
+}
+
+#[test]
+fn u_undoes_the_last_change_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-undo",
+        &[
+            ("a.org", "* TODO Write\nSCHEDULED: <2026-10-21 Wed>\n"),
+            ("b.org", "* Target\n"),
+        ],
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "Ltt");
+    // The last change only, saved again.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* NEXT Write\nSCHEDULED: <2026-10-22 Thu>\n"
+    );
+    assert!(s.status().contains("undone"), "{}", s.status());
+    type_keys(&mut s, "u");
+    assert!(s.status().contains("no change"), "{}", s.status());
+    // A refile into another file can't be undone.
+    go_to(&mut s, "Write");
+    type_keys(&mut s, " mrb.org › Target<ret>u");
+    assert!(s.status().contains("no change"), "{}", s.status());
+    assert!(file(&dir, "b.org").contains("Write") && !file(&dir, "a.org").contains("Write"));
+}
+
+#[test]
+fn c_captures_for_the_line_s_day() {
+    let (mut s, dir) = agenda_files(
+        "agenda-capture",
+        &[("a.org", "* TODO Thing\nSCHEDULED: <2026-10-23 Fri>\n")],
+    );
+    s.eval(
+        r#"(define (capture-clock) (list "2026-10-21" "Wed" "09:15" "Wednesday" "October"))
+           (set! *capture-templates* '())
+           (define-capture-template! "t" "Todo" '(file "inbox.org") "* TODO %?\nSCHEDULED: %t")"#,
+    )
+    .unwrap();
+    go_to(&mut s, "Thing");
+    type_keys(&mut s, "CCall Ann<C-c><C-c>");
+    assert_eq!(
+        file(&dir, "inbox.org"),
+        "* TODO Call Ann\nSCHEDULED: <2026-10-23 Fri>\n"
+    );
+    // A capture from anywhere else is for today again.
+    type_keys(&mut s, ":OrgCapture<ret>Later<C-c><C-c>");
+    assert!(
+        file(&dir, "inbox.org").ends_with("* TODO Later\nSCHEDULED: <2026-10-21 Wed>\n"),
+        "{}",
+        file(&dir, "inbox.org")
+    );
+}
+
+#[test]
+fn spc_m_names_the_agenda_s_groups() {
+    let (mut s, _) = agenda_files("agenda-wk-groups", &[("a.org", "* TODO X\n")]);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " m");
+    let shown = s.frame().text_rows().join("\n");
+    assert!(
+        shown.contains("d → +dates") && shown.contains("t → set TODO"),
+        "{shown}"
+    );
+    // An Org buffer's SPC m d is its own: the agenda's group name goes.
+    type_keys(&mut s, "<esc>");
+    let dir = temp_path("agenda-wk-groups");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret> m", dir.join("a.org").display()),
+    );
+    let shown = s.frame().text_rows().join("\n");
+    assert!(
+        shown.contains("d → deadline") && shown.contains("c → +clock"),
+        "{shown}"
+    );
+}
