@@ -35,6 +35,64 @@ From the left: its time, what the date is, its TODO keyword, its priority and ti
 
 In the window client, the agenda's title and the day headers are drawn larger, at the sizes `org-heading-heights` gives Org's headings.
 
+## Moving around
+
+| Key | What it does |
+|---|---|
+| `gj` / `gk` | Next or previous task (also `C-j` / `C-k`) |
+| `gH` / `gM` / `gL` | Top, middle or bottom of the window |
+| `f` / `b` | Next or previous week (also `]]` / `[[`) |
+| `.` | Back to today |
+| `gd` | Go to a date, picked from the calendar |
+| `<ret>` | Go to the task |
+| `<tab>` | Show the task in another window, staying in the agenda |
+| `F` | Follow mode: show each task the cursor moves to |
+| `gr` | Read the files again |
+| `gR` | Read the files again, in every agenda buffer |
+| `q` / `ZZ` | Leave the agenda |
+| `ZQ` | Leave the agenda and close the files it opened (not ones with unsaved changes) |
+
+## Changing tasks from the agenda
+
+Change a task right from its line, without opening its file.
+
+| Key | What it does |
+|---|---|
+| `t` | Cycle its TODO keyword, as `<ret>` does on its heading |
+| `SPC m t` | Pick its TODO keyword, or none |
+| `SPC m d s` | Schedule it, picking the date from the calendar |
+| `SPC m d d` | Give it a deadline, from the calendar |
+| `H` / `L` | Move the date on the line a day earlier or later; `3L` is three days |
+| `+` / `-` | Raise or lower its priority; a task without one counts as `B` |
+| `SPC m p` | Set its priority: `a`, `b` or `c`, or space to remove it |
+| `ct` or `SPC m q` | Add or remove tags, as `C-c C-q` does in its file |
+| `ce` | Set its effort, such as `0:45` |
+| `SPC m r` | Refile it under another heading, as `C-c C-w` does |
+| `da` | Archive it, after asking |
+| `dA` | Archive it without asking |
+| `dd` | Delete it and everything under it, after asking |
+| `C` | Capture a new task for the day the cursor is on |
+| `u` | Undo the last change made from the agenda |
+
+`H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
+
+The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
+
+## Days, weeks, months
+
+Press `gD` to change how much the agenda shows:
+
+| Key | What it shows |
+|---|---|
+| `d` | The day the cursor is on |
+| `w` | Its week |
+| `t` | Its fortnight |
+| `m` | Its month, from the 1st |
+| `y` | Its year, from 1 January |
+| `g` | Turn the time grid on or off |
+
+`f` and `b` then move by that much: a month at a time in a month's view. The agenda is back to a week the next time you open it.
+
 ## Times and appointments
 
 A time in a task's date, such as `<2026-10-25 Sun 14:00>` or `<2026-10-25 Sun 9:30-10:00>`, puts it at that time of day. Timed tasks come first in their day, by time; the rest follow by priority.
@@ -80,6 +138,39 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 
 `Plant the bulbs` shows as `:autumn:outside:home:`.
 
+## Lists of TODOs
+
+`SPC o a t` (or `M-x org-todo-list`) lists every undone TODO in your agenda files, dated or not, by priority and then in the order they're written. The same keys work on it as in the agenda, so you can change a task from the list.
+
+## Matching tags and properties
+
+`SPC o a m` (or `M-x org-tags-view`) asks for a match and lists every heading it fits, done ones too:
+
+| Match | Finds headings |
+|---|---|
+| `work` | tagged `work`, or under a heading or file that is |
+| `+work-urgent` | tagged `work` but not `urgent` |
+| `work\|home` | tagged either |
+| `{^pro}` | with a tag matching a regexp |
+| `TODO="NEXT"` | with the keyword `NEXT` |
+| `PRIORITY="A"` | with priority `A` |
+| `LEVEL>1` | below the top level |
+| `CATEGORY="work"` | in the category `work` |
+| `+work+Effort<"1:00"` | tagged `work`, with an `Effort` property under `1:00` |
+
+Compare properties with `=`, `<>`, `<`, `>`, `<=` or `>=`, against a number, a `"string"` or a `{regexp}`. A heading without the property matches only `<>`.
+
+## Searching
+
+`SPC o a s` (or `M-x org-search-view`) asks for words and lists every entry whose heading or text holds them all, ignoring case:
+
+| Search | Finds entries |
+|---|---|
+| `bank loan` | with both words |
+| `bank -holiday` | with `bank` but not `holiday` |
+| `"the bank later"` | with that phrase |
+| `{bulbs?}` | matching a regexp |
+
 ## The dispatcher
 
 `SPC o A` (or `M-x org-agenda`, or `:OrgAgenda`) shows a menu of views, as Org's agenda dispatcher does:
@@ -117,97 +208,6 @@ Add a view to the dispatcher in `init.scm` with `define-agenda-command!`: a key,
 | `(search "words")` | A search |
 
 Each part can have a `(header "Name")`. With more than one part, each is shown under its name. `f` and `b` move the agenda part by its span.
-
-## Lists of TODOs
-
-`SPC o a t` (or `M-x org-todo-list`) lists every undone TODO in your agenda files, dated or not, by priority and then in the order they're written. The same keys work on it as in the agenda, so you can change a task from the list.
-
-## Matching tags and properties
-
-`SPC o a m` (or `M-x org-tags-view`) asks for a match and lists every heading it fits, done ones too:
-
-| Match | Finds headings |
-|---|---|
-| `work` | tagged `work`, or under a heading or file that is |
-| `+work-urgent` | tagged `work` but not `urgent` |
-| `work\|home` | tagged either |
-| `{^pro}` | with a tag matching a regexp |
-| `TODO="NEXT"` | with the keyword `NEXT` |
-| `PRIORITY="A"` | with priority `A` |
-| `LEVEL>1` | below the top level |
-| `CATEGORY="work"` | in the category `work` |
-| `+work+Effort<"1:00"` | tagged `work`, with an `Effort` property under `1:00` |
-
-Compare properties with `=`, `<>`, `<`, `>`, `<=` or `>=`, against a number, a `"string"` or a `{regexp}`. A heading without the property matches only `<>`.
-
-## Searching
-
-`SPC o a s` (or `M-x org-search-view`) asks for words and lists every entry whose heading or text holds them all, ignoring case:
-
-| Search | Finds entries |
-|---|---|
-| `bank loan` | with both words |
-| `bank -holiday` | with `bank` but not `holiday` |
-| `"the bank later"` | with that phrase |
-| `{bulbs?}` | matching a regexp |
-
-## Days, weeks, months
-
-Press `gD` to change how much the agenda shows:
-
-| Key | What it shows |
-|---|---|
-| `d` | The day the cursor is on |
-| `w` | Its week |
-| `t` | Its fortnight |
-| `m` | Its month, from the 1st |
-| `y` | Its year, from 1 January |
-| `g` | Turn the time grid on or off |
-
-`f` and `b` then move by that much: a month at a time in a month's view. The agenda is back to a week the next time you open it.
-
-## Moving around
-
-| Key | What it does |
-|---|---|
-| `gj` / `gk` | Next or previous task (also `C-j` / `C-k`) |
-| `gH` / `gM` / `gL` | Top, middle or bottom of the window |
-| `f` / `b` | Next or previous week (also `]]` / `[[`) |
-| `.` | Back to today |
-| `gd` | Go to a date, picked from the calendar |
-| `<ret>` | Go to the task |
-| `<tab>` | Show the task in another window, staying in the agenda |
-| `F` | Follow mode: show each task the cursor moves to |
-| `gr` | Read the files again |
-| `gR` | Read the files again, in every agenda buffer |
-| `q` / `ZZ` | Leave the agenda |
-| `ZQ` | Leave the agenda and close the files it opened (not ones with unsaved changes) |
-
-## Changing tasks from the agenda
-
-Change a task right from its line, without opening its file.
-
-| Key | What it does |
-|---|---|
-| `t` | Cycle its TODO keyword, as `<ret>` does on its heading |
-| `SPC m t` | Pick its TODO keyword, or none |
-| `SPC m d s` | Schedule it, picking the date from the calendar |
-| `SPC m d d` | Give it a deadline, from the calendar |
-| `H` / `L` | Move the date on the line a day earlier or later; `3L` is three days |
-| `+` / `-` | Raise or lower its priority; a task without one counts as `B` |
-| `SPC m p` | Set its priority: `a`, `b` or `c`, or space to remove it |
-| `ct` or `SPC m q` | Add or remove tags, as `C-c C-q` does in its file |
-| `ce` | Set its effort, such as `0:45` |
-| `SPC m r` | Refile it under another heading, as `C-c C-w` does |
-| `da` | Archive it, after asking |
-| `dA` | Archive it without asking |
-| `dd` | Delete it and everything under it, after asking |
-| `C` | Capture a new task for the day the cursor is on |
-| `u` | Undo the last change made from the agenda |
-
-`H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
-
-The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
 
 ## Choosing the files
 

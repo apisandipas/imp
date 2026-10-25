@@ -25,5 +25,5 @@ Each task updates the reference page in the same commit.
 - [x] Search: words in a heading or its text, ignoring case, with `+word`, `-word`, `"phrase"` and `{regexp}`; with tests
 - [x] The dispatcher (`SPC o A`, `M-x org-agenda`, `:OrgAgenda`): `a t T m M s n`, `<` and `< <` to limit to the file or subtree; `SPC o a t`, `SPC o a m`, `SPC o a s`; with tests
 - [x] Custom commands and block agendas: `define-agenda-command!` with `agenda`, `todo`, `tags`, `tags-todo` and `search` blocks and their `span` and `header` settings, in the dispatcher; `[[` and `]]` move the dated blocks; with tests
-- [ ] Read the reference page through against the spec and the keys, and check the which-key labels
+- [x] Read the reference page through against the spec and the keys, and check the which-key labels
 - [ ] The owner has looked at the views and the dispatcher
