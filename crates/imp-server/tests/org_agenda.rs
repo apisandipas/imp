@@ -1079,3 +1079,17 @@ fn spc_m_names_the_agenda_s_groups() {
         "{shown}"
     );
 }
+
+#[test]
+fn spc_o_a_a_opens_the_agenda() {
+    let dir = org_dir("agenda-spc", &[("a.org", "* TODO Thing\n")]);
+    let mut s = agenda_server(&dir);
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " oa");
+    assert!(s.frame().text_rows().join("\n").contains("a → agenda"));
+    type_keys(&mut s, "a");
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    type_keys(&mut s, "q");
+    s.eval("(run-command 'org-agenda-list)").unwrap();
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+}

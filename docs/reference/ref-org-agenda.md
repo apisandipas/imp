@@ -14,7 +14,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Opening the agenda
 
-`SPC o a` opens the agenda on this week, with the cursor on today.
+`SPC o a a` (or `M-x org-agenda-list`) opens the agenda on this week, with the cursor on today.
 
 - **Overdue**, at the top, lists undone tasks scheduled or due before today. `Sched. 3x` means it was scheduled 3 days ago; `2 d. ago` means its deadline was 2 days ago.
 - **Each day** lists what falls on it: scheduled tasks, deadlines and appointments. A repeating task shows on every day it falls on.

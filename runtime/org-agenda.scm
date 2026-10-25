@@ -2,7 +2,7 @@
 ;;; do in the agenda files (org-agenda-files, or every .org file under
 ;;; org-directory), as Org's week view, in aligned columns.
 ;;;
-;;; SPC o a shows it, a week (org-agenda-span days) with Overdue above
+;;; SPC o a a shows it, a week (org-agenda-span days) with Overdue above
 ;;; and Later and To do below. Today has a time grid and a now line, and
 ;;; the deadlines coming soon. In it (normal state):
 ;;;
@@ -25,6 +25,12 @@
 ;; The day of the week a week's agenda starts on: 0 for Sunday to 6 for
 ;; Saturday, or #f for today. Unset, it is calendar-week-start's day.
 (define-option! 'org-agenda-start-on-weekday 0 '())
+;; The view the agenda shows: (name blocks). A block is (kind settings
+;; arg): kind agenda (the dated view), todo, tags, tags-todo or search,
+;; its settings as org-agenda-setting reads them.
+(define *org-agenda-view* (list "Agenda" (list (list 'agenda '() #f))))
+;; The span gD chose, or #f for org-agenda-span.
+(define *org-agenda-span* #f)
 ;; The line today's header was drawn on, or #f, and each day's header's,
 ;; as (day . line).
 (define *org-agenda-today-line* #f)
@@ -156,7 +162,7 @@
   (let ([start (if (option-set? 'org-agenda-start-on-weekday)
                    (option 'org-agenda-start-on-weekday)
                    (option 'calendar-week-start))])
-    (if (and start (= (option 'org-agenda-span) 7))
+    (if (and start (= (org-agenda-span) 7))
         (date-add-days day (- (modulo (- (date-weekday day) start) 7)))
         day)))
 
@@ -319,7 +325,8 @@
          [(header)
           (let* ([text (cadr r)] [kind (caddr r)]
                  [face (case kind [(today) "org.agenda.today"] [(weekend) "org.agenda.weekend"]
-                                  [(date) "org.agenda.date"] [else "org.agenda.section"])])
+                                  [(date) "org.agenda.date"] [(block) "org.agenda.title"]
+                                  [else "org.agenda.section"])])
             (draw-line! (list (if (eq? kind 'today) (list "▌" "org.agenda.today") (list " " #f)) (list " " #f)
                               (list text (list face (heights 2))))
                         #f)
@@ -443,19 +450,28 @@
   "What an occurrence of `kind` says it is on its day."
   (case kind [(scheduled) "Sched."] [(deadline) "Deadline"] [else ""]))
 
-(define (org-render-agenda!)
-  "Redraws the agenda from the agenda files, as Org's week view: the
-   undone entries scheduled or due before today, then org-agenda-span
+(define (org-agenda-setting settings name default)
+  "Block setting `name` from `settings`, ((span . 1) (header . \"Work\")),
+   else `default`."
+  (let ([hit (assq name settings)]) (if hit (cdr hit) default)))
+
+(define (org-agenda-span)
+  "How many days a dated block shows: the span gD chose, else
+   org-agenda-span."
+  (max 1 (or *org-agenda-span* (option 'org-agenda-span))))
+
+(define (org-agenda-dated-block entries settings)
+  "The dated block over `entries`, as Org's week view: (covers rows).
+   The undone entries scheduled or due before today, then the span's
    days with what falls on each (repeats and ranges included, timed
    entries first, and on today the deadlines coming), then what is dated
    after the span, then the TODOs with no date. Done entries are left
-   out."
+   out. `settings` may give its span."
   (let* ([today (calendar-today)]
+         [span (max 1 (org-agenda-setting settings 'span (org-agenda-span)))]
          [first (org-agenda-first-day)]
-         [span (max 1 (option 'org-agenda-span))]
          [last (date-add-days first (- span 1))]
          [today-shown? (and (not (date<? today first)) (not (date<? last today)))]
-         [entries (apply append (map org-file-entries (org-agenda-file-list)))]
          [open (filter (lambda (e) (not (org-entry-done? e))) entries)]
          [rank (lambda (e) (org-priority-rank (list-ref e 6)))]
          ;; (occurrence entry) for each date an open entry has, in priority order.
@@ -522,11 +538,10 @@
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
          [section (lambda (name items)
                     (if (null? items) '() (append (list '(blank) (list 'header name 'section)) items)))])
-    (org-agenda-draw!
+    (list
+     (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
+                    (org-span-text first last))
      (append
-      (list (list 'title "Agenda"
-                  (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
-                                 (org-span-text first last))))
       (section "Overdue" (if today-shown? overdue '()))
       (apply append
              (map (lambda (n)
@@ -534,7 +549,39 @@
                       (append (list '(blank) (org-day-header day today)) (day-rows day))))
                   (range 0 span)))
       (section "Later" later)
-      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))
+      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))))))
+
+
+(define (org-agenda-block entries block)
+  "The (covers rows) of `block` over `entries`."
+  (case (car block)
+    [(agenda) (org-agenda-dated-block entries (cadr block))]
+    [else (list "" '())]))
+
+(define (org-agenda-block-name block)
+  "What a block of a block agenda is headed: its header setting, else
+   its kind's name."
+  (org-agenda-setting (cadr block) 'header
+                      (case (car block) [(agenda) "Agenda"] [else (symbol->string (car block))])))
+
+(define (org-render-agenda!)
+  "Redraws the agenda's view from the agenda files: its name and what it
+   covers, then each block's sections, a block agenda's each under its
+   own header."
+  (let* ([entries (apply append (map org-file-entries (org-agenda-file-list)))]
+         [blocks (cadr *org-agenda-view*)]
+         [drawn (map (lambda (b) (org-agenda-block entries b)) blocks)])
+    (org-agenda-draw!
+     (append
+      (list (list 'title (car *org-agenda-view*) (car (car drawn))))
+      (if (null? (cdr blocks))
+          (cadr (car drawn))
+          (apply append
+                 (let loop ([bs blocks] [ds drawn])
+                   (if (null? bs)
+                       '()
+                       (cons (append (list '(blank) (list 'header (org-agenda-block-name (car bs)) 'block)) (cadr (car ds)))
+                             (loop (cdr bs) (cdr ds)))))))
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
@@ -552,13 +599,19 @@
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
-(define (org-agenda!)
-  "Shows the agenda in its own buffer, freshly read from the files, from
-   this week."
+(define (org-agenda-show-view! view)
+  "Shows `view` (see *org-agenda-view*) in the agenda's buffer, freshly
+   read from the files, from this week and at org-agenda-span."
   (go-to-buffer! (special-buffer "*org agenda*" 'org-agenda-mode))
+  (set! *org-agenda-view* view)
   (set! *org-agenda-start* #f)
+  (set! *org-agenda-span* #f)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
+
+(define (org-agenda!)
+  "Shows the agenda: this week's dated view."
+  (org-agenda-show-view! (list "Agenda" (list (list 'agenda '() #f)))))
 
 (define (org-agenda-entry-line? line)
   "Whether agenda line `line` is an entry's."
@@ -864,7 +917,7 @@
 
 (define (org-agenda-span-days n)
   "How far `n` spans go, in days."
-  (* (max 1 n) (max 1 (option 'org-agenda-span))))
+  (* (max 1 n) (org-agenda-span)))
 
 (org-agenda-key! "<ret>" (lambda (n) (org-agenda-visit!)) "go to entry")
 (org-agenda-key! "<tab>" (lambda (n) (org-agenda-show!)) "show entry")
@@ -912,9 +965,14 @@
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 
+(define-command! 'org-agenda-list
+  (lambda (count)
+    "Show the agenda: this week's scheduled, due and timed entries."
+    (org-agenda!)))
 (define-command! 'org-agenda
   (lambda (count)
-    "Show the agenda: TODOs and SCHEDULED and DEADLINE dates."
+    "Show the agenda: this week's scheduled, due and timed entries."
     (org-agenda!)))
-(define-leader! "oa" 'org-agenda "agenda")
+(define-leader-group! "oa" "agenda")
+(define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))
