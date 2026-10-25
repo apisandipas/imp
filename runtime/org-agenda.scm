@@ -16,6 +16,8 @@
 ;;;   F                follow mode: show each entry the cursor is on
 ;;;   gr gR            read the files again (gR: every agenda buffer)
 ;;;   q ZZ             leave; ZQ also closes the files the agenda opened
+;;;   I O cc cg        clock in on the entry, out, cancel, go to the clock
+;;;   gD l, gD R (cr)  log mode, the clock report
 ;;;
 ;;; It loads after org.scm and uses its readers: timestamps
 ;;; (org-parse-stamp), properties and categories, TODO keywords.

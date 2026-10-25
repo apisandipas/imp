@@ -12,7 +12,7 @@ Org files are plain-text outlines. You fold headings, track TODOs, schedule them
 
 - Changing a keyword never asks for a note.
 - The calendar can't add a repeater; type one into the timestamp. Repeaters can't be hourly.
-- Properties are only used for `CATEGORY`: there is no column view, no searching by property, and no special properties such as `ID` or `STYLE`.
+- Properties are only used for `CATEGORY`, `Effort`, a habit's `STYLE`, `LAST_REPEAT` and the agenda's matches: there is no column view, and no special properties such as `ID`.
 
 ## Headings and folding
 

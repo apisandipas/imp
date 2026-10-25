@@ -22,5 +22,5 @@ Clocking writes `CLOCK:` lines in the heading's `:LOGBOOK:` drawer; the running 
 - [x] The agenda's `I`, `O`, `cc`, `cg`; with tests
 - [x] Log mode (`gD l`): `Closed`, `State` and `Clocked (1:15)` lines on each day at their times, done entries included; with tests
 - [x] The clock report (`gD R`, `cr`): a table of time per file and per heading two levels deep, with totals, in the clock report face (every bundled theme, Modus included); with tests
-- [ ] Read the reference pages through against the specs and the keys, and check the which-key labels
+- [x] Read the reference pages through against the specs and the keys, and check the which-key labels
 - [ ] The owner has looked at it

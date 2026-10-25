@@ -21,6 +21,8 @@
 ;;;   C-c C-d    give it a deadline (DEADLINE:)
 ;;;   C-c .      put a timestamp at the cursor, or change the one there
 ;;;   C-c C-x p  set a property of the heading (SPC m P); empty removes it
+;;;   C-c C-x C-i, C-o, C-q, C-j   clock in on the heading, clock out,
+;;;              cancel the clock, go to it (SPC m c i, o, c, g)
 ;;;
 ;;; A timestamp ending in a repeater, <2026-10-24 Sat +1w> (or ++1w, .+1w),
 ;;; moves on when its heading is marked done, and the heading goes back
