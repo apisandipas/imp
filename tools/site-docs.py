@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the website's docs section, site/docs/, with pandoc: the guides
 in docs/guide/*.md, and a reference page for each spec in docs/specs (see
-lore:0017). The Pages workflow runs it before publishing; site/docs/ isn't
+lore:0018). The Pages workflow runs it before publishing; site/docs/ isn't
 committed.
 
     tools/site-docs.py [OUT]     (OUT defaults to site/docs)

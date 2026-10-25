@@ -2,11 +2,11 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/20
-summary: "The user documentation on the website: guides for learning imp, and a reference for each area generated from its spec."
+summary: "The user documentation on the website: guides for learning imp, and a plain-English reference page for each area, written from its spec."
 ---
 # User documentation
 
-The website gets a documentation section for people using imp, not working on it, as Helix's book and Doom Emacs's docs are. Guides teach imp from the start; a reference page for each area is generated from that area's spec, so the docs and the specs can't drift apart.
+The website gets a documentation section for people using imp, not working on it, as Helix's book and Doom Emacs's docs are. Guides teach imp from the start; a reference page for each area is written in plain English from that area's spec, and checked against it so the two can't drift apart.
 
 ## Behaviour
 
@@ -17,14 +17,12 @@ The website gets a documentation section for people using imp, not working on it
   - **Configuring init.scm:** options, keys, commands, hooks and themes, and redefining things while imp runs.
   - **Packages:** the bundled opt-in packages, loading them with `use-package!`, and writing your own.
   - **Coming from Emacs or Vim:** what carries over, Emacs state, and where imp differs.
-- **Reference:** one page per spec in `docs/specs`, except this one, generated from it. The sidebar groups them by area: editing, files and windows, code, git and Org, and extending imp.
-  - The page's title is the spec's title, its first paragraph the spec's summary.
-  - It shows the spec's Behaviour and Keys and options sections.
-  - The spec's Known gaps show as a notice at the top of the page ("Not yet in imp"), each gap with its issue link, so a user knows what is missing before reading on (the Org agenda's, for one).
-  - Out of scope, anchors and other frontmatter aren't shown.
-  - A link to another spec goes to that area's reference page. A link to a decision, effort or other note becomes plain text.
-- The specs are written to read well for users as well as contributors: plain statements of what imp does, keys and options named, nothing that only makes sense with the code open. Every spec gets this pass.
-- The docs are built by `tools/site-docs.py`, which turns the guides and specs into HTML with pandoc, inside the site's template. The Pages workflow runs it before publishing, so the generated pages are never committed.
+- **Reference:** one page per area, in `docs/reference/NAME.md`, written in plain English from the spec `docs/specs/NAME.md` by the `docs-page` skill ([[0018-user-reference-pages-are-written-from-the-specs-and-checked]]). Every spec but this one has a page. The sidebar groups them by area: editing, files and windows, code, git and Org, and extending imp.
+  - A page is for someone using imp: short sentences, one idea per paragraph, sub-headings by task ("Folding headings", "Dates"), and tables for keys and options. It says what to press and what happens, not how imp does it.
+  - What the area can't do yet, from the spec's Known gaps, shows as a notice at the top of the page ("Not yet in imp"), each gap with its issue link, so a user knows what is missing before reading on (the Org agenda's, for one).
+  - A page links to other areas' pages, never to decisions or efforts.
+  - Each page records the hash of the spec it was written from. `tools/site-docs.py --check` fails when a spec has no page, a page has no spec, or a spec has changed since its page was written; the page is then rewritten with the skill, and `--stamp NAME` records the new hash. `tools/check.sh` runs the check.
+- The docs are built by `tools/site-docs.py`, which turns the guides and reference pages into HTML with pandoc, inside the site's template. The Pages workflow runs it before publishing, so the generated pages are never committed.
 - The docs describe the release they are published with. They are written on `develop` and go live when a release merges `develop` into `main`.
 - A docs page works without JavaScript and reads well on a phone.
 

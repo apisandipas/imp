@@ -1,6 +1,6 @@
 ---
 type: Decision
-status: accepted
+status: superseded
 ---
 # The user reference is generated from the specs
 
