@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
@@ -21,4 +21,4 @@ Filters are predicates over agenda entries, kept in a buffer-local list that `or
 - [x] Marks: `m` toggles and moves down, `~` toggles all, `*` marks all, `%` marks by title regexp, `M` unmarks all; the mark column and the marked face (every bundled theme, Modus included); with tests
 - [x] `x`, the bulk menu: `t` keyword, `s` schedule, `d` deadline, `+` and `-` tags, `r` refile, `$` archive, `S` shift dates by N days, `k` delete; asks once, acts on each marked entry, clears the marks; with tests
 - [x] Read the reference page through against the spec and the keys, and check the which-key labels
-- [ ] The owner has looked at it
+- [x] The owner has looked at it
