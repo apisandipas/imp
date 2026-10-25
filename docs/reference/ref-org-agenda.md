@@ -8,10 +8,6 @@ frozen:
 
 The agenda gathers what's scheduled, due and still to do in your Org files into one week, so you can see what's next without opening each file.
 
-## Not yet in imp
-
-- More of Org's agenda is on its way: clocking, log mode and the clock report. [#59](https://github.com/apisandipas/imp/issues/59)
-
 ## Opening the agenda
 
 `SPC o a a` (or `M-x org-agenda-list`) opens the agenda on this week, with the cursor on today.
@@ -122,6 +118,18 @@ Then press `x` and pick what to do to every marked task:
 
 It asks once, acts on each task, then clears the marks. `S` moves a task's scheduled date and deadline, or its first appointment when it has neither. `u` undoes the whole action when it changed a single file, but not a refile or an archive.
 
+## Clocking from the agenda
+
+Keep track of time on a task from its line, as `SPC m c` does in its file (see [Clocking](ref-org.md#clocking)).
+
+| Key | What it does |
+|---|---|
+| `I` | Clock in on it, clocking out of any other task first |
+| `O` | Clock out |
+| `cc` | Cancel the clock |
+| `cg` | Go to the task you're clocked in on |
+| `cr` | Show or hide the clock report |
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:
@@ -133,9 +141,41 @@ Press `gD` to change how much the agenda shows:
 | `t` | Its fortnight |
 | `m` | Its month, from the 1st |
 | `y` | Its year, from 1 January |
+| `l` | Turn log mode on or off: what you did each day |
+| `R` | Show or hide the clock report |
 | `g` | Turn the time grid on or off |
 
 `f` and `b` then move by that much: a month at a time in a month's view. The agenda is back to a week the next time you open it.
+
+## Log mode
+
+Press `gD l` to see what you did on each day, alongside what's planned. Each line is at its time:
+
+| Line | What it shows |
+|---|---|
+| `Closed` | A task marked done, from its `CLOSED:` note |
+| `State` | A repeating task done, as `DONE from TODO` |
+| `Clocked` | Time clocked on a task, with how long, as `(1:15)` |
+
+Done tasks show too. Press `gD l` again to turn it off; it's off again the next time you open the agenda.
+
+## The clock report
+
+Press `gD R` or `cr` to add a table below the agenda of the time you clocked in the days it shows. It gives each file's time, and each heading's under it, two levels deep. A heading's time includes the time of the headings under it.
+
+```
+Clock report
+────────────
+File      Heading    Time
+─────────────────────────
+work.org  File time  1:55
+          Project    1:55
+            Draft    1:25
+─────────────────────────
+Total                1:55
+```
+
+A clock counts on the day it started. It's off again the next time you open the agenda.
 
 ## Times and appointments
 

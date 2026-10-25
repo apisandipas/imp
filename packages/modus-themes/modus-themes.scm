@@ -463,6 +463,8 @@
    (list "org.agenda.category" 'fg-dim #f "" #f)
    ;; The agenda's bulk marks: modus-themes-mark-sel.
    (list "org.agenda.marked" 'fg-mark-select 'bg-mark-select "bold" #f)
+   ;; The clock report, as org-clock-report's table (org-table).
+   (list "org.agenda.clock-report" 'prose-table #f "" #f)
    ;; org-habit-clear-face and co.: the graph colors, in black.
    (list "org.agenda.habit.clear" "#000000" 'bg-graph-blue-0 "" #f)
    (list "org.agenda.habit.clear-future" "#000000" 'bg-graph-blue-1 "" #f)

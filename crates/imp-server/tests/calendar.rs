@@ -152,9 +152,11 @@ fn timestamps_parse_into_their_parts() {
     );
 }
 
-/// Marks the heading on the first line done, with <ret>.
+/// Marks the heading on the first line done, with <ret>, without
+/// logging it (tests/org_clock.rs checks that).
 fn mark_done(text: &str) -> String {
     let mut s = setup(text);
+    no_logging(&mut s);
     type_keys(&mut s, "<ret>");
     s.text()
 }
@@ -183,9 +185,16 @@ fn marking_a_repeating_heading_done_moves_its_dates_on() {
     );
 }
 
+/// Turns off logging done and repeats.
+fn no_logging(s: &mut imp_server::Server) {
+    s.eval("(set-option! 'org-log-done #f)").unwrap();
+    s.eval("(set-option! 'org-log-repeat #f)").unwrap();
+}
+
 #[test]
 fn repeating_back_to_the_first_keyword_is_one_undo() {
     let mut s = setup("* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
+    no_logging(&mut s);
     s.eval("(set-option! 'org-todo-keywords '(\"TODO\" \"NEXT\" \"|\" \"DONE\"))")
         .unwrap();
     type_keys(&mut s, "<ret>");

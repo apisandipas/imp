@@ -10,9 +10,9 @@ Org files are plain-text outlines. You fold headings, track TODOs, schedule them
 
 ## Not yet in imp
 
-- Repeating a task doesn't log it: there's no `LAST_REPEAT` property and no state-change notes.
+- Changing a keyword never asks for a note.
 - The calendar can't add a repeater; type one into the timestamp. Repeaters can't be hourly.
-- Properties are only used for `CATEGORY`: there is no column view, no searching by property, and no special properties such as `ID` or `STYLE`.
+- Properties are only used for `CATEGORY`, `Effort`, a habit's `STYLE`, `LAST_REPEAT` and the agenda's matches: there is no column view, and no special properties such as `ID`.
 
 ## Headings and folding
 
@@ -116,6 +116,52 @@ End a timestamp with a repeater to make the task come back. When you mark it don
 
 Use `d`, `w`, `m` or `y` for days, weeks, months or years. A warning period such as `-3d` goes after the repeater. Picking a new date from the calendar keeps the repeater.
 
+## Logging
+
+When you mark a heading done, imp notes when on its planning line. Moving it back out of done takes the note away again, and so does undo.
+
+```org
+* DONE Write the report
+CLOSED: [2026-10-25 Sun 11:42] SCHEDULED: <2026-10-24 Sat>
+```
+
+When you mark a repeating task done, imp sets its `LAST_REPEAT` property and logs the change at the top of its `:LOGBOOK:` drawer, which it makes if there isn't one. Habits in the agenda read these lines.
+
+```org
+* TODO Water the plants
+SCHEDULED: <2026-11-27 Fri +1w>
+:PROPERTIES:
+:LAST_REPEAT: [2026-11-20 Fri 18:05]
+:END:
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2026-11-20 Fri 18:05]
+:END:
+```
+
+Set `org-log-done` or `org-log-repeat` to `#f` to stop either.
+
+## Clocking
+
+Clock in on a heading to keep track of the time you spend on it.
+
+| Key | What it does |
+|---|---|
+| `C-c C-x C-i` or `SPC m c i` | Clock in on the heading the cursor is under |
+| `C-c C-x C-o` or `SPC m c o` | Clock out |
+| `C-c C-x C-q` or `SPC m c c` | Cancel the clock, as if you never clocked in |
+| `C-c C-x C-j` or `SPC m c g` | Go to the heading you're clocked in on |
+
+Clocking in adds a line to the heading's `:LOGBOOK:` drawer, and clocking out ends it with the time it ran:
+
+```org
+* TODO Write the report
+:LOGBOOK:
+CLOCK: [2026-10-25 Sun 11:42]--[2026-10-25 Sun 12:57] =>  1:15
+:END:
+```
+
+One clock runs at a time: clocking in on another heading clocks out of the first. While it runs, the status line shows how long it has run, the heading's effort if it has one, and its title, as `[0:23/1:00] Write the report`. If you quit with a clock running, imp picks it up again the next time it starts, as long as the file is one of your agenda files.
+
 ## Tags and effort
 
 Press `C-c C-q` or `SPC m q` to tag the heading the cursor is under. Pick a tag from the ones your Org files use, or type a new one, and press `<ret>`. A tag the heading has already is taken off instead. It asks again, so you can change several; press `<esc>` when you're done. Tags the heading has are marked `on`.
@@ -207,6 +253,8 @@ Your notes file is `inbox.org` in `org-directory`, unless you set `org-default-n
 | `org-agenda-files` | `'()` | The files the agenda reads |
 | `org-default-notes-file` | `""` | Where capture saves; empty means `inbox.org` in `org-directory` |
 | `org-todo-keywords` | `'("TODO" "DONE")` | The keywords a heading cycles through |
+| `org-log-done` | `'time` | Note when a heading is marked done, as `CLOSED:` |
+| `org-log-repeat` | `'time` | Log each repeat in the `:LOGBOOK:` drawer |
 | `org-archive-location` | `"%s_archive::"` | Where archiving moves a heading: a file, then `::` and a heading |
 | `org-tags-column` | `-77` | Where tags go: negative ends them at that column, positive starts them there |
 | `org-link-descriptive` | `#t` | Show links as their descriptions away from the cursor |

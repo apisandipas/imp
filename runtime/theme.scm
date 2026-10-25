@@ -159,6 +159,8 @@
      (list "org.agenda.category" (fg 'dim))
      ;; The agenda's bulk marks
      (list "org.agenda.marked" (fg 'cyan "bold"))
+     ;; The agenda's clock report.
+     (list "org.agenda.clock-report" (fg 'fg))
      ;; A habit's graph (org-habit): clear before it is due, ready while
      ;; it may be done, alert on its last day, overdue after; the future
      ;; and past days it wasn't done on, lighter.
@@ -396,7 +398,7 @@
 ;;; %#face# a face (%#mode# the mode's), %* the status face, %= right side.
 
 (define-option! 'statusline
-  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
+  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
   '(stl))
 (define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
 
