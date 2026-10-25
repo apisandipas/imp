@@ -20,7 +20,7 @@ The four new syntax faces aren't defined by the other themes: a capture's face f
 - [x] The rest of the faces: status line and mode badges, popups, menus, which-key and completion, diagnostics, diffs, git, blame and gutter, Org, dired, the start screen, terminal colors; tests for a sample of each
 - [x] `modus-themes-bold-constructs` and `modus-themes-italic-constructs`, redrawing a loaded Modus theme, with tests
 - [x] Palette overrides (common and per theme, per theme winning), redrawing, an unknown name an error naming it, with tests
-- [ ] `modus-themes-toggle`, with a test
+- [x] `modus-themes-toggle`, with a test
 - [ ] Screenshots of the same files in both themes, compared with Modus's published samples, and fixes
 - [ ] The reference page `ref-modus-themes.md` (docs-page skill) in the docs' groups, the Packages guide and `packages/CONTEXT.md` list it, the spec's anchors
 - [ ] The owner has looked at both themes

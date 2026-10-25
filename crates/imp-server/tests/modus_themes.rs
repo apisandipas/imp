@@ -200,3 +200,16 @@ fn an_unknown_override_is_an_error_naming_it() {
         .unwrap();
     assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#ff5f59");
 }
+
+#[test]
+fn the_toggle_switches_between_the_two() {
+    let mut s = server("");
+    s.eval("(use-package! 'modus-themes) (load-theme! 'one-dark)")
+        .unwrap();
+    // From another theme it loads Operandi, then switches back and forth.
+    for want in ["modus-operandi", "modus-vivendi", "modus-operandi"] {
+        s.eval("(run-command 'modus-themes-toggle)").unwrap();
+        assert_eq!(s.eval("*theme*").unwrap(), want);
+        assert_eq!(s.status(), want);
+    }
+}

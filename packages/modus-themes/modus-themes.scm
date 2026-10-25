@@ -527,3 +527,10 @@
           '(modus-themes-bold-constructs modus-themes-italic-constructs
             modus-themes-common-palette-overrides modus-vivendi-palette-overrides
             modus-operandi-palette-overrides))
+
+(define-command! 'modus-themes-toggle
+  (lambda (count)
+    "Switch between Modus Operandi and Modus Vivendi; from any other
+     theme, load Modus Operandi, as Emacs's modus-themes-toggle does."
+    (load-theme! (if (equal? *theme* 'modus-operandi) 'modus-vivendi 'modus-operandi))
+    (message (symbol->string *theme*))))
