@@ -137,19 +137,6 @@
   "Whether agenda entry `e` has a done keyword (see `org-done-keywords`)."
   (and (caddr e) (member (caddr e) (org-done-keywords)) #t))
 
-(define (org-agenda-line! e date what)
-  "Draws agenda entry `e`, with its `date` and `what` (Scheduled:...),
-   and its category.
-   Either may be #f. The line remembers the entry's file and line, so
-   <ret> on it goes there."
-  (draw-line! (list (list "  " #f)
-                   (list (if date (string-append date "  ") "") "org.date")
-                   (list (if what (pad-right what 12) "") "org.special")
-                   (list (if (caddr e) (string-append (caddr e) " ") "") (if (org-entry-done? e) "org.done" "org.todo"))
-                   (list (cadddr e) #f)
-                   (list (string-append "  " (list-ref e 7)) "git.count"))
-             (list 'org (car e) (cadr e))))
-
 ;; The first day the agenda shows, or #f for this week's.
 (define *org-agenda-start* #f)
 
@@ -192,12 +179,165 @@
                    (let ([ra (rank (cdr a))] [rb (rank (cdr b))])
                      (or (< ra rb) (and (= ra rb) (< (car a) (car b)))))))))
 
+(define (org-pad-left text width)
+  "`text` padded with spaces on the left to `width` characters."
+  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
+
+(define (org-fit text width)
+  "`text` cut to `width` characters, ending in … when it was longer, and
+   padded with spaces to `width`."
+  (cond [(<= width 0) ""]
+        [(> (string-length text) width) (string-append (substring text 0 (- width 1)) "…")]
+        [else (pad-right text width)]))
+
+(define (org-agenda-title-text e)
+  "Agenda entry `e`'s title as the agenda shows it: without its active
+   timestamps, which the agenda shows in their own column."
+  (let loop ([t (cadddr e)])
+    (let ([b (org-stamp-bounds-anywhere t 0)])
+      (if (and b (equal? (substring t (car b) (+ (car b) 1)) "<"))
+          (let* ([end (cadr b)]
+                 [end (let ([r (and (<= (+ end 2) (string-length t)) (equal? (substring t end (+ end 2)) "--")
+                                    (org-stamp-bounds t (+ end 2)))])
+                        (if r (cadr r) end))])
+            (loop (string-append (trim-end (substring t 0 (car b))) (substring t end (string-length t)))))
+          (string-join (split-whitespace t) " ")))))
+
+(define (org-agenda-tags-text e)
+  "Agenda entry `e`'s tags as Org writes them, \":work:home:\", or \"\"."
+  (let ([tags (map car (org-entry-tags e))])
+    (if (null? tags) "" (string-append ":" (string-join tags ":") ":"))))
+
+(define (org-short-date d)
+  "Date `d` as \"Thu 5 Nov\", with its year when that isn't this year's."
+  (string-append (vector-ref *calendar-day-names* (date-weekday d)) " "
+                 (number->string (caddr d)) " "
+                 (substring (vector-ref *calendar-month-names* (- (cadr d) 1)) 0 3)
+                 (if (= (car d) (car (calendar-today))) "" (string-append " " (number->string (car d))))))
+
+(define (org-iso-week d)
+  "The ISO week number of date `d`: weeks start on Monday, and week 1 is
+   the one with the year's first Thursday."
+  (let* ([iso-day (+ (modulo (+ (date-weekday d) 6) 7) 1)]
+         [thursday (date-add-days d (- 4 iso-day))])
+    (+ 1 (quotient (- (date->days thursday) (date->days (list (car thursday) 1 1))) 7))))
+
+(define (org-span-thursday first)
+  "The Thursday of the 7 days from `first`: its ISO week is the week most
+   of those days are in."
+  (date-add-days first (modulo (- 4 (date-weekday first)) 7)))
+
+(define (org-span-text first last)
+  "The days `first` to `last` written short: \"19–25 Oct 2026\", or
+   \"28 Oct – 3 Nov 2026\" across months, with both years across years."
+  (let ([month (lambda (d) (substring (vector-ref *calendar-month-names* (- (cadr d) 1)) 0 3))]
+        [day (lambda (d) (number->string (caddr d)))]
+        [year (lambda (d) (number->string (car d)))])
+    (cond [(equal? first last) (string-append (day first) " " (month first) " " (year first))]
+          [(and (= (car first) (car last)) (= (cadr first) (cadr last)))
+           (string-append (day first) "–" (day last) " " (month last) " " (year last))]
+          [(= (car first) (car last))
+           (string-append (day first) " " (month first) " – " (day last) " " (month last) " " (year last))]
+          [else (string-append (day first) " " (month first) " " (year first) " – "
+                               (day last) " " (month last) " " (year last))])))
+
+(define (org-day-header day today)
+  "The header row for `day`: its date, as \"Thursday 23 October\", and
+   whether it is today or a weekend."
+  (let ([text (string-append (vector-ref *org-day-names* (date-weekday day)) " "
+                             (number->string (caddr day)) " "
+                             (vector-ref *calendar-month-names* (- (cadr day) 1)))])
+    (cond [(equal? day today) (list 'header (string-append text " · today") 'today)]
+          [(memv (date-weekday day) '(0 6)) (list 'header text 'weekend)]
+          [else (list 'header text 'date)])))
+
+;; What an agenda line says its date is, and the face it says it in.
+(define (org-what-face what)
+  "The face for the what column's `what`, a symbol such as 'scheduled."
+  (case what
+    [(scheduled) "org.agenda.scheduled"]
+    [(deadline) "org.agenda.deadline"]
+    [(overdue) "org.agenda.overdue"]
+    [(upcoming) "org.agenda.upcoming"]
+    [else "org.agenda.time"]))
+
+;; The agenda is drawn in two steps: the sections make a list of rows,
+;; then org-agenda-draw! lays them out, sizing each column of the entry
+;; rows to what they hold and the window's width. A row is:
+;;   (title NAME COVERS)         the view's name, what it covers under
+;;                               it, then a rule
+;;   (header TEXT KIND)          a section or day, with a rule under it;
+;;                               KIND is section, date, weekend or today
+;;   (entry E TIME WHAT KIND)    entry E, TIME and WHAT strings (or ""),
+;;                               KIND the what's kind (org-what-face)
+;;   (blank)
+;;   (note TEXT)                 a line of its own, dim
+
+(define (org-agenda-draw! rows width)
+  "Draws `rows` (see above) into the current buffer, `width` columns wide."
+  (let* ([entries (filter (lambda (r) (eq? (car r) 'entry)) rows)]
+         [widest (lambda (f cap) (min cap (foldl (lambda (r m) (max m (string-length (f r)))) 0 entries)))]
+         [col (lambda (w) (if (> w 0) (+ w 2) 0))]
+         [time-w (widest caddr 14)]
+         [what-w (widest cadddr 10)]
+         [kw-w (widest (lambda (r) (or (caddr (cadr r)) "")) 12)]
+         [tags? (>= width 60)]
+         [tags-w (if tags? (widest (lambda (r) (org-agenda-tags-text (cadr r))) 30) 0)]
+         [cat-w (widest (lambda (r) (list-ref (cadr r) 7)) 14)]
+         ;; Indent, mark column, then the columns; what's left is the title's.
+         [title-w (max 10 (- width 4 (col time-w) (col what-w) (col kw-w)
+                             (if (> tags-w 0) (+ tags-w 2) 0) (+ cat-w 2) 1))]
+         [rule (lambda (n) (make-string (max 0 n) #\─))]
+         [heights (lambda (level) (string-append "org.height" (number->string level)))])
+    (draw-begin!)
+    (for-each
+     (lambda (r)
+       (case (car r)
+         [(title)
+          (draw-line! (list (list " " #f) (list (cadr r) (list "org.agenda.title" (heights 1)))) #f)
+          (draw-line! (list (list " " #f) (list (caddr r) "org.agenda.span")) #f)
+          (draw-line! (list (list (rule (- width 1)) "org.agenda.rule")) #f)]
+         [(header)
+          (let* ([text (cadr r)] [kind (caddr r)]
+                 [face (case kind [(today) "org.agenda.today"] [(weekend) "org.agenda.weekend"]
+                                  [(date) "org.agenda.date"] [else "org.agenda.section"])])
+            (draw-line! (list (list (if (eq? kind 'today) "▌ " "  ") "org.agenda.today")
+                              (list text (list face (heights 2))))
+                        #f)
+            (draw-line! (list (list "  " #f) (list (rule (string-length text)) "org.agenda.rule")) #f))]
+         [(entry)
+          (let* ([e (cadr r)] [time (caddr r)] [what (cadddr r)] [kind (list-ref r 4)]
+                 [kw (caddr e)]
+                 [title (org-agenda-title-text e)]
+                 [prio (and (>= (string-length title) 5) (starts-with? title "[#")
+                            (equal? (substring title 3 5) "] ") (substring title 0 4))]
+                 [fitted (org-fit title title-w)]
+                 [cell (lambda (text w face) (if (> w 0) (list (list (pad-right text w) face) (list "  " #f)) '()))])
+            (draw-line!
+             (append (list (list "    " #f))
+                     (cell time time-w "org.agenda.time")
+                     (cell what what-w (org-what-face kind))
+                     (cell (or kw "") kw-w (if (org-entry-done? e) "org.done" "org.todo"))
+                     (if (and prio (> title-w 5))
+                         (list (list prio "org.priority")
+                               (list (substring fitted 4 (string-length fitted)) #f))
+                         (list (list fitted #f)))
+                     (if (> tags-w 0)
+                         (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
+                         '())
+                     (list (list "  " #f) (list (pad-right (list-ref e 7) cat-w) "org.agenda.category")))
+             (list 'org (car e) (cadr e))))]
+         [(note) (draw-line! (list (list "  " #f) (list (cadr r) "org.agenda.span")) #f)]
+         [else (draw-line! '() #f)]))
+     rows)
+    (draw-finish!)))
+
 (define (org-render-agenda!)
   "Redraws the agenda from the agenda files, as Org's week view: the
    undone entries dated before today, then org-agenda-span days with what
    is scheduled or due on each (repeats included), then those dated
-   after the span, then the TODOs with no date. Done entries are left out; entries on the same day sort by
-   priority."
+   after the span, then the TODOs with no date. Done entries are left
+   out; entries on the same day sort by priority."
   (let* ([today (calendar-today)]
          [first (org-agenda-first-day)]
          [span (max 1 (option 'org-agenda-span))]
@@ -207,8 +347,8 @@
          [rank (lambda (e) (org-priority-rank (list-ref e 6)))]
          ;; (stamp what entry) for each date an entry has.
          [dated (apply append (map (lambda (e)
-                                     (append (if (list-ref e 4) (list (list (list-ref e 4) "Scheduled:" e)) '())
-                                             (if (list-ref e 5) (list (list (list-ref e 5) "Deadline:" e)) '())))
+                                     (append (if (list-ref e 4) (list (list (list-ref e 4) 'scheduled e)) '())
+                                             (if (list-ref e 5) (list (list (list-ref e 5) 'deadline e)) '())))
                                    open))]
          [overdue (org-sort-entries (filter (lambda (d) (date<? (cadr (car d)) today)) dated)
                                     (lambda (d) (+ (* 100 (date->days (cadr (car d)))) (rank (caddr d)))))]
@@ -223,39 +363,33 @@
                          (map (lambda (d) (list (org-stamp-after-day (car d) last) (cadr d) (caddr d))) dated))
                  (lambda (d) (+ (* 100 (date->days (car d))) (rank (caddr d)))))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (not (list-ref e 4)) (not (list-ref e 5)))) open)
-                                  rank)])
-    (draw-begin!)
-    (draw-line! (list (list (string-append "Agenda: " (date->string first) " to " (date->string last)) "git.section")) #f)
-    (when (pair? overdue)
-      (draw-line! '() #f)
-      (draw-line! (list (list "Overdue" "git.section")) #f)
-      (for-each (lambda (d) (org-agenda-line! (caddr d) (date->string (cadr (car d))) (cadr d))) overdue))
-    (draw-line! '() #f)
-    (for-each (lambda (n)
-                (let ([day (date-add-days first n)])
-                  (draw-line! (list (list (string-append (pad-right (vector-ref *org-day-names* (date-weekday day)) 10)
-                                                         (number->string (caddr day)) " "
-                                                         (vector-ref *calendar-month-names* (- (cadr day) 1)) " "
-                                                         (number->string (car day))
-                                                         (if (equal? day today) "  today" ""))
-                                          (if (equal? day today) "git.head" "org.date")))
-                              #f)
-                  (for-each (lambda (d) (when (equal? (car d) day) (org-agenda-line! (caddr d) #f (cadr d))))
-                            shown)))
-              (range 0 span))
-    (when (pair? later)
-      (draw-line! '() #f)
-      (draw-line! (list (list "Later" "git.section")) #f)
-      (for-each (lambda (d) (org-agenda-line! (caddr d) (date->string (car d)) (cadr d))) later))
-    (draw-line! '() #f)
-    (draw-line! (list (list "To do" "git.section")) #f)
-    (for-each (lambda (e) (org-agenda-line! e #f #f)) todos)
-    (when (null? entries)
-      (draw-line! '() #f)
-      (draw-line! (list (list (string-append "no entries in " (option 'org-directory)
-                                            " (set org-directory or org-agenda-files)") "git.head"))
-                 #f))
-    (draw-finish!)))
+                                  rank)]
+         [label (lambda (what) (if (eq? what 'scheduled) "Sched." "Deadline"))]
+         [section (lambda (name items)
+                    (if (null? items) '() (append (list '(blank) (list 'header name 'section)) items)))])
+    (org-agenda-draw!
+     (append
+      (list (list 'title "Agenda"
+                  (string-append (if (= span 7) (string-append "Week " (number->string (org-iso-week (org-span-thursday first))) " · ") "")
+                                 (org-span-text first last))))
+      (section "Overdue"
+               (map (lambda (d) (list 'entry (caddr d) (org-short-date (cadr (car d))) (label (cadr d)) 'overdue))
+                    overdue))
+      (apply append
+             (map (lambda (n)
+                    (let ([day (date-add-days first n)])
+                      (append (list '(blank) (org-day-header day today))
+                              (map (lambda (d) (list 'entry (caddr d) "" (label (cadr d)) (cadr d)))
+                                   (filter (lambda (d) (equal? (car d) day)) shown)))))
+                  (range 0 span)))
+      (section "Later"
+               (map (lambda (d) (list 'entry (caddr d) (org-short-date (car d)) (label (cadr d)) (cadr d))) later))
+      (section "To do" (map (lambda (e) (list 'entry e "" "" #f)) todos))
+      (if (null? entries)
+          (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
+                                                    " (set org-directory or org-agenda-files)")))
+          '()))
+     (window-text-width))))
 
 (define (org-agenda-move! days)
   "Moves the agenda `days` on, or back to this week when `days` is #f."

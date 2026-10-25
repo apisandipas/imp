@@ -28,7 +28,7 @@ The agenda gathers what's scheduled, due, timed and to do in the agenda files in
 
 ### Layout
 
-- A title line: the view's name on the left (`Agenda`, `To do`, `Tags: +work`, …), and on the right what it covers, such as `Week 43 · 19–25 Oct 2026` (the ISO week of the first day, given for a week view), then any filters, as `Filter: +work -home`. A rule across the window below it.
+- A title: the view's name (`Agenda`, `To do`, `Tags: +work`, …) on a line of its own, and under it what it covers, such as `Week 43 · 19–25 Oct 2026` (the ISO week most of its days are in, given for a week view), with any filters at the right, as `Filter: +work -home`. A rule across the window below them. (The name has its own line because the window client draws it larger, and a daemon may show the agenda in a terminal and a window at once.)
 - Then the view's sections, each a header with a short rule under it. A section with nothing in it is left out, except a dated view's days.
 - Each entry is one line, in columns that line up down the agenda: a mark column (bulk marks); its time; what the date is (`Sched.`, `Deadline`, and the counts below); its TODO keyword; its priority and title, with a habit's graph after it; its tags, right-aligned; its category (as in [[org]]), last. A column with nothing in it is blank, so the next stays aligned. The title is cut short with `…` so the tags and category stay in place; under 60 columns wide, tags are left out.
 - In the window client, the title is drawn at a level-1 heading's size and each section and day header at a level-2's (`org-heading-heights`); terminals draw them at the text's size.

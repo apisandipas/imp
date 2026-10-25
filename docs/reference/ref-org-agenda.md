@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: 2ff7eb89d37e
+  docs/specs/org-agenda.md: a347b01704fc
 ---
 # Org agenda
 
