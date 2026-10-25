@@ -4,7 +4,7 @@ The editor, in Steel Scheme: every command, keymap and mode, the Vim engine incl
 
 ## Load order
 
-The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `foldmethod`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
+The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `foldmethod`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `org-agenda`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
 
 ## Rules
 

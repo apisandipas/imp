@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org]]"
 frozen:
-  docs/specs/org.md: 9fbd4095d2da
+  docs/specs/org.md: 2a4bc3dc93d6
 ---
 # Org
 
@@ -10,7 +10,6 @@ Org files are plain-text outlines. You fold headings, track TODOs, schedule them
 
 ## Not yet in imp
 
-- The agenda only has a week view. There are no day or month views, deadline warnings, appointments or times, no agenda dispatcher or match views, and you can't filter the agenda or act on entries from it. [#59](https://github.com/apisandipas/imp/issues/59)
 - Repeating a task doesn't log it: there's no `LAST_REPEAT` property and no state-change notes.
 - The calendar can't add a repeater; type one into the timestamp. Repeaters can't be hourly.
 - Properties are only used for `CATEGORY`: there is no column view, no searching by property, and no special properties such as `ID` or `STYLE`.
@@ -136,27 +135,7 @@ In `init.scm`, `(org-entry-property line "OWNER")` gives a heading's property, a
 
 ## The agenda
 
-`SPC o a` opens the agenda: this week's TODOs and dates from your agenda files, one day at a time.
-
-- **Overdue**, at the top, lists undone tasks dated before today.
-- **Each day** lists the tasks scheduled or due that day. A repeating task shows on every day it falls on, and today is marked.
-- **Later** lists undone tasks dated after this week.
-- **To do**, at the bottom, lists TODOs with no date.
-
-Done tasks are left out. Tasks on the same day are sorted by priority.
-
-| Key | What it does |
-|---|---|
-| `<ret>` | Go to the task |
-| `f` / `b` | Next or previous week |
-| `.` | Back to this week |
-| `gr` | Read the files again |
-
-Set the files to read in `init.scm`. Relative names are looked up in `org-directory`:
-
-```scheme
-(set-option! 'org-agenda-files '("inbox.org" "work.org"))
-```
+`SPC o a` opens the agenda: this week's TODOs and dates from your agenda files. See [Org agenda](ref-org-agenda.md).
 
 ## Capture
 
@@ -189,8 +168,6 @@ Your notes file is `inbox.org` in `org-directory`, unless you set `org-default-n
 | `org-agenda-files` | `'()` | The files the agenda reads |
 | `org-default-notes-file` | `""` | Where capture saves; empty means `inbox.org` in `org-directory` |
 | `org-todo-keywords` | `'("TODO" "DONE")` | The keywords a heading cycles through |
-| `org-agenda-span` | `7` | How many days the agenda shows |
-| `calendar-week-start` | `0` | The day the agenda's week starts on: 0 is Sunday |
 | `org-link-descriptive` | `#t` | Show links as their descriptions away from the cursor |
 | `org-fold-drawers` | `#t` | Start drawers folded |
 | `org-indent` | `#f` | Indented display; `SPC m i` toggles it |

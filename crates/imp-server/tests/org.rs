@@ -265,85 +265,6 @@ fn priorities() {
 }
 
 #[test]
-fn the_agenda_sorts_by_priority() {
-    let dir = temp_path("org-prio-agenda");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("p.org"),
-        "* TODO [#C] Low\n* TODO None first\n* TODO [#A] High\n* TODO None second\n* TODO [#C] Due low\nDEADLINE: <2000-01-01 Sat>\n* TODO [#A] Due high\nDEADLINE: <2000-01-01 Sat>\n",
-    )
-    .unwrap();
-    let mut s = server("");
-    s.eval(&format!(
-        "(set-option! 'org-directory {:?})",
-        dir.display().to_string()
-    ))
-    .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
-    let text = s.text();
-    let at = |what: &str| {
-        text.find(what)
-            .unwrap_or_else(|| panic!("{what} in {text}"))
-    };
-    // Same date: A before C. No date: A, then the ones with none (as B) in
-    // file order, then C.
-    assert!(at("Due high") < at("Due low"), "{text}");
-    assert!(
-        at("High") < at("None first")
-            && at("None first") < at("None second")
-            && at("None second") < at("[#C] Low"),
-        "{text}"
-    );
-}
-
-#[test]
-fn agenda_and_capture() {
-    let dir = temp_path("org-agenda");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("work.org"),
-        "* TODO Write report\nSCHEDULED: <2000-01-02 Sun>\n* DONE Old thing\nDEADLINE: <2000-01-01 Sat>\n* TODO Plan trip\n* TODO Future\nDEADLINE: <2999-01-01 Thu>\n* Notes\n",
-    )
-    .unwrap();
-    let mut s = server("");
-    s.eval(&format!(
-        "(set-option! 'org-directory {:?})",
-        dir.display().to_string()
-    ))
-    .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
-    let text = s.text();
-    let overdue = text.find("Overdue").unwrap();
-    let todo = text.find("To do").unwrap();
-    let report = text.find("Scheduled:  TODO Write report").expect(&text);
-    let trip = text.find("TODO Plan trip").expect(&text);
-    assert!(overdue < report && report < todo && todo < trip, "{text}");
-    // A date after the week is under Later, before To do.
-    let later = text.find("Later").expect(&text);
-    let future = text
-        .find("2999-01-01  Deadline:   TODO Future")
-        .expect(&text);
-    assert!(report < later && later < future && future < todo, "{text}");
-    assert!(
-        !text.contains("Old thing"),
-        "DONE items are left out: {text}"
-    );
-    // <ret> visits the entry.
-    let line = text.lines().position(|l| l.contains("Plan trip")).unwrap();
-    s.eval(&format!("(set-cursor! (line-start {line}))"))
-        .unwrap();
-    type_keys(&mut s, "<ret>");
-    assert!(s.eval("(buffer-name)").unwrap().contains("work.org"));
-    assert_eq!(s.eval("(current-line)").unwrap(), "4");
-    // Capture files into the notes file (tests/capture.rs has the rest).
-    type_keys(&mut s, ":OrgCapture<ret>tBuy milk<C-c><C-c>");
-    let inbox = std::fs::read_to_string(dir.join("inbox.org")).unwrap();
-    assert!(inbox.starts_with("* Tasks\n** TODO Buy milk\n"), "{inbox}");
-}
-
-#[test]
 fn headings_have_faces() {
     let mut s = org("faces.org", "* TODO Top\n** Sub\n");
     let frame = s.frame();
@@ -403,32 +324,6 @@ fn keywords_after_the_bar_are_done() {
     assert_eq!(style("NEXT"), style("TODO"));
     assert_eq!(style("CANCELLED"), style("DONE"));
     assert_ne!(style("DONE"), style("TODO"));
-}
-
-#[test]
-fn the_agenda_leaves_out_every_done_keyword() {
-    let dir = temp_path("org-agenda-bar");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("work.org"),
-        "* TODO Write\n* NEXT Plan\n* DONE Old\n* CANCELLED Dropped\n",
-    )
-    .unwrap();
-    let mut s = server("");
-    s.eval(KEYWORDS).unwrap();
-    s.eval(&format!(
-        "(set-option! 'org-directory {:?})",
-        dir.display().to_string()
-    ))
-    .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>");
-    let text = s.text();
-    assert!(
-        text.contains("TODO Write") && text.contains("NEXT Plan"),
-        "{text}"
-    );
-    assert!(!text.contains("Old") && !text.contains("Dropped"), "{text}");
 }
 
 #[test]
