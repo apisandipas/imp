@@ -128,3 +128,40 @@ fn terminal_colors_are_modus_s_term_colors() {
     assert_eq!(colors[8], "#595959");
     assert_eq!(colors[9], "#ff6b55");
 }
+
+#[test]
+fn bold_and_italic_constructs_redraw_the_theme_in_use() {
+    let mut s = modus("modus-vivendi");
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#b6a0ff");
+    s.eval("(set-option! 'modus-themes-bold-constructs #t)")
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#b6a0ff bold");
+    assert_eq!(spec(&mut s, "syntax.type.builtin"), "fg=#f78fe7 bold");
+    assert_eq!(spec(&mut s, "syntax.comment"), "fg=#989898");
+    s.eval("(set-option! 'modus-themes-italic-constructs #t)")
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.comment"), "fg=#989898 italic");
+    assert_eq!(
+        spec(&mut s, "syntax.comment.documentation"),
+        "fg=#9ac8e0 italic"
+    );
+    // The other theme has them too when it's loaded.
+    s.eval("(load-theme! 'modus-operandi)").unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#531ab6 bold");
+    // And off again.
+    s.eval("(set-option! 'modus-themes-bold-constructs #f)")
+        .unwrap();
+    assert_eq!(spec(&mut s, "syntax.keyword"), "fg=#531ab6");
+}
+
+#[test]
+fn constructs_set_before_the_theme_loads_count() {
+    let mut s = server("");
+    s.eval(
+        "(use-package! 'modus-themes)
+         (set-option! 'modus-themes-italic-constructs #t)
+         (load-theme! 'modus-vivendi)",
+    )
+    .unwrap();
+    assert_eq!(spec(&mut s, "syntax.comment"), "fg=#989898 italic");
+}

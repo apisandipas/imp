@@ -18,7 +18,7 @@ The four new syntax faces aren't defined by the other themes: a capture's face f
 - [x] Core: `load-theme!` removes the faces the last theme set that the new one doesn't (a `remove-face!` primitive), so a theme can set the four new faces (`syntax.comment.documentation`, `syntax.function.builtin`, `syntax.constant.builtin`, `syntax.type.builtin`) and the other themes, which don't, keep drawing them as their general face; with tests; the look spec says so
 - [x] The package, registered in `PACKAGES`: both palettes from the source, the resolver, and the two themes with the code and frame faces (normal, cursor line, region, search, line numbers, columns, separators, syntax); a test checks those faces' hex values against the source
 - [x] The rest of the faces: status line and mode badges, popups, menus, which-key and completion, diagnostics, diffs, git, blame and gutter, Org, dired, the start screen, terminal colors; tests for a sample of each
-- [ ] `modus-themes-bold-constructs` and `modus-themes-italic-constructs`, redrawing a loaded Modus theme, with tests
+- [x] `modus-themes-bold-constructs` and `modus-themes-italic-constructs`, redrawing a loaded Modus theme, with tests
 - [ ] Palette overrides (common and per theme, per theme winning), redrawing, an unknown name an error naming it, with tests
 - [ ] `modus-themes-toggle`, with a test
 - [ ] Screenshots of the same files in both themes, compared with Modus's published samples, and fixes
