@@ -2,6 +2,26 @@
 ;;; export dispatcher and ox-pandoc.
 ;;;
 ;;;   (use-package! 'org-export)
+;;;
+;;; In an Org buffer, C-c C-e (or SPC m e) opens the export menu, as Org's
+;;; dispatcher does: a key picks the format, a second what to do with it
+;;; (see lore:spec/org-export).
+;;;
+;;;   h HTML   p PDF   m Markdown   d Word   l LaTeX   o OpenDocument   t text
+;;;
+;;;   h h   write notes.html beside notes.org
+;;;   h o   write it, then open it with xdg-open (o O for OpenDocument)
+;;;   h H   export into an *Org Export: HTML* buffer (text formats only)
+;;;
+;;; Before the format, C-s exports only the subtree at the cursor, C-b
+;;; only the body (no <head> or preamble) and C-v only what folds don't
+;;; hide; the menu's title shows the toggles that are on. :OrgExport FORMAT
+;;; writes the file without the menu.
+;;;
+;;; The buffer's text is exported, unsaved edits included, by pandoc in the
+;;; background, from the file's directory. org-export-pdf-engine (xelatex)
+;;; makes PDFs; org-export-pandoc-args is added to every run, as "--toc".
+;;; When pandoc fails, its errors are in the *org-export* buffer.
 
 ;; The LaTeX engine pandoc makes PDFs with; xelatex copes with Unicode.
 (define-option! 'org-export-pdf-engine "xelatex" '())

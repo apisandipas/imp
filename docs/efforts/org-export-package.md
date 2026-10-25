@@ -5,7 +5,7 @@ specs: ["[[spec/org-export]]", "[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/54
 frozen:
   docs/specs/org-export.md: 30020f22a896
-  docs/specs/org.md: 7120a0ea277d
+  docs/specs/org.md: 9fbd4095d2da
 ---
 # Org export package
 

@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/54
+anchors: [packages/org-export/org-export.scm, crates/imp-server/tests/org_export.rs]
 summary: "The org-export package: Org's export dispatcher (C-c C-e), turning an Org buffer into HTML, PDF, Markdown, docx, LaTeX, ODT or plain text through pandoc."
 ---
 # Org export
