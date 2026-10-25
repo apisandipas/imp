@@ -52,6 +52,12 @@
 ;; times the font. Levels past the list are the font's size; '() makes
 ;; them all so. Window clients only: a terminal draws one size.
 (define-option! 'org-heading-heights '(1.4 1.25 1.1) '())
+;; Marking a heading done adds CLOSED: [stamp] to its planning line
+;; ('time, as Doom); #f doesn't. Leaving done removes it.
+(define-option! 'org-log-done 'time '())
+;; Marking a repeating heading done sets its LAST_REPEAT property and
+;; logs the state change at the top of its :LOGBOOK: ('time); #f doesn't.
+(define-option! 'org-log-repeat 'time '())
 
 ;;; Headings and subtrees
 
@@ -290,13 +296,17 @@
          [current (org-keyword-in rest)]
          [title (if current (trim-start (substring rest (string-length current) (string-length rest))) rest)]
          [repeat? (and next (member next (org-done-keywords))
-                       (pair? (org-repeating-stamps line (org-body-end line))))]
+                       (pair? (org-repeating-stamps line (org-body-end line)))
+                       (list next))]
          [next (if repeat? (car kws) next)])
-    (begin-change!)
-    (org-set-line! line (string-append (make-string level #\*) " " (if next (string-append next " ") "") title))
-    (let ([moved (and repeat? (org-repeat-entry! line))])
-      (set-cursor! (line-start line))
-      (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))
+    (with-undo-group
+     (lambda ()
+       (begin-change!)
+       (org-set-line! line (string-append (make-string level #\*) " " (if next (string-append next " ") "") title))
+       (org-log-change! line current (if repeat? (car repeat?) next) repeat?)
+       (let ([moved (and repeat? (org-repeat-entry! line))])
+         (set-cursor! (line-start line))
+         (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))))
 
 (define (org-todo-cycle! line)
   "Moves the heading on `line` to the next TODO keyword (none after the last)."
@@ -1135,6 +1145,92 @@
                text))
            #f
            (org-repeating-stamps heading (org-body-end heading)))))
+
+;;; Logging: CLOSED: stamps, LAST_REPEAT and the :LOGBOOK: drawer, as
+;;; Org writes them (org-log-into-drawer, as Doom sets it). The clock's
+;;; CLOCK: lines go in the same drawer, newest first.
+
+(define (org-now)
+  "The time now, as \"11:42\"."
+  (trim (cadr (run-shell "date +%H:%M" ""))))
+
+(define (org-now-stamp)
+  "An inactive timestamp for now: \"[2026-10-25 Sun 11:42]\"."
+  (date-timestamp (calendar-today) (org-now) #f))
+
+(define (org-logbook-line heading)
+  "The :LOGBOOK: line in the text of the heading on line `heading`, or #f."
+  (let ([end (org-body-end heading)])
+    (let loop ([l (+ heading 1)])
+      (cond [(> l end) #f]
+            [(equal? (string-upcase (trim (line-text l))) ":LOGBOOK:") l]
+            [else (loop (+ l 1))]))))
+
+(define (org-logbook-insert! heading text)
+  "Puts line `text` at the top of the :LOGBOOK: drawer of the heading on
+   line `heading`, making the drawer after its planning line and
+   properties if it has none. Returns the line `text` is on."
+  (let ([at (org-logbook-line heading)])
+    (if at
+        (begin (buffer-insert! (line-end at) (string-append "\n" text)) (+ at 1))
+        (let* ([lines (org-buffer-lines)]
+               [d (org-drawer-at lines heading)]
+               [after (cond [d (cadr d)]
+                            [(and (<= (+ heading 1) (last-line)) (org-planning-line? (line-text (+ heading 1))))
+                             (+ heading 1)]
+                            [else heading])])
+          (buffer-insert! (line-end after) (string-append "\n:LOGBOOK:\n" text "\n:END:"))
+          (+ after 2)))))
+
+(define (org-set-closed! heading stamp)
+  "Sets the CLOSED: date of the heading on line `heading` to `stamp`, at
+   the start of its planning line (made if there isn't one), or removes
+   it when `stamp` is #f, with the line if nothing else is on it."
+  (let* ([next (+ heading 1)]
+         [planning? (and (<= next (last-line)) (org-planning-line? (line-text next)))]
+         [text (if planning? (line-text next) "")]
+         [at (and planning? (string-index-from text "CLOSED:" 0))]
+         [bounds (and at (org-stamp-bounds text (+ at 7)))])
+    (cond
+      [(and bounds stamp)
+       (replace-range! (+ (line-start next) (car bounds)) (+ (line-start next) (cadr bounds)) stamp)]
+      [bounds
+       (let* ([rest (trim (string-append (substring text 0 at) (substring text (cadr bounds) (string-length text))))])
+         (if (equal? rest "")
+             (replace-range! (line-end heading) (line-end next) "")
+             (org-set-line! next rest)))]
+      [(not stamp) void]
+      [planning?
+       (let ([indent (- (string-length text) (string-length (trim-start text)))])
+         (buffer-insert! (+ (line-start next) indent) (string-append "CLOSED: " stamp " ")))]
+      [else (buffer-insert! (line-end heading) (string-append "\nCLOSED: " stamp))])
+    void))
+
+(define (org-pad text width)
+  "`text` with spaces after it to `width` columns."
+  (if (< (string-length text) width) (string-append text (make-string (- width (string-length text)) #\space)) text))
+
+(define (org-state-line new old stamp)
+  "The logbook line for a change from keyword `old` (or #f) to `new`, as
+   Org writes it: - State \"DONE\"       from \"TODO\"       [stamp]."
+  (string-append "- State " (org-pad (string-append "\"" new "\"") 12)
+                 " from " (org-pad (if old (string-append "\"" old "\"") "") 12) " " stamp))
+
+(define (org-log-change! heading old new repeat?)
+  "Logs the heading on line `heading` going from keyword `old` to `new`:
+   a CLOSED: stamp on done, removed on leaving done (org-log-done); on a
+   repeat, LAST_REPEAT and a state line instead (org-log-repeat)."
+  (let ([done (org-done-keywords)])
+    (cond
+      [repeat?
+       (when (option 'org-log-repeat)
+         (let ([stamp (org-now-stamp)])
+           (org-set-property! heading "LAST_REPEAT" stamp)
+           (org-logbook-insert! heading (org-state-line new old stamp))))]
+      [(and new (member new done))
+       (when (option 'org-log-done) (org-set-closed! heading (org-now-stamp)))]
+      [else (org-set-closed! heading #f)])
+    void))
 
 (define (org-restamp old new)
   "Timestamp `new` with the repeater and warning of timestamp `old`, so
