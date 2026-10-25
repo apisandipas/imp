@@ -36,6 +36,21 @@
     (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces)))))
   void)
 
+(define (theme-mix a b)
+  "The color halfway between colors `a` and `b`, both \"#rrggbb\"; `a`
+   if either is written otherwise."
+  (let* ([hex? (lambda (c) (and (= (string-length c) 7) (equal? (string-ref c 0) #\#)
+                                (foldl (lambda (ch ok) (and ok (memv ch (string->list "0123456789abcdefABCDEF")) #t))
+                                       #t (cdr (string->list c)))))]
+         [digit (lambda (c) (let ([i (char->integer (char-downcase c))]) (if (>= i 97) (- i 87) (- i 48))))]
+         [part (lambda (color k) (+ (* 16 (digit (string-ref color k))) (digit (string-ref color (+ k 1)))))]
+         [hex "0123456789abcdef"]
+         [two (lambda (n) (string (string-ref hex (quotient n 16)) (string-ref hex (modulo n 16))))])
+    (if (and (hex? a) (hex? b))
+        (apply string-append
+               (cons "#" (map (lambda (k) (two (quotient (+ (part a k) (part b k)) 2))) '(1 3 5))))
+        a)))
+
 (define (theme-faces p)
   "Every face as a (name spec) list, made from palette `p`."
   (let* ([c (lambda (name) (hash-ref p name))]
@@ -142,6 +157,17 @@
      (list "org.agenda.upcoming" (fg 'yellow))
      (list "org.agenda.tag" (fg 'comment))
      (list "org.agenda.category" (fg 'dim))
+     ;; A habit's graph (org-habit): clear before it is due, ready while
+     ;; it may be done, alert on its last day, overdue after; the future
+     ;; and past days it wasn't done on, lighter.
+     (list "org.agenda.habit.clear" (string-append "fg=" (c 'bg) " bg=" (c 'blue)))
+     (list "org.agenda.habit.clear-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'blue) (c 'bg))))
+     (list "org.agenda.habit.ready" (string-append "fg=" (c 'bg) " bg=" (c 'green)))
+     (list "org.agenda.habit.ready-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'green) (c 'bg))))
+     (list "org.agenda.habit.alert" (string-append "fg=" (c 'bg) " bg=" (c 'yellow)))
+     (list "org.agenda.habit.alert-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'yellow) (c 'bg))))
+     (list "org.agenda.habit.overdue" (string-append "fg=" (c 'bg) " bg=" (c 'red)))
+     (list "org.agenda.habit.overdue-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'red) (c 'bg))))
      ;; Git and diffs
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))
