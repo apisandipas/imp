@@ -23,7 +23,7 @@ A docs section on the website: four guides, and a reference page per area genera
 - [x] Pages for the code areas: completion, completion-at-point, lsp, tree-sitter, dap.
 - [x] Pages for the rest of git and Org: git, git-blame, git-gutter, org-export.
 - [x] Pages for the extending areas: live-scheme-and-help, packages, kdl-config, wasm-plugins, daemon, shared-buffers, claude, mcp.
-- [ ] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
+- [x] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
 - [ ] Guide: Configuring init.scm.
 - [ ] Guide: Packages.
 - [ ] Guide: Coming from Emacs or Vim.
