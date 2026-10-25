@@ -917,6 +917,11 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.faces.insert(name, style));
         Ok::<(), String>(())
     });
+    // Removes a face, so text drawn in it falls back to its general face
+    // (syntax.function.builtin to syntax.function). For load-theme!.
+    engine.register_fn("remove-face!", |name: String| {
+        editor::with(|e| e.faces.remove(&name));
+    });
     // Every face's name, sorted; a face's spec ("fg=#rrggbb bold"), or #f
     // if there's no such face; and the faces drawn at an offset of the
     // current buffer, bottom first. For describe-face and list-faces.

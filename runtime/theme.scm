@@ -17,6 +17,7 @@
 
 (define *themes* (hash))  ; name -> (palette extra-faces)
 (define *theme* #f)       ; the theme loaded
+(define *theme-face-names* '())  ; the faces it set
 
 (define (define-theme! name parent palette faces)
   "Defines theme `name`, starting from theme `parent` (or #f).
@@ -197,9 +198,15 @@
   (let ([theme (hash-try-get *themes* name)])
     (if (not theme)
         (error (string-append "no theme " (symbol->string name)))
-        (begin
-          (for-each (lambda (f) (set-face! (car f) (cadr f)))
-                    (append (theme-faces (car theme)) (cadr theme)))
+        (let ([faces (append (theme-faces (car theme)) (cadr theme))])
+          ;; Faces the last theme set and this one doesn't go, so a theme
+          ;; that sets syntax.function.builtin leaves builtins drawn as
+          ;; syntax.function in the next.
+          (let ([names (map car faces)])
+            (for-each (lambda (name) (unless (member name names) (remove-face! name)))
+                      *theme-face-names*)
+            (set! *theme-face-names* names))
+          (for-each (lambda (f) (set-face! (car f) (cadr f))) faces)
           (set-terminal-palette! (terminal-palette (car theme)))
           (set! *theme* name))))
   void)
