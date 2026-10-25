@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: 6f6173563533
+  docs/specs/leader-and-modes.md: f86f363277a8
 ---
 # Leader and modes
 
@@ -71,7 +71,7 @@ Add a leader key, and name a group so the popup shows it:
 
 The last argument, the label, is what which-key shows. `define-key!`, `define-motion!` and `define-operator!` take one too.
 
-Mode keys that start with a control or meta key, such as `C-c C-c`, wait for the rest of the sequence. They work in normal, visual and insert state, without getting in the way of `g`, `z` or typing.
+Mode keys that start with a control or meta key, such as `C-c C-c`, wait for the rest of the sequence. They work in normal, visual and insert state, without getting in the way of `g`, `z` or typing. A mode can also bind keys that start with a letter, such as the agenda's `ct`: there, in normal state, `c` waits for the next key instead of starting a Vim change.
 
 ## Making your own modes
 

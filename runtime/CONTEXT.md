@@ -11,7 +11,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Every function and command has an Emacs-style docstring: a string first in its body (or in the command's lambda), its first line a sentence of its own. Help and M-x show it. Variables and options get a comment above. `tools/docstrings.py missing` lists gaps.
 - A file can't call a function first defined in a later file, and a `define` there won't replace an earlier file's function for its callers. To extend across files, use hooks, tables (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`, `*local-keymaps*`, `*cmdline-key-handler*`).
 - Show a package's buffers with `display-buffer!`, not `go-to-buffer!`, so popup rules apply.
-- A buffer's mode keys come before Vim's operators, motions, prefixes and the `/` and `?` search prompts, so special buffers can bind `c`, `d`, `q`, `g`, `?`.
+- A buffer's mode keys come before Vim's operators, motions, prefixes and the `/` and `?` search prompts, so special buffers can bind `c`, `d`, `q`, `g`, `?`. A mode's key sequences may start with a letter too (the agenda's `ct`, `dd`): in normal and visual state, while a mode binds longer keys starting with it, that letter waits for the rest instead of being Vim's, unless it is a Vim prefix (`g`, `z`, `Z`), whose sequences go through Vim.
 
 ## Extension points
 

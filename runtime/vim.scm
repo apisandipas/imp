@@ -4436,7 +4436,9 @@
   (update-visual-highlight!))
 
 ;; A mode's key sequence that starts with a control or meta key, as
-;; Emacs's C-c C-c, in normal, visual or insert state: the keys so far.
+;; Emacs's C-c C-c, in normal, visual or insert state, or with a letter
+;; that isn't a Vim prefix, as the agenda's ct, in normal or visual
+;; state: the keys so far.
 (define *local-prefix* #f)
 
 (define (local-prefix-state)
@@ -4445,9 +4447,20 @@
   (cond [(typing-mode?) 'insert] [(eq? *mode* 'visual) 'visual] [else 'normal]))
 
 (define (local-prefix? state keys)
-  "Whether `keys` begin a longer binding in the buffer's modes."
-  (and (or (starts-with? keys "C-") (starts-with? keys "M-"))
-       (let ([longer? (lambda (k) (and (> (string-length k) (string-length keys)) (starts-with? k keys)))])
+  "Whether `keys` begin a longer binding in the buffer's modes: keys
+   starting with a control or meta key, as C-c C-c, or, outside insert
+   state, a letter that isn't one of Vim's prefixes, as the agenda's ct
+   (g and z keys go through Vim's prefixes)."
+  (let* ([control? (or (starts-with? keys "C-") (starts-with? keys "M-"))]
+         [letter? (and (not control?) (not (eq? state 'insert)) (= (string-length keys) 1)
+                       (let ([c (char->integer (string-ref keys 0))])
+                         (or (<= 65 c 90) (<= 97 c 122)))
+                       (not (hash-contains? *prefix-keys* keys)))]
+         ;; A longer binding, its next key not part of this one's name:
+         ;; C-c C-c doesn't start with the key C.
+         [longer? (lambda (k) (and (> (string-length k) (string-length keys)) (starts-with? k keys)
+                                   (or control? (not (equal? (string-ref k (string-length keys)) #\-)))))])
+    (and (or control? letter?)
          (let loop ([maps (*local-keymaps* state)])
            (cond [(null? maps) #f]
                  [(pair? (filter longer? (hash-keys->list (keymap (car maps))))) #t]

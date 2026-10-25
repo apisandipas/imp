@@ -108,6 +108,10 @@ Change a task right from its line, without opening its file.
 | `SPC m d s` | Schedule it, picking the date from the calendar |
 | `SPC m d d` | Give it a deadline, from the calendar |
 | `H` / `L` | Move the date on the line a day earlier or later; `3L` is three days |
+| `+` / `-` | Raise or lower its priority; a task without one counts as `B` |
+| `SPC m p` | Set its priority: `a`, `b` or `c`, or space to remove it |
+| `ct` or `SPC m q` | Add or remove tags, as `C-c C-q` does in its file |
+| `ce` | Set its effort, such as `0:45` |
 
 `H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
 

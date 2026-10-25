@@ -717,6 +717,65 @@
              [(deadline) (org-shift-planning! line "DEADLINE:" days)]
              [else (org-shift-appointment! line (list-ref item 4) days)]))))))
 
+(define (org-agenda-entry-at)
+  "The agenda entry (as org-file-entries gives it) of the line at the
+   cursor, read afresh from its file, or #f."
+  (let ([item (line-item)])
+    (and (pair? item) (eq? (car item) 'org)
+         (let ([found (filter (lambda (e) (= (cadr e) (caddr item))) (org-file-entries (cadr item)))])
+           (and (pair? found) (car found))))))
+
+(define (org-agenda-priority-step! step)
+  "Raises (`step` -1) or lowers (1) the entry's priority a letter, a
+   heading without one counting as B; A and C are the ends."
+  (let ([e (org-agenda-entry-at)])
+    (when e
+      (let* ([now (char->integer (string-ref (or (list-ref e 6) "B") 0))]
+             [next (string (integer->char (max 65 (min 67 (+ now step)))))])
+        (org-agenda-act! (lambda (line) (org-set-priority! line next)))
+        (message (string-append "priority " next))))))
+
+(define (org-agenda-priority-menu!)
+  "SPC m p: asks for the entry's priority."
+  (when (org-agenda-entry-line? (current-line))
+    (menu! "Priority"
+           (append (map (lambda (p) (list (string-downcase p) p
+                                          (lambda () (org-agenda-act! (lambda (line) (org-set-priority! line p))))))
+                        '("A" "B" "C"))
+                   (list (list " " "remove" (lambda () (org-agenda-act! (lambda (line) (org-set-priority! line #f))))))))))
+
+(define (org-agenda-tags!)
+  "ct: sets the entry's tags as C-c C-q does: each tag picked is added,
+   or removed if it has it, asking again until <esc>."
+  (let ([e (org-agenda-entry-at)])
+    (when e
+      (let ([own (map car (filter cdr (org-entry-tags e)))])
+        (completing-read (string-append "Tags " (if (null? own) "(none)" (string-append ":" (string-join own ":") ":"))
+                                        " (<esc> when done): ")
+                         (org-known-tags)
+                         (lambda (tag)
+                           (let ([tag (trim (org-trim-colons tag))])
+                             (unless (equal? tag "")
+                               (org-agenda-act!
+                                (lambda (line)
+                                  (let ([now (org-heading-tags line)])
+                                    (org-set-heading-tags! line (if (member tag now)
+                                                                    (filter (lambda (t) (not (equal? t tag))) now)
+                                                                    (append now (list tag)))))))
+                               (org-agenda-tags!))))
+                         (lambda (tag) (and (member tag own) "on")))))))
+
+(define (org-agenda-effort!)
+  "ce: sets the entry's Effort property; empty removes it."
+  (let ([item (line-item)])
+    (when (org-agenda-entry-line? (current-line))
+      (let* ([id (org-agenda-entry-buffer! (cadr item))]
+             [now (and id (with-buffer id (lambda () (org-entry-property (caddr item) "Effort"))))])
+        (when id
+          (open-cmdline! "Effort: " (or now "")
+                         (lambda (v) (org-agenda-act! (lambda (line) (org-set-property! line "Effort" (trim v)))))
+                         #f #f))))))
+
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
@@ -762,6 +821,12 @@
 (define-mode-leader! 'org-agenda-mode "dd" (lambda (n) (org-agenda-plan! "DEADLINE:" "Deadline: ")) "deadline")
 (org-agenda-key! "H" (lambda (n) (org-agenda-shift-date! (- (max 1 n)))) "date earlier")
 (org-agenda-key! "L" (lambda (n) (org-agenda-shift-date! (max 1 n))) "date later")
+(org-agenda-key! "+" (lambda (n) (org-agenda-priority-step! -1)) "priority up")
+(org-agenda-key! "-" (lambda (n) (org-agenda-priority-step! 1)) "priority down")
+(define-mode-leader! 'org-agenda-mode "p" (lambda (n) (org-agenda-priority-menu!)) "priority")
+(org-agenda-key! "ct" (lambda (n) (org-agenda-tags!)) "set tags")
+(define-mode-leader! 'org-agenda-mode "q" (lambda (n) (org-agenda-tags!)) "set tags")
+(org-agenda-key! "ce" (lambda (n) (org-agenda-effort!)) "set effort")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

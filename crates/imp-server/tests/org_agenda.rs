@@ -933,3 +933,40 @@ fn h_and_l_move_the_line_s_date() {
     );
     assert!(line_text(&mut s).contains("Lunch"));
 }
+
+#[test]
+fn priority_tags_and_effort_from_the_agenda() {
+    let (mut s, dir) = agenda_files(
+        "agenda-prio",
+        &[("a.org", "* Area :home:\n** TODO Write :work:\n")],
+    );
+    go_to(&mut s, "Write");
+    // None counts as B: up is A, and A is the top.
+    type_keys(&mut s, "++");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* Area :home:\n** TODO [#A] Write :work:\n"
+    );
+    type_keys(&mut s, "---");
+    assert!(file(&dir, "a.org").contains("[#C] Write"));
+    type_keys(&mut s, " mp ");
+    assert!(
+        file(&dir, "a.org").contains("** TODO Write"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    // Tags: own ones toggle, inherited ones aren't the entry's to remove.
+    type_keys(&mut s, "ctwork<ret>urgent<ret><esc>");
+    let heading = file(&dir, "a.org").lines().nth(1).unwrap().to_string();
+    assert!(
+        heading.starts_with("** TODO Write ") && heading.ends_with(" :urgent:"),
+        "{heading}"
+    );
+    // Effort.
+    type_keys(&mut s, "ce1:30<ret>");
+    assert!(
+        file(&dir, "a.org").contains(":Effort: 1:30"),
+        "{}",
+        file(&dir, "a.org")
+    );
+}
