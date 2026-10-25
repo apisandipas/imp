@@ -1255,3 +1255,40 @@ fn spc_o_a_m_asks_for_a_match() {
     assert_eq!(lines(&s)[0], " Tags: home");
     assert_eq!(lines(&s)[1], " 2 entries");
 }
+
+#[test]
+fn search_finds_words_in_headings_and_text() {
+    let (mut s, _) = agenda_files(
+        "agenda-search",
+        &[(
+            "s.org",
+            "* TODO Call the Bank\nabout the loan\n* Garden\nplant bulbs; ask the bank later\n* DONE Bank holiday plans\n* Other\nnothing\n",
+        )],
+    );
+    let found = |s: &mut imp_server::Server, text: &str| -> Vec<String> {
+        s.eval(&format!("(org-search-view! {text:?})")).unwrap();
+        lines(s)[3..]
+            .iter()
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                l.split_whitespace()
+                    .filter(|w| !["TODO", "DONE", "s"].contains(w))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect()
+    };
+    // Ignoring case, in the text too, done entries included.
+    assert_eq!(
+        found(&mut s, "bank"),
+        ["Call the Bank", "Garden", "Bank holiday plans"]
+    );
+    assert_eq!(found(&mut s, "bank -holiday"), ["Call the Bank", "Garden"]);
+    assert_eq!(found(&mut s, "+bank +loan"), ["Call the Bank"]);
+    assert_eq!(found(&mut s, "\"the bank later\""), ["Garden"]);
+    assert_eq!(found(&mut s, "{bulbs?;}"), ["Garden"]);
+    assert_eq!(lines(&s)[0], " Search: {bulbs?;}");
+    // SPC o a s asks.
+    type_keys(&mut s, " oasnothing<ret>");
+    assert_eq!(lines(&s)[1], " 1 entry");
+}

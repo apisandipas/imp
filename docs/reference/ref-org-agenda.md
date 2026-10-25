@@ -102,6 +102,17 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 
 Compare properties with `=`, `<>`, `<`, `>`, `<=` or `>=`, against a number, a `"string"` or a `{regexp}`. A heading without the property matches only `<>`.
 
+## Searching
+
+`SPC o a s` (or `M-x org-search-view`) asks for words and lists every entry whose heading or text holds them all, ignoring case:
+
+| Search | Finds entries |
+|---|---|
+| `bank loan` | with both words |
+| `bank -holiday` | with `bank` but not `holiday` |
+| `"the bank later"` | with that phrase |
+| `{bulbs?}` | matching a regexp |
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:

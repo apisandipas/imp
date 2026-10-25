@@ -705,6 +705,58 @@
     (list (string-append (if todo-only? "TODOs · " "") (number->string n) (if (= n 1) " entry" " entries"))
           (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) hits)))))
 
+;;; Search: words in a heading or its text.
+
+(define (org-search-terms text)
+  "The words of a search, as (must? kind value): kind word, phrase or
+   regexp. +word and plain words must be there, -word mustn't;
+   \"a phrase\" is as written, {regexp} a regexp."
+  (let loop ([chars (string->list (trim text))] [acc '()])
+    (cond
+      [(null? chars) (reverse acc)]
+      [(char-whitespace? (car chars)) (loop (cdr chars) acc)]
+      [else
+       (let* ([must? (not (equal? (car chars) #\-))]
+              [chars (if (memv (car chars) '(#\+ #\-)) (cdr chars) chars)]
+              [close (cond [(null? chars) #f] [(equal? (car chars) #\") #\"] [(equal? (car chars) #\{) #\}] [else #f])])
+         (if close
+             (let take ([cs (cdr chars)] [word '()])
+               (if (or (null? cs) (equal? (car cs) close))
+                   (loop (if (null? cs) cs (cdr cs))
+                         (cons (list must? (if (equal? close #\") 'phrase 'regexp) (list->string (reverse word))) acc))
+                   (take (cdr cs) (cons (car cs) word))))
+             (let take ([cs chars] [word '()])
+               (if (or (null? cs) (char-whitespace? (car cs)))
+                   (loop cs (if (null? word) acc (cons (list must? 'word (list->string (reverse word))) acc)))
+                   (take (cdr cs) (cons (car cs) word))))))])))
+
+(define (org-entry-text e)
+  "Agenda entry `e`'s heading and text, up to the next heading."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)])
+    (let loop ([l (+ (cadr e) 1)] [acc (list (vector-ref lines (cadr e)))])
+      (if (or (>= l n) (org-level-of (vector-ref lines l)))
+          (string-join (reverse acc) "\n")
+          (loop (+ l 1) (cons (vector-ref lines l) acc))))))
+
+(define (org-entry-found? e terms)
+  "Whether entry `e`'s heading and text hold `terms`, ignoring case."
+  (let ([text (string-downcase (org-entry-text e))])
+    (andmap (lambda (t)
+              (let ([hit (if (eq? (cadr t) 'regexp)
+                             (regexp-match? (caddr t) text)
+                             (string-contains? text (string-downcase (caddr t))))])
+                (eq? (and hit #t) (car t))))
+            terms)))
+
+(define (org-agenda-search-block entries text)
+  "The entries whose heading or text hold the words of `text`: (covers
+   rows), in file order."
+  (let* ([terms (org-search-terms text)]
+         [hits (if (null? terms) '() (filter (lambda (e) (org-entry-found? e terms)) entries))]
+         [n (length hits)])
+    (list (string-append (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) hits)))))
+
 (define (org-agenda-block entries block)
   "The (covers rows) of `block` over `entries`."
   (case (car block)
@@ -712,6 +764,7 @@
     [(todo) (org-agenda-todo-block entries (caddr block))]
     [(tags) (org-agenda-tags-block entries (caddr block) #f)]
     [(tags-todo) (org-agenda-tags-block entries (caddr block) #t)]
+    [(search) (org-agenda-search-block entries (caddr block))]
     [else (list "" '())]))
 
 (define (org-agenda-block-name block)
@@ -721,6 +774,7 @@
                       (case (car block)
                         [(agenda) "Agenda"] [(todo) "To do"]
                         [(tags tags-todo) (string-append "Tags: " (or (caddr block) ""))]
+                        [(search) (string-append "Search: " (or (caddr block) ""))]
                         [else (symbol->string (car block))])))
 
 (define (org-render-agenda!)
@@ -815,6 +869,15 @@
   "Asks for a tags match and shows what matches it."
   (open-cmdline! (if todo-only? "Match TODOs: " "Match: ") ""
                  (lambda (text) (unless (equal? (trim text) "") (org-tags-view! (trim text) todo-only?))) #f #f))
+
+(define (org-search-view! text)
+  "Shows the entries whose heading or text hold the words of `text`."
+  (org-agenda-show-view! (list (string-append "Search: " text) (list (list 'search '() text)))))
+
+(define (org-search-view-prompt!)
+  "Asks for words and shows the entries that hold them."
+  (open-cmdline! "Search: " ""
+                 (lambda (text) (unless (equal? (trim text) "") (org-search-view! (trim text)))) #f #f))
 
 (define (org-todo-list-prompt!)
   "Asks for a TODO keyword and shows the TODO list for it."
@@ -1193,5 +1256,10 @@
     "Show the headings matching a tags match, as +work-urgent|home."
     (org-tags-view-prompt! #f)))
 (define-leader! "oam" 'org-tags-view "tags match")
+(define-command! 'org-search-view
+  (lambda (count)
+    "Show the entries whose heading or text hold some words."
+    (org-search-view-prompt!)))
+(define-leader! "oas" 'org-search-view "search")
 (define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))
