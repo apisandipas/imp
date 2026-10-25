@@ -69,12 +69,12 @@
 (define (org-line-appointments text)
   "The active timestamps on `text`, parsed, other than its SCHEDULED: and
    DEADLINE: ones, as (start end) where end is the range's last
-   timestamp (<a>--<b>) or #f."
+   timestamp (<a>--<b>) or #f; then its diary dates, as (stamp #f)."
   (let ([n (string-length text)])
     (let loop ([from 0] [acc '()])
       (let ([b (org-stamp-bounds-anywhere text from)])
         (if (not b)
-            (reverse acc)
+            (append (reverse acc) (map (lambda (d) (list d #f)) (org-diary-stamps text)))
             (let* ([before (trim-end (substring text 0 (car b)))]
                    [planned? (or (ends-with? before "SCHEDULED:") (ends-with? before "DEADLINE:"))]
                    [stamp (org-parse-stamp (substring text (car b) (cadr b)))]
@@ -185,21 +185,27 @@
 
 (define (org-stamp-days stamp first last)
   "The days from `first` to `last` that timestamp `stamp` falls on: its
-   date, and with a repeater each interval after it."
+   date, and with a repeater each interval after it; a diary date's
+   days."
   (let ([date (cadr stamp)] [r (cadddr stamp)])
-    (if (not r)
-        (if (and (not (date<? date first)) (not (date<? last date))) (list date) '())
-        (let loop ([k 0] [acc '()])
-          (let ([d (org-shift-date date r k)])
-            (cond [(date<? last d) (reverse acc)]
-                  [(date<? d first) (loop (+ k 1) acc)]
-                  [else (loop (+ k 1) (cons d acc))]))))))
+    (cond
+      [(org-diary-stamp? stamp) (org-diary-days stamp first last)]
+      [(not r)
+       (if (and (not (date<? date first)) (not (date<? last date))) (list date) '())]
+      [else
+       (let loop ([k 0] [acc '()])
+         (let ([d (org-shift-date date r k)])
+           (cond [(date<? last d) (reverse acc)]
+                 [(date<? d first) (loop (+ k 1) acc)]
+                 [else (loop (+ k 1) (cons d acc))])))])))
 
 (define (org-stamp-after-day stamp day)
   "The first day after `day` that timestamp `stamp` falls on, or #f: its
-   date, or with a repeater the first repeat after `day`."
+   date, or with a repeater the first repeat after `day`; a diary
+   date's next day."
   (let ([date (cadr stamp)] [r (cadddr stamp)])
-    (cond [(date<? day date) date]
+    (cond [(org-diary-stamp? stamp) (org-diary-after stamp day)]
+          [(date<? day date) date]
           [(not r) #f]
           [else (let loop ([k 1])
                   (let ([d (org-shift-date date r k)]) (if (date<? day d) d (loop (+ k 1)))))])))
@@ -226,7 +232,7 @@
 (define (org-agenda-title-text e)
   "Agenda entry `e`'s title as the agenda shows it: without its active
    timestamps, which the agenda shows in their own column."
-  (let loop ([t (cadddr e)])
+  (let loop ([t (org-diary-strip (cadddr e))])
     (let ([b (org-stamp-bounds-anywhere t 0)])
       (if (and b (equal? (substring t (car b) (+ (car b) 1)) "<"))
           (let* ([end (cadr b)]
@@ -446,7 +452,7 @@
           (if (list-ref e 5) (list (list (list-ref e 5) 'deadline #f)) '())
           (map (lambda (a) (list (car a) 'appointment
                                  (and (cadr a) (date<? (cadr (car a)) (cadr (cadr a))) (cadr a))))
-               (org-entry-appointments e))))
+               (filter (lambda (a) (not (org-diary-unknown? (car a)))) (org-entry-appointments e)))))
 
 (define (org-occurrence-days o first last)
   "The days from `first` to `last` occurrence `o` falls on, as (day
@@ -466,6 +472,200 @@
 (define (org-occurrence-label kind)
   "What an occurrence of `kind` says it is on its day."
   (case kind [(scheduled) "Sched."] [(deadline) "Deadline"] [else ""]))
+
+;;; Habits and diary dates
+;;
+;; A diary date is an active timestamp holding a diary sexp, such as
+;; <%%(diary-float 11 4 4)>, read without running Lisp. Its stamp is
+;; (#t #f TIME (diary FORM) #f): no date of its own, and in the
+;; repeater's place the form saying which days it falls on, one of
+;;   (anniversary DATE)       every year on DATE's day, after its year
+;;   (float MONTH DAY N)      the Nth weekday DAY (0 Sunday) of MONTH,
+;;                            #t for every month; N < 0 from the end
+;;   (block FIRST LAST)       each day from FIRST to LAST
+;;   (cyclic N DATE)          every N days from DATE
+;;   (date (YEAR MONTH DAY))  the days matching, #t for any part
+;;   (unknown TEXT)           a sexp the agenda doesn't read, skipped
+
+;; The order a diary sexp's dates are in: 'american (month day year, as
+;; Emacs), 'european (day month year) or 'iso (year month day).
+(define-option! 'calendar-date-style 'american '())
+
+(define (org-diary-stamp? stamp)
+  "Whether timestamp `stamp` is a diary date."
+  (let ([r (cadddr stamp)]) (and (pair? r) (eq? (car r) 'diary))))
+
+(define (org-diary-form stamp)
+  "Diary date `stamp`'s form (see above)."
+  (cadr (cadddr stamp)))
+
+(define (org-diary-unknown? stamp)
+  "Whether `stamp` is a diary date whose sexp the agenda doesn't read."
+  (and (org-diary-stamp? stamp) (eq? (car (org-diary-form stamp)) 'unknown)))
+
+(define (org-diary-ymd args)
+  "The (year month day) three of a diary sexp's arguments give, in
+   calendar-date-style's order."
+  (let ([a (car args)] [b (cadr args)] [c (caddr args)])
+    (case (option 'calendar-date-style)
+      [(european) (list c b a)]
+      [(iso) (list a b c)]
+      [else (list c a b)])))
+
+(define (org-diary-args words)
+  "A diary sexp's argument `words` read: whole numbers, and #t for t;
+   #f if any is something else."
+  (let loop ([ws words] [acc '()])
+    (cond [(null? ws) (reverse acc)]
+          [(equal? (car ws) "t") (loop (cdr ws) (cons #t acc))]
+          [(let ([n (string->number (car ws))]) (and n (integer? n) n))
+           => (lambda (n) (loop (cdr ws) (cons n acc)))]
+          [else #f])))
+
+(define (org-diary-parse inside)
+  "The form (see above) of the diary sexp `inside` its parentheses, as
+   \"diary-float 11 4 4\"; (unknown INSIDE) when it isn't one of the
+   five the agenda reads, or its arguments don't fit."
+  (let* ([words (split-whitespace inside)]
+         [name (if (pair? words) (car words) "")]
+         [args (and (pair? words) (org-diary-args (cdr words)))]
+         [n (if args (length args) 0)]
+         [numbers? (lambda (xs) (foldl (lambda (x ok) (and ok (number? x))) #t xs))])
+    (or (and args
+             (cond
+               [(and (equal? name "diary-anniversary") (= n 3) (numbers? args))
+                (list 'anniversary (org-diary-ymd args))]
+               [(and (equal? name "diary-float") (= n 3)
+                     (or (eq? (car args) #t) (and (number? (car args)) (<= 1 (car args) 12)))
+                     (number? (cadr args)) (<= 0 (cadr args) 6)
+                     (number? (caddr args)) (not (= (caddr args) 0)))
+                (list 'float (car args) (cadr args) (caddr args))]
+               [(and (equal? name "diary-block") (= n 6) (numbers? args))
+                (list 'block (org-diary-ymd args) (org-diary-ymd (list-tail args 3)))]
+               [(and (equal? name "diary-cyclic") (= n 4) (numbers? args) (> (car args) 0))
+                (list 'cyclic (car args) (org-diary-ymd (cdr args)))]
+               [(and (equal? name "diary-date") (= n 3))
+                (list 'date (org-diary-ymd args))]
+               [else #f]))
+        (list 'unknown inside))))
+
+(define (org-diary-bounds text from)
+  "The (start open close end) of the next diary timestamp in `text` at
+   or after `from`: where its <%%( starts, its sexp's parentheses, and
+   just past its >. #f if there is none."
+  (let ([start (string-index-from text "<%%(" from)] [n (string-length text)])
+    (and start
+         (let loop ([i (+ start 4)] [depth 1])
+           (cond [(>= i n) #f]
+                 [(equal? (string-ref text i) #\() (loop (+ i 1) (+ depth 1))]
+                 [(and (equal? (string-ref text i) #\)) (= depth 1))
+                  (let ([gt (string-index-from text ">" i)])
+                    (and gt (list start (+ start 3) i (+ gt 1))))]
+                 [(equal? (string-ref text i) #\)) (loop (+ i 1) (- depth 1))]
+                 [else (loop (+ i 1) depth)])))))
+
+(define (org-diary-stamps text)
+  "The diary timestamps in `text`, as stamps (see above), with the time
+   after the sexp if there is one, <%%(diary-float t 4 1) 19:00>."
+  (let loop ([from 0] [acc '()])
+    (let ([b (org-diary-bounds text from)])
+      (if (not b)
+          (reverse acc)
+          (let* ([inside (substring text (+ (cadr b) 1) (caddr b))]
+                 [after (trim (substring text (+ (caddr b) 1) (- (cadddr b) 1)))]
+                 [time (and (org-time-minutes after) after)])
+            (loop (cadddr b)
+                  (cons (list #t #f time (list 'diary (org-diary-parse inside)) #f) acc)))))))
+
+(define (org-diary-strip text)
+  "`text` without its diary timestamps."
+  (let ([b (org-diary-bounds text 0)])
+    (if b
+        (org-diary-strip (string-append (trim-end (substring text 0 (car b)))
+                                        (substring text (cadddr b) (string-length text))))
+        text)))
+
+(define (org-diary-on? form day)
+  "Whether diary `form` (see above) falls on `day`."
+  (let ([y (car day)] [m (cadr day)] [d (caddr day)])
+    (case (car form)
+      [(anniversary)
+       (let* ([date (cadr form)]
+              ;; 29 February is 1 March in other years, as Emacs.
+              [moved? (and (= (cadr date) 2) (= (caddr date) 29) (not (= (days-in-month y 2) 29)))])
+         (and (> y (car date))
+              (= m (if moved? 3 (cadr date)))
+              (= d (if moved? 1 (caddr date)))))]
+      [(float)
+       (let ([month (cadr form)] [weekday (caddr form)] [k (cadddr form)])
+         (and (or (eq? month #t) (= month m))
+              (= (date-weekday day) weekday)
+              (if (> k 0)
+                  (= (quotient (- d 1) 7) (- k 1))
+                  (= (quotient (- (days-in-month y m) d) 7) (- (- k) 1)))))]
+      [(block) (and (not (date<? day (cadr form))) (not (date<? (caddr form) day)))]
+      [(cyclic)
+       (let ([k (- (date->days day) (date->days (caddr form)))])
+         (and (>= k 0) (= (modulo k (cadr form)) 0)))]
+      [(date)
+       (let ([want (cadr form)])
+         (and (or (eq? (car want) #t) (= (car want) y))
+              (or (eq? (cadr want) #t) (= (cadr want) m))
+              (or (eq? (caddr want) #t) (= (caddr want) d))))]
+      [else #f])))
+
+(define (org-diary-days stamp first last)
+  "The days from `first` to `last` diary date `stamp` falls on."
+  (let ([form (org-diary-form stamp)])
+    (filter (lambda (day) (org-diary-on? form day))
+            (map (lambda (k) (date-add-days first k))
+                 (range 0 (+ 1 (- (date->days last) (date->days first))))))))
+
+(define (org-diary-after stamp day)
+  "The first day after `day` diary date `stamp` falls on, looking four
+   years ahead, or #f."
+  (let ([form (org-diary-form stamp)])
+    (if (eq? (car form) 'block)
+        (cond [(date<? day (cadr form)) (cadr form)]
+              [(date<? day (caddr form)) (date-add-days day 1)]
+              [else #f])
+        (let loop ([k 1])
+          (cond [(> k 1462) #f]
+                [(org-diary-on? form (date-add-days day k)) (date-add-days day k)]
+                [else (loop (+ k 1))])))))
+
+(define (org-ordinal-suffix n)
+  "The suffix of `n`'s ordinal: \"st\" for 1 and 21, \"th\" for 11."
+  (cond [(memv (modulo n 100) '(11 12 13)) "th"]
+        [(= (modulo n 10) 1) "st"]
+        [(= (modulo n 10) 2) "nd"]
+        [(= (modulo n 10) 3) "rd"]
+        [else "th"]))
+
+(define (org-replace-all text needle new)
+  "`text` with each `needle` in it made `new`."
+  (let ([i (string-index-from text needle 0)])
+    (if i
+        (string-append (substring text 0 i) new
+                       (org-replace-all (substring text (+ i (string-length needle)) (string-length text)) needle new))
+        text)))
+
+(define (org-diary-entry e o day)
+  "Agenda entry `e` as shown on `day` for occurrence `o`: an
+   anniversary's title with %d made the count of years and %s its
+   ordinal's suffix, as Emacs's diary does; else `e`."
+  (let ([stamp (car o)])
+    (if (and day (org-diary-stamp? stamp) (eq? (car (org-diary-form stamp)) 'anniversary))
+        (let* ([years (- (car day) (car (cadr (org-diary-form stamp))))]
+               [title (org-replace-all (org-replace-all (cadddr e) "%d" (number->string years))
+                                     "%s" (org-ordinal-suffix years))])
+          (append (take e 3) (list title) (list-tail e 4)))
+        e)))
+
+(define (org-diary-skipped entries)
+  "How many diary timestamps in `entries` the agenda doesn't read."
+  (length (filter (lambda (a) (org-diary-unknown? (car a)))
+                  (apply append (map org-entry-appointments entries)))))
 
 (define (org-agenda-setting settings name default)
   "Block setting `name` from `settings`, ((span . 1) (header . \"Work\")),
@@ -554,7 +754,7 @@
               (apply append
                      (map (lambda (x)
                             (let ([o (car x)])
-                              (map (lambda (d) (list 'entry (cadr x) (if (cadr d) "" (time-of (car o)))
+                              (map (lambda (d) (list 'entry (org-diary-entry (cadr x) o (car d)) (if (cadr d) "" (time-of (car o)))
                                                      (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
                                    (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
                           occs)))
@@ -570,7 +770,7 @@
                                                             (org-stamp-after-day (car o) last))])
                                  (and next
                                       (cons (date->days next)
-                                            (list 'entry (cadr x)
+                                            (list 'entry (org-diary-entry (cadr x) o next)
                                                   (string-append (org-short-date next)
                                                                  (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
                                                   (org-occurrence-label (cadr o)) (cadr o) o)))))
@@ -811,7 +1011,14 @@
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
-          '()))
+          '())
+      (let ([skipped (org-diary-skipped entries)])
+        (if (and (> skipped 0) (pair? (filter (lambda (b) (eq? (car b) 'agenda)) blocks)))
+            (list '(blank)
+                  (list 'note (string-append (number->string skipped)
+                                             (if (= skipped 1) " diary sexp" " diary sexps")
+                                             " skipped: the agenda reads diary-anniversary, -float, -block, -cyclic and -date")))
+            '())))
      (window-text-width))))
 
 (define (org-agenda-cursor-home!)
@@ -1131,14 +1338,17 @@
   "Moves the date the line at the cursor shows `days` days on (back when
    negative)."
   (let ([item (line-item)])
-    (if (not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
-        (message "no date on this line")
-        (org-agenda-act!
+    (cond
+      [(not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
+       (message "no date on this line")]
+      [(not (list-ref item 4)) (message "a diary date can't be moved")]
+      [else
+       (org-agenda-act!
          (lambda (line)
            (case (list-ref item 3)
              [(scheduled) (org-shift-planning! line "SCHEDULED:" days)]
              [(deadline) (org-shift-planning! line "DEADLINE:" days)]
-             [else (org-shift-appointment! line (list-ref item 4) days)]))))))
+             [else (org-shift-appointment! line (list-ref item 4) days)])))])))
 
 (define (org-agenda-entry-at)
   "The agenda entry (as org-file-entries gives it) of the line at the
