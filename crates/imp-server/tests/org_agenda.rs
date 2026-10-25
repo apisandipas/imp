@@ -871,3 +871,65 @@ fn a_buffer_with_unsaved_changes_is_changed_but_not_saved() {
         "\"* NEXT Write\\n* TODO Kept\\n\""
     );
 }
+
+fn file(dir: &std::path::Path, name: &str) -> String {
+    std::fs::read_to_string(dir.join(name)).unwrap()
+}
+
+#[test]
+fn schedule_and_deadline_from_the_agenda() {
+    let (mut s, dir) = agenda_files("agenda-plan", &[("a.org", "* TODO Write\n")]);
+    go_to(&mut s, "Write");
+    type_keys(&mut s, " mdsfri<ret>");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-23 Fri>\n"
+    );
+    // It moved from To do to Friday, and the cursor went with it.
+    assert!(
+        lines(&s).iter().all(|l| !l.contains("To do")),
+        "{:#?}",
+        lines(&s)
+    );
+    assert!(line_text(&mut s).contains("Write"), "{}", line_text(&mut s));
+    type_keys(&mut s, " mdd+3<ret>");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-23 Fri> DEADLINE: <2026-10-24 Sat>\n"
+    );
+}
+
+#[test]
+fn h_and_l_move_the_line_s_date() {
+    let (mut s, dir) = agenda_files(
+        "agenda-hl",
+        &[(
+            "a.org",
+            "* TODO Write\nSCHEDULED: <2026-10-21 Wed 10:00 +1w> DEADLINE: <2026-10-23 Fri>\n* Lunch\nwith Ann <2026-10-22 Thu 12:30>\n",
+        )],
+    );
+    // The scheduled line: its date, keeping time and repeater.
+    go_to(&mut s, "Sched.");
+    type_keys(&mut s, "L");
+    assert_eq!(
+        file(&dir, "a.org"),
+        "* TODO Write\nSCHEDULED: <2026-10-22 Thu 10:00 +1w> DEADLINE: <2026-10-23 Fri>\n* Lunch\nwith Ann <2026-10-22 Thu 12:30>\n"
+    );
+    // The deadline's line moves the deadline; 2H is two days.
+    go_to(&mut s, "Deadline");
+    type_keys(&mut s, "2H");
+    assert!(
+        file(&dir, "a.org").contains("DEADLINE: <2026-10-21 Wed>"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    // An appointment.
+    go_to(&mut s, "Lunch");
+    type_keys(&mut s, "L");
+    assert!(
+        file(&dir, "a.org").ends_with("with Ann <2026-10-23 Fri 12:30>\n"),
+        "{}",
+        file(&dir, "a.org")
+    );
+    assert!(line_text(&mut s).contains("Lunch"));
+}

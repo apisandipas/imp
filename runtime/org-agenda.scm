@@ -278,8 +278,10 @@
 ;;                               it, then a rule
 ;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
-;;   (entry E TIME WHAT KIND)    entry E, TIME and WHAT strings (or ""),
-;;                               KIND the what's kind (org-what-face)
+;;   (entry E TIME WHAT KIND O)  entry E, TIME and WHAT strings (or ""),
+;;                               KIND the what's kind (org-what-face), O
+;;                               the occurrence shown (or #f). The line's
+;;                               item is (org file line kind date).
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
@@ -344,7 +346,7 @@
                          (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
                          '())
                      (list (list "  " #f) (list (pad-right (list-ref e 7) cat-w) "org.agenda.category")))
-             (list 'org (car e) (cadr e))))]
+             (let ([o (list-ref r 5)]) (list 'org (car e) (cadr e) (and o (cadr o)) (and o (cadr (car o)))))))]
          [(grid)
           (let ([time (pad-right (cadr r) (max 5 time-w))])
             (draw-line! (list (list "    " #f) (list time "org.agenda.time")
@@ -472,7 +474,7 @@
                          (if (eq? (cadr o) 'scheduled)
                              (string-append "Sched. " (number->string n) "x")
                              (string-append (number->string n) " d. ago"))
-                         'overdue)))
+                         'overdue o)))
                (org-sort-entries
                 (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline))
                                          (date<? (cadr (car (car x))) today)))
@@ -485,7 +487,7 @@
                                 [n (and next (- (date->days next) (date->days today)))])
                            (and n (<= n (org-warning-days (car o)))
                                 (list 'entry (cadr x) (time-of (car o))
-                                      (string-append "In " (number->string n) " d.") 'upcoming))))
+                                      (string-append "In " (number->string n) " d.") 'upcoming o))))
                        occs))]
          [day-rows
           (lambda (day)
@@ -496,7 +498,7 @@
                      (map (lambda (x)
                             (let ([o (car x)])
                               (map (lambda (d) (list 'entry (cadr x) (if (cadr d) "" (time-of (car o)))
-                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o)))
+                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
                                    (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
                           occs)))
               (if (equal? day today) upcoming '()))
@@ -514,7 +516,7 @@
                                             (list 'entry (cadr x)
                                                   (string-append (org-short-date next)
                                                                  (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
-                                                  (org-occurrence-label (cadr o)) (cadr o))))))
+                                                  (org-occurrence-label (cadr o)) (cadr o) o)))))
                              occs))
                 car))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
@@ -532,7 +534,7 @@
                       (append (list '(blank) (org-day-header day today)) (day-rows day))))
                   (range 0 span)))
       (section "Later" later)
-      (section "To do" (map (lambda (e) (list 'entry e "" "" #f)) todos))
+      (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))
       (if (null? entries)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
@@ -669,11 +671,20 @@
           #t))))
 
 (define (org-agenda-redraw-at! item at)
-  "Redraws the agenda, the cursor on `item` if it is still there, else on
-   line `at`."
+  "Redraws the agenda, the cursor on `item` if it is still there, or the
+   same date of the same entry moved, else on line `at`."
   (org-render-agenda!)
   (unless (equal? (line-item) item)
-    (set-cursor! (line-start (min at (last-line))))))
+    (let* ([items (buffer-local 'line-items)]
+           [find (lambda (n)
+                   (let loop ([i 0])
+                     (cond [(>= i (vector-length items)) #f]
+                           [(let ([it (vector-ref items i)])
+                              (and (pair? it) (eq? (car it) 'org) (equal? (take it n) (take item n))))
+                            i]
+                           [else (loop (+ i 1))])))])
+      ;; The same date of the entry, else the entry's first line.
+      (set-cursor! (line-start (or (find 4) (find 3) (min at (last-line))))))))
 
 (define (org-agenda-set-todo!)
   "SPC m t: asks for a TODO keyword, or none, for the entry at the cursor."
@@ -681,6 +692,30 @@
     (completing-read "Keyword: " (append (org-keywords) (list "(none)"))
                      (lambda (kw)
                        (org-agenda-act! (lambda (line) (org-todo-set! line (if (equal? kw "(none)") #f kw))))))))
+
+(define (org-agenda-plan! key prompt)
+  "Asks for a date with `prompt` (the calendar) and sets the entry's
+   `key` (\"SCHEDULED:\" or \"DEADLINE:\") to it."
+  (let ([item (line-item)])
+    (when (org-agenda-entry-line? (current-line))
+      (read-date prompt #f
+                 (lambda (d)
+                   (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                     (org-agenda-act! (lambda (line) (org-set-planning! line key stamp)))
+                     (message (string-append key " " stamp))))))))
+
+(define (org-agenda-shift-date! days)
+  "Moves the date the line at the cursor shows `days` days on (back when
+   negative)."
+  (let ([item (line-item)])
+    (if (not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
+        (message "no date on this line")
+        (org-agenda-act!
+         (lambda (line)
+           (case (list-ref item 3)
+             [(scheduled) (org-shift-planning! line "SCHEDULED:" days)]
+             [(deadline) (org-shift-planning! line "DEADLINE:" days)]
+             [else (org-shift-appointment! line (list-ref item 4) days)]))))))
 
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
@@ -723,6 +758,10 @@
                  "follow mode")
 (org-agenda-key! "t" (lambda (n) (org-agenda-act! org-todo-cycle!)) "cycle TODO")
 (define-mode-leader! 'org-agenda-mode "t" (lambda (n) (org-agenda-set-todo!)) "set TODO")
+(define-mode-leader! 'org-agenda-mode "ds" (lambda (n) (org-agenda-plan! "SCHEDULED:" "Schedule: ")) "schedule")
+(define-mode-leader! 'org-agenda-mode "dd" (lambda (n) (org-agenda-plan! "DEADLINE:" "Deadline: ")) "deadline")
+(org-agenda-key! "H" (lambda (n) (org-agenda-shift-date! (- (max 1 n)))) "date earlier")
+(org-agenda-key! "L" (lambda (n) (org-agenda-shift-date! (max 1 n))) "date later")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

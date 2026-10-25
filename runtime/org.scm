@@ -1162,6 +1162,44 @@
             [else (buffer-insert! (line-end next) (string-append " " key " " stamp))]))
         (buffer-insert! (line-end heading) (string-append "\n" key " " stamp)))))
 
+(define (org-shift-stamp-at! line bounds days)
+  "Moves the timestamp at `bounds` (start end) of `line`'s text `days`
+   days on, keeping its time, repeater and warning."
+  (let* ([text (line-text line)]
+         [stamp (org-parse-stamp (substring text (car bounds) (cadr bounds)))])
+    (when stamp
+      (begin-change!)
+      (replace-range! (+ (line-start line) (car bounds)) (+ (line-start line) (cadr bounds))
+                      (org-stamp->string (list (car stamp) (date-add-days (cadr stamp) days)
+                                               (caddr stamp) (cadddr stamp) (list-ref stamp 4)))))))
+
+(define (org-shift-planning! heading key days)
+  "Moves `key`'s date (\"SCHEDULED:\" or \"DEADLINE:\") of the heading
+   on line `heading` `days` days on."
+  (let ([next (+ heading 1)])
+    (when (and (<= next (last-line)) (org-planning-line? (line-text next)))
+      (let* ([text (line-text next)] [at (string-index-from text key 0)]
+             [bounds (and at (org-stamp-bounds text (+ at (string-length key))))])
+        (when bounds (org-shift-stamp-at! next bounds days))))))
+
+(define (org-shift-appointment! heading date days)
+  "Moves the first active timestamp dated `date` in the entry of the
+   heading on line `heading`, other than its SCHEDULED: and DEADLINE:,
+   `days` days on."
+  (let loop ([line heading])
+    (when (<= line (org-body-end heading))
+      (let ([text (line-text line)])
+        (let find ([from 0])
+          (let ([b (org-stamp-bounds-anywhere text from)])
+            (cond
+              [(not b) (loop (+ line 1))]
+              [(let ([st (org-parse-stamp (substring text (car b) (cadr b)))]
+                     [before (trim-end (substring text 0 (car b)))])
+                 (and st (car st) (equal? (cadr st) date)
+                      (not (ends-with? before "SCHEDULED:")) (not (ends-with? before "DEADLINE:"))))
+               (org-shift-stamp-at! line b days)]
+              [else (find (cadr b))])))))))
+
 (define (org-planning-date heading key)
   "The date `key` gives the heading on line `heading`, or #f."
   (let ([next (+ heading 1)])

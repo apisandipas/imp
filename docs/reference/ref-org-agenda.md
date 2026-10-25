@@ -105,6 +105,11 @@ Change a task right from its line, without opening its file.
 |---|---|
 | `t` | Cycle its TODO keyword, as `<ret>` does on its heading |
 | `SPC m t` | Pick its TODO keyword, or none |
+| `SPC m d s` | Schedule it, picking the date from the calendar |
+| `SPC m d d` | Give it a deadline, from the calendar |
+| `H` / `L` | Move the date on the line a day earlier or later; `3L` is three days |
+
+`H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
 
 The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda.
 
