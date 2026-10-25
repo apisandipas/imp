@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: filters, bulk actions and clocking. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: clocking, log mode and the clock report. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -31,7 +31,7 @@ Each task is one line, and its parts line up down the agenda:
     14:00   Sched.    TODO  [#A] Review the pull request    :work:  imp
 ```
 
-From the left: its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A habit has its graph after its title (see [Habits](#habits)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
+From the left: a `▸` if it's marked (see [Acting on several tasks](#acting-on-several-tasks)), its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A habit has its graph after its title (see [Habits](#habits)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
 
 In the window client, the agenda's title and the day headers are drawn larger, at the sizes `org-heading-heights` gives Org's headings.
 
@@ -77,6 +77,50 @@ Change a task right from its line, without opening its file.
 `H` and `L` move the date that line shows: its scheduled date, its deadline, or an appointment, keeping its time and repeater.
 
 The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
+
+## Filtering
+
+Narrow the agenda to what you're working on. Filters add up, show at the right of the title as `Filter: +work -home`, and stay while you move, refresh and change the view.
+
+| Key | Keeps |
+|---|---|
+| `st` | Tasks with a tag, picked from your tags; type `-tag` to leave a tag's tasks out |
+| `sc` | Tasks in the category of the task under the cursor |
+| `se` | Tasks whose effort fits, such as `<1:00` or `>=0:30` |
+| `sr` | Tasks whose title matches a regexp, ignoring case |
+| `s^` | Tasks under the same top-level heading as the task under the cursor |
+| `S` | Everything again: removes every filter |
+
+A task with no effort is left out by `se`, except with `<>`. A section the filters leave empty is left out; the days always show. Opening another view starts without filters.
+
+## Acting on several tasks
+
+Mark tasks, then act on all of them at once. A marked task has a `▸` at the left of its line, and its title is highlighted.
+
+| Key | What it does |
+|---|---|
+| `m` | Mark the task under the cursor, or unmark it, and move down |
+| `*` | Mark every task the agenda shows |
+| `%` | Mark the tasks whose title matches a regexp |
+| `~` | Flip the marks: marked tasks are unmarked, the rest marked |
+| `M` | Unmark everything |
+
+Marks stay while you move and refresh; opening another view clears them.
+
+Then press `x` and pick what to do to every marked task:
+
+| Key | What it does |
+|---|---|
+| `t` | Set their TODO keyword, or none |
+| `s` | Schedule them, on a date from the calendar |
+| `d` | Give them a deadline |
+| `+` / `-` | Add a tag, or remove one they have |
+| `r` | Refile them under another heading |
+| `$` | Archive them |
+| `S` | Move their dates by a number of days, such as `3` or `-1` |
+| `k` | Delete them and everything under them, after asking |
+
+It asks once, acts on each task, then clears the marks. `S` moves a task's scheduled date and deadline, or its first appointment when it has neither. `u` undoes the whole action when it changed a single file, but not a refile or an archive.
 
 ## Days, weeks, months
 

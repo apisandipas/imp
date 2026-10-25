@@ -157,6 +157,8 @@
      (list "org.agenda.upcoming" (fg 'yellow))
      (list "org.agenda.tag" (fg 'comment))
      (list "org.agenda.category" (fg 'dim))
+     ;; The agenda's bulk marks
+     (list "org.agenda.marked" (fg 'cyan "bold"))
      ;; A habit's graph (org-habit): clear before it is due, ready while
      ;; it may be done, alert on its last day, overdue after; the future
      ;; and past days it wasn't done on, lighter.
