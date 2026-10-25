@@ -21,7 +21,7 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 - **Properties**: a heading's `:PROPERTIES:` drawer holds `:NAME: value` lines. `(org-entry-property line name)` gives the value of `name` for the heading `line` is under, ignoring case, or #f. With a third argument `#t` it looks up the heading's ancestors when it has none, then the file's `#+PROPERTY: NAME value` lines. `C-c C-x p` (`SPC m P`) sets a property on the heading, asking for the name (completing from the buffer's property names) and then the value; the drawer is made after the heading's planning line if it has none, and an empty value removes the property.
 - **Category**: the agenda shows each entry's category in place of its file name: its `CATEGORY` property, inherited, or the file's `#+CATEGORY:` line, or else the file's name without `.org`.
 - **Agenda** (`SPC o A`, `SPC o a a`): Org's agenda views, acting on entries from them, filters and bulk actions; see [[org-agenda]].
-- **Tags**: `C-c C-q` (`SPC m q`) sets the heading's tags, completing from the agenda files' tags; they go after the title, as `:work:urgent:`, and an empty answer removes them.
+- **Tags**: `C-c C-q` (`SPC m q`) sets the heading's tags, as Doom's does: each tag picked, completing from the agenda files' tags (those it has marked), or a new one typed, is added, or removed if the heading has it, and it asks again until `<esc>`. They go after the title, as `:work:urgent:`, ending at column 77 (`org-tags-column`, as Org).
 - **Effort**: `C-c C-x e` (`SPC m c E`) sets the heading's `Effort` property, as `0:45` or `1:30`.
 - **Refile**: `C-c C-w` (`SPC m r`) moves the heading and its subtree under any agenda-file heading (asked for, as capture's refile), at the right level.
 - **Archive**: `C-c C-x C-a` (`SPC m A`) moves the heading and its subtree to `org-archive-location` (`"%s_archive::"`, by default: the file's name with `_archive` added, at the top level), with Org's `ARCHIVE_TIME`, `ARCHIVE_FILE`, `ARCHIVE_OLPATH`, `ARCHIVE_CATEGORY` and `ARCHIVE_TODO` properties. The archive file is made if it doesn't exist and isn't read by the agenda.
@@ -35,7 +35,7 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 
 ## Keys and options
 
-`org-directory`, `org-agenda-files`, `org-default-notes-file`, `org-todo-keywords`, `org-archive-location`, `org-log-done`, `org-log-repeat`, `org-link-descriptive` (`SPC m l` toggles), `org-fold-drawers`, `org-indent`, `org-indent-per-level`, `org-heading-heights`.
+`org-directory`, `org-agenda-files`, `org-default-notes-file`, `org-todo-keywords`, `org-archive-location`, `org-log-done`, `org-log-repeat`, `org-tags-column`, `org-link-descriptive` (`SPC m l` toggles), `org-fold-drawers`, `org-indent`, `org-indent-per-level`, `org-heading-heights`.
 
 ## Known gaps
 

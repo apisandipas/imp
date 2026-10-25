@@ -532,3 +532,44 @@ fn c_c_c_x_p_sets_and_removes_properties() {
         "* TODO Task\nSCHEDULED: <2026-10-24 Sat>\nbody\n* Next\n"
     );
 }
+
+#[test]
+fn c_c_c_q_adds_and_removes_tags() {
+    let mut s = org(
+        "tags.org",
+        "* TODO Write the report\nbody\n* Other :home:\n",
+    );
+    s.eval("(set-option! 'org-agenda-files '())").unwrap();
+    // A new tag, then one completed from the file's, then the first again
+    // to take it off; <esc> ends.
+    type_keys(&mut s, "j<C-c><C-q>work<ret>hom<ret>work<ret><esc>");
+    let first = s.text().lines().next().unwrap().to_string();
+    assert_eq!(
+        first,
+        format!("* TODO Write the report{}:home:", " ".repeat(77 - 23 - 6))
+    );
+    assert_eq!(first.chars().count(), 77);
+    // A title too long for the column gets one space.
+    s.eval("(set-option! 'org-tags-column -20)").unwrap();
+    type_keys(&mut s, "gg<C-c><C-q>work<ret><esc>");
+    assert_eq!(
+        s.text().lines().next().unwrap(),
+        "* TODO Write the report :home:work:"
+    );
+    // SPC m q too; taking every tag off leaves the title alone.
+    type_keys(&mut s, " mqhome<ret>work<ret><esc>");
+    assert_eq!(s.text().lines().next().unwrap(), "* TODO Write the report");
+}
+
+#[test]
+fn c_c_c_x_e_sets_the_effort() {
+    let mut s = org("effort.org", "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n");
+    type_keys(&mut s, "<C-c><C-x>e0:45<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n:PROPERTIES:\n:Effort: 0:45\n:END:\n"
+    );
+    // SPC m c E shows the effort to change; empty removes it.
+    type_keys(&mut s, " mcE<C-u><ret>");
+    assert_eq!(s.text(), "* TODO Write\nSCHEDULED: <2026-10-24 Sat>\n");
+}

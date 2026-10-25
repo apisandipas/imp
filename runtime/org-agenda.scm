@@ -51,39 +51,6 @@
          (let* ([rest (cadr parts)] [b (org-stamp-bounds rest 0)])
            (and b (org-parse-stamp (substring rest (car b) (cadr b))))))))
 
-(define (org-file-text file)
-  "The text of `file`: its buffer's, unsaved changes included, when a
-   buffer visits it, else what is on the disk."
-  (let ([id (buffer-for-path (absolute-path file))])
-    (if id
-        (with-buffer id (lambda () (buffer-substring 0 (buffer-length))))
-        (read-file file))))
-
-(define (org-tags-of text)
-  "The tags at the end of heading text `text`, as (\"work\" \"urgent\")
-   from \"* TODO Write :work:urgent:\", or '()."
-  (let* ([words (split-whitespace text)] [w (and (pair? words) (last words))])
-    (if (and w (> (string-length w) 2) (starts-with? w ":") (ends-with? w ":")
-             (andmap org-tag-char? (string->list w)))
-        (filter (lambda (t) (not (equal? t ""))) (split-many (substring w 1 (- (string-length w) 1)) ":"))
-        '())))
-
-(define (org-without-tags text)
-  "Heading text `text` without the tags at its end."
-  (let ([t (trim-end text)])
-    (if (null? (org-tags-of t))
-        t
-        (trim-end (substring t 0 (- (string-length t) (string-length (last (split-whitespace t)))))))))
-
-(define (org-file-tags lines)
-  "The tags `#+FILETAGS:` gives in `lines` (a vector), as (\"a\" \"b\")
-   from \":a:b:\" (or \"a b\")."
-  (let ([v (org-file-setting lines "#+FILETAGS:")])
-    (if v
-        (filter (lambda (t) (not (equal? t "")))
-                (apply append (map (lambda (w) (split-many w ":")) (split-whitespace v))))
-        '())))
-
 (define (org-line-appointments text)
   "The active timestamps on `text`, parsed, other than its SCHEDULED: and
    DEADLINE: ones, as (start end) where end is the range's last

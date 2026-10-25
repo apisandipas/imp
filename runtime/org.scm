@@ -839,6 +839,120 @@
                                (open-cmdline! (string-append name ": ") (or (org-entry-property h name) "")
                                               (lambda (v) (org-set-property! h name (trim v))) #f #f)))))))
 
+;;; Tags
+
+(define (org-file-text file)
+  "The text of `file`: its buffer's, unsaved changes included, when a
+   buffer visits it, else what is on the disk."
+  (let ([id (buffer-for-path (absolute-path file))])
+    (if id
+        (with-buffer id (lambda () (buffer-substring 0 (buffer-length))))
+        (read-file file))))
+
+(define (org-tags-of text)
+  "The tags at the end of heading text `text`, as (\"work\" \"urgent\")
+   from \"* TODO Write :work:urgent:\", or '()."
+  (let* ([words (split-whitespace text)] [w (and (pair? words) (last words))])
+    (if (and w (> (string-length w) 2) (starts-with? w ":") (ends-with? w ":")
+             (andmap org-tag-char? (string->list w)))
+        (filter (lambda (t) (not (equal? t ""))) (split-many (substring w 1 (- (string-length w) 1)) ":"))
+        '())))
+
+(define (org-without-tags text)
+  "Heading text `text` without the tags at its end."
+  (let ([t (trim-end text)])
+    (if (null? (org-tags-of t))
+        t
+        (trim-end (substring t 0 (- (string-length t) (string-length (last (split-whitespace t)))))))))
+
+(define (org-file-tags lines)
+  "The tags `#+FILETAGS:` gives in `lines` (a vector), as (\"a\" \"b\")
+   from \":a:b:\" (or \"a b\")."
+  (let ([v (org-file-setting lines "#+FILETAGS:")])
+    (if v
+        (filter (lambda (t) (not (equal? t "")))
+                (apply append (map (lambda (w) (split-many w ":")) (split-whitespace v))))
+        '())))
+
+;; Where a heading's tags go: a negative number right-aligns them to end
+;; at that column, a positive one starts them there, as Org's
+;; org-tags-column.
+(define-option! 'org-tags-column -77 '())
+
+(define (org-heading-tags line)
+  "The tags of the heading on `line`, as (\"work\" \"urgent\")."
+  (org-tags-of (line-text line)))
+
+(define (org-with-tags text tags)
+  "Heading text `text` with `tags` (a list) at its end in place of any it
+   had, placed by org-tags-column."
+  (let* ([base (org-without-tags text)]
+         [tag-text (string-append ":" (string-join tags ":") ":")]
+         [col (option 'org-tags-column)]
+         [start (if (< col 0) (- (- col) (string-length tag-text)) col)]
+         [pad (max 1 (- start (string-length base)))])
+    (if (null? tags) base (string-append base (make-string pad #\space) tag-text))))
+
+(define (org-set-heading-tags! line tags)
+  "Gives the heading on `line` exactly `tags` (a list)."
+  (begin-change!)
+  (org-set-line! line (org-with-tags (line-text line) tags)))
+
+(define (org-known-tags)
+  "Every tag in the agenda files and the current buffer, each once."
+  (let* ([texts (cons (buffer-substring 0 (buffer-length))
+                      (map (lambda (f) (with-handler (lambda (e) "") (org-file-text f))) (org-agenda-file-list)))]
+         [tags (apply append
+                      (map (lambda (t)
+                             (let ([lines (text-lines t)])
+                               (append (org-file-tags (list->vector lines))
+                                       (apply append (map (lambda (l) (if (org-level-of l) (org-tags-of l) '())) lines)))))
+                           texts))])
+    (let loop ([ts tags] [acc '()])
+      (cond [(null? ts) (reverse acc)]
+            [(member (car ts) acc) (loop (cdr ts) acc)]
+            [else (loop (cdr ts) (cons (car ts) acc))]))))
+
+(define (org-tags-prompt!)
+  "C-c C-q: sets the tags of the heading the cursor is under. Each tag
+   picked, completing from the agenda files' tags, or a new one typed, is
+   added, or removed if the heading has it; it asks again until <esc>."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (let ask ()
+          (let ([now (org-heading-tags h)])
+            (completing-read (string-append "Tags " (if (null? now) "(none)" (string-append ":" (string-join now ":") ":"))
+                                            " (<esc> when done): ")
+                             (org-known-tags)
+                             (lambda (tag)
+                               (let ([tag (trim (org-trim-colons tag))])
+                                 (cond [(equal? tag "") void]
+                                       [(not (andmap org-tag-char? (string->list tag)))
+                                        (message (string-append "not a tag: " tag))]
+                                       [else
+                                        (org-set-heading-tags! h (if (member tag now)
+                                                                     (filter (lambda (t) (not (equal? t tag))) now)
+                                                                     (append now (list tag))))
+                                        (ask)])))
+                             (lambda (tag) (and (member tag now) "on"))))))))
+
+(define (org-trim-colons text)
+  "`text` without colons at either end."
+  (let loop ([t text])
+    (cond [(starts-with? t ":") (loop (substring t 1 (string-length t)))]
+          [(ends-with? t ":") (loop (substring t 0 (- (string-length t) 1)))]
+          [else t])))
+
+(define (org-effort-prompt!)
+  "C-c C-x e: sets the Effort property of the heading the cursor is
+   under, as 0:45 or 1:30; an empty answer removes it."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (open-cmdline! "Effort: " (or (org-entry-property h "Effort") "")
+                       (lambda (v) (org-set-property! h "Effort" (trim v))) #f #f))))
+
 ;;; The agenda files, which capture and refile use too
 
 (define (org-notes-file)
@@ -1580,6 +1694,8 @@
 (org-key! '(normal insert) "C-c." (lambda args (org-time-stamp!)))
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
 (org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
+(org-key! '(normal insert) "C-cC-q" (lambda args (org-tags-prompt!)))
+(org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1589,6 +1705,8 @@
 (define-mode-leader! 'org-mode "x" (lambda (n) (org-toggle-checkbox! (current-line))) "toggle checkbox")
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
 (define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
+(define-mode-leader! 'org-mode "q" (lambda (n) (org-tags-prompt!)) "set tags")
+(define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 
