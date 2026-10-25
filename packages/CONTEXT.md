@@ -8,5 +8,7 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `move-lines`: `J` and `K` move a visual line selection.
 - `nerd-icons`: Nerd Font icons in completion, menus and the status line.
 - `git-blame`: the cursor's line's last commit, after the line.
+- `git-gutter`: a coloured bar beside each line that differs from git's index.
+- `org-export`: `C-c C-e` exports an Org buffer through pandoc.
 
 The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.
