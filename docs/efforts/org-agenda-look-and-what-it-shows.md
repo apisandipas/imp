@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
@@ -28,4 +28,4 @@ The Ledger mockup the owner chose is the visual target. The work is checked agai
 - [x] The Modus themes' colors for the `org.agenda.*` faces, from Modus's agenda faces, with a test
 - [x] The reference page `ref-org-agenda` covering this effort (and a line on what's to come), the agenda's keys in the help and the which-key labels
 - [x] Compare terminal captures and window-client screenshots, in a dark and a light theme, with the Ledger mockup, and fix what differs
-- [ ] The owner has looked at the agenda
+- [x] The owner has looked at the agenda
