@@ -78,6 +78,17 @@ Change a task right from its line, without opening its file.
 
 The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
 
+## Clocking from the agenda
+
+Keep track of time on a task from its line, as `SPC m c` does in its file (see [Clocking](ref-org.md#clocking)).
+
+| Key | What it does |
+|---|---|
+| `I` | Clock in on it, clocking out of any other task first |
+| `O` | Clock out |
+| `cc` | Cancel the clock |
+| `cg` | Go to the task you're clocked in on |
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:

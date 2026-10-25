@@ -1278,6 +1278,27 @@
     (when (and item (eq? (car item) 'org))
       (org-agenda-open-entry! item))))
 
+;; Clocking, log mode and the clock report
+
+(define (org-agenda-clock-redraw!)
+  "Redraws the agenda after a clock change, the cursor where it was."
+  (org-agenda-redraw-at! (line-item) (current-line)))
+
+(define (org-agenda-clock-in!)
+  "I: clocks in on the entry at the cursor (org-clock-in!)."
+  (when (org-agenda-entry-line? (current-line))
+    (org-agenda-act! org-clock-in!)))
+
+(define (org-agenda-clock-out!)
+  "O: clocks out, wherever the clock runs."
+  (org-clock-out!)
+  (org-agenda-clock-redraw!))
+
+(define (org-agenda-clock-cancel!)
+  "cc: cancels the running clock."
+  (org-clock-cancel!)
+  (org-agenda-clock-redraw!))
+
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
 (define (org-agenda-key! key proc label)
   "Binds `key` in the agenda, in normal state, labelled `label`."
@@ -1329,6 +1350,12 @@
 (org-agenda-key! "u" (lambda (n) (org-agenda-undo!)) "undo")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
+
+;; The clock.
+(org-agenda-key! "I" (lambda (n) (org-agenda-clock-in!)) "clock in")
+(org-agenda-key! "O" (lambda (n) (org-agenda-clock-out!)) "clock out")
+(org-agenda-key! "cc" (lambda (n) (org-agenda-clock-cancel!)) "cancel clock")
+(org-agenda-key! "cg" (lambda (n) (org-clock-goto!)) "go to clock")
 
 (define-command! 'org-agenda-list
   (lambda (count)

@@ -1374,9 +1374,8 @@
   "Goes to the running clock's heading, opening its file."
   (if (not *org-clock*)
       (message "no clock is running")
-      (let ([id (org-clock-buffer)])
+      (let ([id (open-file! (car *org-clock*))])
         (when id
-          (switch-to-buffer! id)
           (let ([l (org-clock-line)])
             (if l
                 (begin (set-cursor! (line-start (or (org-heading-line l) l)))

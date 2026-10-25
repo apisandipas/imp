@@ -19,7 +19,7 @@ Clocking writes `CLOCK:` lines in the heading's `:LOGBOOK:` drawer; the running 
 
 - [x] Logging: `CLOSED:` on done (removed when undone), and on a repeat `LAST_REPEAT` and the `- State "DONE" from "TODO" [...]` logbook line (`org-log-done`, `org-log-repeat`); with tests
 - [x] Clocking in Org buffers: clock in, out, cancel, go to (`C-c C-x C-i/C-o/C-q/C-j`, `SPC m c i/o/c/g`), one clock at a time, the status line's `[0:23/1:00] Title`, and a running clock picked up when imp starts; with tests
-- [ ] The agenda's `I`, `O`, `cc`, `cg`; with tests
+- [x] The agenda's `I`, `O`, `cc`, `cg`; with tests
 - [ ] Log mode (`gD l`): `Closed`, `State` and `Clocked (1:15)` lines on each day at their times, done entries included; with tests
 - [ ] The clock report (`gD R`, `cr`): a table of time per file and per heading two levels deep, with totals, in the clock report face (every bundled theme, Modus included); with tests
 - [ ] Read the reference pages through against the specs and the keys, and check the which-key labels

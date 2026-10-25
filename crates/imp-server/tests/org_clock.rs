@@ -162,3 +162,86 @@ fn a_running_clock_is_picked_up() {
     let text = std::fs::read_to_string(dir.join("work.org")).unwrap();
     assert!(text.contains("CLOCK: [2026-10-25 Sun 11:00]--[2026-10-25 Sun 11:42] =>  0:42"));
 }
+
+/// A directory holding `files` (name, text), fresh each run.
+fn org_dir(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+    let dir = temp_path(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (file, text) in files {
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    dir
+}
+
+/// The agenda's week over `files` in a fresh directory, today and now
+/// pinned, the grid off; returns the directory too.
+fn agenda(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std::path::PathBuf) {
+    let dir = org_dir(name, files);
+    let mut s = common::server("");
+    s.set_size(100, 50);
+    pin(&mut s, "11:42");
+    s.eval(&format!(
+        "(set-option! 'org-directory {:?})",
+        dir.display().to_string()
+    ))
+    .unwrap();
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>a");
+    (s, dir)
+}
+
+fn lines(s: &imp_server::Server) -> Vec<String> {
+    s.text().lines().map(|l| l.trim_end().to_string()).collect()
+}
+
+/// Puts the cursor on the agenda line holding `text`.
+fn go_to(s: &mut imp_server::Server, text: &str) {
+    let at = lines(s)
+        .iter()
+        .position(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("no {text} in {:#?}", lines(s)));
+    s.eval(&format!("(set-cursor! (line-start {at}))")).unwrap();
+}
+
+#[test]
+fn the_agenda_clocks_in_and_out() {
+    let (mut s, dir) = agenda(
+        "agenda-clock",
+        &[(
+            "a.org",
+            "* TODO Write\nSCHEDULED: <2026-10-25 Sun>\n* TODO Read\nSCHEDULED: <2026-10-25 Sun>\n",
+        )],
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "I");
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.org")).unwrap(),
+        "* TODO Write\nSCHEDULED: <2026-10-25 Sun>\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 11:42]\n:END:\n\
+         * TODO Read\nSCHEDULED: <2026-10-25 Sun>\n"
+    );
+    assert!(status_row(&mut s).contains("[0:00] Write"));
+    // I on another clocks out of the first.
+    pin(&mut s, "12:10");
+    go_to(&mut s, "Read");
+    type_keys(&mut s, "I");
+    let text = std::fs::read_to_string(dir.join("a.org")).unwrap();
+    assert!(text.contains("--[2026-10-25 Sun 12:10] =>  0:28"), "{text}");
+    assert!(text.contains(
+        "* TODO Read\nSCHEDULED: <2026-10-25 Sun>\n:LOGBOOK:\nCLOCK: [2026-10-25 Sun 12:10]\n:END:"
+    ));
+    // cg goes there; back in the agenda, cc cancels it and O says none runs.
+    type_keys(&mut s, "cg");
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-mode");
+    assert_eq!(s.eval("(current-line)").unwrap(), "5");
+    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, "cc");
+    assert!(!std::fs::read_to_string(dir.join("a.org"))
+        .unwrap()
+        .contains("CLOCK: [2026-10-25 Sun 12:10]"));
+    type_keys(&mut s, "O");
+    let rows = s.frame().text_rows();
+    assert!(rows[rows.len() - 1].contains("no clock is running"));
+}
