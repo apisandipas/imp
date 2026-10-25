@@ -338,7 +338,7 @@
           (let* ([text (cadr r)] [kind (caddr r)]
                  [face (case kind [(today) "org.agenda.today"] [(weekend) "org.agenda.weekend"]
                                   [(date) "org.agenda.date"] [else "org.agenda.section"])])
-            (draw-line! (list (list (if (eq? kind 'today) "▌ " "  ") "org.agenda.today")
+            (draw-line! (list (if (eq? kind 'today) (list "▌" "org.agenda.today") (list " " #f)) (list " " #f)
                               (list text (list face (heights 2))))
                         #f)
             (draw-line! (list (list "  " #f) (list (rule (string-length text)) "org.agenda.rule")) #f))]
