@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
@@ -28,4 +28,4 @@ Each task updates the reference pages it changes (`ref-org`, `ref-org-agenda`) i
 - [x] `SPC m r` refiles, `da` archives asking first and `dA` without, `dd` deletes the entry and its subtree asking first; with tests
 - [x] `C` captures with the line's date; `u` undoes the last change made from the agenda; with tests
 - [x] Read the reference pages through against the specs and the keys, and check the which-key labels
-- [ ] The owner has looked at acting from the agenda
+- [x] The owner has looked at acting from the agenda
