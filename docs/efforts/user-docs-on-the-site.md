@@ -27,5 +27,5 @@ A docs section on the website: four guides, and a reference page per area genera
 - [x] Guide: Configuring init.scm.
 - [x] Guide: Packages.
 - [x] Guide: Coming from Emacs or Vim.
-- [ ] `--check` is strict and `tools/check.sh` runs it; the Pages workflow installs pandoc and runs `tools/site-docs.py`, and also runs when `docs/guide`, `docs/reference` or the script change; the home page's nav and Docs link go to `docs/`; `site/CONTEXT.md` says how the docs are built.
+- [x] `--check` is strict and `tools/check.sh` runs it; the Pages workflow installs pandoc and runs `tools/site-docs.py`, and also runs when `docs/guide`, `docs/reference` or the script change; the home page's nav and Docs link go to `docs/`; `site/CONTEXT.md` says how the docs are built.
 - [ ] The owner has read the docs through in a browser.

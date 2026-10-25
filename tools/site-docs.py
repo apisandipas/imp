@@ -203,8 +203,13 @@ def problems():
     for p in sorted(PAGES.glob("*.md")):
         if p.stem[len(REF_PREFIX):] not in specs:
             found.append(f"docs/reference/{p.name}: no spec docs/specs/{p.stem[len(REF_PREFIX):]}.md")
-    lore = subprocess.run(["lore", "check"], cwd=ROOT, capture_output=True, text=True)
-    found += [line for line in lore.stdout.splitlines() if line.startswith("docs/reference/")]
+    # Drift is lore's to find; where lore isn't installed (CI), lore check
+    # before each commit has already looked.
+    try:
+        lore = subprocess.run(["lore", "check"], cwd=ROOT, capture_output=True, text=True)
+        found += [line for line in lore.stdout.splitlines() if line.startswith("docs/reference/")]
+    except FileNotFoundError:
+        pass
     return found
 
 

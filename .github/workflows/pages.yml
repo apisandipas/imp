@@ -1,11 +1,12 @@
 # The website (site/) on GitHub Pages, published on every push to main
-# that changes it.
+# that changes it. The docs section, site/docs/, is built first from
+# docs/guide and docs/reference by tools/site-docs.py.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths: [site/**, .github/workflows/pages.yml]
+    paths: [site/**, docs/guide/**, docs/reference/**, tools/site-docs.py, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +26,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y pandoc
+      - run: python3 tools/site-docs.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
