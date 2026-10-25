@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]"]
 frozen:
-  docs/specs/org-agenda.md: 9736e77a7cbe
+  docs/specs/org-agenda.md: 646e5fc328fd
 ---
 # Org agenda: views and the dispatcher
 
@@ -19,7 +19,7 @@ Each task updates the reference page in the same commit.
 ## Tasks
 
 - [x] Views as data: the agenda buffer holds a view of blocks, the dated view one of them, drawn as now; `SPC o a` becomes a prefix (`SPC o a a`, `M-x org-agenda-list`); with tests
-- [ ] `gD`: a day, week, fortnight, month (from its first day) or year (from 1 January), and the grid on or off, kept until the agenda is opened again; with tests
+- [x] `gD`: a day, week, fortnight, month (from its first day) or year (from 1 January), and the grid on or off, kept until the agenda is opened again; with tests
 - [ ] The TODO list, by priority then file order, and `T`'s list for one keyword; with tests
 - [ ] Tags matches in Org's syntax (tags with `+ - & |`; `TODO`, `LEVEL`, `PRIORITY`, `CATEGORY` and properties compared with `= <> < > <= >=` against numbers, strings and regexps), done entries in or out; with tests
 - [ ] Search: words in a heading or its text, ignoring case, with `+word`, `-word`, `"phrase"` and `{regexp}`; with tests

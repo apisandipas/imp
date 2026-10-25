@@ -29,8 +29,11 @@
 ;; arg): kind agenda (the dated view), todo, tags, tags-todo or search,
 ;; its settings as org-agenda-setting reads them.
 (define *org-agenda-view* (list "Agenda" (list (list 'agenda '() #f))))
-;; The span gD chose, or #f for org-agenda-span.
+;; The span gD chose: day, week, fortnight, month or year, or #f for
+;; org-agenda-span days; and whether it turned the grid on or off
+;; ('default for org-agenda-use-time-grid).
 (define *org-agenda-span* #f)
+(define *org-agenda-grid* 'default)
 ;; The line today's header was drawn on, or #f, and each day's header's,
 ;; as (day . line).
 (define *org-agenda-today-line* #f)
@@ -156,13 +159,13 @@
   (or *org-agenda-start* (org-agenda-span-start (calendar-today))))
 
 (define (org-agenda-span-start day)
-  "The first day of the span that shows `day`: with a span of 7 days and
-   org-agenda-start-on-weekday a day, the last such day on or before it,
-   else `day` itself."
+  "The first day of the span that shows `day`: with a span of 7 or 14
+   days and org-agenda-start-on-weekday a day, the last such day on or
+   before it, else `day` itself."
   (let ([start (if (option-set? 'org-agenda-start-on-weekday)
                    (option 'org-agenda-start-on-weekday)
                    (option 'calendar-week-start))])
-    (if (and start (= (org-agenda-span) 7))
+    (if (and start (memv (org-agenda-span) '(7 14)))
         (date-add-days day (- (modulo (- (date-weekday day) start) 7)))
         day)))
 
@@ -398,7 +401,7 @@
   (let* ([minutes (lambda (r) (org-time-minutes (caddr r)))]
          [timed (filter minutes rows)]
          [untimed (filter (lambda (r) (not (minutes r))) rows)])
-    (if (or (not (option 'org-agenda-use-time-grid)) (and (not today?) (null? timed)))
+    (if (or (not (org-agenda-grid?)) (and (not today?) (null? timed)))
         rows
         (let* ([taken (map minutes timed)]
                [grid (filter (lambda (m) (not (memv m taken)))
@@ -456,9 +459,28 @@
   (let ([hit (assq name settings)]) (if hit (cdr hit) default)))
 
 (define (org-agenda-span)
-  "How many days a dated block shows: the span gD chose, else
-   org-agenda-span."
-  (max 1 (or *org-agenda-span* (option 'org-agenda-span))))
+  "How many days a dated block shows: the span gD chose (a month's or a
+   year's from the first day shown), else org-agenda-span."
+  (let ([first (or *org-agenda-start* (calendar-today))])
+    (case *org-agenda-span*
+      [(day) 1] [(week) 7] [(fortnight) 14]
+      [(month) (days-in-month (car first) (cadr first))]
+      [(year) (if (= (days-in-month (car first) 2) 29) 366 365)]
+      [else (max 1 (option 'org-agenda-span))])))
+
+(define (org-agenda-grid?)
+  "Whether dated blocks draw the time grid: as gD set it, else
+   org-agenda-use-time-grid."
+  (if (eq? *org-agenda-grid* 'default) (option 'org-agenda-use-time-grid) *org-agenda-grid*))
+
+(define (org-agenda-span-first day)
+  "The first day of the span gD chose that holds `day`: the month's or
+   year's first, else as org-agenda-span-start."
+  (case *org-agenda-span*
+    [(month) (list (car day) (cadr day) 1)]
+    [(year) (list (car day) 1 1)]
+    [(day) day]
+    [else (org-agenda-span-start day)]))
 
 (define (org-agenda-dated-block entries settings)
   "The dated block over `entries`, as Org's week view: (covers rows).
@@ -593,11 +615,41 @@
    its first line."
   (set-cursor! (line-start (or *org-agenda-today-line* 0))))
 
-(define (org-agenda-move! days)
-  "Moves the agenda `days` on, or back to this week when `days` is #f."
-  (set! *org-agenda-start* (and days (date-add-days (org-agenda-first-day) days)))
+(define (org-agenda-move! n)
+  "Moves the agenda `n` spans on (back when negative): months or years
+   in a month's or year's view, else days. #f goes back to the span that
+   has today."
+  (let ([first (org-agenda-first-day)])
+    (set! *org-agenda-start*
+          (cond [(not n) (org-agenda-span-first (calendar-today))]
+                [(eq? *org-agenda-span* 'month) (date-add-months first n)]
+                [(eq? *org-agenda-span* 'year) (date-add-months first (* 12 n))]
+                [else (date-add-days first (* n (org-agenda-span)))])))
   (org-render-agenda!)
   (org-agenda-cursor-home!))
+
+(define (org-agenda-view-span! kind)
+  "gD: shows the span `kind` (day, week, fortnight, month or year) that
+   holds the day the cursor is on."
+  (let ([day (org-agenda-line-date)])
+    (set! *org-agenda-span* kind)
+    (set! *org-agenda-start* (org-agenda-span-first day))
+    (org-render-agenda!)
+    (let ([line (assoc day *org-agenda-day-lines*)])
+      (set-cursor! (line-start (if line (cdr line) 0))))))
+
+(define (org-agenda-view-menu!)
+  "gD: asks how the agenda's dated view shows."
+  (menu! "View"
+         (list (list "d" "day" (lambda () (org-agenda-view-span! 'day)))
+               (list "w" "week" (lambda () (org-agenda-view-span! 'week)))
+               (list "t" "fortnight" (lambda () (org-agenda-view-span! 'fortnight)))
+               (list "m" "month" (lambda () (org-agenda-view-span! 'month)))
+               (list "y" "year" (lambda () (org-agenda-view-span! 'year)))
+               (list "g" "time grid" (lambda ()
+                                       (set! *org-agenda-grid* (not (org-agenda-grid?)))
+                                       (org-render-agenda!)
+                                       (message (if *org-agenda-grid* "time grid on" "time grid off")))))))
 
 (define (org-agenda-show-view! view)
   "Shows `view` (see *org-agenda-view*) in the agenda's buffer, freshly
@@ -606,6 +658,7 @@
   (set! *org-agenda-view* view)
   (set! *org-agenda-start* #f)
   (set! *org-agenda-span* #f)
+  (set! *org-agenda-grid* 'default)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
@@ -631,7 +684,7 @@
 
 (define (org-agenda-go-to-date! date)
   "Shows the span that has `date`, the cursor on its day."
-  (set! *org-agenda-start* (org-agenda-span-start date))
+  (set! *org-agenda-start* (org-agenda-span-first date))
   (org-render-agenda!)
   (let ([line (assoc date *org-agenda-day-lines*)])
     (set-cursor! (line-start (if line (cdr line) 0)))))
@@ -915,19 +968,16 @@
   "Binds `key` in the agenda, in normal state, labelled `label`."
   (define-mode-key! 'org-agenda-mode 'normal key proc label))
 
-(define (org-agenda-span-days n)
-  "How far `n` spans go, in days."
-  (* (max 1 n) (org-agenda-span)))
-
 (org-agenda-key! "<ret>" (lambda (n) (org-agenda-visit!)) "go to entry")
 (org-agenda-key! "<tab>" (lambda (n) (org-agenda-show!)) "show entry")
 (org-agenda-key! "gr" (lambda (n) (org-render-agenda!)) "refresh")
 (org-agenda-key! "gR" (lambda (n) (org-agenda-redraw-all!)) "refresh all")
-(org-agenda-key! "f" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
-(org-agenda-key! "b" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
-(org-agenda-key! "]]" (lambda (n) (org-agenda-move! (org-agenda-span-days n))) "later")
-(org-agenda-key! "[[" (lambda (n) (org-agenda-move! (- (org-agenda-span-days n)))) "earlier")
+(org-agenda-key! "f" (lambda (n) (org-agenda-move! (max 1 n))) "later")
+(org-agenda-key! "b" (lambda (n) (org-agenda-move! (- (max 1 n)))) "earlier")
+(org-agenda-key! "]]" (lambda (n) (org-agenda-move! (max 1 n))) "later")
+(org-agenda-key! "[[" (lambda (n) (org-agenda-move! (- (max 1 n)))) "earlier")
 (org-agenda-key! "." (lambda (n) (org-agenda-move! #f)) "today")
+(org-agenda-key! "gD" (lambda (n) (org-agenda-view-menu!)) "view")
 (org-agenda-key! "gd" (lambda (n) (read-date "Go to date: " #f (lambda (d) (org-agenda-go-to-date! (take d 3)))))
                  "go to date")
 (org-agenda-key! "gj" (lambda (n) (org-agenda-next-entry! 1 n)) "next entry")

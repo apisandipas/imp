@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: 9736e77a7cbe
+  docs/specs/org-agenda.md: 646e5fc328fd
 ---
 # Org agenda
 
@@ -80,6 +80,21 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 
 `Plant the bulbs` shows as `:autumn:outside:home:`.
 
+## Days, weeks, months
+
+Press `gD` to change how much the agenda shows:
+
+| Key | What it shows |
+|---|---|
+| `d` | The day the cursor is on |
+| `w` | Its week |
+| `t` | Its fortnight |
+| `m` | Its month, from the 1st |
+| `y` | Its year, from 1 January |
+| `g` | Turn the time grid on or off |
+
+`f` and `b` then move by that much: a month at a time in a month's view. The agenda is back to a week the next time you open it.
+
 ## Moving around
 
 | Key | What it does |
@@ -138,7 +153,7 @@ Set the files to read in `init.scm`. Relative names are looked up in `org-direct
 | `org-agenda-files` | `'()` | The files the agenda reads; empty means every `.org` file in `org-directory` |
 | `org-directory` | `"~/org"` | Where your Org files live |
 | `org-agenda-span` | `7` | How many days the agenda shows |
-| `org-agenda-start-on-weekday` | `calendar-week-start` | The day a week starts on, 0 (Sunday) to 6; `#f` starts on today. Other spans start on today |
+| `org-agenda-start-on-weekday` | `calendar-week-start` | The day a week starts on, 0 (Sunday) to 6; `#f` starts on today. Spans other than a week or fortnight start on today |
 | `org-deadline-warning-days` | `14` | How many days ahead deadlines show on today |
 | `org-agenda-use-time-grid` | `#t` | Draw the time grid |
 | `org-agenda-time-grid` | `'(800 1000 1200 1400 1600 1800 2000)` | The grid's times, `800` being 08:00 |

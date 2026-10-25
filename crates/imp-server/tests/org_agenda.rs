@@ -1093,3 +1093,37 @@ fn spc_o_a_a_opens_the_agenda() {
     s.eval("(run-command 'org-agenda-list)").unwrap();
     assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
 }
+
+#[test]
+fn gd_changes_the_span() {
+    let (mut s, _) = agenda_files(
+        "agenda-gD",
+        &[("a.org", "* TODO Thing\nSCHEDULED: <2026-10-23 Fri 10:00>\n")],
+    );
+    // A day: the one the cursor is on (today).
+    type_keys(&mut s, "gDd");
+    assert_eq!(lines(&s)[1], " 21 Oct 2026");
+    type_keys(&mut s, "f");
+    assert_eq!(lines(&s)[1], " 22 Oct 2026");
+    // A fortnight, a month from its first, a year from 1 January; f moves
+    // a month or a year.
+    type_keys(&mut s, ".gDt");
+    assert_eq!(lines(&s)[1], " 18–31 Oct 2026");
+    type_keys(&mut s, "gDm");
+    assert_eq!(lines(&s)[1], " 1–31 Oct 2026");
+    type_keys(&mut s, "f");
+    assert_eq!(lines(&s)[1], " 1–30 Nov 2026");
+    type_keys(&mut s, "gDy");
+    assert_eq!(lines(&s)[1], " 1 Jan – 31 Dec 2026");
+    type_keys(&mut s, "b");
+    assert_eq!(lines(&s)[1], " 1 Jan – 31 Dec 2025");
+    type_keys(&mut s, ".gDw");
+    assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
+    // The grid: off in these tests, on with gD g; opening again resets both.
+    assert!(!lines(&s).iter().any(|l| l.contains('┄')));
+    type_keys(&mut s, "gDg");
+    assert!(lines(&s).iter().any(|l| l.contains('┄')));
+    type_keys(&mut s, "gDm:OrgAgenda<ret>");
+    assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
+    assert!(!lines(&s).iter().any(|l| l.contains('┄')));
+}
