@@ -20,6 +20,7 @@ Turn one on with `use-package!` in your `init.scm`:
 | `git-blame` | The current line's last commit, shown after the line |
 | `git-gutter` | A coloured bar beside each changed line; see [Git gutter](ref-git-gutter.md) |
 | `org-export` | Export Org files to HTML, PDF and more; see [Org export](ref-org-export.md) |
+| `modus-themes` | The Modus Vivendi and Modus Operandi themes from Emacs; see [Modus themes](ref-modus-themes.md) |
 
 `:packages` lists what's loaded and what else comes with imp.
 

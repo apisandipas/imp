@@ -10,5 +10,6 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `git-blame`: the cursor's line's last commit, after the line.
 - `git-gutter`: a coloured bar beside each line that differs from git's index.
 - `org-export`: `C-c C-e` exports an Org buffer through pandoc.
+- `modus-themes`: the Modus Vivendi and Operandi themes, from Modus's own palettes.
 
 The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.

@@ -131,6 +131,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "org-export",
         include_str!("../../../packages/org-export/org-export.scm"),
     ),
+    (
+        "modus-themes",
+        include_str!("../../../packages/modus-themes/modus-themes.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from
