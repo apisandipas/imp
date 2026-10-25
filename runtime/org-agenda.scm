@@ -49,6 +49,10 @@
 ;; Whether follow mode is on, and the line it last showed.
 (define *org-agenda-follow* #f)
 (define *org-agenda-followed* #f)
+;; The agenda's filters, as sc, st, se, sr and s^ add them: (kind arg
+;; label), kind category, tag, effort, regexp or top. They stay until S
+;; or another view.
+(define *org-agenda-filters* '())
 ;; Draw a time grid on today, and on other days with something timed:
 ;; a line at each of org-agenda-time-grid's times, and on today a line
 ;; for now.
@@ -297,8 +301,8 @@
 ;; The agenda is drawn in two steps: the sections make a list of rows,
 ;; then org-agenda-draw! lays them out, sizing each column of the entry
 ;; rows to what they hold and the window's width. A row is:
-;;   (title NAME COVERS)         the view's name, what it covers under
-;;                               it, then a rule
+;;   (title NAME COVERS FILTER)  the view's name, what it covers under
+;;                               it (FILTER at its right), then a rule
 ;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
 ;;   (entry E TIME WHAT KIND O)  entry E, TIME and WHAT strings (or ""),
@@ -337,7 +341,13 @@
        (case (car r)
          [(title)
           (draw-line! (list (list " " #f) (list (cadr r) (list "org.agenda.title" (heights 1)))) #f)
-          (draw-line! (list (list " " #f) (list (caddr r) "org.agenda.span")) #f)
+          (let* ([covers (caddr r)] [filter-text (if (pair? (cdddr r)) (cadddr r) "")]
+                 [gap (max 2 (- width 2 (string-length covers) (string-length filter-text)))])
+            (draw-line! (append (list (list " " #f) (list covers "org.agenda.span"))
+                                (if (equal? filter-text "")
+                                    '()
+                                    (list (list (make-string gap #\space) #f) (list filter-text "org.agenda.tag"))))
+                        #f))
           (draw-line! (list (list (rule (- width 1)) "org.agenda.rule")) #f)]
          [(header)
           (let* ([text (cadr r)] [kind (caddr r)]
@@ -791,15 +801,16 @@
    covers, then each block's sections, a block agenda's each under its
    own header."
   (let* ([r *org-agenda-restriction*]
-         [entries (if r
+         [all (if r
                       (filter (lambda (e) (or (null? (cdr r)) (<= (cadr r) (cadr e) (caddr r))))
                               (org-file-entries (car r)))
                       (apply append (map org-file-entries (org-agenda-file-list))))]
+         [entries (org-agenda-filtered all)]
          [blocks (cadr *org-agenda-view*)]
          [drawn (map (lambda (b) (org-agenda-block entries b)) blocks)])
     (org-agenda-draw!
      (append
-      (list (list 'title (car *org-agenda-view*) (car (car drawn))))
+      (list (list 'title (car *org-agenda-view*) (car (car drawn)) (org-agenda-filter-text)))
       (if (null? (cdr blocks))
           (cadr (car drawn))
           (apply append
@@ -808,7 +819,7 @@
                        '()
                        (cons (append (list '(blank) (list 'header (org-agenda-block-name (car bs)) 'block)) (cadr (car ds)))
                              (loop (cdr bs) (cdr ds)))))))
-      (if (null? entries)
+      (if (null? all)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
           '()))
@@ -869,6 +880,7 @@
   (set! *org-agenda-start* #f)
   (set! *org-agenda-span* #f)
   (set! *org-agenda-grid* 'default)
+  (set! *org-agenda-filters* '())
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
@@ -1278,6 +1290,132 @@
     (when (and item (eq? (car item) 'org))
       (org-agenda-open-entry! item))))
 
+;;; Filters and bulk actions
+
+(define (org-effort-minutes text)
+  "Effort `text` (\"1:30\", \"0:45\" or \"45\") in minutes, or #f."
+  (let* ([t (trim text)] [colon (string-index-from t ":" 0)])
+    (if colon
+        (let ([h (string->number (substring t 0 colon))]
+              [m (string->number (substring t (+ colon 1) (string-length t)))])
+          (and h m (+ (* h 60) m)))
+        (string->number t))))
+
+(define (org-agenda-top-heading e)
+  "The first and last line of the top-level heading agenda entry `e` is
+   under (its own if it is one), and its title: (first last title)."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)]
+         [first (let loop ([l (cadr e)])
+                  (if (or (<= l 0) (eqv? (org-level-of (vector-ref lines l)) 1)) l (loop (- l 1))))]
+         [last (let loop ([l (+ first 1)])
+                 (if (or (>= l n) (eqv? (org-level-of (vector-ref lines l)) 1)) (- l 1) (loop (+ l 1))))]
+         [text (vector-ref lines first)]
+         [level (or (org-level-of text) 0)]
+         [rest (substring text (min (string-length text) (+ level 1)) (string-length text))]
+         [kw (org-keyword-in rest)]
+         [title (org-without-tags (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest))])
+    (list first last (trim title))))
+
+(define (org-agenda-keeps? e filter)
+  "Whether agenda entry `e` passes `filter` (see *org-agenda-filters*)."
+  (let ([arg (cadr filter)])
+    (case (car filter)
+      [(category) (equal? (list-ref e 7) arg)]
+      [(tag) (eq? (and (member (car arg) (map car (org-entry-tags e))) #t) (cdr arg))]
+      [(effort)
+       (let ([have (let ([v (org-entry-prop e "Effort")]) (and v (org-effort-minutes v)))])
+         ;; Like a match, an entry without an effort passes only <>.
+         (if have
+             (org-compare-with (car arg) (< have (cadr arg)) (= have (cadr arg)))
+             (equal? (car arg) "<>")))]
+      [(regexp) (regexp-match? arg (org-agenda-title-text e))]
+      [(top) (and (equal? (car e) (car arg)) (<= (cadr arg) (cadr e) (caddr arg)))]
+      [else #t])))
+
+(define (org-agenda-filtered entries)
+  "`entries` that pass every filter."
+  (filter (lambda (e) (andmap (lambda (f) (org-agenda-keeps? e f)) *org-agenda-filters*)) entries))
+
+(define (org-agenda-filter-text)
+  "The filters as the title line shows them, \"Filter: +work -home\", or
+   \"\"."
+  (if (null? *org-agenda-filters*)
+      ""
+      (string-append "Filter: " (string-join (map caddr *org-agenda-filters*) " "))))
+
+(define (org-agenda-add-filter! kind arg label)
+  "Adds a filter and redraws, keeping the cursor where it can."
+  (let ([f (list kind arg label)] [item (line-item)] [at (current-line)])
+    (unless (member f *org-agenda-filters*)
+      (set! *org-agenda-filters* (append *org-agenda-filters* (list f))))
+    (org-agenda-redraw-at! item at)
+    (message (org-agenda-filter-text))))
+
+(define (org-agenda-filter-category!)
+  "sc: keeps the entries in the category of the entry at the cursor."
+  (let ([e (org-agenda-entry-at)])
+    (if e
+        (org-agenda-add-filter! 'category (list-ref e 7) (string-append "cat:" (list-ref e 7)))
+        (message "not on an agenda entry"))))
+
+(define (org-agenda-filter-tag!)
+  "st: asks for a tag and keeps the entries with it, or with -tag those
+   without it."
+  (let ([tags (org-known-tags)])
+    (completing-read "Filter by tag (-tag leaves it out): "
+                     (append tags (map (lambda (t) (string-append "-" t)) tags))
+                     (lambda (text)
+                       (let* ([text (trim text)]
+                              [out? (starts-with? text "-")]
+                              [tag (org-trim-colons (if (or out? (starts-with? text "+"))
+                                                        (substring text 1 (string-length text))
+                                                        text))])
+                         (unless (equal? tag "")
+                           (org-agenda-add-filter! 'tag (cons tag (not out?))
+                                                   (string-append (if out? "-" "+") tag))))))))
+
+(define (org-agenda-filter-effort!)
+  "se: asks for a comparison and an effort, as <1:00, and keeps the
+   entries whose effort fits; = when no comparison is given."
+  (open-cmdline! "Filter by effort (as <1:00): " ""
+                 (lambda (text)
+                   (let* ([t (trim text)]
+                          [op (list-find (lambda (o) (starts-with? t o)) '("<=" ">=" "<>" "<" ">" "="))]
+                          [value (org-effort-minutes (if op (substring t (string-length op) (string-length t)) t))])
+                     (if value
+                         (org-agenda-add-filter! 'effort (list (or op "=") value)
+                                                 (string-append "effort" (or op "=") (org-hhmm value)))
+                         (message (string-append "not an effort: " t)))))
+                 #f #f))
+
+(define (org-agenda-filter-regexp!)
+  "sr: asks for a regexp and keeps the entries whose title matches it."
+  (open-cmdline! "Filter by regexp: " ""
+                 (lambda (text)
+                   (let ([re (trim text)])
+                     (cond [(equal? re "") void]
+                           [(not (with-handler (lambda (err) #f) (begin (regexp-match? re "") #t)))
+                            (message (string-append "bad regexp: " re))]
+                           [else (org-agenda-add-filter! 'regexp re (string-append "{" re "}"))])))
+                 #f #f))
+
+(define (org-agenda-filter-top!)
+  "s^: keeps the entries under the top-level heading of the entry at the
+   cursor."
+  (let ([e (org-agenda-entry-at)])
+    (if e
+        (let ([top (org-agenda-top-heading e)])
+          (org-agenda-add-filter! 'top (list (car e) (car top) (cadr top))
+                                  (string-append "^" (org-fit (caddr top) (min 20 (string-length (caddr top)))))))
+        (message "not on an agenda entry"))))
+
+(define (org-agenda-filter-clear!)
+  "S: removes every filter."
+  (let ([item (line-item)] [at (current-line)])
+    (set! *org-agenda-filters* '())
+    (org-agenda-redraw-at! item at)
+    (message "filters off")))
+
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
 (define (org-agenda-key! key proc label)
   "Binds `key` in the agenda, in normal state, labelled `label`."
@@ -1357,3 +1495,9 @@
 (define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda-dispatch!)))
 (define-leader! "oA" 'org-agenda "agenda dispatcher")
+(org-agenda-key! "sc" (lambda (n) (org-agenda-filter-category!)) "filter by category")
+(org-agenda-key! "st" (lambda (n) (org-agenda-filter-tag!)) "filter by tag")
+(org-agenda-key! "se" (lambda (n) (org-agenda-filter-effort!)) "filter by effort")
+(org-agenda-key! "sr" (lambda (n) (org-agenda-filter-regexp!)) "filter by regexp")
+(org-agenda-key! "s^" (lambda (n) (org-agenda-filter-top!)) "filter by top heading")
+(org-agenda-key! "S" (lambda (n) (org-agenda-filter-clear!)) "remove filters")

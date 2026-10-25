@@ -78,6 +78,21 @@ Change a task right from its line, without opening its file.
 
 The change is made in the task's file. If the file isn't open, it's opened out of sight and saved. If it's open with changes you haven't saved, the change joins them and nothing is saved. The agenda redraws to show it; a task that's now done leaves the agenda. `u` can't undo refiling or archiving into another file.
 
+## Filtering
+
+Narrow the agenda to what you're working on. Filters add up, show at the right of the title as `Filter: +work -home`, and stay while you move, refresh and change the view.
+
+| Key | Keeps |
+|---|---|
+| `st` | Tasks with a tag, picked from your tags; type `-tag` to leave a tag's tasks out |
+| `sc` | Tasks in the category of the task under the cursor |
+| `se` | Tasks whose effort fits, such as `<1:00` or `>=0:30` |
+| `sr` | Tasks whose title matches a regexp, ignoring case |
+| `s^` | Tasks under the same top-level heading as the task under the cursor |
+| `S` | Everything again: removes every filter |
+
+A task with no effort is left out by `se`, except with `<>`. A section the filters leave empty is left out; the days always show. Opening another view starts without filters.
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:
