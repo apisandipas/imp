@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/org-export]]", "[[spec/org]]"]
 issue: https://github.com/apisandipas/imp/issues/54
 frozen:
-  docs/specs/org-export.md: de7f2ecf0f8c
+  docs/specs/org-export.md: 30020f22a896
   docs/specs/org.md: 7120a0ea277d
 ---
 # Org export package
@@ -20,5 +20,5 @@ All Scheme, in a bundled package `packages/org-export` ([[0011-non-essential-fea
 - [x] The `org-export` package (in `PACKAGES`) exports the buffer's text to a file beside it through pandoc in the background, for each of the seven formats (`--standalone`, `--pdf-engine` from `org-export-pdf-engine`, `org-export-pandoc-args`), and says `exported notes.html`; a missing pandoc, a failing pandoc (`*org-export*`) and a buffer with no file say so; with tests against a fake pandoc, and one against the real one when it is installed.
 - [x] Exporting into a `*Org Export: FORMAT*` buffer for the text formats, and writing then opening with `xdg-open`, with tests.
 - [x] The toggles: subtree only (the heading's title becomes the document's, its children promoted), body only (no `--standalone`) and visible only (closed folds left out), with tests.
-- [ ] `C-c C-e` and `SPC m e` open the two-level menu, the toggles flipping and showing in its title, and `:OrgExport FORMAT` exports with completion, with tests.
+- [x] `C-c C-e` and `SPC m e` open the two-level menu, the toggles flipping and showing in its title, and `:OrgExport FORMAT` exports with completion, with tests.
 - [ ] The package's header comment says how to use it, the Org spec's known gaps no longer list export, and the owner has tried it by hand.

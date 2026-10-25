@@ -24,7 +24,7 @@ The org-export package exports an Org buffer to other formats through pandoc, as
 
 - The second key says what to do with it, as in Org's dispatcher.
   - The format's own key again (`h h`) writes the file.
-  - `o` (`h o`) writes the file, then opens it with `xdg-open`.
+  - `o` (`h o`) writes the file, then opens it with `xdg-open`. OpenDocument's own key is `o`, so for it `O` does this (`o O`).
   - Its capital (`h H`) writes the output into a buffer, `*Org Export: HTML*`, instead of a file, and shows it. PDF, Word and OpenDocument aren't text and have no buffer entry.
 - The file goes beside the Org file, with its extension changed: `notes.org` becomes `notes.html`, replacing one already there. When it is written the message line says so (`exported notes.html`).
 - The buffer's text is exported, unsaved edits included. pandoc runs in the Org file's directory, so relative links and images resolve as they do from the file.

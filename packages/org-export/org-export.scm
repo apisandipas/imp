@@ -149,3 +149,78 @@
                                 (start-job! (string-append (shell-quote *org-export-open*) " " (shell-quote out))
                                             "" #f #f))]))))]))
   void)
+
+;;; The menu, after Org's dispatcher: a key picks the format, a second
+;;; what to do with it; C-s, C-b and C-v flip the toggles first.
+
+;; (key format) in the menu, in order.
+(define *org-export-keys*
+  '(("h" "html") ("p" "pdf") ("m" "markdown") ("d" "docx") ("l" "latex") ("o" "odt") ("t" "text")))
+;; (key toggle label).
+(define *org-export-toggle-keys*
+  '(("C-s" subtree "subtree only") ("C-b" body "body only") ("C-v" visible "visible only")))
+
+;; The toggles that are on in the open menu.
+(define *org-export-toggles* '())
+
+(define (org-export-title)
+  "The menu's title, naming the toggles that are on."
+  (let ([on (filter (lambda (t) (memq (cadr t) *org-export-toggles*)) *org-export-toggle-keys*)])
+    (if (null? on)
+        "Export"
+        (string-append "Export (" (string-join (map caddr on) ", ") ")"))))
+
+(define (org-export-format-menu! key name)
+  "The second level of the menu, for format `name` picked with `key`:
+   key again writes the file, o (O for ODT, whose key is o) writes and
+   opens it, the capital exports a text format into a buffer."
+  (let* ([format (org-export-format name)]
+         [toggles *org-export-toggles*]
+         [open-key (if (equal? key "o") "O" "o")]
+         [run (lambda (target) (lambda () (org-export! name target toggles)))])
+    (menu! (string-append (org-export-title) ": " (org-export-label format))
+           (append (list (list key "to file" (run 'file))
+                         (list open-key "to file and open" (run 'open)))
+                   (if (and (org-export-text? format) (not (equal? key "o")))
+                       (list (list (string-upcase key) "to buffer" (run 'buffer)))
+                       '())))))
+
+(define (org-export-menu-again!)
+  "Shows the export menu, keeping the toggles."
+  (menu! (org-export-title)
+         (append (map (lambda (k)
+                        (list (car k) (org-export-label (org-export-format (cadr k)))
+                              (lambda () (org-export-format-menu! (car k) (cadr k)))))
+                      *org-export-keys*)
+                 (map (lambda (t)
+                        (list (car t) (caddr t)
+                              (lambda ()
+                                (set! *org-export-toggles*
+                                      (if (memq (cadr t) *org-export-toggles*)
+                                          (filter (lambda (x) (not (eq? x (cadr t)))) *org-export-toggles*)
+                                          (cons (cadr t) *org-export-toggles*)))
+                                (org-export-menu-again!))))
+                      *org-export-toggle-keys*))))
+
+(define (org-export-menu!)
+  "Opens the export menu, its toggles off."
+  (set! *org-export-toggles* '())
+  (org-export-menu-again!))
+
+(define-command! 'org-export
+  (lambda (count)
+    "Export the Org buffer through pandoc: a menu of formats (C-c C-e)."
+    (org-export-menu!)))
+
+(for-each (lambda (state) (define-mode-key! 'org-mode state "C-cC-e" 'org-export "export"))
+          '(normal insert))
+(define-mode-leader! 'org-mode "e" (lambda (n) (org-export-menu!)) "export")
+
+(define-ex! '("OrgExport")
+  (lambda (ex)
+    (let ([name (trim-end (trim-start (ex-args ex)))])
+      (if (equal? name "")
+          (message "OrgExport needs a format: html, pdf, markdown, docx, latex, odt or text")
+          (org-export! name 'file '())))))
+(define-ex-completion! '("OrgExport")
+  (lambda (typed) (filter (lambda (n) (starts-with? n typed)) (map car *org-export-formats*))))

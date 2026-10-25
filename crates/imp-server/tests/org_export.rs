@@ -335,3 +335,83 @@ fn visible_only_leaves_out_closed_folds() {
     wait_for_message(&mut s, "exported notes.html");
     assert_eq!(input(&dir), "#+TITLE: Two\n");
 }
+
+fn screen(s: &mut imp_server::Server) -> String {
+    s.frame().text_rows().join("\n")
+}
+
+#[test]
+fn the_menu_picks_a_format_then_what_to_do() {
+    let dir = setup("export-menu");
+    let mut s = visiting(&dir);
+    type_keys(&mut s, "<C-c><C-e>");
+    let menu = screen(&mut s);
+    for label in [
+        "Export",
+        "HTML",
+        "PDF",
+        "Markdown",
+        "Word",
+        "LaTeX",
+        "OpenDocument",
+        "Text",
+        "subtree only",
+    ] {
+        assert!(menu.contains(label), "{label} in {menu}");
+    }
+    type_keys(&mut s, "h");
+    let menu = screen(&mut s);
+    assert!(menu.contains("Export: HTML"), "{menu}");
+    assert!(menu.contains("to buffer"), "{menu}");
+    type_keys(&mut s, "h");
+    wait_for_message(&mut s, "exported notes.html");
+    assert!(dir.join("notes.html").exists());
+
+    // SPC m e opens it too; PDF has no buffer entry.
+    type_keys(&mut s, " mep");
+    let menu = screen(&mut s);
+    assert!(menu.contains("Export: PDF"), "{menu}");
+    assert!(!menu.contains("to buffer"), "{menu}");
+    type_keys(&mut s, "<esc>");
+
+    // ODT's key is o, so O writes and opens it.
+    type_keys(&mut s, "<C-c><C-e>o");
+    let menu = screen(&mut s);
+    assert!(menu.contains("to file and open"), "{menu}");
+    type_keys(&mut s, "o");
+    wait_for_message(&mut s, "exported notes.odt");
+}
+
+#[test]
+fn the_menus_toggles_flip_and_show_in_its_title() {
+    let dir = setup("export-menu-toggles");
+    let mut s = visiting(&dir);
+    type_keys(&mut s, "<C-c><C-e><C-b><C-s>");
+    let menu = screen(&mut s);
+    assert!(menu.contains("Export (subtree only, body only)"), "{menu}");
+    // Pressed again, it goes off.
+    type_keys(&mut s, "<C-s>");
+    assert!(screen(&mut s).contains("Export (body only)"));
+    type_keys(&mut s, "hh");
+    wait_for_message(&mut s, "exported notes.html");
+    assert!(!args(&dir).contains(&"--standalone".to_string()));
+    // Each menu starts with them off.
+    type_keys(&mut s, "<C-c><C-e>");
+    assert!(!screen(&mut s).contains("body only)"));
+    type_keys(&mut s, "hh");
+    wait_for_message(&mut s, "exported notes.html");
+    assert!(args(&dir).contains(&"--standalone".to_string()));
+}
+
+#[test]
+fn org_export_exports_without_the_menu() {
+    let dir = setup("export-ex");
+    let mut s = visiting(&dir);
+    type_keys(&mut s, ":OrgExport mark<tab><ret>");
+    wait_for_message(&mut s, "exported notes.md");
+    feed(&mut s, ":OrgExport<ret>");
+    assert_eq!(
+        message(&mut s),
+        "OrgExport needs a format: html, pdf, markdown, docx, latex, odt or text"
+    );
+}
