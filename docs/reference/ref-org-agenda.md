@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: d283f91acd0d
+  docs/specs/org-agenda.md: b6ab81427154
 ---
 # Org agenda
 
@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: filters, bulk actions and clocking. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -31,7 +31,7 @@ Each task is one line, and its parts line up down the agenda:
     14:00   Sched.    TODO  [#A] Review the pull request    :work:  imp
 ```
 
-From the left: its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
+From the left: its time, what the date is, its TODO keyword, its priority and title, its tags, and its category (see [Org](ref-org.md)). A habit has its graph after its title (see [Habits](#habits)). A long title is cut short with `…` so the rest stays in place. In a window under 60 columns wide, tags are left out.
 
 In the window client, the agenda's title and the day headers are drawn larger, at the sizes `org-heading-heights` gives Org's headings.
 
@@ -106,6 +106,51 @@ Any other active date in a heading or its text is an appointment, shown on its d
 ```
 
 A date range shows on each of its days, as `(2/3)` on the second.
+
+## Habits
+
+A habit is a task you mean to do regularly. Give it a repeating scheduled date and a `STYLE` property of `habit`:
+
+```org
+* TODO Exercise
+SCHEDULED: <2026-10-21 Wed .+2d>
+:PROPERTIES:
+:STYLE:    habit
+:END:
+```
+
+A habit shows on today only, once it's due, never under Overdue or Later. After its title is a graph of the last three weeks and the week to come, a cell a day:
+
+```
+    Sched.   TODO  Exercise          *      * * !
+```
+
+A `*` is a day you did it, `!` is today. The colors say how you were doing on each day, as in Org: blue before it was due, green while it could be done, yellow on its last day, red once it was overdue. Days to come, and past days you didn't do it, are drawn lighter.
+
+A repeater can give the longest you may wait after a slash: `.+2d/4d` is due two days after you last did it, and overdue after four. The days you did it come from the state changes logged when you marked it done, and its `LAST_REPEAT` property (see [Org](ref-org.md)).
+
+## Diary dates
+
+A date can be one of Emacs's diary forms, for things that come round in a pattern a repeater can't give. The agenda reads five of them, written in a timestamp:
+
+```org
+* Ana is %d <%%(diary-anniversary 10 22 1990)>
+* Thanksgiving <%%(diary-float 11 4 4)>
+* Book club <%%(diary-float t 3 3) 19:00>
+* Trip <%%(diary-block 10 19 2026 10 23 2026)>
+* Bins out <%%(diary-cyclic 14 10 10 2026)>
+* Payday <%%(diary-date t 25 t)>
+```
+
+| Form | Falls on |
+|---|---|
+| `diary-anniversary 10 22 1990` | 22 October every year after 1990; `%d` in the title becomes the number of years, `%s` its ending, as `36th` for `%d%s` |
+| `diary-float 11 4 4` | The 4th Thursday of November (days count from 0, Sunday); `t` for every month, and `-1` for the last |
+| `diary-block 10 19 2026 10 23 2026` | Each day from the first date to the second |
+| `diary-cyclic 14 10 10 2026` | Every 14 days from that date |
+| `diary-date t 25 t` | Every day that matches, `t` matching any month, day or year |
+
+A time after the form, as `19:00`, puts it at that time. Dates are month, day, year, as in Emacs; set `calendar-date-style` to `'european` for day, month, year, or `'iso` for year, month, day. The agenda doesn't run Lisp, so any other form is skipped, and the agenda's last line says how many were. `H` and `L` can't move a diary date.
 
 ## The time grid
 
@@ -229,3 +274,6 @@ Set the files to read in `init.scm`. Relative names are looked up in `org-direct
 | `org-agenda-use-time-grid` | `#t` | Draw the time grid |
 | `org-agenda-time-grid` | `'(800 1000 1200 1400 1600 1800 2000)` | The grid's times, `800` being 08:00 |
 | `calendar-week-start` | `0` | The day weeks start on: 0 is Sunday |
+| `org-habit-preceding-days` | `21` | How many days before today a habit's graph shows |
+| `org-habit-following-days` | `7` | How many days from today on a habit's graph shows |
+| `calendar-date-style` | `'american` | The order of a diary form's dates: `'american` (month day year), `'european` (day month year) or `'iso` |

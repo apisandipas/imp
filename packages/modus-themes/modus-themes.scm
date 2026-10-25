@@ -461,6 +461,15 @@
    (list "org.agenda.upcoming" 'date-deadline-subtle #f "" #f)
    (list "org.agenda.tag" 'prose-tag #f "" #f)
    (list "org.agenda.category" 'fg-dim #f "" #f)
+   ;; org-habit-clear-face and co.: the graph colors, in black.
+   (list "org.agenda.habit.clear" "#000000" 'bg-graph-blue-0 "" #f)
+   (list "org.agenda.habit.clear-future" "#000000" 'bg-graph-blue-1 "" #f)
+   (list "org.agenda.habit.ready" "#000000" 'bg-graph-green-0 "" #f)
+   (list "org.agenda.habit.ready-future" "#000000" 'bg-graph-green-1 "" #f)
+   (list "org.agenda.habit.alert" "#000000" 'bg-graph-yellow-0 "" #f)
+   (list "org.agenda.habit.alert-future" "#000000" 'bg-graph-yellow-1 "" #f)
+   (list "org.agenda.habit.overdue" "#000000" 'bg-graph-red-0 "" #f)
+   (list "org.agenda.habit.overdue-future" "#000000" 'bg-graph-red-1 "" #f)
    ;; Git: magit-section-heading, -branch-local, -branch-remote, -hash,
    ;; -dimmed; the key lines on the mode line's background
    (list "git.section" 'fg-alt #f "bold" #f)
