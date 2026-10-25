@@ -574,17 +574,30 @@
       (section "To do" (map (lambda (e) (list 'entry e "" "" #f #f)) todos))))))
 
 
+(define (org-agenda-todo-block entries keyword)
+  "The TODO list over `entries`: (covers rows), every undone TODO entry
+   (with `keyword` only, unless it is #f), by priority, then in file
+   order."
+  (let* ([todos (filter (lambda (e) (and (caddr e) (not (org-entry-done? e))
+                                         (or (not keyword) (equal? (caddr e) keyword))))
+                        entries)]
+         [todos (org-sort-entries todos (lambda (e) (org-priority-rank (list-ref e 6))))]
+         [n (length todos)])
+    (list (string-append (if keyword keyword "Every keyword") " · " (number->string n) (if (= n 1) " entry" " entries"))
+          (cons '(blank) (map (lambda (e) (list 'entry e "" "" #f #f)) todos)))))
+
 (define (org-agenda-block entries block)
   "The (covers rows) of `block` over `entries`."
   (case (car block)
     [(agenda) (org-agenda-dated-block entries (cadr block))]
+    [(todo) (org-agenda-todo-block entries (caddr block))]
     [else (list "" '())]))
 
 (define (org-agenda-block-name block)
   "What a block of a block agenda is headed: its header setting, else
    its kind's name."
   (org-agenda-setting (cadr block) 'header
-                      (case (car block) [(agenda) "Agenda"] [else (symbol->string (car block))])))
+                      (case (car block) [(agenda) "Agenda"] [(todo) "To do"] [else (symbol->string (car block))])))
 
 (define (org-render-agenda!)
   "Redraws the agenda's view from the agenda files: its name and what it
@@ -661,6 +674,17 @@
   (set! *org-agenda-grid* 'default)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
+
+(define (org-todo-list! keyword)
+  "Shows the TODO list: every undone TODO entry, or those with
+   `keyword` when it isn't #f."
+  (org-agenda-show-view! (list (if keyword (string-append "To do: " keyword) "To do")
+                               (list (list 'todo '() keyword)))))
+
+(define (org-todo-list-prompt!)
+  "Asks for a TODO keyword and shows the TODO list for it."
+  (completing-read "Keyword: " (filter (lambda (k) (not (member k (org-done-keywords)))) (org-keywords))
+                   (lambda (kw) (org-todo-list! kw))))
 
 (define (org-agenda!)
   "Shows the agenda: this week's dated view."
@@ -1023,6 +1047,11 @@
   (lambda (count)
     "Show the agenda: this week's scheduled, due and timed entries."
     (org-agenda!)))
+(define-command! 'org-todo-list
+  (lambda (count)
+    "Show every undone TODO entry in the agenda files."
+    (org-todo-list! #f)))
 (define-leader-group! "oa" "agenda")
+(define-leader! "oat" 'org-todo-list "TODO list")
 (define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda!)))

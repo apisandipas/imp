@@ -1127,3 +1127,43 @@ fn gd_changes_the_span() {
     assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
     assert!(!lines(&s).iter().any(|l| l.contains('┄')));
 }
+
+#[test]
+fn the_todo_list_has_every_undone_todo() {
+    let (mut s, _) = agenda_files(
+        "agenda-todo-list",
+        &[(
+            "a.org",
+            "* TODO [#C] Low\nSCHEDULED: <2026-10-21 Wed>\n* NEXT Next one\n* Notes\n* TODO [#A] High\n* DONE Done\n* TODO Plain\n",
+        )],
+    );
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " oat");
+    let shown = lines(&s);
+    assert_eq!(shown[0], " To do");
+    assert_eq!(shown[1], " Every keyword · 4 entries");
+    // By priority, none as B, then file order; dated ones too; no plain
+    // headings or done ones.
+    let rest: Vec<String> = shown[3..]
+        .iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    assert_eq!(
+        rest,
+        [
+            "TODO [#A] High a",
+            "NEXT Next one a",
+            "TODO Plain a",
+            "TODO [#C] Low a"
+        ]
+    );
+    // One keyword.
+    s.eval("(org-todo-list! \"NEXT\")").unwrap();
+    assert_eq!(lines(&s)[0], " To do: NEXT");
+    assert_eq!(lines(&s)[1], " NEXT · 1 entry");
+    // t on it still acts, and the list redraws.
+    go_to(&mut s, "Next one");
+    type_keys(&mut s, "t");
+    assert_eq!(lines(&s)[1], " NEXT · 0 entries");
+}

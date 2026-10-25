@@ -80,6 +80,10 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 
 `Plant the bulbs` shows as `:autumn:outside:home:`.
 
+## Lists of TODOs
+
+`SPC o a t` (or `M-x org-todo-list`) lists every undone TODO in your agenda files, dated or not, by priority and then in the order they're written. The same keys work on it as in the agenda, so you can change a task from the list.
+
 ## Days, weeks, months
 
 Press `gD` to change how much the agenda shows:
