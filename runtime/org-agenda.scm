@@ -474,13 +474,18 @@
 
 (define (org-agenda-span)
   "How many days a dated block shows: the span gD chose (a month's or a
-   year's from the first day shown), else org-agenda-span."
+   year's from the first day shown), else the view's first dated
+   block's span setting, else org-agenda-span."
   (let ([first (or *org-agenda-start* (calendar-today))])
     (case *org-agenda-span*
       [(day) 1] [(week) 7] [(fortnight) 14]
       [(month) (days-in-month (car first) (cadr first))]
       [(year) (if (= (days-in-month (car first) 2) 29) 366 365)]
-      [else (max 1 (option 'org-agenda-span))])))
+      [else (let ([dated (filter (lambda (b) (eq? (car b) 'agenda)) (cadr *org-agenda-view*))])
+              ;; A custom command's first dated block may give its span.
+              (max 1 (if (pair? dated)
+                         (org-agenda-setting (cadr (car dated)) 'span (option 'org-agenda-span))
+                         (option 'org-agenda-span))))])))
 
 (define (org-agenda-grid?)
   "Whether dated blocks draw the time grid: as gD set it, else
@@ -935,6 +940,36 @@
 ;; Custom commands: (key description blocks), as define-agenda-command!
 ;; adds them.
 (define *org-agenda-commands* '())
+
+(define (org-agenda-command-block form)
+  "A block of a custom command as written, (tags-todo \"+work\" (header
+   \"Work\")), as a view's block: (kind settings arg)."
+  (let* ([kind (car form)]
+         [args (cdr form)]
+         [arg (let ([strings (filter string? args)]) (if (pair? strings) (car strings) #f))]
+         [settings (map (lambda (s) (cons (car s) (cadr s))) (filter pair? args))])
+    (unless (memq kind '(agenda todo tags tags-todo search))
+      (error (string-append "define-agenda-command!: no block kind " (symbol->string kind))))
+    (list kind settings arg)))
+
+(define (define-agenda-command! key description blocks)
+  "Adds a view to the agenda dispatcher on `key`. `blocks` are shown
+   one after another, each one of:
+
+     (agenda)              the dated view; (agenda (span 1)) for a day
+     (todo) (todo \"NEXT\")  the TODO list, or one keyword's
+     (tags \"+work\")        a tags match; tags-todo for undone TODOs
+     (search \"words\")      a search
+
+   each with optional settings, (span N) and (header \"Name\"):
+
+     (define-agenda-command! \"w\" \"Work\"
+       '((agenda (span 1)) (tags-todo \"+work\" (header \"Work to do\"))))"
+  (let ([parsed (map org-agenda-command-block blocks)])
+    (set! *org-agenda-commands*
+          (cons (list key description parsed)
+                (filter (lambda (c) (not (equal? (car c) key))) *org-agenda-commands*))))
+  void)
 
 (define (org-agenda-custom-entries show)
   "The dispatcher's entries for the custom commands."

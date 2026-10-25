@@ -10,7 +10,7 @@ The agenda gathers what's scheduled, due and still to do in your Org files into 
 
 ## Not yet in imp
 
-- More of Org's agenda is on its way: day to year views, filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
+- More of Org's agenda is on its way: filters, bulk actions, clocking, habits and diary dates. [#59](https://github.com/apisandipas/imp/issues/59)
 
 ## Opening the agenda
 
@@ -96,6 +96,27 @@ A task's tags are its own, those of the headings it's under, and the file's `#+F
 | `<` | Limit the next view to the file you're in; press it again for the heading the cursor is under and everything below it |
 
 A limited view says so in its title, and keeps the limit when you press `gr`.
+
+## Your own views
+
+Add a view to the dispatcher in `init.scm` with `define-agenda-command!`: a key, a name, and the parts it shows, one after another.
+
+```scheme
+(define-agenda-command! "w" "Work day"
+  '((agenda (span 1))
+    (tags-todo "+work" (header "Work to do"))
+    (search "meeting")))
+```
+
+| Part | Shows |
+|---|---|
+| `(agenda)` | The agenda's days; `(span 1)` for one day |
+| `(todo)` or `(todo "NEXT")` | Every undone TODO, or one keyword's |
+| `(tags "+work")` | Headings matching a tags match |
+| `(tags-todo "+work")` | The same, undone TODOs only |
+| `(search "words")` | A search |
+
+Each part can have a `(header "Name")`. With more than one part, each is shown under its name. `f` and `b` move the agenda part by its span.
 
 ## Lists of TODOs
 

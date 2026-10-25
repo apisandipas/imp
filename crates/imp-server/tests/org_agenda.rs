@@ -1350,3 +1350,47 @@ fn the_dispatcher_offers_each_view() {
     type_keys(&mut s, ":OrgAgenda<ret>t");
     assert!(lines(&s).iter().any(|l| l.contains("Elsewhere")));
 }
+
+#[test]
+fn custom_commands_make_block_agendas() {
+    let (mut s, _) = agenda_files(
+        "agenda-custom",
+        &[
+            ("m.org", MATCHING),
+            ("d.org", "* TODO Today's\nSCHEDULED: <2026-10-21 Wed>\n"),
+        ],
+    );
+    s.eval(
+        r#"(define-agenda-command! "w" "Work day"
+             '((agenda (span 1)) (tags-todo "+work" (header "Work to do")) (search "garden")))"#,
+    )
+    .unwrap();
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    assert!(s.frame().text_rows().join("\n").contains("w → Work day"));
+    type_keys(&mut s, "w");
+    let shown = lines(&s);
+    assert_eq!(shown[0], " Work day");
+    assert_eq!(shown[1], " 21 Oct 2026");
+    // Each block under its header, in order.
+    let at = |h: &str| {
+        shown
+            .iter()
+            .position(|l| l == h)
+            .unwrap_or_else(|| panic!("{h} in {shown:#?}"))
+    };
+    assert!(at("  Agenda") < at("  Work to do") && at("  Work to do") < at("  Search: garden"));
+    assert!(shown.iter().any(|l| l.contains("Today's")));
+    assert!(
+        shown.iter().any(|l| l.contains("Urgent report"))
+            && shown.iter().any(|l| l.contains("Garden"))
+    );
+    // ]] moves the dated block by its span: a day.
+    type_keys(&mut s, "]]");
+    assert_eq!(lines(&s)[1], " 22 Oct 2026");
+    // A bad block kind is an error naming it.
+    let err = s
+        .eval(r#"(define-agenda-command! "x" "X" '((nope)))"#)
+        .unwrap_err();
+    assert!(err.contains("no block kind nope"), "{err}");
+}
