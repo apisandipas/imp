@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org]]"
 frozen:
-  docs/specs/org.md: c7fe38aa9667
+  docs/specs/org.md: eacefd3dbd04
 ---
 # Org
 
@@ -132,6 +132,29 @@ Press `C-c C-x e` or `SPC m c E` to set the heading's effort: how long it should
 
 Press `C-c C-w` or `SPC m r` to refile the heading the cursor is under: pick any heading in your agenda files, and the heading moves there with everything under it. It goes at the end of what's under the new heading, one level below it. Undo puts it back when it moves within the same file.
 
+## Archiving
+
+Press `C-c C-x C-a` or `SPC m A` to archive the heading the cursor is under, with everything under it. It moves to the end of an archive file next to yours, `work.org_archive` for `work.org`, made if it doesn't exist. The agenda doesn't read archives.
+
+The heading keeps a note of where it came from, in properties:
+
+```org
+* TODO Old task
+:PROPERTIES:
+:ARCHIVE_TIME: 2026-10-25 Sun 11:42
+:ARCHIVE_FILE: /home/you/org/work.org
+:ARCHIVE_OLPATH: Projects
+:ARCHIVE_CATEGORY: work
+:ARCHIVE_TODO: TODO
+:END:
+```
+
+To archive somewhere else, set `org-archive-location`: a file name, where `%s` is your file's name, then `::` and a heading to file under, if you want one.
+
+```scheme
+(set-option! 'org-archive-location "archive.org::* From %s")
+```
+
 ## Properties
 
 A heading's properties live in a drawer under it:
@@ -184,6 +207,7 @@ Your notes file is `inbox.org` in `org-directory`, unless you set `org-default-n
 | `org-agenda-files` | `'()` | The files the agenda reads |
 | `org-default-notes-file` | `""` | Where capture saves; empty means `inbox.org` in `org-directory` |
 | `org-todo-keywords` | `'("TODO" "DONE")` | The keywords a heading cycles through |
+| `org-archive-location` | `"%s_archive::"` | Where archiving moves a heading: a file, then `::` and a heading |
 | `org-tags-column` | `-77` | Where tags go: negative ends them at that column, positive starts them there |
 | `org-link-descriptive` | `#t` | Show links as their descriptions away from the cursor |
 | `org-fold-drawers` | `#t` | Start drawers folded |

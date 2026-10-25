@@ -647,3 +647,52 @@ fn c_c_c_w_refiles_into_another_file() {
         "* Target\n** Old\n** TODO Move me\nbody\n"
     );
 }
+
+#[test]
+fn c_c_c_x_c_a_archives_a_subtree() {
+    let (mut s, dir) = org_files(
+        "org-archive",
+        &[(
+            "work.org",
+            "#+CATEGORY: job\n* Projects\n** TODO Old task\nnotes\n*** Sub\n* Keep\n",
+        )],
+        "work.org",
+    );
+    s.eval(r#"(define (capture-clock) (list "2026-10-25" "Sun" "11:42" "Sunday" "October"))"#)
+        .unwrap();
+    type_keys(&mut s, "jj<C-c><C-x><C-a>");
+    assert_eq!(s.text(), "#+CATEGORY: job\n* Projects\n* Keep\n");
+    let path = dir.join("work.org").display().to_string();
+    assert_eq!(
+        std::fs::read_to_string(dir.join("work.org_archive")).unwrap(),
+        format!(
+            "#    -*- mode: org -*-\n\n\nArchived entries from file {path}\n\n\n* TODO Old task\n:PROPERTIES:\n:ARCHIVE_TIME: 2026-10-25 Sun 11:42\n:ARCHIVE_FILE: {path}\n:ARCHIVE_OLPATH: Projects\n:ARCHIVE_CATEGORY: job\n:ARCHIVE_TODO: TODO\n:END:\nnotes\n** Sub\n"
+        )
+    );
+    // One undo puts it back, properties and all.
+    type_keys(&mut s, "u");
+    assert_eq!(
+        s.text(),
+        "#+CATEGORY: job\n* Projects\n** TODO Old task\nnotes\n*** Sub\n* Keep\n"
+    );
+    // Under a heading of a file of its own; the agenda doesn't read it.
+    s.eval(r#"(set-option! 'org-archive-location "archive.org::* From %s")"#)
+        .unwrap();
+    type_keys(&mut s, "G mA");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("archive.org"))
+            .unwrap()
+            .split("\n\n\n")
+            .last()
+            .unwrap(),
+        "* From work.org\n** Keep\n:PROPERTIES:\n:ARCHIVE_TIME: 2026-10-25 Sun 11:42\n:ARCHIVE_FILE: "
+            .to_string()
+            + &path
+            + "\n:ARCHIVE_CATEGORY: job\n:END:\n"
+    );
+    let files = s.eval("(org-agenda-file-list)").unwrap();
+    assert!(
+        files.contains("work.org") && !files.contains("archive.org"),
+        "{files}"
+    );
+}

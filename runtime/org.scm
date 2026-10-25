@@ -878,6 +878,9 @@
 ;; at that column, a positive one starts them there, as Org's
 ;; org-tags-column.
 (define-option! 'org-tags-column -77 '())
+;; Where archiving moves a heading: a file, %s for the file's name, then
+;; :: and an optional heading to go under, as Org's.
+(define-option! 'org-archive-location "%s_archive::" '())
 
 (define (org-heading-tags line)
   "The tags of the heading on `line`, as (\"work\" \"urgent\")."
@@ -966,14 +969,19 @@
 (define (org-agenda-file-list)
   "The full paths of the files the agenda reads.
    They are org-agenda-files, or when that is empty every .org file
-   under org-directory (none if it doesn't exist)."
+   under org-directory (none if it doesn't exist) but the archives
+   org-archive-location names."
   (let ([files (option 'org-agenda-files)])
     (if (pair? files)
         (map org-path files)
         (let ([dir (expand-path (option 'org-directory))])
           (if (file-exists? dir)
-              (map (lambda (f) (string-append dir "/" f))
-                   (filter (lambda (f) (ends-with? f ".org")) (list-files dir 10000)))
+              (let* ([all (map (lambda (f) (string-append dir "/" f))
+                               (filter (lambda (f) (ends-with? f ".org")) (list-files dir 10000)))]
+                     ;; Not the files archiving moves headings to.
+                     [archives (filter (lambda (t) t)
+                                       (map (lambda (f) (let ([t (car (org-archive-target f))]) (and (not (equal? t f)) t))) all))])
+                (filter (lambda (f) (not (member f archives))) all))
               '())))))
 
 (define (org-date-after text key)
@@ -1619,6 +1627,70 @@
                                    (let ([hit (assoc choice targets)])
                                      (then (and hit (org-refile-to! h hit))))))])))
 
+(define (org-archive-target path)
+  "Where org-archive-location sends a heading of file `path`: (file
+   heading-or-#f). %s anywhere in the location is the file's name; an empty file
+   part is the file itself; after :: an optional heading, as \"* Archive\"."
+  (let* ([name (file-name-of path)]
+         [loc (let loop ([t (option 'org-archive-location)])
+                (let ([i (string-index-from t "%s" 0)])
+                  (if i (loop (string-append (substring t 0 i) name (substring t (+ i 2) (string-length t)))) t)))]
+         [parts (let ([i (string-index-from loc "::" 0)])
+                  (if i (list (substring loc 0 i) (substring loc (+ i 2) (string-length loc))) (list loc "")))]
+         [file (car parts)]
+         [file (cond [(equal? file "") path]
+                     [(or (starts-with? file "/") (starts-with? file "~")) (expand-path file)]
+                     [else (string-append (directory-of path) "/" file)])]
+         [heading (trim (cadr parts))]
+         [heading (let ([lv (org-level-of heading)])
+                    (if lv (trim (substring heading (min (string-length heading) (+ lv 1)) (string-length heading))) heading))])
+    (list file (if (equal? heading "") #f heading))))
+
+(define (org-archive! h)
+  "Moves the heading on line `h`, with its subtree, to its archive
+   (org-archive-location), with Org's ARCHIVE_TIME, ARCHIVE_FILE,
+   ARCHIVE_OLPATH, ARCHIVE_CATEGORY and ARCHIVE_TODO properties. The
+   archive file is made if needed. Returns the archive's path."
+  (let* ([path (absolute-path (buffer-path))]
+         [target (org-archive-target path)]
+         [file (car target)]
+         [lines (org-buffer-lines)]
+         [clock (capture-clock)]
+         [olpath (let loop ([p (org-parent-heading lines h)] [acc '()])
+                   (if p (loop (org-parent-heading lines p) (cons (org-heading-title (vector-ref lines p)) acc)) acc))]
+         [base (let ([b (file-name-of path)]) (if (ends-with? b ".org") (substring b 0 (- (string-length b) 4)) b))]
+         [category (or (org-lines-property lines h "CATEGORY" #t) (org-file-setting lines "#+CATEGORY:") base)]
+         [rest (substring (line-text h) (+ (org-level h) 1) (string-length (line-text h)))]
+         [keyword (org-keyword-in rest)])
+    (with-undo-group
+     (lambda ()
+       (org-set-property! h "ARCHIVE_TIME" (string-append (car clock) " " (cadr clock) " " (caddr clock)))
+       (org-set-property! h "ARCHIVE_FILE" path)
+       (when (pair? olpath) (org-set-property! h "ARCHIVE_OLPATH" (string-join olpath "/")))
+       (org-set-property! h "ARCHIVE_CATEGORY" category)
+       (when keyword (org-set-property! h "ARCHIVE_TODO" keyword))
+       (let* ([end (org-subtree-end h)]
+              [level (org-level h)]
+              [text (buffer-substring (line-start h) (min (buffer-length) (+ (line-end end) 1)))]
+              [entry (apply string-append
+                            (map (lambda (l) (string-append (if (org-level-of l) (substring l (- level 1) (string-length l)) l) "\n"))
+                                 (text-lines text)))])
+         (begin-change!)
+         (replace-range! (line-start h) (min (buffer-length) (+ (line-end end) 1)) "")
+         (unless (or (buffer-for-path file) (file-exists? file))
+           (write-text-file! file (string-append "#    -*- mode: org -*-\n\n\nArchived entries from file " path "\n\n\n")))
+         (capture-file! (if (cadr target) (list 'file+headline file (cadr target)) (list 'file file)) entry #f))))
+    file))
+
+(define (org-archive-prompt!)
+  "C-c C-x C-a: archives the heading the cursor is under, with its
+   subtree (org-archive-location)."
+  (let ([h (org-heading-line (current-line))])
+    (if (not h)
+        (message "not under a heading")
+        (let ([file (org-archive! h)])
+          (message (string-append "archived in " (file-name-of file)))))))
+
 (define-minor-mode! 'org-capture-mode #f #f)
 (for-each (lambda (state)
             (define-mode-key! 'org-capture-mode state "C-cC-c" (lambda args (capture-finish!)))
@@ -1736,6 +1808,7 @@
 (org-key! '(normal insert) "C-c," (lambda args (org-priority-menu!)))
 (org-key! '(normal insert) "C-cC-xp" (lambda args (org-property-prompt!)))
 (org-key! '(normal insert) "C-cC-q" (lambda args (org-tags-prompt!)))
+(org-key! '(normal insert) "C-cC-xC-a" (lambda args (org-archive-prompt!)))
 (org-key! '(normal insert) "C-cC-w" (lambda args (org-refile-prompt! (lambda (moved?) void))))
 (org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
@@ -1748,6 +1821,7 @@
 (define-mode-leader! 'org-mode "p" (lambda (n) (org-priority-menu!)) "priority")
 (define-mode-leader! 'org-mode "P" (lambda (n) (org-property-prompt!)) "set property")
 (define-mode-leader! 'org-mode "q" (lambda (n) (org-tags-prompt!)) "set tags")
+(define-mode-leader! 'org-mode "A" (lambda (n) (org-archive-prompt!)) "archive")
 (define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
 (define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
