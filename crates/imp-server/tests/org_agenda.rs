@@ -344,6 +344,8 @@ fn every_theme_colors_the_agenda() {
         "weekend",
         "today",
         "time",
+        "grid",
+        "now",
         "scheduled",
         "deadline",
         "overdue",
@@ -486,10 +488,10 @@ fn the_agenda_is_a_week_with_repeats_on_each_day() {
     assert_eq!(lines(&s)[1], " Week 42 · 11–17 Oct 2026");
     type_keys(&mut s, ".");
     assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
-    // A span of 3 days has no week number.
+    // A span of 3 days starts on today, and has no week number.
     s.eval("(set-option! 'org-agenda-span 3)").unwrap();
-    type_keys(&mut s, "gr");
-    assert_eq!(lines(&s)[1], " 18–20 Oct 2026");
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    assert_eq!(lines(&s)[1], " 21–23 Oct 2026");
 }
 
 #[test]
@@ -640,4 +642,30 @@ fn today_has_a_time_grid_and_a_now_line() {
         ]
     );
     assert!(!lines(&s).iter().any(|l| l.contains('┄')));
+}
+
+#[test]
+fn the_week_starts_on_org_agenda_start_on_weekday() {
+    let mut s = agenda("agenda-weekday", "* TODO Thing\n");
+    assert_eq!(lines(&s)[1], " Week 43 · 18–24 Oct 2026");
+    s.eval("(set-option! 'org-agenda-start-on-weekday 1)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    assert_eq!(lines(&s)[1], " Week 43 · 19–25 Oct 2026");
+    s.eval("(set-option! 'org-agenda-start-on-weekday #f)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    assert_eq!(lines(&s)[1], " Week 43 · 21–27 Oct 2026");
+}
+
+#[test]
+fn the_cursor_starts_on_today() {
+    let mut s = agenda("agenda-cursor", "* TODO Thing\n");
+    let today = lines(&s).iter().position(|l| l.starts_with('▌')).unwrap();
+    assert_eq!(s.eval("(current-line)").unwrap(), today.to_string());
+    // A week without today starts at the top; . comes back to today.
+    type_keys(&mut s, "f");
+    assert_eq!(s.eval("(current-line)").unwrap(), "0");
+    type_keys(&mut s, ".");
+    assert_eq!(s.eval("(current-line)").unwrap(), today.to_string());
 }

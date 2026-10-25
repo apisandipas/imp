@@ -11,6 +11,11 @@
 
 ;; How many days the agenda shows.
 (define-option! 'org-agenda-span 7 '())
+;; The day of the week a week's agenda starts on: 0 for Sunday to 6 for
+;; Saturday, or #f for today. Unset, it is calendar-week-start's day.
+(define-option! 'org-agenda-start-on-weekday 0 '())
+;; The line today's header was drawn on, or #f.
+(define *org-agenda-today-line* #f)
 ;; Draw a time grid on today, and on other days with something timed:
 ;; a line at each of org-agenda-time-grid's times, and on today a line
 ;; for now.
@@ -153,11 +158,17 @@
   (vector "Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
 
 (define (org-agenda-first-day)
-  "The first day the agenda shows: the one f and b moved to, or the first
-   day of this week (calendar-week-start)."
+  "The first day the agenda shows: the one f and b moved to, or else
+   today, or with a span of 7 days and org-agenda-start-on-weekday a day,
+   the last such day."
   (or *org-agenda-start*
-      (let ([today (calendar-today)])
-        (date-add-days today (- (modulo (- (date-weekday today) (option 'calendar-week-start)) 7))))))
+      (let ([today (calendar-today)]
+            [start (if (option-set? 'org-agenda-start-on-weekday)
+                       (option 'org-agenda-start-on-weekday)
+                       (option 'calendar-week-start))])
+        (if (and start (= (option 'org-agenda-span) 7))
+            (date-add-days today (- (modulo (- (date-weekday today) start) 7)))
+            today))))
 
 (define (org-stamp-days stamp first last)
   "The days from `first` to `last` that timestamp `stamp` falls on: its
@@ -300,8 +311,11 @@
          [rule (lambda (n) (make-string (max 0 n) #\─))]
          [heights (lambda (level) (string-append "org.height" (number->string level)))])
     (draw-begin!)
+    (set! *org-agenda-today-line* #f)
     (for-each
      (lambda (r)
+       (when (and (eq? (car r) 'header) (eq? (caddr r) 'today))
+         (set! *org-agenda-today-line* (length *draw-lines*)))
        (case (car r)
          [(title)
           (draw-line! (list (list " " #f) (list (cadr r) (list "org.agenda.title" (heights 1)))) #f)
@@ -531,11 +545,16 @@
           '()))
      (window-text-width))))
 
+(define (org-agenda-cursor-home!)
+  "Puts the cursor on today's header if the agenda shows today, else on
+   its first line."
+  (set-cursor! (line-start (or *org-agenda-today-line* 0))))
+
 (define (org-agenda-move! days)
   "Moves the agenda `days` on, or back to this week when `days` is #f."
   (set! *org-agenda-start* (and days (date-add-days (org-agenda-first-day) days)))
   (org-render-agenda!)
-  (set-cursor! 0))
+  (org-agenda-cursor-home!))
 
 (define (org-agenda!)
   "Shows the agenda in its own buffer, freshly read from the files, from
@@ -543,7 +562,7 @@
   (go-to-buffer! (special-buffer "*org agenda*" 'org-agenda-mode))
   (set! *org-agenda-start* #f)
   (org-render-agenda!)
-  (set-cursor! 0))
+  (org-agenda-cursor-home!))
 
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."

@@ -36,7 +36,7 @@ The agenda gathers what's scheduled, due, timed and to do in the agenda files in
 
 ### The dated view
 
-- It shows a span of days. `SPC o a a` (`M-x org-agenda-list`) opens it as a week (`org-agenda-span`, 7 by default) from `org-agenda-start-on-weekday` (by default `calendar-week-start`'s day; `#f` starts on today).
+- It shows a span of days. `SPC o a a` (`M-x org-agenda-list`) opens it as a week (`org-agenda-span`, 7 by default) from `org-agenda-start-on-weekday` (by default `calendar-week-start`'s day; `#f` starts on today). A span other than 7 days starts on today, as in Org.
 - Days: each day's header is its date, as `Thursday 23 October`, weekends dimmer. Today's is marked with an accent bar at the left edge and `· today`. Every day of the span is shown, entries or not.
 - `Overdue`, above the days when the span includes today, lists the undone entries scheduled or due before today, once each, oldest first: `Sched. 3x` for one scheduled 3 days ago, `2 d. ago` for a deadline 2 days past, in the overdue face. Appointments in the past aren't overdue.
 - Under each day, its entries: timed ones first, by time, then the rest by priority (a heading without one counting as `B`).

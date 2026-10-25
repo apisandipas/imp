@@ -4,7 +4,7 @@ status: active
 issue: https://github.com/apisandipas/imp/issues/59
 specs: ["[[spec/org-agenda]]", "[[spec/org]]"]
 frozen:
-  docs/specs/org-agenda.md: a347b01704fc
+  docs/specs/org-agenda.md: 7188e85aaf98
   docs/specs/org.md: 2a4bc3dc93d6
 ---
 # Org agenda: look and what it shows
@@ -23,7 +23,7 @@ The Ledger mockup the owner chose is the visual target. The work is checked agai
 - [x] Lay out an entry in columns (mark, time, what, keyword, title, tags, category), with the title cut by `…` and tags dropped under 60 columns; the title line with the week, section headers with rules, day headers with weekends dimmer and today's accent bar; new `org.agenda.*` faces in every theme; larger title and headers in the window client; with tests
 - [x] The dated view's contents: `Overdue` with `Sched. 3x` and `2 d. ago`, timed entries first by time then by priority, deadline warnings on today (`org-deadline-warning-days`, an entry's `-3d`), ranges with `(2/3)`, `Later` lines starting with their date; with tests
 - [x] The time grid and the `now` line (`org-agenda-time-grid`, `org-agenda-use-time-grid`), on today and on days with something timed; with tests
-- [ ] `org-agenda-start-on-weekday`, and the cursor starting on today's header; with tests
+- [x] `org-agenda-start-on-weekday`, and the cursor starting on today's header; with tests
 - [ ] Moving around: `gj`/`gk` (`C-j`/`C-k`), `gH`/`gM`/`gL`, `[[`/`]]`, `gd`, `<tab>` in another window, follow mode (`F`), `gR`, `ZZ`/`q`, `ZQ`; with tests
 - [ ] The Modus themes' colors for the `org.agenda.*` faces, from Modus's agenda faces, with a test
 - [ ] The reference page `ref-org-agenda` covering this effort (and a line on what's to come), the agenda's keys in the help and the which-key labels
