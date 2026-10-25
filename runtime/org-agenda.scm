@@ -31,6 +31,8 @@
 (define *org-agenda-day-lines* '())
 ;; The file buffers the agenda opened, which ZQ closes.
 (define *org-agenda-opened* '())
+;; The last change made from the agenda: (buffer saved?), for u.
+(define *org-agenda-last-change* #f)
 ;; Whether follow mode is on, and the line it last showed.
 (define *org-agenda-follow* #f)
 (define *org-agenda-followed* #f)
@@ -638,6 +640,48 @@
       (set! *org-agenda-opened* '())))
   void)
 
+;;; Acting on entries: each change goes through the entry's file buffer,
+;;; as the same command does in an Org buffer.
+
+(define (org-agenda-entry-buffer! path)
+  "The id of the buffer visiting `path`, opening it in the background
+   (remembered for ZQ) if none does, or #f after saying why."
+  (or (buffer-for-path (absolute-path path))
+      (let ([id (buffer-open! path)])
+        (if (string? id)
+            (begin (message id) #f)
+            (begin (set! *org-agenda-opened* (cons id *org-agenda-opened*)) id)))))
+
+(define (org-agenda-act! proc)
+  "Runs (proc line) on the heading of the entry at the cursor, in its
+   file's buffer, then saves the buffer unless it had unsaved changes
+   before, and redraws the agenda. Returns whether there was an entry."
+  (let ([item (line-item)])
+    (if (not (and item (eq? (car item) 'org)))
+        (begin (message "not on an agenda entry") #f)
+        (let ([id (org-agenda-entry-buffer! (cadr item))])
+          (when id
+            (let ([clean? (not (buffer-modified-by-id? id))] [at (current-line)])
+              (with-buffer id (lambda () (with-undo-group (lambda () (proc (caddr item))))))
+              (when clean? (with-buffer id (lambda () (save-buffer!))))
+              (set! *org-agenda-last-change* (list id clean?))
+              (org-agenda-redraw-at! item at)))
+          #t))))
+
+(define (org-agenda-redraw-at! item at)
+  "Redraws the agenda, the cursor on `item` if it is still there, else on
+   line `at`."
+  (org-render-agenda!)
+  (unless (equal? (line-item) item)
+    (set-cursor! (line-start (min at (last-line))))))
+
+(define (org-agenda-set-todo!)
+  "SPC m t: asks for a TODO keyword, or none, for the entry at the cursor."
+  (when (org-agenda-entry-line? (current-line))
+    (completing-read "Keyword: " (append (org-keywords) (list "(none)"))
+                     (lambda (kw)
+                       (org-agenda-act! (lambda (line) (org-todo-set! line (if (equal? kw "(none)") #f kw))))))))
+
 (define (org-agenda-visit!)
   "Opens the file of the agenda entry at the cursor, on its heading."
   (let ([item (line-item)])
@@ -677,6 +721,8 @@
                        (set! *org-agenda-followed* #f)
                        (message (if *org-agenda-follow* "follow mode on" "follow mode off")))
                  "follow mode")
+(org-agenda-key! "t" (lambda (n) (org-agenda-act! org-todo-cycle!)) "cycle TODO")
+(define-mode-leader! 'org-agenda-mode "t" (lambda (n) (org-agenda-set-todo!)) "set TODO")
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 

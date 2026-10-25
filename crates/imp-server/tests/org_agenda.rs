@@ -778,3 +778,96 @@ fn which_key_names_the_agenda_s_keys() {
         assert!(shown.contains(label), "{label} in\n{shown}");
     }
 }
+
+/// The agenda over `files` in a fresh directory, today TODAY, the grid
+/// off; returns the directory too.
+fn agenda_files(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std::path::PathBuf) {
+    let dir = org_dir(name, files);
+    let mut s = agenda_server(&dir);
+    s.set_size(100, 50);
+    s.eval(TODAY).unwrap();
+    s.eval(r#"(set-option! 'org-todo-keywords '("TODO" "NEXT" "|" "DONE"))"#)
+        .unwrap();
+    s.eval("(set-option! 'org-agenda-use-time-grid #f)")
+        .unwrap();
+    type_keys(&mut s, ":OrgAgenda<ret>");
+    (s, dir)
+}
+
+/// Puts the cursor on the agenda line holding `text`.
+fn go_to(s: &mut imp_server::Server, text: &str) {
+    let at = lines(s)
+        .iter()
+        .position(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("no {text} in {:#?}", lines(s)));
+    s.eval(&format!("(set-cursor! (line-start {at}))")).unwrap();
+}
+
+#[test]
+fn t_changes_the_entry_s_keyword_in_its_file() {
+    let (mut s, dir) = agenda_files(
+        "agenda-t",
+        &[(
+            "a.org",
+            "* TODO Write\nSCHEDULED: <2026-10-21 Wed>\n* TODO Other\n",
+        )],
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "t");
+    // Not open before: opened in the background, changed and saved.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.org")).unwrap(),
+        "* NEXT Write\nSCHEDULED: <2026-10-21 Wed>\n* TODO Other\n"
+    );
+    assert_eq!(s.eval("(major-mode)").unwrap(), "org-agenda-mode");
+    assert!(line_text(&mut s).contains("NEXT") && line_text(&mut s).contains("Write"));
+    // Done: it leaves the view, the cursor staying where it was.
+    type_keys(&mut s, "t");
+    assert!(
+        !lines(&s).iter().any(|l| l.contains("Write")),
+        "{:#?}",
+        lines(&s)
+    );
+    // SPC m t picks one.
+    go_to(&mut s, "Other");
+    type_keys(&mut s, " mtNEXT<ret>");
+    assert!(std::fs::read_to_string(dir.join("a.org"))
+        .unwrap()
+        .contains("* NEXT Other"));
+}
+
+#[test]
+fn a_buffer_with_unsaved_changes_is_changed_but_not_saved() {
+    let (mut s, dir) = agenda_files(
+        "agenda-unsaved",
+        &[("a.org", "* TODO Write\n* TODO Keep\n")],
+    );
+    let path = dir.join("a.org");
+    type_keys(
+        &mut s,
+        &format!(
+            ":e {}<ret>Gcc* TODO Kept<esc>:OrgAgenda<ret>",
+            path.display()
+        ),
+    );
+    go_to(&mut s, "Write");
+    type_keys(&mut s, "t");
+    // The file is as it was; the buffer has both changes.
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "* TODO Write\n* TODO Keep\n"
+    );
+    let id = s
+        .eval(&format!(
+            "(buffer-for-path {:?})",
+            path.display().to_string()
+        ))
+        .unwrap();
+    assert_eq!(
+        s.eval(&format!(
+            "(with-buffer {id} (lambda () (buffer-substring 0 (buffer-length))))"
+        ))
+        .unwrap(),
+        "\"* NEXT Write\\n* TODO Kept\\n\""
+    );
+}

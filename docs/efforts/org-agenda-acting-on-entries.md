@@ -22,7 +22,7 @@ Each task updates the reference pages it changes (`ref-org`, `ref-org-agenda`) i
 - [x] Tags in Org buffers: `C-c C-q` (`SPC m q`) sets a heading's tags, completing from the agenda files' tags, an empty answer removing them; and effort: `C-c C-x e` (`SPC m c E`) sets its `Effort` property; with tests
 - [x] Refile in Org buffers: `C-c C-w` (`SPC m r`) moves the heading and its subtree under any agenda-file heading, at the right level, as one undo step; with tests
 - [x] Archive in Org buffers: `C-c C-x C-a` (`SPC m A`) moves the subtree to `org-archive-location` with the `ARCHIVE_*` properties, making the archive file, which the agenda doesn't read; with tests
-- [ ] Acting from the agenda: a change goes through the entry's file buffer, opened in the background if needed, saved unless it had unsaved changes, and the line redraws in place (an entry no longer in the view goes); `t` cycles the TODO keyword and `SPC m t` picks one; with tests
+- [x] Acting from the agenda: a change goes through the entry's file buffer, opened in the background if needed, saved unless it had unsaved changes, and the line redraws in place (an entry no longer in the view goes); `t` cycles the TODO keyword and `SPC m t` picks one; with tests
 - [ ] `SPC m d s` and `SPC m d d` schedule and set a deadline from the calendar; `H` and `L` move the line's date a day; with tests
 - [ ] `+` and `-` raise and lower the priority, `SPC m p` sets it; `ct` (`SPC m q`) sets tags, `ce` the effort; with tests
 - [ ] `SPC m r` refiles, `da` archives asking first and `dA` without, `dd` deletes the entry and its subtree asking first; with tests

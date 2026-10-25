@@ -279,19 +279,16 @@
                    rest)])
     (org-normalize-title rest)))
 
-(define (org-todo-cycle! line)
-  "Moves the heading on `line` to the next TODO keyword (none after the last)."
+(define (org-todo-set! line next)
+  "Gives the heading on `line` TODO keyword `next`, or none when it is
+   #f. Done with a repeating date, the date moves on instead and the
+   keyword goes back to the first."
   (let* ([text (line-text line)]
          [level (org-level line)]
          [rest (substring text (+ level 1) (string-length text))]
          [kws (org-keywords)]
          [current (org-keyword-in rest)]
          [title (if current (trim-start (substring rest (string-length current) (string-length rest))) rest)]
-         [next (cond [(not current) (car kws)]
-                     [(member current kws)
-                      (let ([after (cdr (member current kws))]) (if (null? after) #f (car after)))]
-                     [else #f])]
-         ;; Done with a repeating date: the date moves on instead.
          [repeat? (and next (member next (org-done-keywords))
                        (pair? (org-repeating-stamps line (org-body-end line))))]
          [next (if repeat? (car kws) next)])
@@ -300,6 +297,17 @@
     (let ([moved (and repeat? (org-repeat-entry! line))])
       (set-cursor! (line-start line))
       (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))
+
+(define (org-todo-cycle! line)
+  "Moves the heading on `line` to the next TODO keyword (none after the last)."
+  (let* ([text (line-text line)]
+         [rest (substring text (+ (org-level line) 1) (string-length text))]
+         [kws (org-keywords)]
+         [current (org-keyword-in rest)])
+    (org-todo-set! line (cond [(not current) (car kws)]
+                              [(member current kws)
+                               (let ([after (cdr (member current kws))]) (if (null? after) #f (car after)))]
+                              [else #f]))))
 
 (define (org-priority-in text)
   "The priority letter `text` starts with, as in \"[#A] title\", or #f."
