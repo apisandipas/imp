@@ -17,15 +17,15 @@ A docs section on the website: four guides, and a reference page per area genera
 ## Tasks
 
 - [x] `tools/site-docs.py` builds `site/docs/` from the specs: the site's look, a grouped sidebar, the Known gaps notice, spec links between pages and other links as plain text; `site/docs/` ignored by git; checked in a browser on the Org page.
-- [ ] `tools/site-docs.py` builds the reference from `docs/reference/NAME.md` (its `from:` hash, a page's own "Not yet in imp" notice), `--stamp NAME` records a spec's hash and `--check` reports specs without pages, pages without specs and drift; the `docs-page` skill says how a page is written; `docs/reference/org.md` written with it and checked in a browser; the owner settles the tone on it.
-- [ ] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
-- [ ] Guide: Configuring init.scm.
-- [ ] Guide: Packages.
-- [ ] Guide: Coming from Emacs or Vim.
-- [ ] Pages for the editing areas: vim, emacs-state, leader-and-modes, mouse, look, start-screen.
+- [x] `tools/site-docs.py` builds the reference from `docs/reference/NAME.md` (its `from:` hash, a page's own "Not yet in imp" notice), `--stamp NAME` records a spec's hash and `--check` reports specs without pages, pages without specs and drift; the `docs-page` skill says how a page is written; `docs/reference/org.md` written with it and checked in a browser; the owner settles the tone on it.
+- [x] Pages for the editing areas: vim, emacs-state, leader-and-modes, mouse, look, start-screen.
 - [ ] Pages for the files and windows areas: files, buffers-and-windows, projects, dired, folding, terminals.
 - [ ] Pages for the code areas: completion, completion-at-point, lsp, tree-sitter, dap.
 - [ ] Pages for the rest of git and Org: git, git-blame, git-gutter, org-export.
 - [ ] Pages for the extending areas: live-scheme-and-help, packages, kdl-config, wasm-plugins, daemon, shared-buffers, claude, mcp.
+- [ ] Guide: Install and first steps (`docs/guide/`), the docs' index page linking to it.
+- [ ] Guide: Configuring init.scm.
+- [ ] Guide: Packages.
+- [ ] Guide: Coming from Emacs or Vim.
 - [ ] `--check` is strict and `tools/check.sh` runs it; the Pages workflow installs pandoc and runs `tools/site-docs.py`, and also runs when `docs/guide`, `docs/reference` or the script change; the home page's nav and Docs link go to `docs/`; `site/CONTEXT.md` says how the docs are built.
 - [ ] The owner has read the docs through in a browser.

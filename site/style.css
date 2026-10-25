@@ -381,6 +381,7 @@ h3 { margin: 0 0 10px; font-size: 19px; letter-spacing: -0.01em; font-weight: 60
 
 .prose { max-width: 74ch; }
 .prose h1 { font-size: clamp(32px, 4vw, 42px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; }
+.prose h1, .prose h2, .prose h3 { max-width: none; text-wrap: wrap; }
 .prose h2 { font-size: 24px; letter-spacing: -0.01em; margin: 44px 0 12px; padding-top: 8px; }
 .prose h3 { font-size: 18px; margin: 28px 0 8px; }
 .prose .lede { font-size: 19px; color: var(--muted); margin: 0 0 28px; }
