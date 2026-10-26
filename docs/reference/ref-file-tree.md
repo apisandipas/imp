@@ -20,6 +20,8 @@ The file tree is an opt-in package. Load it near the top of your `init.scm`:
 
 Press `SPC t e`, or type `:FileTree`, to open the tree. It opens down the left, 30 columns wide, and the cursor moves into it. Press `SPC t e` again, from the tree or from any other window, to close it. `q` in the tree closes it too. Either way the cursor goes back to the window you opened it from.
 
+With the [daemon](ref-daemon.md), each client has its own tree, so two clients can each show a different project.
+
 The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
 
 Dotfiles, and files git ignores, aren't shown at first: `H` shows or hides dotfiles, and `I` shows or hides ignored files.
@@ -65,8 +67,6 @@ These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 - Git status colours or file icons beside the entries.
 - More than one root, or a tree in more than one window.
 - Following the file you're in as you switch buffers. The tree only shows the current file when it opens.
-
-With the [daemon](ref-daemon.md), every client shares the same tree. If two clients open it on different projects, both show the one opened last.
 
 ## Options
 

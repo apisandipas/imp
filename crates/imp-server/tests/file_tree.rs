@@ -282,7 +282,7 @@ fn r_renames_and_moves_and_buffers_follow() {
     // The buffer visiting it now visits the new path.
     let file_buffer = eval(
         &mut s,
-        "(window-buffer (cdr (assv (current-window) *file-tree-origins*)))",
+        "(window-buffer (cadr (assv (current-window) *file-tree-origins*)))",
     );
     let path = eval(&mut s, &format!("(with-buffer {file_buffer} buffer-path)"));
     assert!(path.ends_with("docs/bee.txt\""), "{path}");

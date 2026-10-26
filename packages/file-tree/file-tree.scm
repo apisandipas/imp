@@ -20,9 +20,11 @@
 ;;; With file-tree-open-at-start set, the tree opens beside the first
 ;;; window when imp starts, the cursor left in that window.
 ;;;
-;;; Each frame has at most one tree window. It isn't a popup (special.scm):
-;;; a popup shares its side with the others and closes through popup
-;;; handling, while the tree stays put beside them.
+;;; Each frame has at most one tree window, with a buffer of its own, so
+;;; each daemon client has its own tree; the buffer goes when the tree
+;;; closes. It isn't a popup (special.scm): a popup shares its side with
+;;; the others and closes through popup handling, while the tree stays put
+;;; beside them.
 
 (define-option! 'file-tree-width 30 '())
 (define-option! 'file-tree-show-hidden #f '())   ; dotfiles
@@ -31,7 +33,9 @@
 
 (define *file-tree-buffer-name* "*file-tree*")
 
-;; (tree-window . origin): the window each open tree was opened from.
+;; (tree-window origin buffer) for each open tree, every client's: the
+;; window it was opened from, and its own buffer. Window ids aren't
+;; reused, so another client's entries are never mistaken for ours.
 (define *file-tree-origins* '())
 
 ;; The tree's keys, (key label procedure), bound at the end and shown by ?.
@@ -53,14 +57,34 @@
 ;; The folders shown open, path -> #t, kept while imp runs.
 (define *file-tree-expanded* (hash))
 
-(define (file-tree-buffer)
-  "The *file-tree* buffer's id, or #f if there is none."
-  (list-find (lambda (id) (equal? (car (buffer-info id)) *file-tree-buffer-name*)) (buffer-list)))
+(define (file-tree-entry)
+  "This frame's open tree, as (tree-window origin buffer), or #f."
+  (list-find (lambda (o) (and (memv (car o) (window-list)) (eqv? (window-buffer (car o)) (caddr o))))
+             *file-tree-origins*))
 
 (define (file-tree-window)
   "The window showing the tree in this frame, or #f."
-  (let ([id (file-tree-buffer)])
-    (and id (list-find (lambda (w) (eqv? (window-buffer w) id)) (window-list)))))
+  (let ([entry (file-tree-entry)]) (and entry (car entry))))
+
+(define (file-tree-buffer)
+  "The buffer of this frame's tree, or #f."
+  (let ([entry (file-tree-entry)]) (and entry (caddr entry))))
+
+(define (file-tree-new-buffer!)
+  "A new tree buffer: *file-tree*, or *file-tree 2* and so on while
+   another client's tree has that name. Tree buffers no open tree uses
+   (left by a tree window closed with C-w c) go first."
+  (set! *file-tree-origins* (filter (lambda (o) (memv (caddr o) (buffer-list))) *file-tree-origins*))
+  (for-each (lambda (id)
+              (when (and (eq? (with-buffer id major-mode) 'file-tree-mode)
+                         (not (list-find (lambda (o) (eqv? (caddr o) id)) *file-tree-origins*)))
+                (kill-buffer! id)))
+            (buffer-list))
+  (let loop ([n 1])
+    (let ([name (if (= n 1) *file-tree-buffer-name* (string-append "*file-tree " (number->string n) "*"))])
+      (if (list-find (lambda (id) (equal? (car (buffer-info id)) name)) (buffer-list))
+          (loop (+ n 1))
+          (buffer-new! name)))))
 
 (define (file-tree-join dir name)
   "The path of `name` in directory `dir`."
@@ -150,11 +174,10 @@
         (loop (directory-of dir)))))
   void)
 
-(define (file-tree-show! root focus)
-  "Shows the tree of `root` in the current window, making the buffer if
-   there isn't one yet, with the cursor on `focus` (a path) if the tree
-   shows it."
-  (let ([id (or (file-tree-buffer) (buffer-new! *file-tree-buffer-name*))])
+(define (file-tree-show! id root focus)
+  "Shows the tree of `root` in tree buffer `id`, in the current window,
+   with the cursor on `focus` (a path) if the tree shows it."
+  (begin
     (when focus (file-tree-reveal! root focus))
     (go-to-buffer! id)
     (unless (eq? (major-mode) 'file-tree-mode) (set-major-mode! 'file-tree-mode))
@@ -173,11 +196,10 @@
         [file (and (buffer-path) (absolute (buffer-path)))])
     (leave-pending-states!)
     (split-frame! "left" 0.2)
-    (set! *file-tree-origins*
-          (cons (cons (current-window) origin)
-                (filter (lambda (o) (memv (car o) (window-list))) *file-tree-origins*)))
-    (after-window-change!)
-    (file-tree-show! root file)
+    (let ([id (file-tree-new-buffer!)])
+      (set! *file-tree-origins* (cons (list (current-window) origin id) *file-tree-origins*))
+      (after-window-change!)
+      (file-tree-show! id root file))
     ;; Sized once its buffer's options (no line numbers) are in place.
     (resize-window! "width" (- (option 'file-tree-width) (window-text-width)))
     void))
@@ -185,14 +207,17 @@
 (define (file-tree-close!)
   "Closes this frame's tree, and puts the cursor back in the window it
    was opened from."
-  (let* ([w (file-tree-window)] [entry (assv w *file-tree-origins*)] [origin (and entry (cdr entry))])
-    (when w
-      (file-tree-hide-help!)
-      (leave-pending-states!)
-      (close-window! w)
-      (set! *file-tree-origins* (filter (lambda (o) (not (eqv? (car o) w))) *file-tree-origins*))
-      (when (and origin (memv origin (window-list))) (focus-window! origin))
-      (after-window-change!))))
+  (let ([entry (file-tree-entry)])
+    (when entry
+      (let ([w (car entry)] [origin (cadr entry)] [id (caddr entry)])
+        (file-tree-hide-help!)
+        (leave-pending-states!)
+        (close-window! w)
+        (set! *file-tree-origins* (filter (lambda (o) (not (eqv? (car o) w))) *file-tree-origins*))
+        (when (memv origin (window-list)) (focus-window! origin))
+        (after-window-change!)
+        (when (memv id (buffer-list)) (kill-buffer! id))))
+    void))
 
 (define (file-tree-row)
   "The row, (path directory? depth), at the cursor's line of the tree."
@@ -211,8 +236,8 @@
   "The window a file opened from the tree goes to: the one the tree came
    from, else another window of the frame, else #f."
   (let* ([w (current-window)] [entry (assv w *file-tree-origins*)])
-    (if (and entry (memv (cdr entry) (window-list)))
-        (cdr entry)
+    (if (and entry (memv (cadr entry) (window-list)))
+        (cadr entry)
         (list-find (lambda (o) (not (= o w))) (window-list)))))
 
 (define (file-tree-visit!)
