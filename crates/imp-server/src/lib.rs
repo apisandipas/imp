@@ -104,6 +104,10 @@ const RUNTIME: &[(&str, &str)] = &[
 /// `packages` directory beside it instead.
 pub(crate) const PACKAGES: &[(&str, &str)] = &[
     (
+        "file-tree",
+        include_str!("../../../packages/file-tree/file-tree.scm"),
+    ),
+    (
         "olivetti",
         include_str!("../../../packages/olivetti/olivetti.scm"),
     ),
