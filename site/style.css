@@ -96,7 +96,7 @@ kbd {
 .nav nav { margin-left: auto; }
 .nav-links { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; }
 .nav-links a { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; }
-.nav-links a:hover { color: var(--fg); }
+.nav-links a:hover, .nav-links a[aria-current] { color: var(--fg); }
 
 /* Buttons */
 .btn {
@@ -354,16 +354,74 @@ h3 { margin: 0 0 10px; font-size: 19px; letter-spacing: -0.01em; font-weight: 60
 .footer a { color: var(--muted); }
 .footer ul { display: flex; gap: 20px; list-style: none; margin: 0 0 0 auto; padding: 0; }
 
+/* Docs (site/docs/, built by tools/site-docs.py) */
+.docs-layout {
+  display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 56px;
+  padding: 40px 0 72px; align-items: start;
+}
+.docs-main { grid-column: 2; grid-row: 1; min-width: 0; }
+.docs-nav {
+  grid-column: 1; grid-row: 1;
+  position: sticky; top: 88px; max-height: calc(100vh - 112px); overflow-y: auto;
+  font-size: 14px; padding-right: 8px;
+}
+.docs-nav-head {
+  margin: 20px 0 6px; color: var(--dim);
+  font: 600 12px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .06em;
+}
+.docs-nav-head:first-child { margin-top: 0; }
+.docs-nav ul { list-style: none; margin: 0; padding: 0; }
+.docs-nav a {
+  display: block; padding: 4px 10px; border-radius: 8px;
+  color: var(--muted); text-decoration: none;
+}
+.docs-nav a:hover { color: var(--fg); background: var(--bg-2); }
+.docs-nav a[aria-current="page"] { color: var(--fg); background: var(--surface); }
+.docs-jump { display: none; }
+
+.prose { max-width: 74ch; }
+.prose h1 { font-size: clamp(32px, 4vw, 42px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; }
+.prose h1, .prose h2, .prose h3 { max-width: none; text-wrap: wrap; }
+.prose h2 { font-size: 24px; letter-spacing: -0.01em; margin: 44px 0 12px; padding-top: 8px; }
+.prose h3 { font-size: 18px; margin: 28px 0 8px; }
+.prose .lede { font-size: 19px; color: var(--muted); margin: 0 0 28px; }
+.prose li { margin: 6px 0; }
+.prose li > ul { margin-top: 6px; }
+.prose strong { color: var(--fg); }
+.prose pre {
+  background: var(--editor); border: 1px solid var(--line-soft); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto; font-size: 14px; line-height: 1.55;
+}
+.prose pre code { color: var(--fg-editor); font-size: inherit; }
+.prose table { border-collapse: collapse; margin: 16px 0; font-size: 15px; display: block; overflow-x: auto; }
+.prose th, .prose td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+.prose th { background: var(--bg-2); }
+
+.notice {
+  margin: 0 0 28px; padding: 14px 18px;
+  background: color-mix(in srgb, var(--yellow) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--yellow) 35%, transparent);
+  border-left-width: 4px; border-radius: 10px; font-size: 15px;
+}
+.notice-head { margin: 0 0 4px; color: var(--yellow); font-weight: 600; }
+.notice ul { margin: 0; padding-left: 20px; }
+.notice li { margin: 4px 0; }
+
 /* Narrow */
 @media (max-width: 900px) {
   .habit-grid, .built-grid { grid-template-columns: minmax(0, 1fr); }
   .built-grid { gap: 32px; }
   .panel, .scheme-grid, .install-grid { grid-template-columns: minmax(0, 1fr); }
   .panel-text { padding-top: 0; }
+  .docs-layout { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-top: 24px; }
+  .docs-main, .docs-nav { grid-column: 1; }
+  .docs-nav { grid-row: 2; position: static; max-height: none; border-top: 1px solid var(--line-soft); padding-top: 24px; }
+  .docs-jump { display: inline-block; margin-bottom: 16px; font-size: 14px; }
 }
 @media (max-width: 720px) {
   body { font-size: 16px; }
-  .nav-links li:not(:last-child) { display: none; }
+  /* The home page's own sections go; Docs and GitHub stay. */
+  .nav-links li:not(:last-child):not(.nav-docs) { display: none; }
   .nav-links { gap: 16px; }
   .nav .btn-small { display: none; }
   .demo-window {

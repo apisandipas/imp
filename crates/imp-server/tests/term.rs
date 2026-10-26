@@ -109,3 +109,168 @@ fn killing_the_buffer_ends_the_program() {
     type_keys(&mut s, ":bd!<ret>");
     assert_eq!(s.eval("(hash-length *terminals*)").unwrap(), "0");
 }
+
+/// Terminal ids, oldest first, and window ids top to bottom.
+fn term_ids(s: &mut imp_server::Server) -> Vec<String> {
+    let ids = s.eval("(sort (hash-keys->list *terminals*) <)").unwrap();
+    ids.trim_matches(|c| c == '(' || c == ')')
+        .split(' ')
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn every_terminal_fits_the_windows_showing_it() {
+    let mut s = server("");
+    s.set_size(80, 30);
+    type_keys(&mut s, ":terminal cat<ret>");
+    s.keys(&["C-\\", "C-n"]);
+    type_keys(&mut s, ":split<ret>:terminal cat<ret>");
+    s.keys(&["C-\\", "C-n"]);
+    let ids = term_ids(&mut s);
+    let (first, second) = (&ids[0], &ids[1]);
+    let windows = s.eval("(window-list)").unwrap();
+    let windows: Vec<&str> = windows
+        .trim_matches(|c| c == '(' || c == ')')
+        .split(' ')
+        .collect();
+    let size_of =
+        |s: &mut imp_server::Server, w: &str| s.eval(&format!("(window-text-size {w})")).unwrap();
+    let shown_in = |s: &mut imp_server::Server, t: &str| {
+        s.eval(&format!(
+            "(car (filter (lambda (w) (eqv? (if (= w (current-window)) (current-buffer) (window-buffer w)) (hash-ref *terminals* {t}))) (window-list)))"
+        ))
+        .unwrap()
+    };
+    // The first terminal, no longer in the current window, was refitted
+    // when the split made its window smaller.
+    let w1 = shown_in(&mut s, first);
+    let w2 = shown_in(&mut s, second);
+    assert_ne!(w1, w2);
+    assert_eq!(
+        s.eval(&format!("(term-size {first})")).unwrap(),
+        size_of(&mut s, &w1)
+    );
+    assert_eq!(
+        s.eval(&format!("(term-size {second})")).unwrap(),
+        size_of(&mut s, &w2)
+    );
+    // Making one window taller resizes its terminal.
+    s.keys(&["C-w", "+"]);
+    s.keys(&["C-w", "+"]);
+    assert_eq!(
+        s.eval(&format!("(term-size {second})")).unwrap(),
+        size_of(&mut s, &w2)
+    );
+    assert_eq!(
+        s.eval(&format!("(term-size {first})")).unwrap(),
+        size_of(&mut s, &w1)
+    );
+    // Shown in both windows, a terminal takes the smaller one.
+    s.eval(&format!("(go-to-buffer! (hash-ref *terminals* {first}))"))
+        .unwrap();
+    type_keys(&mut s, "<esc>");
+    let smaller = windows
+        .iter()
+        .map(|w| size_of(&mut s, w))
+        .min_by_key(|r| {
+            r.trim_matches(|c| c == '(' || c == ')')
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse::<u32>()
+                .unwrap()
+        })
+        .unwrap();
+    assert_eq!(s.eval(&format!("(term-size {first})")).unwrap(), smaller);
+}
+
+fn mouse(s: &mut imp_server::Server, action: &str, button: &str, x: u16, y: u16) {
+    s.handle(imp_core::protocol::ClientMsg::Mouse {
+        action: action.into(),
+        button: button.into(),
+        x,
+        y,
+        fine: None,
+    });
+}
+
+fn have_python() -> bool {
+    std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_ok()
+}
+
+/// A program that turns on mouse reporting with `modes` (escape sequence
+/// numbers, such as 1000 and 1006) and prints each read as Python bytes.
+fn mouse_program(modes: &[u32]) -> String {
+    let on: String = modes.iter().map(|m| format!("\\\\x1b[?{m}h")).collect();
+    format!(
+        ":terminal python3 -c \"import os,tty; tty.setraw(0); os.write(1, b'{on}ready\\\\r\\\\n'); [os.write(1, (repr(os.read(0, 64)) + '\\\\r\\\\n').encode()) for _ in range(9)]\"<ret>"
+    )
+}
+
+#[test]
+fn the_mouse_goes_to_programs_that_ask_for_it() {
+    if !have_python() {
+        return;
+    }
+    let mut s = server("");
+    type_keys(&mut s, &mouse_program(&[1002, 1006]));
+    wait_for(&mut s, "the program", |s| s.text().contains("ready"));
+    assert_eq!(
+        s.eval("(term-mouse-mode (term-id))").unwrap(),
+        r#"("button-motion" "sgr")"#
+    );
+    // Cell (4, 0) is column 5, row 1 of the program's screen.
+    mouse(&mut s, "press", "left", 4, 0);
+    wait_for(&mut s, "the press", |s| s.text().contains(r"\x1b[<0;5;1M"));
+    mouse(&mut s, "drag", "left", 6, 1);
+    wait_for(&mut s, "the drag", |s| s.text().contains(r"\x1b[<32;7;2M"));
+    mouse(&mut s, "release", "left", 6, 1);
+    wait_for(&mut s, "the release", |s| {
+        s.text().contains(r"\x1b[<0;7;2m")
+    });
+    mouse(&mut s, "scroll-down", "", 0, 2);
+    wait_for(&mut s, "the wheel", |s| s.text().contains(r"\x1b[<65;1;3M"));
+    // In normal state the mouse is the editor's again.
+    s.keys(&["C-\\", "C-n"]);
+    let before = s.text();
+    mouse(&mut s, "press", "left", 0, 0);
+    s.pump(Duration::from_millis(100));
+    assert_eq!(s.text(), before);
+}
+
+#[test]
+fn classic_mouse_encoding_and_press_only() {
+    if !have_python() {
+        return;
+    }
+    let mut s = server("");
+    type_keys(&mut s, &mouse_program(&[9]));
+    wait_for(&mut s, "the program", |s| s.text().contains("ready"));
+    // X10 mode: presses only, as ESC [ M and three chars.
+    mouse(&mut s, "release", "left", 4, 0);
+    mouse(&mut s, "press", "right", 4, 0);
+    wait_for(&mut s, "the press", |s| s.text().contains(r#"\x1b[M"%!"#));
+    assert!(!s.text().contains(r"\x1b[M#"), "{}", s.text());
+}
+
+#[test]
+fn pastes_go_to_the_program_bracketed_if_it_asks() {
+    if !have_python() {
+        return;
+    }
+    let mut s = server("");
+    // A program that turns on bracketed paste and prints what it reads.
+    type_keys(
+        &mut s,
+        ":terminal python3 -c \"import os,tty; tty.setraw(0); os.write(1, b'\\\\x1b[?2004hready\\\\r\\\\n'); [os.write(1, (repr(os.read(0, 64)) + '\\\\r\\\\n').encode()) for _ in range(3)]\"<ret>",
+    );
+    wait_for(&mut s, "the program", |s| s.text().contains("ready"));
+    s.handle(imp_core::protocol::ClientMsg::Paste("a\nb".into()));
+    wait_for(&mut s, "the paste", |s| {
+        s.text().contains(r"\x1b[200~a\rb\x1b[201~")
+    });
+}

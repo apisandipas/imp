@@ -124,3 +124,99 @@ fn capture_asks_for_a_date_and_can_schedule() {
     let filed = std::fs::read_to_string(dir.join("inbox.org")).unwrap();
     assert!(filed.contains("SCHEDULED: <2026-11-01 Sun>"), "{filed}");
 }
+
+#[test]
+fn timestamps_parse_into_their_parts() {
+    let mut s = setup("");
+    let mut parse = |text: &str| s.eval(&format!("(org-parse-stamp {text:?})")).unwrap();
+    assert_eq!(
+        parse("<2026-10-24 Sat>"),
+        "(#true (2026 10 24) #false #false #false)"
+    );
+    assert_eq!(
+        parse("<2026-10-24 Sat 09:00-10:30 .+2w -3d>"),
+        "(#true (2026 10 24) \"09:00-10:30\" (\".+\" 2 \"w\") (\"-\" 3 \"d\"))"
+    );
+    assert_eq!(
+        parse("[2026-10-24 ++1m]"),
+        "(#false (2026 10 24) #false (\"++\" 1 \"m\") #false)"
+    );
+    assert_eq!(parse("<2026-10-24 Sat +1x>"), "#false");
+    assert_eq!(parse("<2026-10-24 Sat"), "#false");
+    assert_eq!(parse("<soon>"), "#false");
+    // Written back with the day name the date has.
+    assert_eq!(
+        s.eval("(org-stamp->string (list #t (list 2026 10 31) \"09:00\" (list \"+\" 1 \"w\") #f))")
+            .unwrap(),
+        "\"<2026-10-31 Sat 09:00 +1w>\""
+    );
+}
+
+/// Marks the heading on the first line done, with <ret>, without
+/// logging it (tests/org_clock.rs checks that).
+fn mark_done(text: &str) -> String {
+    let mut s = setup(text);
+    no_logging(&mut s);
+    type_keys(&mut s, "<ret>");
+    s.text()
+}
+
+#[test]
+fn marking_a_repeating_heading_done_moves_its_dates_on() {
+    // + moves one interval, even if that is still in the past.
+    assert_eq!(
+        mark_done("* TODO Water\nSCHEDULED: <2026-10-01 Thu +1w>\n"),
+        "* TODO Water\nSCHEDULED: <2026-10-08 Thu +1w>\n"
+    );
+    // ++ moves whole intervals until after today (2026-10-21).
+    assert_eq!(
+        mark_done("* TODO Call\nDEADLINE: <2026-10-01 Thu 09:00 ++1w -2d>\n"),
+        "* TODO Call\nDEADLINE: <2026-10-22 Thu 09:00 ++1w -2d>\n"
+    );
+    // .+ moves to one interval after today; a body timestamp moves too.
+    assert_eq!(
+        mark_done("* TODO Cut hair\nSCHEDULED: <2026-01-31 Sat .+1m>\nAt <2026-01-31 Sat +1m>.\n* Next\n<2026-01-01 Thu +1d>\n"),
+        "* TODO Cut hair\nSCHEDULED: <2026-11-21 Sat .+1m>\nAt <2026-02-28 Sat +1m>.\n* Next\n<2026-01-01 Thu +1d>\n"
+    );
+    // Without a repeater, or only an inactive one, done is done.
+    assert_eq!(
+        mark_done("* TODO Once\nSCHEDULED: <2026-10-01 Thu>\n[2026-10-01 Thu +1d]\n"),
+        "* DONE Once\nSCHEDULED: <2026-10-01 Thu>\n[2026-10-01 Thu +1d]\n"
+    );
+}
+
+/// Turns off logging done and repeats.
+fn no_logging(s: &mut imp_server::Server) {
+    s.eval("(set-option! 'org-log-done #f)").unwrap();
+    s.eval("(set-option! 'org-log-repeat #f)").unwrap();
+}
+
+#[test]
+fn repeating_back_to_the_first_keyword_is_one_undo() {
+    let mut s = setup("* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
+    no_logging(&mut s);
+    s.eval("(set-option! 'org-todo-keywords '(\"TODO\" \"NEXT\" \"|\" \"DONE\"))")
+        .unwrap();
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "* TODO Review\nSCHEDULED: <2027-10-19 Tue +1y>\n");
+    let status = s.frame().text_rows().last().unwrap().clone();
+    assert!(status.contains("repeats: <2027-10-19 Tue +1y>"), "{status}");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "* NEXT Review\nSCHEDULED: <2026-10-19 Mon +1y>\n");
+}
+
+#[test]
+fn picking_a_new_date_keeps_the_repeater() {
+    let mut s = setup("* TODO Water\nSCHEDULED: <2026-10-01 Thu 08:00 .+1w -1d>\n");
+    type_keys(&mut s, "<C-c><C-s>fri<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Water\nSCHEDULED: <2026-10-23 Fri .+1w -1d>\n"
+    );
+    // And C-c . on one.
+    type_keys(&mut s, "gg0jf<<C-c>.tom 9am<ret>");
+    assert_eq!(
+        s.text(),
+        "* TODO Water\nSCHEDULED: <2026-10-22 Thu 09:00 .+1w -1d>\n"
+    );
+}

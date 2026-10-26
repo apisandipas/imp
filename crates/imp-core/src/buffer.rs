@@ -3,9 +3,11 @@
 //! Positions are char offsets into the whole text. Line/column conversions are
 //! provided for the editing layer, which decides what the positions mean.
 
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ropey::Rope;
 
@@ -18,9 +20,12 @@ pub struct Buffer {
     /// Name of a buffer with no file, such as "*messages*".
     name: Option<String>,
     modified: bool,
-    // Rope clones share structure, so a snapshot is cheap.
-    undo: Vec<Rope>,
-    redo: Vec<Rope>,
+    /// The undo tree: every state the text was in at an undo point, each
+    /// a child of the one it was made from. Rope clones share structure,
+    /// so a snapshot is cheap.
+    states: Vec<UndoState>,
+    /// The state the text is in, or was in before changes since (`dirty`).
+    state: usize,
     /// Whether the text changed since the last undo point, so a boundary
     /// knows whether to record one without comparing ropes.
     dirty: bool,
@@ -46,6 +51,44 @@ pub struct Buffer {
     /// Edits since a parser last looked, when something asked to track
     /// them (a syntax tree; see `track_edits`).
     edits: Option<Vec<Edit>>,
+    /// The text as one string and the version it was copied at, for
+    /// `shared_text`. Kept until the next search after a change, so a
+    /// searched buffer holds a second copy of its text.
+    shared: RefCell<Option<(u64, Arc<str>)>>,
+    /// The last `CHANGE_LOG` edits, each with the version it made, for
+    /// `changes_since`; any number of readers can each keep a version.
+    changes: VecDeque<(u64, Change)>,
+    /// The oldest version `changes_since` can start from: edits before it
+    /// were dropped, or an undo, redo or reload replaced the whole text.
+    changes_from: u64,
+}
+
+/// One state in the undo tree: the text and marks at an undo point. Its
+/// index in `Buffer::states` is its change number, in the order made.
+#[derive(Debug)]
+struct UndoState {
+    text: Rope,
+    marks: HashMap<String, usize>,
+    parent: Option<usize>,
+    /// The child last visited: where redo goes.
+    last_child: Option<usize>,
+    made: std::time::SystemTime,
+}
+
+/// How many edits `changes_since` can reach back.
+const CHANGE_LOG: usize = 1000;
+
+/// One edit, in chars: `start..old_end` became `start..new_end`, holding
+/// `text`. The (line, column) points are where it started and ended
+/// before it was made, as an LSP range wants them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub start: usize,
+    pub old_end: usize,
+    pub new_end: usize,
+    pub text: String,
+    pub start_point: (usize, usize),
+    pub old_end_point: (usize, usize),
 }
 
 /// One change to the text, in the terms a tree-sitter parser wants:
@@ -193,6 +236,21 @@ impl Buffer {
         self.text.to_string()
     }
 
+    /// The text as one string, for searching it with a regex. It is copied
+    /// once per version and shared until the text changes, so repeated
+    /// searches (`n`, each key of an incremental search) don't copy it.
+    pub fn shared_text(&self) -> Arc<str> {
+        let mut shared = self.shared.borrow_mut();
+        match &*shared {
+            Some((version, text)) if *version == self.version => text.clone(),
+            _ => {
+                let text: Arc<str> = self.text.to_string().into();
+                *shared = Some((self.version, text.clone()));
+                text
+            }
+        }
+    }
+
     /// Number of chars in the buffer.
     pub fn len(&self) -> usize {
         self.text.len_chars()
@@ -307,6 +365,40 @@ impl Buffer {
             edits.clear();
             edits.push(Edit::Reset);
         }
+        self.changes.clear();
+        self.changes_from = self.version;
+    }
+
+    /// The (line, column) of char offset `offset`.
+    fn char_point(&self, offset: usize) -> (usize, usize) {
+        let line = self.text.char_to_line(offset);
+        (line, offset - self.text.line_to_char(line))
+    }
+
+    /// Logs `change`, made by the version just reached.
+    fn log_change(&mut self, change: Change) {
+        self.changes.push_back((self.version, change));
+        if self.changes.len() > CHANGE_LOG {
+            if let Some((version, _)) = self.changes.pop_front() {
+                self.changes_from = version;
+            }
+        }
+    }
+
+    /// The edits made since the text was at `version`, oldest first, or
+    /// `None` when they aren't known: across an undo, redo or reload, or
+    /// more than `CHANGE_LOG` edits back.
+    pub fn changes_since(&self, version: u64) -> Option<Vec<Change>> {
+        if version < self.changes_from || version > self.version {
+            return None;
+        }
+        Some(
+            self.changes
+                .iter()
+                .filter(|(v, _)| *v > version)
+                .map(|(_, c)| c.clone())
+                .collect(),
+        )
     }
 
     pub fn insert(&mut self, offset: usize, text: &str) {
@@ -314,6 +406,7 @@ impl Buffer {
             return;
         }
         let offset = offset.min(self.len());
+        let start_point = self.char_point(offset);
         let tracking = self.edits.is_some();
         let before = tracking.then(|| {
             let b = self.text.char_to_byte(offset);
@@ -334,6 +427,14 @@ impl Buffer {
         }
         self.version += 1;
         let n = text.chars().count();
+        self.log_change(Change {
+            start: offset,
+            old_end: offset,
+            new_end: offset + n,
+            text: text.to_string(),
+            start_point,
+            old_end_point: start_point,
+        });
         for (name, m) in self.marks.iter_mut() {
             if *m > offset || (*m == offset && !self.sticky.contains(name)) {
                 *m += n;
@@ -341,7 +442,6 @@ impl Buffer {
         }
         self.modified = true;
         self.dirty = true;
-        self.redo.clear();
     }
 
     /// Deletes the chars in `start..end`, clamped to the buffer, and returns
@@ -350,6 +450,7 @@ impl Buffer {
         let end = end.min(self.len());
         let start = start.min(end);
         let removed = self.text.slice(start..end).to_string();
+        let points = (start < end).then(|| (self.char_point(start), self.char_point(end)));
         let before = (self.edits.is_some() && start < end).then(|| {
             let (sb, eb) = (self.text.char_to_byte(start), self.text.char_to_byte(end));
             (sb, eb, self.point(sb), self.point(eb))
@@ -365,8 +466,16 @@ impl Buffer {
                 new_end: start_point,
             });
         }
-        if start < end {
+        if let Some((start_point, old_end_point)) = points {
             self.version += 1;
+            self.log_change(Change {
+                start,
+                old_end: end,
+                new_end: start,
+                text: String::new(),
+                start_point,
+                old_end_point,
+            });
         }
         for m in self.marks.values_mut() {
             if *m >= end {
@@ -378,7 +487,6 @@ impl Buffer {
         if !removed.is_empty() {
             self.modified = true;
             self.dirty = true;
-            self.redo.clear();
         }
         removed
     }
@@ -411,57 +519,106 @@ impl Buffer {
         names
     }
 
-    /// Records the current text as an undo point. The editing layer calls
-    /// this once per change it wants undone as a unit.
+    /// Records the current text as an undo point: a new state in the undo
+    /// tree, the child of the current one, if the text changed since. The
+    /// editing layer calls this once per change it wants undone as a unit.
     pub fn undo_boundary(&mut self) {
-        if self.dirty || self.undo.is_empty() {
-            self.undo.push(self.text.clone());
+        if self.states.is_empty() || self.dirty {
+            let parent = (!self.states.is_empty()).then_some(self.state);
+            let id = self.states.len();
+            self.states.push(UndoState {
+                text: self.text.clone(),
+                marks: self.marks.clone(),
+                parent,
+                last_child: None,
+                made: std::time::SystemTime::now(),
+            });
+            if let Some(p) = parent {
+                self.states[p].last_child = Some(id);
+            }
+            self.state = id;
             self.dirty = false;
         }
     }
 
-    /// Goes back to the last undo point. Returns where the text changed
-    /// (the first char that differs), or `None` when there is nothing to
-    /// undo.
+    /// Goes back to the state before the current one. Returns where the
+    /// text changed (the first char that differs), or `None` when there is
+    /// nothing to undo.
     pub fn undo(&mut self) -> Option<usize> {
         // Changes since the last boundary are undone first, so they can be
         // redone too.
-        if self.dirty {
-            self.undo_boundary();
-        }
-        let mut previous = self.undo.pop()?;
-        // The top snapshot can equal the text (a boundary with no change
-        // after it); skip it to undo something visible.
-        if previous == self.text {
-            previous = match self.undo.pop() {
-                Some(p) => p,
-                None => {
-                    self.undo.push(previous);
-                    return None;
-                }
-            };
-        }
-        let at = first_difference(&previous, &self.text);
-        self.version += 1;
-        self.record_reset();
-        self.redo.push(std::mem::replace(&mut self.text, previous));
-        self.modified = true;
-        // This text is in no snapshot now, so the next boundary must save
-        // it, or a change after the undo would be undone together with the
-        // one before.
-        self.dirty = true;
-        Some(at)
+        self.undo_boundary();
+        let parent = self.states[self.state].parent?;
+        self.states[parent].last_child = Some(self.state);
+        Some(self.go_to_state(parent))
     }
 
+    /// Goes forward to the state last undone from, along the branch last
+    /// taken. `None` when there is none.
     pub fn redo(&mut self) -> Option<usize> {
-        let next = self.redo.pop()?;
-        let at = first_difference(&next, &self.text);
+        self.undo_boundary();
+        let child = self.states[self.state].last_child?;
+        Some(self.go_to_state(child))
+    }
+
+    /// Goes to the state made just after (`forward`) or before the current
+    /// one, whatever branch it is on, as Vim's g+ and g- do. `None` past
+    /// the newest or the oldest.
+    pub fn undo_step(&mut self, forward: bool) -> Option<usize> {
+        self.undo_boundary();
+        let target = if forward {
+            Some(self.state + 1).filter(|&s| s < self.states.len())?
+        } else {
+            self.state.checked_sub(1)?
+        };
+        // Undo and redo from there follow the path that leads to it.
+        let mut node = target;
+        while let Some(parent) = self.states[node].parent {
+            self.states[parent].last_child = Some(node);
+            node = parent;
+        }
+        Some(self.go_to_state(target))
+    }
+
+    /// The tip of each branch of the undo tree, oldest first, as (change
+    /// number, changes deep, when it was made). Changes since the last
+    /// undo point become a state first, as undo would make them.
+    pub fn undo_list(&mut self) -> Vec<(usize, usize, std::time::SystemTime)> {
+        self.undo_boundary();
+        let parents: HashSet<usize> = self.states.iter().filter_map(|s| s.parent).collect();
+        (1..self.states.len())
+            .filter(|i| !parents.contains(i))
+            .map(|i| {
+                let mut depth = 0;
+                let mut node = i;
+                while let Some(p) = self.states[node].parent {
+                    depth += 1;
+                    node = p;
+                }
+                (i, depth, self.states[i].made)
+            })
+            .collect()
+    }
+
+    /// Puts the text and marks back as they were in state `id`. Marks the
+    /// state doesn't know keep their place, clamped into the text. Returns
+    /// the first char that differs.
+    fn go_to_state(&mut self, id: usize) -> usize {
+        let at = first_difference(&self.states[id].text, &self.text);
+        self.text = self.states[id].text.clone();
+        for (name, &offset) in &self.states[id].marks {
+            self.marks.insert(name.clone(), offset);
+        }
+        let len = self.len();
+        for m in self.marks.values_mut() {
+            *m = (*m).min(len);
+        }
+        self.state = id;
         self.version += 1;
         self.record_reset();
-        self.undo.push(std::mem::replace(&mut self.text, next));
         self.modified = true;
-        self.dirty = true; // as after undo
-        Some(at)
+        self.dirty = false;
+        at
     }
 }
 
@@ -485,6 +642,132 @@ fn first_difference(a: &Rope, b: &Rope) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_text_is_copied_once_per_change() {
+        let mut b = Buffer::from_text("one\n");
+        let first = b.shared_text();
+        assert!(Arc::ptr_eq(&first, &b.shared_text()));
+        b.undo_boundary();
+        b.insert(0, "zero ");
+        assert_eq!(&*b.shared_text(), "zero one\n");
+        b.undo();
+        assert_eq!(&*b.shared_text(), "one\n");
+    }
+
+    /// Makes one undoable change: a boundary, then `text` at the end.
+    fn change(b: &mut Buffer, text: &str) {
+        b.undo_boundary();
+        b.insert(b.len(), text);
+    }
+
+    #[test]
+    fn a_change_after_undo_starts_a_branch() {
+        let mut b = Buffer::from_text("");
+        change(&mut b, "a");
+        change(&mut b, "b");
+        b.undo();
+        assert_eq!(b.text(), "a");
+        change(&mut b, "c");
+        assert_eq!(b.text(), "ac");
+        // u and C-r follow the new branch.
+        b.undo();
+        assert_eq!(b.text(), "a");
+        b.redo();
+        assert_eq!(b.text(), "ac");
+        assert_eq!(b.redo(), None);
+        // g- and g+ step through the states in the order they were made,
+        // across branches: "", "a", "ab", "ac".
+        b.undo_step(false);
+        assert_eq!(b.text(), "ab");
+        b.undo_step(false);
+        assert_eq!(b.text(), "a");
+        b.undo_step(false);
+        assert_eq!(b.text(), "");
+        assert_eq!(b.undo_step(false), None);
+        b.undo_step(true);
+        b.undo_step(true);
+        assert_eq!(b.text(), "ab");
+        // From there C-r and u follow the path to it.
+        b.undo();
+        assert_eq!(b.text(), "a");
+        b.redo();
+        assert_eq!(b.text(), "ab");
+        // The tips of the two branches, two changes deep each.
+        let tips: Vec<(usize, usize)> = b.undo_list().iter().map(|&(n, d, _)| (n, d)).collect();
+        assert_eq!(tips, vec![(2, 2), (3, 2)]);
+    }
+
+    #[test]
+    fn undo_puts_marks_back() {
+        let mut b = Buffer::from_text("one two\n");
+        b.set_mark("a", 4);
+        b.undo_boundary();
+        b.delete(0, 4);
+        assert_eq!(b.mark("a"), Some(0));
+        b.set_mark("new", 3);
+        b.undo();
+        assert_eq!(b.text(), "one two\n");
+        assert_eq!(b.mark("a"), Some(4));
+        // A mark set since keeps its place.
+        assert_eq!(b.mark("new"), Some(3));
+        b.redo();
+        assert_eq!(b.mark("a"), Some(0));
+    }
+
+    #[test]
+    fn changes_since_a_version() {
+        let mut b = Buffer::from_text("one\ntwo\n");
+        let v = b.version();
+        b.insert(4, "2");
+        b.delete(0, 2);
+        let changes = b.changes_since(v).unwrap();
+        assert_eq!(
+            changes,
+            vec![
+                Change {
+                    start: 4,
+                    old_end: 4,
+                    new_end: 5,
+                    text: "2".into(),
+                    start_point: (1, 0),
+                    old_end_point: (1, 0),
+                },
+                Change {
+                    start: 0,
+                    old_end: 2,
+                    new_end: 0,
+                    text: String::new(),
+                    start_point: (0, 0),
+                    old_end_point: (0, 2),
+                },
+            ]
+        );
+        // Each reader keeps its own version.
+        assert_eq!(b.changes_since(v + 1).unwrap().len(), 1);
+        assert_eq!(b.changes_since(b.version()).unwrap(), vec![]);
+        // Nothing deleted is no change.
+        b.delete(1, 1);
+        assert_eq!(b.changes_since(v).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn changes_are_unknown_across_undo_and_far_back() {
+        let mut b = Buffer::from_text("x");
+        let v = b.version();
+        b.undo_boundary();
+        b.insert(0, "a");
+        b.undo();
+        assert_eq!(b.changes_since(v), None);
+        let after = b.version();
+        b.insert(0, "b");
+        assert_eq!(b.changes_since(after).unwrap().len(), 1);
+        for _ in 0..CHANGE_LOG {
+            b.insert(0, "c");
+        }
+        assert_eq!(b.changes_since(after), None);
+        assert_eq!(b.changes_since(after + 1).unwrap().len(), CHANGE_LOG);
+    }
 
     #[test]
     fn lines_ignore_trailing_newline() {

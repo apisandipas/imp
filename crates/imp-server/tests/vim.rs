@@ -1501,6 +1501,71 @@ fn insert_state_runs_command_names() {
     assert_eq!(s.text(), "a1b!\n");
 }
 
+/// Blocks are display columns, as in Vim (checked against Neovim with
+/// tabstop=8): a tab or wide char at a corner widens the block to all of
+/// it, and one cut by the block's edge becomes spaces where text is taken
+/// out or put in.
+#[test]
+fn blocks_use_display_columns() {
+    let reg = |s: &mut imp_server::Server| s.eval("(car (register-get #\\\"))").unwrap();
+    let tabs = |text: &str| {
+        let mut s = server(text);
+        s.eval("(set-option! 'tabstop 8)").unwrap();
+        s
+    };
+    // A corner on a tab takes in the whole tab.
+    let mut s = tabs("a\tbcd\nabcdefghijkl\n");
+    s.keys(&["l", "C-v", "j", "0", "l", "l", "d"]);
+    assert_eq!(s.text(), "abcd\naijkl\n");
+    // Lines below a tab line are cut at the same display columns.
+    let mut s = tabs("a\tbcd\nabcdefghijkl\n");
+    s.keys(&["j", "8", "l", "C-v", "l", "k", "0", "l", "l", "l", "d"]);
+    assert_eq!(s.text(), "a\td\nabcdefghkl\n");
+    // A tab cut by the block: d leaves its outside part as spaces, y takes
+    // its inside part as spaces.
+    let block = "abcdefghijkl\na\tbcd\nabcdefghijkl\n";
+    let mut s = tabs(block);
+    s.keys(&["l", "l", "C-v", "l", "j", "j", "y"]);
+    assert_eq!(reg(&mut s), "\"cd\\n  \\ncd\"");
+    s.keys(&["g", "v", "d"]);
+    assert_eq!(s.text(), "abefghijkl\na     bcd\nabefghijkl\n");
+    let mut s = tabs(block);
+    s.keys(&["l", "l", "C-v", "l", "j", "j"]);
+    type_keys(&mut s, "cX<esc>");
+    assert_eq!(s.text(), "abXefghijkl\na X    bcd\nabXefghijkl\n");
+    let mut s = tabs(block);
+    s.keys(&["l", "l", "C-v", "j", "j"]);
+    type_keys(&mut s, "IX<esc>");
+    assert_eq!(s.text(), "abXcdefghijkl\na X      bcd\nabXcdefghijkl\n");
+    let mut s = tabs(block);
+    s.keys(&["l", "l", "C-v", "l", "j", "j"]);
+    type_keys(&mut s, "AX<esc>");
+    assert_eq!(s.text(), "abcdXefghijkl\na   X    bcd\nabcdXefghijkl\n");
+    // Wide chars are two columns; one cut gets spaces before it on I.
+    let wide = "abcdef\n中文字\nabcdef\n";
+    let mut s = server(wide);
+    s.keys(&["l", "C-v", "l", "j", "j", "y"]);
+    assert_eq!(reg(&mut s), "\"bc\\n  \\nbc\"");
+    s.keys(&["g", "v", "d"]);
+    assert_eq!(s.text(), "adef\n  字\nadef\n");
+    let mut s = server(wide);
+    s.keys(&["l", "C-v", "j", "j"]);
+    type_keys(&mut s, "IX<esc>");
+    assert_eq!(s.text(), "aXbcdef\n X中文字\naXbcdef\n");
+    // A line ending before the block yanks as spaces; one ending at its
+    // left edge, as nothing.
+    let mut s = server("abcdefgh\nab\nabcdefgh\n");
+    s.keys(&["4", "l", "C-v", "l", "j", "j", "y"]);
+    assert_eq!(reg(&mut s), "\"ef\\n  \\nef\"");
+    let mut s = server("abcd\nab\nabcd\n");
+    s.keys(&["l", "l", "C-v", "l", "j", "j", "y"]);
+    assert_eq!(reg(&mut s), "\"cd\\n\\ncd\"");
+    // A block puts at the cursor's display column.
+    let mut s = tabs("XY\nZW\na\tbcd\nabcdefghijkl\n");
+    s.keys(&["C-v", "j", "l", "y", "j", "j", "l", "l", "p"]);
+    assert_eq!(s.text(), "XY\nZW\na\tbXYcd\nabcdefghiZWjkl\n");
+}
+
 #[test]
 fn block_d_to_line_ends() {
     let mut s = server("abc\nde\n");

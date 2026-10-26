@@ -5,6 +5,14 @@ mod common;
 
 use common::*;
 
+/// A server without the fold column, so rows start with their text; the
+/// column's own tests are in fold_column.rs.
+fn server(text: &str) -> imp_server::Server {
+    let mut s = common::server(text);
+    s.eval("(set-option! 'foldcolumn \"no\")").unwrap();
+    s
+}
+
 const TEXT: &str = "one\ntwo\nthree\nfour\nfive\nsix\n";
 
 fn rows(s: &mut imp_server::Server) -> Vec<String> {

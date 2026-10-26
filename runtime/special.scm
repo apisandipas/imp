@@ -107,14 +107,16 @@
 
      (define-popup-rule! \"*grep*\" 'side 'right 'size 0.3)"
   (remove-popup-rule! match)
-  (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*)))
+  (set! *popup-rules* (cons (list match (popup-props props)) *popup-rules*))
+  void)
 
 (define (remove-popup-rule! match)
   "Drops the popup rule for `match`, so its buffers take over the
    current window again:
 
      (remove-popup-rule! \"*grep*\")"
-  (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*)))
+  (set! *popup-rules* (filter (lambda (r) (not (equal? (car r) match))) *popup-rules*))
+  void)
 
 (define (popup-prop rule key default)
   "Property `key` of popup rule `rule`, or `default` if it has none."
@@ -130,9 +132,10 @@
   (car (buffer-info id)))
 
 (define (live-popup-windows)
-  "The popup windows still open, as (window origin rule)."
-  (set! *popup-windows* (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
-  *popup-windows*)
+  "The popup windows open among the current windows, as (window origin
+   rule). The others are kept: with the daemon they may be another
+   client's (see lore:decision/0015), and window ids aren't reused."
+  (filter (lambda (p) (memv (car p) (window-list))) *popup-windows*))
 
 (define (popup-window-entry window)
   "The (window origin rule) entry for `window` if it is an open popup,
@@ -218,17 +221,24 @@
 
 (define (menu-input! key)
   "Runs the menu entry for `key`, the key typed while a menu is open.
-   Esc, C-g, C-c and q just close the menu; any other key says it is
+   The first key of a longer entry (g of gr) waits for the rest. Esc,
+   C-g, C-c and q just close the menu; any other key says it is
    undefined."
-  (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)])
+  (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)]
+        [longer (filter (lambda (e) (let ([ks (split-keys (car e))]) (and (> (length ks) 1) (equal? (car ks) key))))
+                        *menu-entries*)])
     (menu-done!)
     (cond [entry (message "") ((caddr entry))]
+          [(pair? longer)
+           (menu! (key-label key)
+                  (map (lambda (e) (cons (apply string-append (cdr (split-keys (car e)))) (cdr e))) longer))]
           [(member key '("<esc>" "C-g" "C-c" "q")) (message "")]
           [else (message (string-append (key-label key) " is undefined"))])))
 
 (define (menu! title entries)
   "Shows a popup menu titled `title`; the next key runs its entry.
-   Each of `entries` is (key label thunk):
+   Each of `entries` is (key label thunk); a key may be a short
+   sequence, \"gr\":
 
      (menu! \"Commit\" (list (list \"c\" \"commit\" commit!)
                            (list \"a\" \"amend\" amend!)))"
@@ -248,7 +258,8 @@
         (lambda (key)
           (set! *key-interceptor* #f)
           (message "")
-          (when (equal? key "y") (thunk)))))
+          (when (equal? key "y") (thunk))))
+  void)
 
 (define (text-lines text)
   "The lines of `text`, without the empty one after a final line break."
@@ -271,18 +282,23 @@
 
 (define (draw-begin!)
   "Starts drawing a buffer afresh, for draw-line! and draw-finish!."
-  (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0))
+  (set! *draw-lines* '()) (set! *draw-items* '()) (set! *draw-faces* '()) (set! *draw-at* 0)
+  void)
 
 (define (draw-line! parts item)
-  "Adds a line made of (text face) parts, about `item`."
+  "Adds a line made of (text face) parts, about `item`. A part's face may
+   be a list of faces, drawn one over the other (a color and a height)."
   (let loop ([parts parts] [at *draw-at*] [text ""])
     (if (null? parts)
         (begin (set! *draw-lines* (cons text *draw-lines*))
                (set! *draw-items* (cons item *draw-items*))
                (set! *draw-at* (+ at 1)))
         (let* ([t (car (car parts))] [face (cadr (car parts))] [n (string-length t)])
-          (when (and face (> n 0)) (set! *draw-faces* (cons (list at (+ at n) face) *draw-faces*)))
-          (loop (cdr parts) (+ at n) (string-append text t))))))
+          (when (and face (> n 0))
+            (for-each (lambda (f) (when f (set! *draw-faces* (cons (list at (+ at n) f) *draw-faces*))))
+                      (if (list? face) face (list face))))
+          (loop (cdr parts) (+ at n) (string-append text t)))))
+  void)
 
 (define (draw-finish!)
   "Puts what was drawn into the current buffer, keeping the cursor on the

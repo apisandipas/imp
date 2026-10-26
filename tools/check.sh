@@ -12,7 +12,7 @@ fi
   echo "$out" | grep -E "test result|^error"
   # A panic message is on the lines after "panicked at".
   echo "$out" | grep -A2 -E "^---- |panicked"
-  # The Phase 5 prototypes, behind features (docs/design/phase-5.md).
+  # The Phase 5 prototypes, behind features.
   out=$(cargo test -q -p imp-server --all-features 2>&1) || t=1
   echo "$out" | grep -A2 -E "FAILED|panicked|^error"
   # And imp built terminal-only, without the window client.
@@ -22,4 +22,7 @@ fi
   [ $f -eq 0 ] && echo FMT-OK || echo FMT-FAIL
   [ $t -eq 0 ] && [ -z "$c" ] && [ $f -eq 0 ]
 ' 2>&1 | grep -v "Git tree"
-exit ${PIPESTATUS[0]}
+t=${PIPESTATUS[0]}
+# Every spec has a reference page, written from its current version.
+python3 tools/site-docs.py --check || t=1
+exit $t

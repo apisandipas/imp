@@ -12,7 +12,7 @@
 ;;;     'config (lambda () (set-option! 'surround-pairs "()[]{}")))
 ;;;
 ;;; A package with 'git that isn't there yet is cloned (pinned to 'rev if
-;;; given) before loading. :packages lists them; :package-update NAME
+;;; given) in the background, and loaded when the clone finishes. :packages lists them; :package-update NAME
 ;;; fetches and checks out its 'rev again (or pulls), then reloads it.
 ;;;
 ;;; Some packages come with imp (packages/ in its source): what isn't
@@ -61,19 +61,46 @@
         (begin (message (string-append "failed: " command ": " (cadr r))) #f))))
 
 (define (clone-package! name dir options)
-  "Clones package `name` into `dir` from its 'git URL, checking out its
-   'rev if `options` give one. Returns #t, or #f after saying what failed."
-  (let ([url (package-option options 'git)] [rev (package-option options 'rev)])
-    (message (string-append "cloning " (symbol->string name) "..."))
-    (and (run-or-report! (string-append "mkdir -p " (shell-quote (packages-dir))
-                                        " && git clone --quiet " (shell-quote url) " " (shell-quote dir)))
-         (or (not rev)
-             (run-or-report! (string-append "git -C " (shell-quote dir) " checkout --quiet " (shell-quote rev)))))))
+  "Clones package `name` into `dir` from its 'git URL in the background,
+   checking out its 'rev if `options` give one, and loads it when that
+   finishes. A failed checkout removes the clone, so the next start tries
+   again rather than loading the wrong revision."
+  (let* ([url (package-option options 'git)] [rev (package-option options 'rev)]
+         [label (symbol->string name)]
+         [output ""]
+         [command (string-append
+                   "mkdir -p " (shell-quote (packages-dir))
+                   " && GIT_TERMINAL_PROMPT=0 git clone --quiet " (shell-quote url) " " (shell-quote dir)
+                   (if rev
+                       (string-append " && { git -C " (shell-quote dir) " checkout --quiet " (shell-quote rev)
+                                      " || { rm -rf " (shell-quote dir) "; false; }; }")
+                       "")
+                   " 2>&1")])
+    (set-package-status! name "cloning")
+    (message (string-append "cloning " label "..."))
+    (unless (start-job! command ""
+                        (lambda (text stream) (set! output (string-append output text)))
+                        (lambda (code)
+                          (if (= code 0)
+                              (begin
+                                (load-package! name)
+                                (when (equal? (package-status name) "loaded")
+                                  (message (string-append "installed " label))))
+                              (begin
+                                (set-package-status! name "clone failed")
+                                (message (string-append "package " label ": clone failed: " (trim-right output)))))))
+      (set-package-status! name "clone failed"))
+    void))
+
+(define (package-status name)
+  "What :packages shows for package `name`, or #f if it isn't declared."
+  (let ([p (assq name *packages*)]) (and p (cadr p))))
 
 (define (set-package-status! name status)
   "Sets what :packages shows for package `name` to `status`."
   (set! *packages*
-        (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*)))
+        (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*))
+  void)
 
 (define (load-package! name)
   "Loads package `name`: its main file (or the built-in copy, for one
@@ -96,7 +123,8 @@
             (message (string-append "package " (symbol->string name) ": " result)))))))
 
 (define (use-package! name . options)
-  "Declares package `name` and loads it, cloning it first if needed.
+  "Declares package `name` and loads it, cloning it in the background
+   first if needed (its 'config runs once it has loaded).
    `options` are 'key value pairs: 'git (a URL to clone from), 'rev (a
    commit, tag or branch to pin), 'config (a thunk run after loading):
 
@@ -109,10 +137,7 @@
                              (list (list name "declared" dir options))))
     (cond
       [(file-exists? dir) (load-package! name)]
-      [(package-option options 'git)
-       (if (clone-package! name dir options)
-           (load-package! name)
-           (set-package-status! name "clone failed"))]
+      [(package-option options 'git) (clone-package! name dir options)]
       [(builtin-package (symbol->string name)) (load-package! name)]
       [else (set-package-status! name "missing")
             (message (string-append "package " (symbol->string name) " is not in " (packages-dir)))])))

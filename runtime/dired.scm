@@ -256,7 +256,8 @@
       (kill-buffer! old)
       ;; C-^ goes back to where you were before the browser.
       (when (and alt (memv alt (buffer-list)) (not (= alt (current-buffer))))
-        (set! *alternate-buffer* alt)))))
+        (set! *alternate-buffer* alt))))
+  void)
 
 (define (dired-quit!)
   "q: closes the browser for the buffer you came from, unless it has
@@ -271,26 +272,48 @@
 
 (define (dired-survivors)
   "The original entry on each line, as a hash line -> entry; the rest were
-   deleted. A line that reads exactly as an entry did is that entry (so
-   moving lines, or opening one above, changes nothing). Otherwise an
-   entry's mark says which line it became, if it sits at the start of a
-   line nobody else has; when two marks meet there, the later entry's is
-   the line's own (deleting a line pushes its mark onto the next)."
+   deleted. Names swapped between entries come first: an entry whose mark
+   is alone at the start of a line that now reads another entry's name
+   is that line, if the other entry's line was renamed too. Then a line
+   that reads exactly as an entry did is that entry (so moving lines, or
+   opening one above, changes nothing). Otherwise an entry's mark says
+   which line it became, if it sits at the start of a line nobody else
+   has; when two marks meet there, the later entry's is the line's own
+   (deleting a line pushes its mark onto the next)."
   (let* ([entries (buffer-local 'dired-entries)]
          [lines (range 0 (buffer-line-count))]
          [shown (lambda (e) (string-append (cadr e) (if (caddr e) "/" "")))]
          [mark-line (lambda (e)
                       (let ([at (mark-get (dired-mark (car e)))])
                         (and at (= at (line-start (offset->line at))) (offset->line at))))]
+         [marks (map (lambda (e) (list e (mark-line e))) entries)]
+         [marks-on (foldl (lambda (m h) (if (cadr m) (hash-insert h (cadr m) (+ 1 (or (hash-try-get h (cadr m)) 0))) h))
+                          (hash) marks)]
+         ;; The line an entry's mark has to itself, and what it reads now.
+         [alone (foldl (lambda (m h)
+                         (if (and (cadr m) (= (hash-ref marks-on (cadr m)) 1))
+                             (hash-insert h (car (car m)) (list (cadr m) (trim (line-text (cadr m)))))
+                             h))
+                       (hash) marks)]
+         [renamed? (lambda (e) (let ([a (hash-try-get alone (car e))]) (and a (not (equal? (cadr a) (shown e))))))]
+         [by-name (foldl (lambda (e h) (hash-insert h (shown e) e)) (hash) entries)]
+         ;; 0. Swapped names (and rotations): both lines were renamed.
+         [swapped (foldl (lambda (e found)
+                           (let* ([a (hash-try-get alone (car e))]
+                                  [other (and a (renamed? e) (hash-try-get by-name (cadr a)))])
+                             (if (and other (renamed? other)) (cons (list (car a) e) found) found)))
+                         '() entries)]
          ;; 1. Exact text, preferring the line the entry's mark is on.
          [exact (foldl (lambda (e found)
-                         (let* ([want (shown e)]
-                                [free? (lambda (l) (and (equal? (trim (line-text l)) want)
-                                                        (not (list-find (lambda (x) (equal? (car x) l)) found))))]
-                                [own (mark-line e)]
-                                [line (if (and own (free? own)) own (list-find free? lines))])
-                           (if line (cons (list line e) found) found)))
-                       '() entries)]
+                         (if (list-find (lambda (x) (equal? (cadr x) e)) found)
+                             found
+                             (let* ([want (shown e)]
+                                    [free? (lambda (l) (and (equal? (trim (line-text l)) want)
+                                                            (not (list-find (lambda (x) (equal? (car x) l)) found))))]
+                                    [own (mark-line e)]
+                                    [line (if (and own (free? own)) own (list-find free? lines))])
+                               (if line (cons (list line e) found) found))))
+                       swapped entries)]
          [claimed? (lambda (l) (list-find (lambda (x) (equal? (car x) l)) exact))]
          [matched? (lambda (e) (list-find (lambda (x) (equal? (cadr x) e)) exact))]
          ;; 2. Marks, for renamed lines: the latest entry wins a line.
@@ -391,12 +414,14 @@
 (define-mode-key! 'dired-mode 'normal "q" (lambda (n) (dired-quit!)))
 (define-mode-key! 'dired-mode 'normal "g." (lambda (n)
                                              (set-option! 'dired-show-hidden (not (option 'dired-show-hidden)))
-                                             (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
+                                             (if (buffer-modified?) (message "save or :e! first") (dired-refresh!)))
+  "toggle hidden files")
 (define-mode-key! 'dired-mode 'normal "("
   (lambda (n)
     (set-option! 'dired-details (not (option 'dired-details)))
     (dired-show-details!)))
-(define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!))))
+(define-mode-key! 'dired-mode 'normal "gr" (lambda (n) (if (buffer-modified?) (message "save or :e! first") (dired-refresh!)))
+  "refresh")
 
 (define (dired-explore! arg)
   "Lists directory `arg`, or for \"\" the current buffer's directory.

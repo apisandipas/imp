@@ -6,11 +6,12 @@
 //! user's `init.scm` may redefine.
 
 mod api;
-mod clipboard;
+pub mod clipboard;
 mod complete;
 mod crdt;
 #[cfg(unix)]
 pub mod daemon;
+mod diff;
 mod docs;
 mod editor;
 mod events;
@@ -53,6 +54,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ),
     ("leader.scm", include_str!("../../../runtime/leader.scm")),
     ("modes.scm", include_str!("../../../runtime/modes.scm")),
+    ("map.scm", include_str!("../../../runtime/map.scm")),
     ("special.scm", include_str!("../../../runtime/special.scm")),
     ("emacs.scm", include_str!("../../../runtime/emacs.scm")),
     (
@@ -60,7 +62,12 @@ const RUNTIME: &[(&str, &str)] = &[
         include_str!("../../../runtime/packages.scm"),
     ),
     ("files.scm", include_str!("../../../runtime/files.scm")),
+    ("repl.scm", include_str!("../../../runtime/repl.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
+    (
+        "foldmethod.scm",
+        include_str!("../../../runtime/foldmethod.scm"),
+    ),
     (
         "complete.scm",
         include_str!("../../../runtime/complete.scm"),
@@ -76,6 +83,10 @@ const RUNTIME: &[(&str, &str)] = &[
         include_str!("../../../runtime/calendar.scm"),
     ),
     ("org.scm", include_str!("../../../runtime/org.scm")),
+    (
+        "org-agenda.scm",
+        include_str!("../../../runtime/org-agenda.scm"),
+    ),
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
     ("project.scm", include_str!("../../../runtime/project.scm")),
     ("term.scm", include_str!("../../../runtime/term.scm")),
@@ -111,6 +122,22 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
     (
         "nerd-icons",
         include_str!("../../../packages/nerd-icons/nerd-icons.scm"),
+    ),
+    (
+        "git-blame",
+        include_str!("../../../packages/git-blame/git-blame.scm"),
+    ),
+    (
+        "git-gutter",
+        include_str!("../../../packages/git-gutter/git-gutter.scm"),
+    ),
+    (
+        "org-export",
+        include_str!("../../../packages/org-export/org-export.scm"),
+    ),
+    (
+        "modus-themes",
+        include_str!("../../../packages/modus-themes/modus-themes.scm"),
     ),
 ];
 
@@ -324,6 +351,9 @@ impl Server {
                 self.call("imp-open-files", vec![SteelVal::ListV(list)])
             }
             ClientMsg::Key(key) => self.call("imp-handle-key", vec![SteelVal::StringV(key.into())]),
+            ClientMsg::Paste(text) => {
+                self.call("imp-handle-paste", vec![SteelVal::StringV(text.into())])
+            }
             ClientMsg::Mouse {
                 action,
                 button,
@@ -351,6 +381,26 @@ impl Server {
             ClientMsg::Hello { heights } => self.set_heights(heights),
             ClientMsg::Cell { width } => self.set_cell_width(width),
         }
+    }
+
+    /// Takes the current windows out as a daemon client's view.
+    pub(crate) fn take_view(&mut self) -> editor::ClientView {
+        editor::with(|e| e.take_view())
+    }
+
+    /// Makes a daemon client's view the current windows.
+    pub(crate) fn put_view(&mut self, view: editor::ClientView) {
+        editor::with(|e| e.put_view(view))
+    }
+
+    /// A view for a new daemon client: one window on the current buffer.
+    pub(crate) fn new_view(&mut self) -> editor::ClientView {
+        editor::with(|e| e.new_view())
+    }
+
+    /// Forgets a departed daemon client's view.
+    pub(crate) fn drop_view(&mut self, view: &editor::ClientView) {
+        editor::with(|e| e.drop_view(view))
     }
 
     /// Whether the next frame is for a client that draws text heights

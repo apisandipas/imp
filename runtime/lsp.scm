@@ -41,6 +41,7 @@
 (define *lsp-log* '())              ; newest first: stderr and logMessage lines
 (define *lsp-line-message* #f)      ; the diagnostic shown on the status line
 (define *lsp-held-diagnostics* #f)  ; buffer id whose new diagnostics wait for insert to end
+(define *lsp-diagnostic-marks* 0)   ; makes each set of diagnostic marks' names new
 (define *lsp-progress-message* #f)  ; the progress shown on the status line
 (define *lsp-runs* 0)               ; servers started so far: each one's 'run
 
@@ -50,7 +51,8 @@
    installed is used. The project root is the nearest directory up
    holding one of `markers`; `language-id` is the languageId sent in
    didOpen."
-  (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id))))
+  (set! *language-servers* (hash-insert *language-servers* mode (list command markers language-id)))
+  void)
 
 (define-language-server! 'rust-mode "rust-analyzer" '("Cargo.toml" ".git") "rust")
 ;; TypeScript 7's own server, tsgo (`tsc --lsp` once 7 is released), first.
@@ -79,7 +81,8 @@
 
 (define (lsp-log! text)
   "Adds `text` to the :lsp-log, which keeps the newest 500 entries."
-  (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*))))
+  (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*)))
+  void)
 
 ;;; Server state
 ;;;
@@ -100,7 +103,8 @@
   "Sets field `field` of the state of server `key` to `value`.
    Does nothing if that server isn't running."
   (let ([s (lsp-state key)])
-    (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value))))))
+    (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value)))))
+  void)
 
 (define (shell-quote text)
   "`text` in single quotes, safe to put in a shell command."
@@ -210,6 +214,7 @@
                 (with-buffer id
                   (lambda ()
                     (when (lsp-uri) (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri))))
+                    (lsp-forget-diagnostics!)
                     (lsp-show-signs!)
                     (minor-mode-off! 'lsp-mode))))
               ids)
@@ -359,7 +364,8 @@
        (when (and *lsp-progress-message* (equal? (status-text) *lsp-progress-message*)) (set-status! ""))
        (set! *lsp-progress-message* #f)]
       [ours? (set! *lsp-progress-message* text) (set-status! text)]
-      [else #f])))
+      [else #f]))
+  void)
 
 ;;; Documents
 
@@ -390,6 +396,7 @@
               (set-buffer-local! 'lsp-server key)
               (set-buffer-local! 'lsp-uri uri)
               (set-buffer-local! 'lsp-version 0)
+              (set-buffer-local! 'lsp-sent (buffer-version))
               (minor-mode-on! 'lsp-mode)
               (lsp-notify! key "textDocument/didOpen"
                            (hash "textDocument"
@@ -422,11 +429,31 @@
         (set-buffer-local! 'lsp-dirty #f)
         (lsp-notify! key "textDocument/didChange"
                      (hash "textDocument" (hash "uri" (lsp-uri) "version" version)
-                           "contentChanges" (list (hash "text" (buffer-substring 0 (buffer-length))))))
+                           "contentChanges" (lsp-content-changes key)))
+        (set-buffer-local! 'lsp-sent (buffer-version))
         ;; A change can affect other files' diagnostics too.
         (if (jget (lsp-get key 'capabilities) "diagnosticProvider" "interFileDependencies")
             (lsp-pull-all! key)
             (lsp-pull-diagnostics!))))))
+
+(define (lsp-content-changes key)
+  "What changed in the current buffer since it was last sent to server
+   `key`, as didChange's contentChanges: the edits, for a server that
+   takes them and counts UTF-32 (after an edit there is no old text to
+   count UTF-16 in), or else the whole text."
+  (let* ([sync (jget (lsp-get key 'capabilities) "textDocumentSync")]
+         [incremental? (and (equal? (lsp-get key 'encoding) "utf-32")
+                            (or (equal? sync 2) (equal? (jget sync "change") 2)))]
+         [sent (buffer-local 'lsp-sent)]
+         [changes (and incremental? sent (buffer-changes-since sent))])
+    (if (pair? changes)
+        (map (lambda (c)
+               (let ([point (lambda (line col) (hash "line" line "character" col))])
+                 (hash "range" (hash "start" (point (list-ref c 4) (list-ref c 5))
+                                     "end" (point (list-ref c 6) (list-ref c 7)))
+                       "text" (list-ref c 3))))
+             changes)
+        (list (hash "text" (buffer-substring 0 (buffer-length)))))))
 
 (define (lsp-pull-diagnostics!)
   "Asks the server for the current buffer's diagnostics, if it is asked.
@@ -457,7 +484,8 @@
                          (run-after! (option 'lsp-change-delay)
                                      (lambda ()
                                        (set! *lsp-change-timers* (hash-remove *lsp-change-timers* id))
-                                       (when (memv id (buffer-list)) (with-buffer id lsp-sync!)))))))))
+                                       (when (memv id (buffer-list)) (with-buffer id lsp-sync!))))))))
+  void)
 
 (add-hook! 'major-mode (lambda (mode) (lsp-attach!)))
 (add-hook! 'after-change lsp-changed!)
@@ -483,6 +511,7 @@
                (when key
                  (lsp-notify! key "textDocument/didClose" (hash "textDocument" (lsp-text-document)))
                  (set! *lsp-diagnostics* (hash-remove *lsp-diagnostics* (lsp-uri)))
+                 (lsp-forget-diagnostics!)
                  (set-buffer-local! 'lsp-server #f)
                  (set-buffer-local! 'lsp-uri #f)
                  (minor-mode-off! 'lsp-mode)))))
@@ -561,6 +590,40 @@
   "The severity of diagnostic `d` as a letter: E, W, I or H."
   (let ([s (severity d)]) (cond [(= s 1) "E"] [(= s 2) "W"] [(= s 3) "I"] [else "H"])))
 
+;;; In an open buffer each diagnostic's range is a pair of marks, made when
+;;; it arrives, so it follows edits until the server sends new ones. A
+;;; buffer keeps the set it shows and, while typing holds new ones back,
+;;; the set it will show next.
+
+(define (lsp-mark-diagnostics! diagnostics)
+  "Marks the range of each of `diagnostics` in the current buffer.
+   Returns the set as (start-mark end-mark diagnostic) lists. The end
+   mark is sticky, so typing just after a range doesn't stretch it."
+  (set! *lsp-diagnostic-marks* (+ *lsp-diagnostic-marks* 1))
+  (let ([prefix (string-append "lsp-diagnostic:" (number->string *lsp-diagnostic-marks*) ":")]
+        [encoding (lsp-encoding)])
+    (let loop ([ds diagnostics] [i 0] [acc '()])
+      (if (null? ds)
+          (reverse acc)
+          (let* ([r (lsp-range-offsets (jget (car ds) "range") encoding)]
+                 [s (string-append prefix (number->string i) "s")]
+                 [e (string-append prefix (number->string i) "e")])
+            (mark-set! s (car r))
+            (mark-set-sticky! e (cadr r))
+            (loop (cdr ds) (+ i 1) (cons (list s e (car ds)) acc)))))))
+
+(define (lsp-unmark-diagnostics! set)
+  "Deletes the marks of diagnostic `set` (from lsp-mark-diagnostics!)."
+  (when set (for-each (lambda (d) (mark-delete! (car d)) (mark-delete! (cadr d))) set))
+  void)
+
+(define (lsp-forget-diagnostics!)
+  "Drops the current buffer's diagnostic marks, shown and held."
+  (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+  (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-held))
+  (set-buffer-local! 'lsp-diagnostics-shown #f)
+  (set-buffer-local! 'lsp-diagnostics-held #f))
+
 (define (lsp-set-diagnostics! uri diagnostics)
   "Records `diagnostics` for the file at `uri` and shows them.
    If the file is open its signs update, and in the current buffer its
@@ -570,30 +633,60 @@
     (cond [(not id) #f]
           [(and (= id (current-buffer)) (memq *mode* '(insert replace))
                 (not (option 'lsp-diagnostics-in-insert)))
+           (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-held))
+           (set-buffer-local! 'lsp-diagnostics-held (lsp-mark-diagnostics! diagnostics))
            (set! *lsp-held-diagnostics* id)]
           [else
-           (with-buffer id lsp-show-signs!)
-           (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))])))
+           (with-buffer id
+             (lambda ()
+               (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+               (set-buffer-local! 'lsp-diagnostics-shown (lsp-mark-diagnostics! diagnostics))
+               (lsp-show-signs!)))
+           (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!))]))
+  void)
 
 (define (lsp-show-held-diagnostics!)
   "Shows the diagnostics that arrived while typing, after insert ends."
   (let ([id *lsp-held-diagnostics*])
     (set! *lsp-held-diagnostics* #f)
     (when (and id (memv id (buffer-list)))
-      (with-buffer id lsp-show-signs!)
+      (with-buffer id
+        (lambda ()
+          (let ([held (buffer-local 'lsp-diagnostics-held)])
+            (when held
+              (lsp-unmark-diagnostics! (buffer-local 'lsp-diagnostics-shown))
+              (set-buffer-local! 'lsp-diagnostics-shown held)
+              (set-buffer-local! 'lsp-diagnostics-held #f)))
+          (lsp-show-signs!)))
       (when (= id (current-buffer)) (lsp-show-diagnostics!) (lsp-show-cursor-diagnostic!)))))
 
 (add-hook! 'insert-leave lsp-show-held-diagnostics!)
 
+(define (lsp-diagnostics-follow!)
+  "Redraws the current buffer's diagnostics where their marks now are.
+   Highlights and signs stay where they were drawn, so after a change
+   they are drawn again."
+  (when (pair? (buffer-local 'lsp-diagnostics-shown))
+    (lsp-show-signs!)
+    (lsp-show-diagnostics!)))
+
+(add-hook! 'after-change lsp-diagnostics-follow!)
+
 (define (buffer-diagnostics)
   "The current buffer's diagnostics as (start end diagnostic) lists.
-   They are sorted by where they start."
-  (let ([uri (lsp-uri)] [encoding (lsp-encoding)])
-    (if (not uri)
+   They are sorted by where they start: where their marks are now, or
+   for diagnostics that came before the buffer had marks, where the
+   server put them."
+  (let* ([uri (lsp-uri)] [ds (and uri (hash-try-get *lsp-diagnostics* uri))])
+    (if (not ds)
         '()
-        (sort (map (lambda (d) (append (lsp-range-offsets (jget d "range") encoding) (list d)))
-                   (or (hash-try-get *lsp-diagnostics* uri) '()))
-              (lambda (a b) (< (car a) (car b)))))))
+        (let ([shown (or (buffer-local 'lsp-diagnostics-shown)
+                         (let ([set (lsp-mark-diagnostics! ds)])
+                           (set-buffer-local! 'lsp-diagnostics-shown set)
+                           set))])
+          (sort (map (lambda (d) (list (mark-get (car d)) (max (mark-get (car d)) (mark-get (cadr d))) (caddr d)))
+                     shown)
+                (lambda (a b) (< (car a) (car b))))))))
 
 (define (lsp-show-signs!)
   "Puts a sign for the current buffer's diagnostics on their lines.
@@ -664,7 +757,8 @@
             [(and (not d) *lsp-line-message* (equal? status *lsp-line-message*))
              (set-status! "")
              (set! *lsp-line-message* #f)]
-            [else #f]))))
+            [else #f])))
+  void)
 
 (add-hook! 'post-command lsp-show-cursor-diagnostic!)
 
@@ -687,8 +781,8 @@
 (define-command! 'previous-diagnostic (lambda (count)
                                         "Go to the previous diagnostic ([d), wrapping around."
                                         (next-diagnostic! count #f)))
-(define-key! 'normal "]d" 'next-diagnostic)
-(define-key! 'normal "[d" 'previous-diagnostic)
+(define-key! 'normal "]d" 'next-diagnostic "next diagnostic")
+(define-key! 'normal "[d" 'previous-diagnostic "previous diagnostic")
 
 (define (relative-path path)
   "`path` relative to the current directory, if it is under it."
@@ -1022,8 +1116,8 @@
 
 (define-minor-mode! 'lsp-mode #f #f)
 (define-mode-key! 'lsp-mode 'normal "K" 'lsp-hover)
-(define-mode-key! 'lsp-mode 'normal "gd" 'lsp-definition)
-(define-mode-key! 'lsp-mode 'normal "gr" 'lsp-references)
+(define-mode-key! 'lsp-mode 'normal "gd" 'lsp-definition "go to definition")
+(define-mode-key! 'lsp-mode 'normal "gr" 'lsp-references "references")
 
 (define-leader-group! "c" "code")
 (define-leader! "ca" 'lsp-code-action "code action")

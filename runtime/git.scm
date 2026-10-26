@@ -18,6 +18,8 @@
 ;;; :Git ARGS runs any git command and shows what it printed.
 
 (define-option! 'git-recent-commits 10 '())
+;; Whether the status buffer shows its main keys at the bottom of its window.
+(define-option! 'git-status-hints #t '())
 
 ;;; Running git
 
@@ -250,7 +252,8 @@
       (for-each (lambda (c) (draw-line! (list (list (car c) "git.hash") (list (string-append "  " (cadr c)) #f))
                                        (list 'commit (car c))))
                 commits))
-    (draw-finish!)))
+    (draw-finish!)
+    (set-footer! (git-status-footer))))
 
 (define (git-refresh!)
   "Redraws the current git status or log buffer from the repository.
@@ -615,48 +618,86 @@
     (buffer-highlight-pattern! "git-comment" "^#.*" "syntax.comment")))
 
 (define (git-keys! mode keys)
-  "Binds each (key action) of `keys` in normal state in `mode`."
-  (for-each (lambda (k) (define-mode-key! mode 'normal (car k) (cadr k))) keys))
+  "Binds each (key action) of `keys` in normal state in `mode`; a third
+   element is the key's which-key label."
+  (for-each (lambda (k) (apply define-mode-key! (cons mode (cons 'normal k)))) keys))
 
 (define git-common-keys
-  (list (list "gr" (lambda (n) (git-refresh!)))
+  (list (list "gr" (lambda (n) (git-refresh!)) "refresh")
         (list "$" (lambda (n) (git-show-process!)))
         (list "<ret>" (lambda (n) (git-visit!)))))
 
-(git-keys! 'git-status-mode
-  (append git-common-keys
-   (list
-    (list "<tab>" (lambda (n) (git-toggle!)))
-    (list "s" (lambda (n) (git-stage!)))
-    (list "u" (lambda (n) (git-unstage!)))
-    (list "S" (lambda (n) (git-stage-all!)))
-    (list "U" (lambda (n) (git-unstage-all!)))
-    (list "x" (lambda (n) (git-discard!)))
-    (list "c" (lambda (n) (menu! "Commit" (list (list "c" "commit" (lambda () (git-commit! #f)))
+;; The status buffer's keys as (key label action): bound from here, and
+;; listed by ? and the footer from here, so they can't drift apart.
+(define git-status-keys
+  (list
+    (list "<tab>" "diff" (lambda (n) (git-toggle!)))
+    (list "<ret>" "visit" (lambda (n) (git-visit!)))
+    (list "s" "stage" (lambda (n) (git-stage!)))
+    (list "u" "unstage" (lambda (n) (git-unstage!)))
+    (list "S" "stage all" (lambda (n) (git-stage-all!)))
+    (list "U" "unstage all" (lambda (n) (git-unstage-all!)))
+    (list "x" "discard" (lambda (n) (git-discard!)))
+    (list "c" "commit" (lambda (n) (menu! "Commit" (list (list "c" "commit" (lambda () (git-commit! #f)))
                                                      (list "a" "amend" (lambda () (git-commit! #t)))
                                                      (list "e" "extend (amend, same message)"
                                                            (lambda () (git-do! (git-root) "commit --amend --no-edit") (git-refresh!)))))))
-    (list "b" (lambda (n) (menu! "Branch" (list (list "b" "checkout" git-checkout!)
+    (list "b" "branch" (lambda (n) (menu! "Branch" (list (list "b" "checkout" git-checkout!)
                                                      (list "c" "create and checkout" git-create-branch!)))))
-    (list "l" (lambda (n) (git-log! (git-root))))
-    (list "d" (lambda (n) (menu! "Diff" (list (list "d" "unstaged" (lambda () (git-diff! #f)))
+    (list "l" "log" (lambda (n) (git-log! (git-root))))
+    (list "d" "diff menu" (lambda (n) (menu! "Diff" (list (list "d" "unstaged" (lambda () (git-diff! #f)))
                                                    (list "s" "staged" (lambda () (git-diff! #t)))))))
-    (list "z" (lambda (n) (menu! "Stash" (list (list "z" "stash changes" (lambda () (git-do! (git-root) "stash push") (git-refresh!)))
+    (list "z" "stash" (lambda (n) (menu! "Stash" (list (list "z" "stash changes" (lambda () (git-do! (git-root) "stash push") (git-refresh!)))
                                                     (list "p" "pop" (lambda () (git-do! (git-root) (string-append "stash pop " (git-stash-ref))) (git-refresh!)))
                                                     (list "a" "apply" (lambda () (git-do! (git-root) (string-append "stash apply " (git-stash-ref))) (git-refresh!)))))))
-    (list "f" (lambda (n) (menu! "Fetch" (list (list "f" "fetch" (lambda () (git-job! (git-root) "fetch")))
+    (list "f" "fetch" (lambda (n) (menu! "Fetch" (list (list "f" "fetch" (lambda () (git-job! (git-root) "fetch")))
                                                     (list "a" "fetch all remotes" (lambda () (git-job! (git-root) "fetch --all")))))))
-    (list "F" (lambda (n) (menu! "Pull" (list (list "F" "pull" (lambda () (git-job! (git-root) "pull")))
+    (list "F" "pull" (lambda (n) (menu! "Pull" (list (list "F" "pull" (lambda () (git-job! (git-root) "pull")))
                                                    (list "r" "pull --rebase" (lambda () (git-job! (git-root) "pull --rebase")))))))
-    (list "P" (lambda (n) (menu! "Push" (list (list "P" "push" (lambda () (git-job! (git-root) "push")))
+    (list "P" "push" (lambda (n) (menu! "Push" (list (list "P" "push" (lambda () (git-job! (git-root) "push")))
                                                    (list "u" "push, setting upstream" (lambda () (git-job! (git-root) "push -u origin HEAD")))))))
-    (list "?" (lambda (n) (show-popup! (git-help-lines)))))))
+    (list "$" "git output" (lambda (n) (git-show-process!)))
+    (list "gr" "refresh" (lambda (n) (git-refresh!)))
+    (list "?" "keys" (lambda (n) (git-status-menu!)))))
+
+;; The keys the status buffer's footer shows: a column each, a related
+;; pair in it, the first on the top line.
+(define git-status-hint-columns '(("s" "<tab>") ("u" "x") ("c" "b") ("F" "P") ("l" "?")))
+
+(define (git-status-footer)
+  "The status buffer's footer: two lines of keys and their labels, from
+   git-status-keys, in the columns of git-status-hint-columns. In each
+   column the keys are right-aligned and the labels left-aligned. The
+   lines are on a band of git.footer, with a blank line of it above and
+   below, padded past any window's width (the window cuts them); none
+   with git-status-hints off."
+  (define (label key) (cadr (list-find (lambda (k) (equal? (car k) key)) git-status-keys)))
+  (define (widest strings) (apply max (map string-length strings)))
+  (define (cell column row)
+    (let ([key (list-ref column row)])
+      (list (list (pad-left key (widest column)) "git.footer.key")
+            (list (string-append " " (pad-right (label key) (widest (map label column)))) "git.footer"))))
+  (define blank (list (list (make-string 300 #\space) "git.footer")))
+  (define (line row)
+    (append (list (list " " "git.footer"))
+            (cdr (apply append (map (lambda (column) (cons (list "  " "git.footer") (cell column row)))
+                                    git-status-hint-columns)))
+            (list (list (make-string 300 #\space) "git.footer"))))
+  (if (option 'git-status-hints) (list blank (line 0) (line 1) blank) '()))
+
+(define (git-status-menu!)
+  "Opens a menu of every status key, as Magit's ? does; the key pressed
+   runs on the item at the cursor."
+  (menu! "Git" (map (lambda (k) (list (car k) (cadr k) (lambda () ((caddr k) 1))))
+                    (filter (lambda (k) (not (equal? (car k) "?"))) git-status-keys))))
+
+(git-keys! 'git-status-mode (map (lambda (k) (list (car k) (caddr k) (cadr k))) git-status-keys))
 
 (git-keys! 'git-log-mode git-common-keys)
 (git-keys! 'git-diff-mode git-common-keys)
 (git-keys! 'git-commit-mode
-  (list (list "ZZ" (lambda (n) (git-commit-finish!)))
-        (list "ZQ" (lambda (n) (git-commit-cancel!)))))
+  (list (list "ZZ" (lambda (n) (git-commit-finish!)) "commit")
+        (list "ZQ" (lambda (n) (git-commit-cancel!)) "cancel commit")))
 ;; And Magit's keys, in insert state too.
 (for-each (lambda (state)
             (define-mode-key! 'git-commit-mode state "C-cC-c" (lambda args (git-commit-finish!)))
@@ -664,12 +705,6 @@
           '(normal insert))
 (define-mode-leader! 'git-commit-mode "c" (lambda (n) (git-commit-finish!)) "commit")
 (define-mode-leader! 'git-commit-mode "k" (lambda (n) (git-commit-cancel!)) "cancel")
-
-(define (git-help-lines)
-  "The lines the status buffer's ? key shows, a summary of its keys."
-  (list "<tab> show/hide diff   s stage   u unstage   x discard   S/U all"
-        "<ret> visit            c commit  b branch    l log       d diff"
-        "z stash   f fetch   F pull   P push   $ git output   gr refresh   q leave"))
 
 (define-command! 'git-status (lambda (count)
                                "Show the Magit-style status of the current file's repository."

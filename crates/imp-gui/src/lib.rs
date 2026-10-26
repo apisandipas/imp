@@ -663,6 +663,12 @@ impl ApplicationHandler<ServerMsg> for App {
             WindowEvent::ModifiersChanged(m) => self.modifiers = m,
             WindowEvent::ScaleFactorChanged { .. } => self.set_zoom(self.zoom),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                // The clipboard beside the window, which with --connect may
+                // not be the server's; empty if no tool gives text.
+                if keys::is_paste(&event.logical_key, self.modifiers.state()) {
+                    let text = imp_server::clipboard::get(false).unwrap_or_default();
+                    return self.send(ClientMsg::Paste(text));
+                }
                 let key = keys::key_name(&event, &self.modifiers);
                 match key.as_deref() {
                     Some("C-=" | "C-+") => return self.set_zoom(self.zoom * 1.1),

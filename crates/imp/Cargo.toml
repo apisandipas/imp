@@ -20,7 +20,7 @@ default = ["gui"]
 # The window client. Without it (--no-default-features) imp is terminal
 # only, with no graphics dependencies.
 gui = ["dep:imp-gui"]
-# Phase 5 prototypes (docs/design/phase-5.md).
+# Phase 5 prototypes.
 wasm = ["imp-server/wasm"]
 crdt = ["imp-server/crdt"]
 kdl = ["imp-server/kdl"]

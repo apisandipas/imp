@@ -18,7 +18,7 @@
         let
           imp = { gui ? true }: pkgs.rustPlatform.buildRustPackage {
             pname = if gui then "imp" else "imp-tui";
-            version = "0.1.0-alpha.4";
+            version = "0.1.0-alpha.5";
             src = self;
             cargoLock.lockFile = ./Cargo.lock;
             buildNoDefaultFeatures = !gui;

@@ -13,6 +13,8 @@ use regex::Regex;
 
 use crate::layout::{Dir, Layout, Rect};
 
+/// A footer line: (text, face) parts.
+pub type FooterLine = Vec<(String, Option<String>)>;
 /// One line's margin text: (text, face) parts.
 pub type MarginText = Vec<(String, String)>;
 
@@ -112,7 +114,11 @@ pub struct Editor {
     pub signs: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// When each buffer shows its sign column (the `signcolumn` option);
     /// a buffer not here shows it only while it has signs.
-    pub sign_columns: HashMap<usize, crate::render::SignColumn>,
+    pub sign_columns: HashMap<usize, crate::render::GutterColumn>,
+    /// Change marks by buffer id: line -> (text, face). A buffer here has
+    /// a one-cell change column between its line numbers and its fold
+    /// column, marks or not (git-gutter; see lore:decision/0016).
+    pub change_marks: HashMap<usize, BTreeMap<usize, (String, String)>>,
     /// Buffers drawn indented by outline level (org-indent): buffer ->
     /// columns per level. See `render::outline_prefix`.
     pub outline_indents: HashMap<usize, usize>,
@@ -127,6 +133,17 @@ pub struct Editor {
     /// Each buffer's closed folds as (first, last) lines: sorted, not
     /// nested. Scheme decides where folds are (runtime/fold.scm).
     pub folds: HashMap<usize, Vec<(usize, usize)>>,
+    /// Each buffer's folds by first line, the outermost starting there,
+    /// and whether it's closed: the fold column's chevrons.
+    pub fold_starts: HashMap<usize, BTreeMap<usize, bool>>,
+    /// Each buffer's footer: lines of (text, face) parts pinned at the
+    /// bottom of its windows, above their status lines.
+    pub footers: HashMap<usize, Vec<FooterLine>>,
+    /// Text drawn after the end of a line, by buffer id: line -> (text,
+    /// face). Not part of the buffer's text.
+    pub line_end_texts: HashMap<usize, BTreeMap<usize, (String, String)>>,
+    /// When each buffer shows its fold column (the `foldcolumn` option).
+    pub fold_columns: HashMap<usize, crate::render::GutterColumn>,
     /// Timers and jobs, which report back through the server's events.
     pub background: crate::events::Background,
     /// Named styles. Highlights refer to faces by name, so redefining a face
@@ -154,6 +171,18 @@ pub struct Window {
 /// The buffer mark that holds window `id`'s cursor while it isn't current.
 pub fn window_mark(id: usize) -> String {
     format!("window:{id}")
+}
+
+/// One daemon client's windows: its layout, its current window, and each
+/// window's buffer and scroll, swapped into the editor while the client's
+/// input is handled and its frame drawn (see lore:decision/0015). Every
+/// window's cursor, the current one's too, waits in its window mark, so
+/// edits through other clients move it.
+#[derive(Debug, Clone)]
+pub struct ClientView {
+    windows: BTreeMap<usize, Window>,
+    layout: Layout,
+    current_window: usize,
 }
 
 /// A buffer that isn't current, with where its cursor and window were.
@@ -301,8 +330,13 @@ impl Editor {
         self.syntax.remove(&id);
         self.buffer_layers.remove(&id);
         self.folds.remove(&id);
+        self.fold_starts.remove(&id);
+        self.fold_columns.remove(&id);
+        self.footers.remove(&id);
+        self.line_end_texts.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
+        self.change_marks.remove(&id);
         self.outline_indents.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
@@ -366,12 +400,23 @@ impl Editor {
     }
 
     /// Rows for text in the current window: its height less its status
-    /// line.
+    /// line and footer.
     pub fn text_rows(&self) -> usize {
-        self.window_rect(self.current_window)
-            .h
-            .saturating_sub(1)
+        let h = self.window_rect(self.current_window).h;
+        h.saturating_sub(1 + self.footer_rows(self.current, h))
             .max(1)
+    }
+
+    /// Rows a window `height` rows tall showing `buffer_id` gives its
+    /// footer: all its lines, or none if that would leave fewer than two
+    /// rows of text.
+    pub fn footer_rows(&self, buffer_id: usize, height: usize) -> usize {
+        let n = self.footers.get(&buffer_id).map_or(0, Vec::len);
+        if height.saturating_sub(1) >= n + 2 {
+            n
+        } else {
+            0
+        }
     }
 
     /// Makes the first window, showing the current buffer. Called once
@@ -388,6 +433,78 @@ impl Editor {
             },
         );
         self.layout = Layout::Window(1);
+    }
+
+    /// Takes the current windows out as a client's view, leaving them in
+    /// place until another view is put.
+    pub fn take_view(&mut self) -> ClientView {
+        let id = self.current_window;
+        self.buffer.set_mark(&window_mark(id), self.cursor);
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.scroll = self.scroll;
+            w.hscroll = self.hscroll;
+        }
+        ClientView {
+            windows: self.windows.clone(),
+            layout: self.layout.clone(),
+            current_window: id,
+        }
+    }
+
+    /// Makes `view` the current windows, bringing its current window's
+    /// buffer, cursor and scroll. A window whose buffer has gone shows the
+    /// current buffer instead.
+    pub fn put_view(&mut self, view: ClientView) {
+        let fallback = self.current;
+        self.windows = view.windows;
+        self.layout = view.layout;
+        self.current_window = view.current_window;
+        let ids = self.buffer_ids();
+        for w in self.windows.values_mut() {
+            if !ids.contains(&w.buffer) {
+                *w = Window {
+                    buffer: fallback,
+                    scroll: 0,
+                    hscroll: 0,
+                };
+            }
+        }
+        let Some(target) = self.windows.get(&self.current_window).cloned() else {
+            return;
+        };
+        self.switch_to(target.buffer);
+        let mark = window_mark(self.current_window);
+        self.cursor = self.buffer.mark(&mark).unwrap_or(0).min(self.buffer.len());
+        self.buffer.delete_mark(&mark);
+        self.scroll = target.scroll;
+        self.hscroll = target.hscroll;
+    }
+
+    /// A view for a new client: one window on the current buffer, where
+    /// the current window is. The current windows stay as they are.
+    pub fn new_view(&mut self) -> ClientView {
+        self.next_window_id += 1;
+        let id = self.next_window_id;
+        self.buffer.set_mark(&window_mark(id), self.cursor);
+        let window = Window {
+            buffer: self.current,
+            scroll: self.scroll,
+            hscroll: self.hscroll,
+        };
+        ClientView {
+            windows: BTreeMap::from([(id, window)]),
+            layout: Layout::Window(id),
+            current_window: id,
+        }
+    }
+
+    /// Forgets `view`'s window marks, when its client has gone.
+    pub fn drop_view(&mut self, view: &ClientView) {
+        for (&id, w) in &view.windows {
+            if let Some(b) = self.buffer_by_id_mut(w.buffer) {
+                b.delete_mark(&window_mark(id));
+            }
+        }
     }
 
     /// Makes window `id` current, bringing its buffer, cursor and scroll.

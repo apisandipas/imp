@@ -16,13 +16,36 @@
   (let ([m (hash-try-get *keymaps* mode)])
     (if m m (hash))))
 
-(define (define-key! mode key command)
+(define (define-key! mode key command . label)
   "Binds `key` to `command` in `mode`. A command is a procedure, or the
    name (a symbol) of one made with define-command!; a name is looked up
    each time the key is pressed, so redefining the command changes every
    key bound to it. What arguments a command takes is up to the mode that
-   calls it; Vim's modes pass the count."
-  (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command))))
+   calls it; Vim's modes pass the count. An optional last argument is the
+   label which-key shows beside the key:
+
+     (define-key! 'normal \"gb\" 'switch-buffer \"switch buffer\")"
+  (set! *keymaps* (hash-insert *keymaps* mode (hash-insert (keymap mode) key command)))
+  (set-binding-label! mode key (and (pair? label) (car label)))
+  void)
+
+;; table (a keymap name, or 'motion or 'operator) -> hash of key -> the
+;; label which-key shows. Binding a key without a label forgets its old one.
+(define *binding-labels* (hash))
+
+(define (set-binding-label! table key label)
+  "Sets the which-key label of `key` in `table` to `label`, or forgets it
+   when `label` is #f. `table` is a keymap name, 'motion or 'operator."
+  (let ([labels (or (hash-try-get *binding-labels* table) (hash))])
+    (set! *binding-labels*
+          (hash-insert *binding-labels* table
+                       (if label (hash-insert labels key label) (hash-remove labels key)))))
+  void)
+
+(define (binding-label-in table key)
+  "The which-key label of `key` in `table`, or #f."
+  (let ([labels (hash-try-get *binding-labels* table)])
+    (and labels (hash-try-get labels key))))
 
 ;; Keymaps checked before `mode`'s own, given `mode`: modes.scm sets this
 ;; so a buffer's minor and major modes can override keys.
@@ -71,7 +94,8 @@
 
      (define-command! 'hello
        (lambda (count) \"Say hello.\" (message \"hello\")))"
-  (set! *commands* (hash-insert *commands* name proc)))
+  (set! *commands* (hash-insert *commands* name proc))
+  void)
 
 (define (command-proc name)
   "The procedure of the command named `name`, or #f."
@@ -86,7 +110,10 @@
   (let ([proc (command-proc name)])
     (if proc
         (proc (if (null? count) 1 (car count)))
-        (set-status! (string-append "no command " (symbol->string name))))))
+        (set-status! (string-append "no command " (symbol->string name)))))
+  ;; Commands run for their effect; whatever the last one returned would
+  ;; only be printed by the REPL and :eval.
+  void)
 
 ;; When this is a procedure, keys go to it instead of the editor (describe-
 ;; key uses it to read the keys it describes). Runtime files extend each
@@ -100,9 +127,13 @@
 
 (define (message text)
   "Shows `text` in the status line and adds it to :messages.
-   The history keeps the last 200."
+   The history keeps the last 200. An empty `text` clears the status
+   line without being kept; echoes of keys being typed use set-status!,
+   which isn't kept either."
   (set-status! text)
-  (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
+  (unless (equal? text "")
+    (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
+  void)
 
 ;;; Evaluating code while the editor runs
 ;;;
@@ -160,18 +191,20 @@
   (imp-eval-forms (list form)))
 
 (define (imp-eval-forms forms)
-  "Evaluates `forms` as one unit, returning the last one's value. Macro
-   definitions go first, each on its own: inside a (begin ...) a macro
-   isn't defined yet for the forms after it."
+  "Evaluates `forms` as one unit, returning the last one's value, or the
+   name it defines if it is a definition, as in Emacs. Macro definitions
+   go first, each on its own: inside a (begin ...) a macro isn't defined
+   yet for the forms after it."
   (let* ([macro? (lambda (f) (and (pair? f) (eq? (car f) 'define-syntax)))]
          [macros (filter macro? forms)]
          [others (filter (lambda (f) (not (macro? f))) forms)])
     (for-each eval macros)
     (if (null? others)
         void
-        ;; A definition's own value is void, so a marker after the last
-        ;; form doesn't change the result that matters.
-        (eval-allowing-later-definitions (cons 'begin (apply append (map unit-forms others))) 100))))
+        (let ([value (eval-allowing-later-definitions (cons 'begin (apply append (map unit-forms others))) 100)])
+          ;; A definition ends in a set! (its own, or the marker after it),
+          ;; which returns the old value: show the name instead.
+          (or (define-target (last others)) value)))))
 
 (define (eval-allowing-later-definitions form tries)
   "Evaluates `form`, defining placeholders for globals it names early.
@@ -251,12 +284,14 @@
 
      (add-hook! 'after-save (lambda () (message \"saved\")))"
   (unless (memq proc (hook-procs name))
-    (set! *hooks* (hash-insert *hooks* name (append (hook-procs name) (list proc))))))
+    (set! *hooks* (hash-insert *hooks* name (append (hook-procs name) (list proc)))))
+  void)
 
 (define (remove-hook! name proc)
   "Takes `proc` off hook `name`. Pass the same procedure that was
    added, so a hook to be removed later needs a name of its own."
-  (set! *hooks* (hash-insert *hooks* name (filter (lambda (p) (not (eq? p proc))) (hook-procs name)))))
+  (set! *hooks* (hash-insert *hooks* name (filter (lambda (p) (not (eq? p proc))) (hook-procs name))))
+  void)
 
 (define (run-hooks name . args)
   "Runs hook `name`, passing `args` to each procedure."
@@ -319,7 +354,8 @@
                   [(eq? where 'around) (list (car a) (cadr a) (caddr a) (add (cadddr a)))]
                   [else (error (string-append "advice must be before, after or around, not "
                                               (symbol->string where)))])])
-    (set! *advice* (hash-insert *advice* name a))))
+    (set! *advice* (hash-insert *advice* name a)))
+  void)
 
 (define (advice-remove! name proc)
   "Takes `proc` off the advice on `name`. With none left, the original
@@ -333,7 +369,8 @@
             (begin
               (eval (list 'set! name (list 'advice-original (list 'quote name))))
               (set! *advice* (hash-remove *advice* name)))
-            (set! *advice* (hash-insert *advice* name a)))))))
+            (set! *advice* (hash-insert *advice* name a))))))
+  void)
 
 ;;; Timers and jobs
 ;;;
@@ -372,7 +409,8 @@
 (define (cancel-timer! id)
   "Stops timer `id`, from run-after! or run-every!."
   (timer-cancel! id)
-  (set! *timers* (hash-remove *timers* id)))
+  (set! *timers* (hash-remove *timers* id))
+  void)
 
 (define (imp-timer-fired id)
   "Called by the server when timer `id` fires."
@@ -498,11 +536,13 @@
 (define (set-buffer-local! name value)
   "Sets the current buffer's own value for `name` to `value`."
   (set! *buffer-locals*
-        (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value))))
+        (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value)))
+  void)
 
 (define (kill-buffer-locals! id)
   "Forgets every buffer-local value of buffer `id`, when it goes."
-  (set! *buffer-locals* (hash-remove *buffer-locals* id)))
+  (set! *buffer-locals* (hash-remove *buffer-locals* id))
+  void)
 
 ;;; Options
 ;;;
@@ -512,6 +552,8 @@
 ;;; when its value changes, for settings Rust needs to know about (tabstop).
 
 (define *options* (hash))
+;; The options set globally (set-option!, :set) since the editor started.
+(define *options-set* (hash))
 (define *option-watchers* (hash))
 (define *option-aliases* (hash))
 
@@ -587,9 +629,15 @@
     (let ([computed (hash-try-get *computed-options* name)])
       (when computed ((cadr computed) value)))
     (set! *options* (hash-insert *options* name value))
+    (set! *options-set* (hash-insert *options-set* name #t))
     (let ([watch (hash-try-get *option-watchers* name)])
       (when watch (watch (option name))))
     (run-hooks 'option-change name value)))
+
+(define (option-set? name)
+  "Whether option `name` was set globally, with set-option! or :set,
+   rather than left at its default."
+  (hash-contains? *options-set* (known-option-name name)))
 
 (define (watch-option! name proc)
   "Makes `proc` the watcher of option `name`, and calls it now.

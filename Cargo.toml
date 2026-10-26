@@ -5,7 +5,7 @@ members = ["crates/imp-core", "crates/imp-server", "crates/imp", "crates/imp-gui
 exclude = ["examples/wasm-plugin"]
 
 [workspace.package]
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/apisandipas/imp"
@@ -35,6 +35,7 @@ base64 = "0.22"
 kdl = { version = "6", default-features = false, features = ["span"] }
 vt100 = "0.17"
 portable-pty = "0.9"
+libc = "0.2"
 
 # Steel's prelude takes ~1s to load in a debug build, and every test starts a
 # server. Optimizing dependencies (not our own crates) keeps tests fast while

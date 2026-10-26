@@ -159,6 +159,40 @@ pub fn resize(id: u64, rows: u16, cols: u16) {
     });
 }
 
+/// What mouse reporting the program asked for, as (mode, encoding): mode
+/// "none", "press", "press-release", "button-motion" or "any-motion";
+/// encoding "default", "utf8" or "sgr".
+pub fn mouse_mode(id: u64) -> Option<(&'static str, &'static str)> {
+    use vt100::{MouseProtocolEncoding as E, MouseProtocolMode as M};
+    with(id, |t| {
+        let screen = t.parser.screen();
+        let mode = match screen.mouse_protocol_mode() {
+            M::None => "none",
+            M::Press => "press",
+            M::PressRelease => "press-release",
+            M::ButtonMotion => "button-motion",
+            M::AnyMotion => "any-motion",
+        };
+        let encoding = match screen.mouse_protocol_encoding() {
+            E::Default => "default",
+            E::Utf8 => "utf8",
+            E::Sgr => "sgr",
+        };
+        (mode, encoding)
+    })
+}
+
+/// The buffer line the program's screen starts on (the history comes
+/// before it), as of the last render.
+pub fn screen_top(id: u64) -> Option<usize> {
+    with(id, |t| t.history.len())
+}
+
+/// The terminal's (rows, columns), or `None` if it is gone.
+pub fn screen_size(id: u64) -> Option<(u16, u16)> {
+    with(id, |t| t.parser.screen().size())
+}
+
 pub fn kill(id: u64) {
     if let Some(mut t) = TERMS.with(|t| t.borrow_mut().remove(&id)) {
         let _ = t.killer.kill();

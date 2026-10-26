@@ -32,6 +32,43 @@ fn themes_set_the_background_and_switch_completely() {
 }
 
 #[test]
+fn a_theme_s_specific_faces_go_when_it_does() {
+    let mut s = themed("");
+    // imp's own themes leave the specific syntax faces out, so their text
+    // is drawn in the general face.
+    for face in [
+        "syntax.comment.documentation",
+        "syntax.function.builtin",
+        "syntax.constant.builtin",
+        "syntax.type.builtin",
+    ] {
+        assert_eq!(
+            s.eval(&format!("(face-spec \"{face}\")")).unwrap(),
+            "#false"
+        );
+    }
+    s.eval(
+        r#"(define-theme! 'builtins 'one-dark (hash)
+             (list (list "syntax.function.builtin" "fg=#ff0000")))
+           (load-theme! 'builtins)"#,
+    )
+    .unwrap();
+    assert_eq!(
+        s.eval("(face-spec \"syntax.function.builtin\")").unwrap(),
+        "\"fg=#ff0000\""
+    );
+    s.eval("(load-theme! 'one-dark)").unwrap();
+    assert_eq!(
+        s.eval("(face-spec \"syntax.function.builtin\")").unwrap(),
+        "#false"
+    );
+    // A face the user set, not the theme, stays.
+    s.eval(r#"(set-face! "my.face" "bold") (load-theme! 'one-light)"#)
+        .unwrap();
+    assert_eq!(s.eval("(face-spec \"my.face\")").unwrap(), "\"bold\"");
+}
+
+#[test]
 fn everforest_has_its_own_syntax_colors_and_leaves_none_behind() {
     let mut s = themed("");
     let path = temp_path("everforest.rs");

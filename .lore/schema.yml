@@ -1,0 +1,34 @@
+# lore's note types. `lore check` enforces these fields; `lore new` creates
+# notes in each type's dir, starting at the first status listed.
+notes: docs
+ignore: [target/**, docs/guide/**]
+types:
+  Spec:
+    dir: docs/specs
+    fields:
+      status: { enum: [draft, accepted, retired], required: true }
+      # The GitHub issue it came from, as a URL.
+      issue: {}
+  Decision:
+    dir: docs/decisions
+    id: "{n:4}"
+    summary: Decision
+    fields:
+      status: { enum: [proposed, accepted, superseded], required: true }
+      supersedes: { link: Decision, many: true }
+  Effort:
+    dir: docs/efforts
+    freeze: [specs]
+    fields:
+      specs: { link: Spec, many: true, required: true }
+      status: { enum: [planned, active, done] }
+      # The GitHub issue it closes, as a URL.
+      issue: {}
+  # A page of the website's user reference, written in plain English
+  # from its spec; frozen against it, so lore check says when the spec
+  # has changed and the page needs rewriting (decision 0018).
+  Page:
+    dir: docs/reference
+    freeze: [spec]
+    fields:
+      spec: { link: Spec, required: true }

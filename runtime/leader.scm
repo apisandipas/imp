@@ -22,18 +22,21 @@
    Keys are written run together as typed:
 
      (define-leader! \"gs\" 'git-status \"status\")"
-  (set! *leader-bindings* (hash-insert *leader-bindings* keys (list command description))))
+  (set! *leader-bindings* (hash-insert *leader-bindings* keys (list command description)))
+  void)
 
 (define (define-leader-group! keys name)
   "Names the group of leader keys that start with `keys`.
    The which-key popup shows it as +name:
 
      (define-leader-group! \"g\" \"git\")"
-  (set! *leader-groups* (hash-insert *leader-groups* keys name)))
+  (set! *leader-groups* (hash-insert *leader-groups* keys name))
+  void)
 
 (define (undefine-leader! keys)
   "Removes the leader binding for `keys`, if there is one."
-  (set! *leader-bindings* (hash-remove *leader-bindings* keys)))
+  (set! *leader-bindings* (hash-remove *leader-bindings* keys))
+  void)
 
 (define (first-key text)
   "The first key of `text` in key notation: \"<tab>\", \"C-x\" or one char."
@@ -64,6 +67,33 @@
     (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
           (lambda (a b) (string<? (car a) (car b))))))
 
+(define (prefix-continuations state prefix)
+  "The keys that can follow Vim prefix `prefix` in `state` ('normal or
+   'visual), as sorted (key . label) pairs: each key bound after it in the
+   buffer's mode keymaps, the state's keymap, operators, motions and (in
+   visual) text objects. A key that is itself a prefix is +prefix; one
+   with no label has \"\"."
+  (let* ([n (string-length prefix)]
+         [bound (apply append
+                       (map hash-keys->list
+                            (append (map keymap (*local-keymaps* state))
+                                    (list (keymap state) *operators* *motions*)
+                                    (if (eq? state 'visual) (list *text-objects*) '()))))]
+         [seen (hash)])
+    (for-each
+     (lambda (keys)
+       (when (and (starts-with? keys prefix) (> (string-length keys) n))
+         (let* ([key (first-key (substring keys n (string-length keys)))]
+                [full (string-append prefix key)])
+           (unless (hash-contains? seen key)
+             (set! seen (hash-insert seen key
+                                     (if (member full bound)
+                                         (or (binding-label state full) "")
+                                         "+prefix")))))))
+     bound)
+    (sort (map (lambda (k) (cons k (hash-ref seen k))) (hash-keys->list seen))
+          (lambda (a b) (string<? (car a) (car b))))))
+
 (define (key-label key)
   "How `key` shows in prompts and popups: SPC for a space."
   (if (equal? key " ") "SPC" key))
@@ -73,7 +103,8 @@
   (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e))) (leader-continuations prefix))))
 
 (define (which-key-table entries)
-  "Popup rows for (key . description) pairs, in columns down then across.
+  "Popup rows for (key . description) pairs, in columns down then across,
+   and a blank row under them, so they don't sit on the command line.
    Keys, the arrow, groups (+name) and commands each have a face."
   (let* ([key-width (apply max (cons 3 (map (lambda (e) (string-length (car e))) entries)))]
          [width (max 22 (+ key-width 6 (apply max (cons 0 (map (lambda (e) (string-length (cdr e))) entries)))))]
@@ -85,14 +116,16 @@
                          (list " → " "which-key.separator")
                          (list (pad-right (cdr e) (- width key-width 3))
                                (if group? "which-key.group" "which-key.command")))))])
-    (map (lambda (r)
+    (append
+     (map (lambda (r)
            (cons " "
                  (apply append
                         (map (lambda (c)
                                (let ([i (+ (* c rows) r)])
                                  (if (< i (length entries)) (cell (list-ref entries i)) '())))
                              (range 0 columns)))))
-         (range 0 rows))))
+         (range 0 rows))
+     (list (list " ")))))
 
 ;; M-x describes a command with no doc comment by its which-key label
 ;; (completion.scm).
@@ -140,11 +173,26 @@
   (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
   (set-popup! '()))
 
+(define (leader-back!)
+  "Takes back the last leader key typed and shows the popup for the keys
+   before it at once; at SPC alone, ends the sequence."
+  (let ([keys (split-keys *leader-keys*)])
+    (if (null? keys)
+        (begin (leader-done!) (message ""))
+        (begin
+          (set! *leader-keys* (apply string-append (reverse (cdr (reverse keys)))))
+          (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
+          (set-status! (leader-prompt))
+          (show-which-key-popup! (which-key-lines *leader-keys*) (trim (leader-prompt)))))))
+
 (define (leader-input! key)
   "Handles `key`, typed after the leader: runs the command it completes,
-   waits for more keys, or cancels on <esc>, C-g or C-c."
-  (if (member key '("<esc>" "C-g" "C-c"))
-      (begin (leader-done!) (message ""))
+   waits for more keys, goes back a key on <bs>, or cancels on <esc>, C-g
+   or C-c."
+  (cond
+    [(member key '("<esc>" "C-g" "C-c")) (leader-done!) (message "")]
+    [(equal? key "<bs>") (leader-back!)]
+    [else
       (let* ([keys (string-append *leader-keys* key)]
              [binding (hash-try-get *leader-bindings* keys)])
         (cond
@@ -158,7 +206,7 @@
            (show-which-key!)]
           [else
            (leader-done!)
-           (message (string-append (leader-prompt) (key-label key) " is undefined"))]))))
+           (message (string-append (leader-prompt) (key-label key) " is undefined"))]))]))
 
 ;; The popup waits which-key-delay ms, so keys typed quickly don't flash
 ;; it; the prompt shows at once.
@@ -168,7 +216,7 @@
 (define (show-which-key!)
   "Shows the leader prompt now, and the which-key popup after
    which-key-delay ms if the sequence is still waiting on the same keys."
-  (message (leader-prompt))
+  (set-status! (leader-prompt))
   (when *which-key-timer* (cancel-timer! *which-key-timer*))
   (set! *which-key-timer* #f)
   (let ([keys *leader-keys*])
@@ -180,7 +228,33 @@
                             (set! *which-key-timer* #f)
                             ;; Only if still waiting on the same keys.
                             (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
-                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt))))))))))
+                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))))))))
+  void)
+
+;; Which-key for Vim's prefixes (vim.scm calls this through
+;; *prefix-which-key*): the same popup and delay as the leader.
+(define *prefix-popup* #f)  ; the prefix whose popup is up, or #f
+
+(set! *prefix-which-key*
+      (lambda (state title prefix)
+        (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
+        (when *prefix-popup* (set! *prefix-popup* #f) (set-popup! '()))
+        (when (and prefix (pair? (prefix-continuations state prefix)))
+          (let ([show! (lambda ()
+                         (set! *prefix-popup* prefix)
+                         (show-which-key-popup!
+                          (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e)))
+                                                (prefix-continuations state prefix)))
+                          title))])
+            (if (<= (option 'which-key-delay) 0)
+                (show!)
+                (set! *which-key-timer*
+                      (run-after! (option 'which-key-delay)
+                                  (lambda ()
+                                    (set! *which-key-timer* #f)
+                                    ;; Only if the prefix is still waiting.
+                                    (when (equal? *prefix* prefix) (show!))))))))
+        void))
 
 (define-command! 'leader
   (lambda (count)

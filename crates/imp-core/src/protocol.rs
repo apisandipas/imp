@@ -33,6 +33,9 @@ pub enum ClientMsg {
     /// Open these files (absolute paths) in the editor, as `imp --connect
     /// FILE...` asks the daemon to.
     Open(Vec<String>),
+    /// Pasted text, whole, from a terminal with bracketed paste on, rather
+    /// than as one key per char.
+    Paste(String),
     /// The mouse at screen cell (`x`, `y`). `action` is "press", "drag",
     /// "release", "scroll-up" or "scroll-down"; `button` is "left",
     /// "middle", "right" (or "" for scrolling).

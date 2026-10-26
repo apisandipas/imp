@@ -2,11 +2,17 @@
 ;;;
 ;;; A fold is a pair of buffer marks, so it follows edits; a fold whose
 ;;; lines are all deleted goes away. Folds nest. Rust draws closed folds
-;;; (set-closed-folds!); vim.scm has the keys (zf zo zc za zR zM zE zd) and
+;;; (set-folds!); vim.scm has the keys (zf zo zc za zR zM zE zd) and
 ;;; makes j, k and linewise operators treat a closed fold as one line.
 ;;; Packages make folds too: Org folds headings with them.
 
 (define *fold-next* 0)
+
+;; The fold column between the line numbers and the text, a chevron on
+;; each fold's first line: "auto" while the buffer has folds, "yes"
+;; always, "no" never.
+(define-option! 'foldcolumn "auto" '(fdc))
+(watch-option! 'foldcolumn set-fold-column!)
 
 (define (fold-entries)
   "The current buffer's folds, as (id closed?)."
@@ -55,26 +61,37 @@
   (cadddr f))
 
 (define (folds-changed!)
-  "Tells the renderer which lines closed folds hide."
-  (set-closed-folds! (map (lambda (f) (list (fold-first f) (fold-last f)))
-                          (filter fold-closed? (buffer-folds))))
+  "Tells the renderer the folds: the lines closed ones hide, and the
+   fold column's chevrons."
+  (set-folds! (map (lambda (f) (list (fold-first f) (fold-last f) (fold-closed? f)))
+                   (buffer-folds)))
   (set-buffer-local! 'folds-version (buffer-version)))
 
 (define (fold-create! first last closed?)
   "Makes a fold of lines first..last; returns its id."
+  (let ([id (fold-add! first last closed?)])
+    (folds-changed!)
+    id))
+
+(define (fold-add! first last closed?)
+  "Makes a fold of lines first..last without redrawing; returns its id.
+   Call folds-changed! after a batch of these."
   (set! *fold-next* (+ *fold-next* 1))
   (let ([id *fold-next*] [first (min first last)] [last (max first last)])
     (mark-set! (fold-mark id #f) (line-start first))
     (mark-set! (fold-mark id #t) (if (< last (last-line)) (line-start (+ last 1)) (buffer-length)))
     (set-buffer-local! 'folds (cons (list id closed?) (fold-entries)))
-    (folds-changed!)
     id))
 
 (define (fold-delete! id)
   "Removes fold `id` from the current buffer."
-  (fold-forget! id)
-  (set-buffer-local! 'folds (filter (lambda (e) (not (= (car e) id))) (fold-entries)))
+  (fold-remove! id)
   (folds-changed!))
+
+(define (fold-remove! id)
+  "Removes fold `id` without redrawing; call folds-changed! after."
+  (fold-forget! id)
+  (set-buffer-local! 'folds (filter (lambda (e) (not (= (car e) id))) (fold-entries))))
 
 (define (fold-set-closed! id closed?)
   "Closes fold `id`, or opens it when `closed?` is #f."
@@ -138,7 +155,8 @@
     (when (and *fold-open-wanted* (closed-fold-at (current-line)))
       (for-each (lambda (f) (when (fold-closed? f) (fold-set-closed! (fold-id f) #f)))
                 (folds-at (current-line)))))
-  (set! *fold-open-wanted* #f))
+  (set! *fold-open-wanted* #f)
+  void)
 
 (add-hook! 'post-command folds-after-command!)
 (add-hook! 'buffer-enter (lambda () (unless (null? (fold-entries)) (folds-changed!))))

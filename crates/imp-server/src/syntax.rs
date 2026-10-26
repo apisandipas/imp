@@ -267,7 +267,10 @@ impl Syntax {
 
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,
     /// end char, faces to try). Earlier patterns win where captures
-    /// overlap, as tree-sitter's queries are written to expect.
+    /// overlap, as tree-sitter's queries are written to expect, except
+    /// that of two captures of the same text, a more specific one wins
+    /// over its general one: `comment.documentation` over the `comment`
+    /// the Rust query lists first.
     pub fn highlights(
         &self,
         rope: &Rope,
@@ -300,7 +303,29 @@ impl Syntax {
         // Lower pattern index first, so painting "only where nothing is
         // painted yet" gives earlier patterns priority.
         out.sort_by_key(|(pattern, ..)| *pattern);
+        let mut first: HashMap<(usize, usize), usize> = HashMap::new();
+        for i in 0..out.len() {
+            let range = (out[i].1, out[i].2);
+            match first.get(&range) {
+                Some(&j) if more_specific(out[i].3, out[j].3) => out.swap(i, j),
+                Some(_) => {}
+                None => {
+                    first.insert(range, i);
+                }
+            }
+        }
         out.into_iter().map(|(_, s, e, f)| (s, e, f)).collect()
+    }
+}
+
+/// Whether the faces of capture `a` are a more specific form of `b`'s:
+/// `syntax.comment.documentation` of `syntax.comment`.
+fn more_specific(a: &[String], b: &[String]) -> bool {
+    match (a.first(), b.first()) {
+        (Some(a), Some(b)) => {
+            a.len() > b.len() && a.starts_with(b.as_str()) && a[b.len()..].starts_with('.')
+        }
+        _ => false,
     }
 }
 
@@ -367,6 +392,39 @@ pub fn ancestors(root: Node, rope: &Rope, at: usize) -> Vec<(String, String, usi
 
 /// The children of the smallest node spanning chars `start..end` exactly
 /// (named or not), each with its field name.
+/// The (first, last) lines of every named node of one of `kinds` that
+/// spans more than one line, in tree order: what foldmethod syntax folds.
+/// A node ending at the start of a line ends on the line before.
+pub fn fold_lines(root: Node, kinds: &[String]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut cursor = root.walk();
+    loop {
+        let node = cursor.node();
+        if node.is_named() && kinds.iter().any(|k| k == node.kind()) {
+            let (start, end) = (node.start_position(), node.end_position());
+            let last = if end.column == 0 && end.row > start.row {
+                end.row - 1
+            } else {
+                end.row
+            };
+            if last > start.row {
+                out.push((start.row, last));
+            }
+        }
+        if cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                return out;
+            }
+        }
+    }
+}
+
 pub fn children(
     root: Node,
     rope: &Rope,

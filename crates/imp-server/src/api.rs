@@ -105,6 +105,40 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("buffer-version", || {
         editor::with(|e| e.buffer.version() as isize)
     });
+    // The edits since the buffer was at `version`, oldest first, as
+    // (start old-end new-end text start-line start-col old-end-line
+    // old-end-col), or #f when they aren't known (Buffer::changes_since).
+    engine.register_fn("buffer-changes-since", |version: isize| {
+        editor::with(|e| {
+            let changes = u64::try_from(version)
+                .ok()
+                .and_then(|v| e.buffer.changes_since(v));
+            changes.map(|changes| {
+                let int = |n: usize| SteelVal::IntV(n as isize);
+                SteelVal::ListV(
+                    changes
+                        .into_iter()
+                        .map(|c| {
+                            SteelVal::ListV(
+                                vec![
+                                    int(c.start),
+                                    int(c.old_end),
+                                    int(c.new_end),
+                                    SteelVal::StringV(c.text.into()),
+                                    int(c.start_point.0),
+                                    int(c.start_point.1),
+                                    int(c.old_end_point.0),
+                                    int(c.old_end_point.1),
+                                ]
+                                .into(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                )
+            })
+        })
+    });
     engine.register_fn("buffer-modified?", || {
         editor::with(|e| e.buffer.is_modified())
     });
@@ -263,13 +297,13 @@ pub fn register(engine: &mut Engine) {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
-    // Seconds since the epoch the file was modified, or #f.
+    // Milliseconds since the epoch the file was modified, or #f.
     engine.register_fn("file-mtime", |path: String| {
         std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as isize)
+            .map(|d| d.as_millis() as isize)
     });
     engine.register_fn("write-text-file!", |path: String, text: String| {
         let path = Path::new(&path);
@@ -509,6 +543,28 @@ pub fn register(engine: &mut Engine) {
             Ok::<_, String>(e.buffer.redo().map(|at| at as isize))
         })
     });
+    // g+ (#t) and g-: the state made just after or before, across
+    // branches. Where the text changed, or #f past the newest or oldest.
+    engine.register_fn("undo-step!", |forward: bool| {
+        editor::with(|e| {
+            writable(e)?;
+            Ok::<_, String>(e.buffer.undo_step(forward).map(|at| at as isize))
+        })
+    });
+    // The tip of each undo branch as (change-number changes-deep
+    // seconds-ago), oldest first.
+    engine.register_fn("undo-list", || {
+        editor::with(|e| {
+            e.buffer
+                .undo_list()
+                .into_iter()
+                .map(|(n, depth, made)| {
+                    let ago = made.elapsed().map_or(0, |d| d.as_secs());
+                    vec![n as isize, depth as isize, ago as isize]
+                })
+                .collect::<Vec<_>>()
+        })
+    });
     engine.register_fn("save!", || {
         editor::with(|e| match e.buffer.save() {
             Ok(()) => true,
@@ -660,6 +716,13 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("line-col-at-display", |line: isize, x: isize| {
         editor::with(|e| crate::render::col_at_display(e, clamp(line), clamp(x)) as isize)
     });
+    // Any window's text area as (rows columns), or #f.
+    engine.register_fn("window-text-size", |id: isize| {
+        editor::with(|e| {
+            crate::render::window_text_size(e, clamp(id))
+                .map(|(r, c)| vec![SteelVal::IntV(r as isize), SteelVal::IntV(c as isize)])
+        })
+    });
     engine.register_fn("window-text-width", || {
         editor::with(|e| crate::render::window_text_width(e) as isize)
     });
@@ -731,15 +794,17 @@ pub fn register(engine: &mut Engine) {
     // When the current buffer shows its sign column: "yes", "no" or
     // "auto" (while it has signs).
     engine.register_fn("set-sign-column!", |mode: String| {
-        use crate::render::SignColumn;
         editor::with(|e| {
             let id = e.current;
-            let mode = match mode.as_str() {
-                "yes" => SignColumn::Yes,
-                "no" => SignColumn::No,
-                _ => SignColumn::Auto,
-            };
-            e.sign_columns.insert(id, mode);
+            e.sign_columns.insert(id, gutter_column(&mode));
+        })
+    });
+    // When the current buffer shows its fold column: "yes", "no" or
+    // "auto" (while it has folds).
+    engine.register_fn("set-fold-column!", |mode: String| {
+        editor::with(|e| {
+            let id = e.current;
+            e.fold_columns.insert(id, gutter_column(&mode));
         })
     });
     // Draws the current buffer indented by outline level, `per-level`
@@ -852,6 +917,11 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.faces.insert(name, style));
         Ok::<(), String>(())
     });
+    // Removes a face, so text drawn in it falls back to its general face
+    // (syntax.function.builtin to syntax.function). For load-theme!.
+    engine.register_fn("remove-face!", |name: String| {
+        editor::with(|e| e.faces.remove(&name));
+    });
     // Every face's name, sorted; a face's spec ("fg=#rrggbb bold"), or #f
     // if there's no such face; and the faces drawn at an offset of the
     // current buffer, bottom first. For describe-face and list-faces.
@@ -887,15 +957,35 @@ pub fn register(engine: &mut Engine) {
         },
     );
 
-    // The current buffer's closed folds, as (first last) lines; nested
-    // ones are dropped, since the outer fold hides them.
-    engine.register_fn("set-closed-folds!", |folds: Vec<Vec<isize>>| {
-        let mut ranges: Vec<(usize, usize)> = folds
+    // The current buffer's folds, as (first last closed?) lines. The
+    // renderer hides what closed ones hold, nested ones dropped since the
+    // outer fold hides them, and puts a chevron on each first line.
+    engine.register_fn("set-folds!", |folds: Vec<Vec<SteelVal>>| {
+        let folds: Vec<(usize, usize, bool)> = folds
             .iter()
             .filter_map(|f| match f.as_slice() {
-                [a, b] if a <= b => Some((clamp(*a), clamp(*b))),
+                [SteelVal::IntV(a), SteelVal::IntV(b), closed] if a <= b => Some((
+                    clamp(*a),
+                    clamp(*b),
+                    !matches!(closed, SteelVal::BoolV(false)),
+                )),
                 _ => None,
             })
+            .collect();
+        let mut starts: std::collections::BTreeMap<usize, (usize, bool)> = Default::default();
+        for &(a, b, closed) in &folds {
+            if starts.get(&a).is_none_or(|&(last, _)| b > last) {
+                starts.insert(a, (b, closed));
+            }
+        }
+        let starts = starts
+            .into_iter()
+            .map(|(a, (_, closed))| (a, closed))
+            .collect();
+        let mut ranges: Vec<(usize, usize)> = folds
+            .iter()
+            .filter(|f| f.2)
+            .map(|&(a, b, _)| (a, b))
             .collect();
         ranges.sort_by_key(|&(a, b)| (a, std::cmp::Reverse(b)));
         let mut outer: Vec<(usize, usize)> = Vec::new();
@@ -908,8 +998,23 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let id = e.current;
             e.folds.insert(id, outer);
+            e.fold_starts.insert(id, starts);
         })
     });
+    // The blocks of lines that differ between two texts, as a list of
+    // (old-start old-count new-start new-count), lines counted from 0.
+    engine.register_fn("line-diff", |old: String, new: String| {
+        crate::diff::line_hunks(&old, &new)
+            .into_iter()
+            .map(|h| {
+                vec![h.old_start, h.old_count, h.new_start, h.new_count]
+                    .into_iter()
+                    .map(|n| SteelVal::IntV(n as isize))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+
     // Gutter signs for the current buffer: a list of (line text face);
     // '() removes them, and the sign column with them.
     engine.register_fn("set-signs!", |signs: Vec<Vec<SteelVal>>| {
@@ -925,6 +1030,36 @@ pub fn register(engine: &mut Engine) {
             let id = e.current;
             e.signs.insert(id, map);
         })
+    });
+
+    // The current buffer's change column: a list of (line text face), or
+    // #f to take the column away. '() keeps the column with no marks.
+    engine.register_fn("set-change-marks!", |marks: SteelVal| {
+        let marks = match marks {
+            SteelVal::BoolV(false) => None,
+            SteelVal::ListV(list) => Some(
+                list.iter()
+                    .filter_map(|mark| match mark {
+                        SteelVal::ListV(m) => match m.iter().collect::<Vec<_>>().as_slice() {
+                            [SteelVal::IntV(line), SteelVal::StringV(text), SteelVal::StringV(face)] => {
+                                Some((clamp(*line), (text.to_string(), face.to_string())))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            ),
+            _ => return Err("set-change-marks!: expected a list or #f".to_string()),
+        };
+        editor::with(|e| {
+            let id = e.current;
+            match marks {
+                Some(marks) => e.change_marks.insert(id, marks),
+                None => e.change_marks.remove(&id),
+            };
+        });
+        Ok(())
     });
 
     // Display-only text before lines of the current buffer: a list of
@@ -994,6 +1129,62 @@ pub fn register(engine: &mut Engine) {
                 ]
             })
         })
+    });
+
+    // Text after the end of line `line` of the current buffer, in `face`;
+    // #f for `text` removes it.
+    engine.register_fn(
+        "set-line-end-text!",
+        |line: isize, text: SteelVal, face: String| {
+            editor::with(|e| {
+                let id = e.current;
+                let texts = e.line_end_texts.entry(id).or_default();
+                match text {
+                    SteelVal::StringV(t) => {
+                        texts.insert(clamp(line), (t.to_string(), face));
+                    }
+                    _ => {
+                        texts.remove(&clamp(line));
+                    }
+                }
+            })
+        },
+    );
+
+    // The current buffer's footer: a list of lines, each a list of (text
+    // face) parts, face #f for none; '() removes it.
+    engine.register_fn("set-footer!", |lines: Vec<Vec<Vec<SteelVal>>>| {
+        let lines: Vec<editor::FooterLine> = lines
+            .into_iter()
+            .map(|parts| {
+                parts
+                    .into_iter()
+                    .filter_map(|part| match part.as_slice() {
+                        [SteelVal::StringV(text), face] => Some((
+                            text.to_string(),
+                            match face {
+                                SteelVal::StringV(f) => Some(f.to_string()),
+                                _ => None,
+                            },
+                        )),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        editor::with(|e| {
+            let id = e.current;
+            if lines.is_empty() {
+                e.footers.remove(&id);
+            } else {
+                e.footers.insert(id, lines);
+            }
+        })
+    });
+
+    // The line whose fold chevron is at screen cell (x, y), or #f.
+    engine.register_fn("fold-column-at", |x: isize, y: isize| {
+        editor::with(|e| crate::render::fold_column_at(e, clamp(x), clamp(y)).map(|l| l as isize))
     });
 
     // The border at screen cell (x, y): "width" between side-by-side
@@ -1071,6 +1262,34 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("term-application-cursor?", |id: isize| {
         crate::term::application_cursor(clamp(id) as u64)
     });
+    // What mouse reporting the program asked for, as (mode encoding)
+    // strings (term::mouse_mode), or #f once it is gone.
+    engine.register_fn("term-mouse-mode", |id: isize| {
+        crate::term::mouse_mode(clamp(id) as u64)
+            .map(|(m, e)| vec![SteelVal::StringV(m.into()), SteelVal::StringV(e.into())])
+    });
+    // The buffer line the terminal's screen starts on, or #f.
+    engine.register_fn("term-screen-top", |id: isize| {
+        crate::term::screen_top(clamp(id) as u64).map(|n| n as isize)
+    });
+    // The text cell at screen cell (x, y) as (window line column), or #f
+    // (render::window_cell).
+    engine.register_fn("window-cell", |x: isize, y: isize| {
+        editor::with(|e| {
+            crate::render::window_cell(e, clamp(x), clamp(y)).map(|(w, l, c)| {
+                vec![
+                    SteelVal::IntV(w as isize),
+                    SteelVal::IntV(l as isize),
+                    SteelVal::IntV(c as isize),
+                ]
+            })
+        })
+    });
+    // The terminal's screen as (rows columns), or #f once it is gone.
+    engine.register_fn("term-size", |id: isize| {
+        crate::term::screen_size(clamp(id) as u64)
+            .map(|(r, c)| vec![SteelVal::IntV(r as isize), SteelVal::IntV(c as isize)])
+    });
     engine.register_fn("term-bracketed-paste?", |id: isize| {
         crate::term::bracketed_paste(clamp(id) as u64)
     });
@@ -1118,11 +1337,22 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("socket-path", |name: String| {
         crate::daemon::socket_path(&name).display().to_string()
     });
+    // Whether regexp `pattern` (Rust's syntax, ignoring case) matches
+    // somewhere in `text`; a bad pattern is an error naming it. For the
+    // agenda's {regexp} matches.
+    engine.register_fn("regexp-match?", |pattern: String, text: String| {
+        regex::RegexBuilder::new(&pattern)
+            .case_insensitive(true)
+            .build()
+            .map(|re| re.is_match(&text))
+            .map_err(|e| format!("bad regexp {pattern}: {e}"))
+    });
+
     // Char offsets of every match of `pattern` in the buffer, up to `limit`.
     engine.register_fn("search-all", |pattern: String, limit: isize| {
         let re = search::compile(&pattern)?;
         Ok::<_, String>(editor::with(|e| {
-            let text = e.buffer.text();
+            let text = e.buffer.shared_text();
             re.find_iter(&text)
                 .take(clamp(limit))
                 .map(|m| e.buffer.byte_to_char(m.start()) as isize)
@@ -1137,7 +1367,7 @@ pub fn register(engine: &mut Engine) {
             if needle.is_empty() {
                 return Vec::new();
             }
-            let text = e.buffer.text();
+            let text = e.buffer.shared_text();
             text.match_indices(&needle)
                 .take(clamp(limit))
                 .map(|(b, _)| e.buffer.byte_to_char(b) as isize)
@@ -1347,6 +1577,21 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
+    // (first last) lines of each multi-line node of one of `kinds`, for
+    // foldmethod syntax (syntax::fold_lines).
+    engine.register_fn("syntax-fold-lines", |kinds: Vec<String>| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
+                return Vec::new();
+            };
+            crate::syntax::fold_lines(root, &kinds)
+                .into_iter()
+                .map(|(a, b)| vec![a as isize, b as isize])
+                .collect::<Vec<_>>()
+        })
+    });
     // The whole tree as an S-expression, for looking at while writing
     // text objects.
     engine.register_fn("syntax-tree", || {
@@ -1478,4 +1723,15 @@ pub fn register(engine: &mut Engine) {
     crate::wasm::register(engine);
     crate::crdt::register(engine);
     crate::kdl::register(engine);
+}
+
+/// A gutter column's option value ("yes", "no", "auto") as the renderer
+/// takes it.
+fn gutter_column(mode: &str) -> crate::render::GutterColumn {
+    use crate::render::GutterColumn;
+    match mode {
+        "yes" => GutterColumn::Yes,
+        "no" => GutterColumn::No,
+        _ => GutterColumn::Auto,
+    }
 }

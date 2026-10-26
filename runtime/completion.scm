@@ -63,6 +63,12 @@
     (map (lambda (name) (string-append dir name))
          (fuzzy-filter part (sort names string<?) *completion-limit*))))
 
+(define (completion-row c)
+  "Candidate `c` as a menu row's runs: a path (with a /) is a path run,
+   so a long one is shortened from the start rather than cut."
+  (list (string-append " " (completion-icon-prefix c))
+        (if (string-contains? c "/") (list c "popup.path") c)))
+
 (define (show-completions!)
   "Draws the menu, scrolled so the selection is visible."
   (let* ([n (length *completion-matches*)]
@@ -76,12 +82,13 @@
                    (let ([width (+ 3 (apply max (map string-length shown)))])
                      (map (lambda (c)
                             (let ([note (*completion-annotate* c)])
-                              (if note
-                                  (list (string-append " " (completion-icon-prefix c) (pad-right c width))
-                                        (list note "popup.detail"))
-                                  (string-append " " (completion-icon-prefix c) c))))
+                              (append (completion-row c)
+                                      (if note
+                                          (list (make-string (- width (string-length c)) #\space)
+                                                (list note "popup.detail"))
+                                          '()))))
                           shown))]
-                  [else (map (lambda (c) (string-append " " (completion-icon-prefix c) c)) shown)]))
+                  [else (map completion-row shown)]))
     ;; Titled with the prompt, without its colon.
     (set-popup-place! (car *completion-place*) (cadr *completion-place*) (trim (let ([p (trim *cmdline-prompt*)])
                                          (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))

@@ -13,10 +13,12 @@
 ;;; Palette names: bg (text background), bg-alt (status line, popups),
 ;;; bg-hl (cursor line), selection, border, fg, dim, comment, punct, red,
 ;;; orange, yellow, green, cyan, blue, magenta, debug-bg, and black and
-;;; white for terminal buffers (dim and fg if left out).
+;;; white for terminal buffers (dim and fg if left out), with bright-black
+;;; ... bright-white for their bright colors (the plain ones if left out).
 
 (define *themes* (hash))  ; name -> (palette extra-faces)
 (define *theme* #f)       ; the theme loaded
+(define *theme-face-names* '())  ; the faces it set
 
 (define (define-theme! name parent palette faces)
   "Defines theme `name`, starting from theme `parent` (or #f).
@@ -31,7 +33,23 @@
                      [(hash-try-get *themes* parent) => (lambda (t) t)]
                      [else (error (string-append "no theme " (symbol->string parent)))])]
          [merged (foldl (lambda (k h) (hash-insert h k (hash-ref palette k))) (car base) (hash-keys->list palette))])
-    (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces))))))
+    (set! *themes* (hash-insert *themes* name (list merged (append (cadr base) faces)))))
+  void)
+
+(define (theme-mix a b)
+  "The color halfway between colors `a` and `b`, both \"#rrggbb\"; `a`
+   if either is written otherwise."
+  (let* ([hex? (lambda (c) (and (= (string-length c) 7) (equal? (string-ref c 0) #\#)
+                                (foldl (lambda (ch ok) (and ok (memv ch (string->list "0123456789abcdefABCDEF")) #t))
+                                       #t (cdr (string->list c)))))]
+         [digit (lambda (c) (let ([i (char->integer (char-downcase c))]) (if (>= i 97) (- i 87) (- i 48))))]
+         [part (lambda (color k) (+ (* 16 (digit (string-ref color k))) (digit (string-ref color (+ k 1)))))]
+         [hex "0123456789abcdef"]
+         [two (lambda (n) (string (string-ref hex (quotient n 16)) (string-ref hex (modulo n 16))))])
+    (if (and (hex? a) (hex? b))
+        (apply string-append
+               (cons "#" (map (lambda (k) (two (quotient (+ (part a k) (part b k)) 2))) '(1 3 5))))
+        a)))
 
 (define (theme-faces p)
   "Every face as a (name spec) list, made from palette `p`."
@@ -47,6 +65,7 @@
      (list "line-number-current" (fg 'yellow "bold"))
      (list "cursorline" (string-append "bg=" (c 'bg-hl)))
      (list "sign-column" "")
+     (list "fold-column" (fg 'dim))
      (list "separator" (fg 'border))
      (list "visual" (string-append "bg=" (c 'selection)))
      (list "search" (string-append "fg=" (c 'bg) " bg=" (c 'yellow)))
@@ -73,6 +92,8 @@
      (list "popup-title" (fg 'blue "bold"))
      (list "popup.detail" (fg 'dim))
      (list "popup.match" (fg 'blue "bold"))
+     ;; A path in a popup row: shortened from the start when the row is too wide.
+     (list "popup.path" "")
      (list "which-key.key" (fg 'magenta "bold"))
      (list "which-key.separator" (fg 'dim))
      (list "which-key.group" (fg 'blue))
@@ -116,11 +137,48 @@
      (list "org.special" (fg 'dim))
      (list "org.date" (fg 'cyan "underline"))
      (list "org.checkbox" (fg 'yellow "bold"))
+     (list "org.priority" (fg 'yellow "bold"))
      (list "org.code" (fg 'green))
      (list "org.link" (fg 'blue "underline"))
+     ;; The agenda
+     (list "org.agenda.title" (fg 'blue "bold"))
+     (list "org.agenda.span" (fg 'dim))
+     (list "org.agenda.rule" (fg 'border))
+     (list "org.agenda.section" (fg 'magenta "bold"))
+     (list "org.agenda.date" (fg 'blue "bold"))
+     (list "org.agenda.weekend" (fg 'dim "bold"))
+     (list "org.agenda.today" (fg 'yellow "bold"))
+     (list "org.agenda.time" (fg 'cyan))
+     (list "org.agenda.grid" (fg 'border))
+     (list "org.agenda.now" (fg 'orange "bold"))
+     (list "org.agenda.scheduled" (fg 'green))
+     (list "org.agenda.deadline" (fg 'red "bold"))
+     (list "org.agenda.overdue" (fg 'red))
+     (list "org.agenda.upcoming" (fg 'yellow))
+     (list "org.agenda.tag" (fg 'comment))
+     (list "org.agenda.category" (fg 'dim))
+     ;; The agenda's bulk marks
+     (list "org.agenda.marked" (fg 'cyan "bold"))
+     ;; The agenda's clock report.
+     (list "org.agenda.clock-report" (fg 'fg))
+     ;; A habit's graph (org-habit): clear before it is due, ready while
+     ;; it may be done, alert on its last day, overdue after; the future
+     ;; and past days it wasn't done on, lighter.
+     (list "org.agenda.habit.clear" (string-append "fg=" (c 'bg) " bg=" (c 'blue)))
+     (list "org.agenda.habit.clear-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'blue) (c 'bg))))
+     (list "org.agenda.habit.ready" (string-append "fg=" (c 'bg) " bg=" (c 'green)))
+     (list "org.agenda.habit.ready-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'green) (c 'bg))))
+     (list "org.agenda.habit.alert" (string-append "fg=" (c 'bg) " bg=" (c 'yellow)))
+     (list "org.agenda.habit.alert-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'yellow) (c 'bg))))
+     (list "org.agenda.habit.overdue" (string-append "fg=" (c 'bg) " bg=" (c 'red)))
+     (list "org.agenda.habit.overdue-future" (string-append "fg=" (c 'bg) " bg=" (theme-mix (c 'red) (c 'bg))))
      ;; Git and diffs
      (list "git.section" (fg 'magenta "bold"))
      (list "git.head" (fg 'dim))
+     (list "git.key" (fg 'yellow "bold"))
+     ;; The status buffer's key lines, on the status line's background
+     (list "git.footer" (string-append "fg=" (c 'fg) " bg=" (c 'bg-alt)))
+     (list "git.footer.key" (string-append "fg=" (c 'yellow) " bg=" (c 'bg-alt) " bold"))
      (list "git.branch" (fg 'cyan "bold"))
      (list "git.remote" (fg 'green "bold"))
      (list "git.hash" (fg 'dim))
@@ -136,6 +194,10 @@
      (list "diff.removed" (fg 'red))
      (list "diff.hunk" (fg 'cyan))
      (list "diff.header" "bold")
+     ;; The git-gutter package's bars
+     (list "git-gutter.added" (fg 'green))
+     (list "git-gutter.changed" (fg 'orange))
+     (list "git-gutter.removed" (fg 'red))
      ;; Code (tree-sitter captures)
      (list "syntax.keyword" (fg 'magenta))
      (list "syntax.string" (fg 'green))
@@ -169,12 +231,19 @@
 
 (define (terminal-palette p)
   "The 16 colors programs in a terminal buffer ask for by number: black,
-   red, green, yellow, blue, magenta, cyan, white, then the bright ones."
+   red, green, yellow, blue, magenta, cyan, white, then the bright ones.
+   A bright color is the palette's bright-red and so on, else the plain
+   one (bright black: dim)."
   (let* ([get (lambda (k fallback) (or (hash-try-get p k) (hash-ref p fallback)))]
          [colors (cons (get 'black 'dim)
                        (append (map (lambda (k) (hash-ref p k)) '(red green yellow blue magenta cyan))
-                               (list (get 'white 'fg))))])
-    (append colors (cons (hash-ref p 'dim) (cdr colors)))))
+                               (list (get 'white 'fg))))]
+         [bright (lambda (k plain) (or (hash-try-get p k) plain))])
+    (append colors
+            (let loop ([keys '(bright-black bright-red bright-green bright-yellow bright-blue
+                               bright-magenta bright-cyan bright-white)]
+                       [plain (cons (hash-ref p 'dim) (cdr colors))])
+              (if (null? keys) '() (cons (bright (car keys) (car plain)) (loop (cdr keys) (cdr plain))))))))
 
 (define (load-theme! name)
   "Switches to theme `name`, a symbol, setting every face and the
@@ -184,11 +253,18 @@
   (let ([theme (hash-try-get *themes* name)])
     (if (not theme)
         (error (string-append "no theme " (symbol->string name)))
-        (begin
-          (for-each (lambda (f) (set-face! (car f) (cadr f)))
-                    (append (theme-faces (car theme)) (cadr theme)))
+        (let ([faces (append (theme-faces (car theme)) (cadr theme))])
+          ;; Faces the last theme set and this one doesn't go, so a theme
+          ;; that sets syntax.function.builtin leaves builtins drawn as
+          ;; syntax.function in the next.
+          (let ([names (map car faces)])
+            (for-each (lambda (name) (unless (member name names) (remove-face! name)))
+                      *theme-face-names*)
+            (set! *theme-face-names* names))
+          (for-each (lambda (f) (set-face! (car f) (cadr f))) faces)
           (set-terminal-palette! (terminal-palette (car theme)))
-          (set! *theme* name)))))
+          (set! *theme* name))))
+  void)
 
 (define-theme! 'one-dark #f
   (hash 'bg "#282c34" 'bg-alt "#21252b" 'bg-hl "#2c313a" 'selection "#3e4452" 'border "#3e4452"
@@ -322,7 +398,7 @@
 ;;; %#face# a face (%#mode# the mode's), %* the status face, %= right side.
 
 (define-option! 'statusline
-  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
+  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
   '(stl))
 (define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
 

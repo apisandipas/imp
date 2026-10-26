@@ -23,13 +23,14 @@ tree-sitter-md.workspace = true
 ropey.workspace = true
 vt100.workspace = true
 portable-pty.workspace = true
+libc.workspace = true
 wasmtime = { workspace = true, optional = true }
 yrs = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 kdl = { workspace = true, optional = true }
 
 [features]
-# Prototypes from Phase 5, off by default (docs/design/phase-5.md).
+# Prototypes from Phase 5, off by default.
 wasm = ["dep:wasmtime"]
 crdt = ["dep:yrs", "dep:base64"]
 kdl = ["dep:kdl"]

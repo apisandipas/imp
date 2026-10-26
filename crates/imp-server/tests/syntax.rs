@@ -27,6 +27,24 @@ fn rust_is_highlighted() {
 }
 
 #[test]
+fn a_more_specific_capture_of_the_same_text_wins() {
+    // The Rust query captures a doc comment as comment, then as
+    // comment.documentation; a theme that colors the second sees it.
+    let mut s = server("");
+    s.eval(r#"(set-face! "syntax.comment.documentation" "fg=#ff0000")"#)
+        .unwrap();
+    open(&mut s, "doc.rs", "/// Docs.\n// Plain.\nfn f() {}\n");
+    let fg = |s: &mut imp_server::Server, row: usize| {
+        s.frame().rows[row]
+            .iter()
+            .find(|sp| sp.text.contains("Docs") || sp.text.contains("Plain"))
+            .and_then(|sp| sp.style.fg)
+    };
+    assert_eq!(fg(&mut s, 0), Some(Color::Rgb(0xff, 0, 0)));
+    assert_ne!(fg(&mut s, 1), Some(Color::Rgb(0xff, 0, 0)));
+}
+
+#[test]
 fn highlighting_follows_edits() {
     let mut s = server("");
     open(&mut s, "edit.rs", "x\n");

@@ -25,13 +25,15 @@
 
      (define-major-mode! 'lua-mode 'prog-mode '(\"lua\")
        (lambda () (set-local-option! 'shiftwidth 2)))"
-  (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup))))
+  (set! *major-modes* (hash-insert *major-modes* name (list parent extensions setup)))
+  void)
 
 (define (define-minor-mode! name setup teardown)
   "Defines minor mode `name`, which a buffer can turn on and off.
    `setup` runs when it turns on in a buffer and `teardown` when it
    turns off; each is a procedure of no arguments, or #f."
-  (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown))))
+  (set! *minor-modes* (hash-insert *minor-modes* name (list setup teardown)))
+  void)
 
 ;; Files with no extension, or one that misleads, by their whole name.
 (define (define-file-name-mode! file-name mode)
@@ -39,19 +41,21 @@
    This wins over the extension:
 
      (define-file-name-mode! \"Justfile\" 'makefile-mode)"
-  (set! *file-names* (hash-insert *file-names* file-name mode)))
+  (set! *file-names* (hash-insert *file-names* file-name mode))
+  void)
 
 (define (mode-keymap mode state)
   "The keymap name for `mode` in `state`, e.g. scheme-mode:normal."
   (string->symbol (string-append (symbol->string mode) ":" (symbol->string state))))
 
-(define (define-mode-key! mode state key command)
+(define (define-mode-key! mode state key command . label)
   "Binds `key` to `command` in `state` for buffers in `mode`.
    `state` is 'normal, 'visual or 'insert; the binding wins over the
-   global one there. `mode` can be a major or a minor mode:
+   global one there. `mode` can be a major or a minor mode. An optional
+   last argument is the label which-key shows:
 
-     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function)"
-  (define-key! (mode-keymap mode state) key command))
+     (define-mode-key! 'lua-mode 'normal \"K\" 'describe-function \"describe\")"
+  (apply define-key! (append (list (mode-keymap mode state) key command) label)))
 
 (define (major-mode)
   "The current buffer's major mode, fundamental-mode if it has none."
@@ -253,9 +257,10 @@
   (lambda (start end linewise?)
     (let ([first (offset->line start)] [last (offset->line (max start (- end 1)))])
       (comment-lines! first last)
-      (set-cursor! (line-first-nonblank first)))))
+      (set-cursor! (line-first-nonblank first))))
+  "comment")
 
-(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)))
+(define-key! 'visual "gc" (lambda (count) (visual-operator! "gc" #t)) "comment")
 
 ;;; The modes that come with imp
 
@@ -319,11 +324,12 @@
       (if name (describe-function name) (message "no symbol at the cursor")))))
 
 (define-mode-key! 'scheme-mode 'normal "K" 'describe-symbol-at-point)
-(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point)
+(define-mode-key! 'scheme-mode 'normal "gd" 'find-definition-at-point "go to definition")
 
 ;;; The local leader: SPC m runs the major mode's own bindings.
 
 (define *mode-leaders* (hash))  ; mode -> hash of keys -> (command description)
+(define *mode-leader-groups* (hash))  ; mode -> hash of keys -> group name
 
 (define (define-mode-leader! mode keys command description)
   "Binds `keys` under SPC m for buffers in major mode `mode`.
@@ -332,7 +338,17 @@
 
      (define-mode-leader! 'lua-mode \"r\" 'lua-run \"run file\")"
   (let ([table (or (hash-try-get *mode-leaders* mode) (hash))])
-    (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description))))))
+    (set! *mode-leaders* (hash-insert *mode-leaders* mode (hash-insert table keys (list command description)))))
+  void)
+
+(define (define-mode-leader-group! mode keys name)
+  "Names the group of `mode`'s SPC m keys that start with `keys`, as
+   define-leader-group! does for SPC:
+
+     (define-mode-leader-group! 'org-agenda-mode \"d\" \"dates\")"
+  (let ([table (or (hash-try-get *mode-leader-groups* mode) (hash))])
+    (set! *mode-leader-groups* (hash-insert *mode-leader-groups* mode (hash-insert table keys name))))
+  void)
 
 (define-command! 'local-leader
   (lambda (count)
@@ -343,8 +359,22 @@
           (message (string-append "no SPC m bindings for " (symbol->string (major-mode))))
           (begin
             ;; Install them under "m" for this sequence, then continue it.
-            (for-each (lambda (keys) (when (starts-with? keys "m") (undefine-leader! keys)))
+            ;; Not m itself, which must run this again for the next buffer.
+            (for-each (lambda (keys) (when (and (starts-with? keys "m") (> (string-length keys) 1)) (undefine-leader! keys)))
                       (hash-keys->list *leader-bindings*))
+            ;; And the mode's group names, the last mode's going.
+            (set! *leader-groups*
+                  (foldl (lambda (keys groups)
+                           (if (and (starts-with? keys "m") (> (string-length keys) 1)) (hash-remove groups keys) groups))
+                         *leader-groups* (hash-keys->list *leader-groups*)))
+            (for-each (lambda (m)
+                        (let ([groups (hash-try-get *mode-leader-groups* m)])
+                          (when groups
+                            (for-each (lambda (keys)
+                                        (unless (hash-contains? *leader-groups* (string-append "m" keys))
+                                          (define-leader-group! (string-append "m" keys) (hash-ref groups keys))))
+                                      (hash-keys->list groups)))))
+                      (mode-lineage (major-mode)))
             (for-each (lambda (table)
                         (for-each (lambda (keys)
                                     (let ([b (hash-ref table keys)])
@@ -361,65 +391,3 @@
 (define-mode-leader! 'scheme-mode "s" 'eval-last-sexp "eval form at cursor")
 (define-mode-leader! 'scheme-mode "d" 'find-definition-at-point "go to definition")
 (define-mode-leader! 'scheme-mode "k" 'describe-symbol-at-point "describe symbol")
-
-;;; The Scheme REPL: a buffer where <ret> evaluates what you typed.
-;;;
-;;; :repl (or SPC e i) opens *scheme*. Type after the "imp> " prompt and
-;;; press <ret> at the end of the buffer: the input is evaluated in the
-;;; running editor, like :eval, and the result is printed with a new
-;;; prompt. Anywhere else <ret> just breaks the line.
-
-(define *repl-prompt* "imp> ")
-
-(define-major-mode! 'repl-mode 'scheme-mode '() #f)
-
-(define (repl-input-start)
-  "Where the input after the last prompt starts."
-  (let loop ([line (last-line)])
-    (cond [(< line 0) 0]
-          [(starts-with? (buffer-substring (line-start line) (line-end line)) *repl-prompt*)
-           (+ (line-start line) (string-length *repl-prompt*))]
-          [else (loop (- line 1))])))
-
-(define (repl-print! text)
-  "Adds `text` at the end of the REPL buffer and moves the cursor there."
-  (buffer-insert! (buffer-length) text)
-  (set-cursor! (buffer-length)))
-
-(define (repl-send!)
-  "Evaluates the REPL input after the last prompt and prints the result.
-   With the cursor before the input, or no input, it only breaks the
-   line. Prints errors too, then a new prompt."
-  (let* ([start (repl-input-start)]
-         [input (buffer-substring start (buffer-length))])
-    (if (or (< (cursor) start) (equal? (trim-left input) ""))
-        (insert-newline!)
-        (let ([result (with-handler (lambda (e) (string-append "error: " (error-message e)))
-                                    (let ([v (imp-eval-string input)])
-                                      (if (eq? v void) "" (to-string v))))])
-          (repl-print! (string-append "\n" (if (equal? result "") "" (string-append result "\n")) *repl-prompt*))))))
-
-(define-mode-key! 'repl-mode 'insert "<ret>" repl-send!)
-(define-mode-key! 'repl-mode 'normal "<ret>"
-  (lambda (count)
-    (set-cursor! (buffer-length))
-    (set-mode! 'insert)
-    (repl-send!)))
-
-(define-command! 'repl
-  (lambda (count)
-    "Open the Scheme REPL, *scheme*, ready to type at its prompt."
-    (let ([existing (filter (lambda (id) (equal? (car (buffer-info id)) "*scheme*")) (buffer-list))])
-      (if (pair? existing)
-          (go-to-buffer! (car existing))
-          (let ([id (buffer-new! "*scheme*")])
-            (go-to-buffer! id)
-            (set-major-mode! 'repl-mode)
-            (buffer-insert! 0 (string-append ";; imp's Scheme. Definitions replace the editor's own, live.\n"
-                                             *repl-prompt*))
-            (set-buffer-unmodified!)))
-      (set-cursor! (buffer-length))
-      (set-mode! 'insert))))
-
-(define-ex! '("repl") (lambda (ex) (run-command 'repl)))
-(define-leader! "ei" 'repl "REPL")

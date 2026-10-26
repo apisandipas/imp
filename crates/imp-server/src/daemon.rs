@@ -13,6 +13,7 @@ use std::sync::mpsc::{self, Sender};
 
 use imp_core::{protocol, Buffer, ClientMsg, Frame, ServerMsg};
 
+use crate::editor::ClientView;
 use crate::events::Event;
 use crate::{Options, Server};
 
@@ -38,6 +39,48 @@ struct Client {
     cell_width: u16,
     /// The last frame sent, to send only what changed.
     last: Option<Frame>,
+    /// Its windows while another client's are current (see
+    /// lore:decision/0015); None while its own are.
+    view: Option<ClientView>,
+}
+
+/// The daemon's clients, and whose windows are current in the editor.
+struct Clients {
+    all: HashMap<u64, Client>,
+    active: Option<u64>,
+}
+
+impl Clients {
+    /// Makes client `id`'s windows the current ones, putting the active
+    /// client's away.
+    fn activate(&mut self, server: &mut Server, id: u64) {
+        if self.active == Some(id) || !self.all.contains_key(&id) {
+            return;
+        }
+        if let Some(c) = self.active.and_then(|a| self.all.get_mut(&a)) {
+            c.view = Some(server.take_view());
+        }
+        if let Some(view) = self.all.get_mut(&id).and_then(|c| c.view.take()) {
+            server.put_view(view);
+        }
+        self.active = Some(id);
+    }
+
+    /// Forgets client `id`, and its windows' cursors. The editor keeps
+    /// showing an active client's windows until another client's are put.
+    fn remove(&mut self, server: &mut Server, id: u64) -> Option<Client> {
+        let mut c = self.all.remove(&id)?;
+        let view = if self.active == Some(id) {
+            self.active = None;
+            Some(server.take_view())
+        } else {
+            c.view.take()
+        };
+        if let Some(view) = view {
+            server.drop_view(&view);
+        }
+        Some(c)
+    }
 }
 
 /// Runs a daemon on `socket` until `:kill-server`.
@@ -84,7 +127,13 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
         }
     });
 
-    let mut clients: HashMap<u64, Client> = HashMap::new();
+    let mut clients = Clients {
+        all: HashMap::new(),
+        active: None,
+    };
+    // The client that last sent input: background work (timers, jobs)
+    // runs in its windows, and a new client starts on its buffer.
+    let mut focus: Option<u64> = None;
     while let Ok(event) = server.events.recv() {
         let from = match &event {
             Event::FromClient(id, _) => Some(*id),
@@ -92,7 +141,18 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
         };
         match event {
             Event::Connected(id, out) => {
-                clients.insert(
+                // The first client takes the windows the editor started
+                // with; a later one gets one window on the buffer of the
+                // client last typing.
+                let view = if clients.all.is_empty() && clients.active.is_none() {
+                    None
+                } else {
+                    if let Some(f) = focus {
+                        clients.activate(&mut server, f);
+                    }
+                    Some(server.new_view())
+                };
+                clients.all.insert(
                     id,
                     Client {
                         out,
@@ -100,57 +160,73 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
                         heights: false,
                         cell_width: 0,
                         last: None,
+                        view,
                     },
                 );
+                if clients.active.is_none() {
+                    clients.activate(&mut server, id);
+                }
             }
             Event::Disconnected(id) => {
-                clients.remove(&id);
+                clients.remove(&mut server, id);
             }
             Event::FromClient(id, ClientMsg::Hello { heights }) => {
-                if let Some(c) = clients.get_mut(&id) {
+                if let Some(c) = clients.all.get_mut(&id) {
                     c.heights = heights;
                     c.last = None;
                 }
             }
             Event::FromClient(id, ClientMsg::Cell { width }) => {
-                if let Some(c) = clients.get_mut(&id) {
+                if let Some(c) = clients.all.get_mut(&id) {
                     c.cell_width = width;
                     c.last = None;
                 }
             }
             Event::FromClient(id, ClientMsg::Resize { width, height }) => {
-                if let Some(c) = clients.get_mut(&id) {
+                if let Some(c) = clients.all.get_mut(&id) {
                     c.size = (width, height);
                     c.last = None;
                 }
             }
             Event::FromClient(id, msg) => {
-                // Draw with this client's size while handling its keys, so
-                // scrolling suits the screen it is looking at.
-                if let Some(c) = clients.get(&id) {
+                // In this client's windows, at its size, so scrolling
+                // suits the screen it is looking at.
+                clients.activate(&mut server, id);
+                focus = Some(id);
+                if let Some(c) = clients.all.get(&id) {
                     server.set_size(c.size.0, c.size.1);
                     server.set_heights(c.heights);
-                    server.set_cell_width(c.cell_width);
                     server.set_cell_width(c.cell_width);
                 }
                 server.handle(msg);
             }
-            other => server.handle_event(other),
+            other => {
+                if let Some(f) = focus {
+                    clients.activate(&mut server, f);
+                }
+                server.handle_event(other)
+            }
         }
         if server.should_quit() {
             if server.kill_requested() {
-                for c in clients.values() {
+                for c in clients.all.values() {
                     let _ = c.out.send(ServerMsg::Quit);
                 }
                 break;
             }
             // :q detaches the client that asked; the editor carries on.
             server.clear_quit();
-            if let Some(c) = from.and_then(|id| clients.remove(&id)) {
+            if let Some(c) = from.and_then(|id| clients.remove(&mut server, id)) {
                 let _ = c.out.send(ServerMsg::Quit);
             }
         }
-        for c in clients.values_mut() {
+        // Each client's frame from its own windows.
+        let ids: Vec<u64> = clients.all.keys().copied().collect();
+        for id in ids {
+            clients.activate(&mut server, id);
+            let Some(c) = clients.all.get_mut(&id) else {
+                continue;
+            };
             server.set_size(c.size.0, c.size.1);
             server.set_heights(c.heights);
             server.set_cell_width(c.cell_width);
@@ -180,15 +256,38 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
 /// running") if something already answers on it, and clearing a stale one
 /// left by a process that died.
 pub(crate) fn bind(socket: &Path, busy: &str) -> Result<UnixListener, String> {
+    if let Some(dir) = socket.parent().filter(|d| !d.as_os_str().is_empty()) {
+        private_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     if UnixStream::connect(socket).is_ok() {
         return Err(format!("{busy} on {}", socket.display()));
     }
     let _ = std::fs::remove_file(socket);
-    if let Some(dir) = socket.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        // Only this user may connect: the socket gives full control.
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-    }
     UnixListener::bind(socket).map_err(|e| format!("{}: {e}", socket.display()))
+}
+
+/// Makes `dir` if needed and leaves it mode 0700. Only this user may
+/// connect, since the socket gives full control, so a directory someone
+/// else owns (another user could make `/tmp/imp-$USER` first and swap the
+/// socket) or a symlink is refused.
+fn private_dir(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| e.to_string())?;
+    let meta = std::fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
+    if !meta.is_dir() {
+        return Err("not a directory".into());
+    }
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    if meta.uid() != unsafe { libc::geteuid() } {
+        return Err("owned by another user".into());
+    }
+    if meta.mode() & 0o777 != 0o700 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

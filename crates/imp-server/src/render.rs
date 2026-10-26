@@ -24,14 +24,14 @@ pub enum LineNumbers {
     Hybrid,
 }
 
-/// When a buffer shows its sign column (the `signcolumn` option, as in
-/// Vim).
+/// When a buffer shows a gutter column: its sign column (the
+/// `signcolumn` option, as in Vim) or its fold column (`foldcolumn`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum SignColumn {
-    /// Only while it has signs.
+pub enum GutterColumn {
+    /// Only while it has signs, or folds.
     #[default]
     Auto,
-    /// Always, so text doesn't shift as signs come and go.
+    /// Always, so text doesn't shift as they come and go.
     Yes,
     /// Never.
     No,
@@ -191,12 +191,27 @@ pub fn frame(e: &mut Editor) -> Frame {
 }
 
 /// A popup row `width` cells wide: its runs over the popup's face (or the
-/// selected one), padded.
+/// selected one), padded. A row too wide has its first `popup.path` run
+/// shortened from the start, keeping the file name, as the status line
+/// does; then what still doesn't fit is cut.
 fn popup_row(e: &Editor, line: &[(String, String)], selected: bool, width: usize) -> Row {
     let base = e.face(if selected { "popup-selected" } else { "popup" });
+    let total: usize = line.iter().map(|(text, _)| text_width(text)).sum();
+    let mut shortened = false;
+    let line: Vec<(String, &String)> = line
+        .iter()
+        .map(|(text, face)| {
+            if total > width && !shortened && face == "popup.path" {
+                shortened = true;
+                (trim_start(text, total - width), face)
+            } else {
+                (text.clone(), face)
+            }
+        })
+        .collect();
     let mut row = Vec::new();
     let mut used = 0;
-    for (text, face) in line {
+    for (text, face) in &line {
         let style = if face.is_empty() {
             base
         } else {
@@ -485,8 +500,13 @@ struct View<'a> {
     buffer_layers: &'a [Layer],
     /// The buffer's gutter signs, if it has any.
     signs: Option<&'a BTreeMap<usize, (String, String)>>,
+    /// The buffer's change marks, if it has a change column.
+    changes: Option<&'a BTreeMap<usize, (String, String)>>,
     /// The buffer's margin text, and the margin's width.
     margin: Option<(&'a BTreeMap<usize, crate::editor::MarginText>, usize)>,
+    /// The first line of each fold, outermost, and whether it's closed,
+    /// if the buffer shows its fold column.
+    fold_starts: Option<&'a BTreeMap<usize, bool>>,
     folds: Folds<'a>,
     cursor_line: usize,
     indent: usize,
@@ -509,7 +529,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer.mark(&window_mark(id)).unwrap_or(0)
     }
     .min(buffer.len());
-    let text_rows = rect.h.saturating_sub(1).max(1);
+    let footer = e.footer_rows(buffer_id, rect.h);
+    let text_rows = rect.h.saturating_sub(1 + footer).max(1);
     let folds = Folds::of(e, buffer_id);
     let real_line = buffer.offset_to_line(cursor);
     let cursor_col = buffer.offset_to_col(cursor);
@@ -628,6 +649,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         current_buffer: buffer_id == e.current,
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: shown_signs(e, buffer_id),
+        fold_starts: shown_fold_starts(e, buffer_id),
+        changes: e.change_marks.get(&buffer_id),
         margin: e
             .margins
             .get(&buffer_id)
@@ -739,6 +762,19 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
             .collect();
         (rows, None)
     };
+    if footer > 0 {
+        for line in &e.footers[&buffer_id] {
+            let mut row = Vec::new();
+            for (text, face) in line {
+                push(
+                    &mut row,
+                    text,
+                    face.as_deref().map_or(Style::default(), |f| e.face(f)),
+                );
+            }
+            rows.push(fill(clip_row(&row, rect.w), rect.w, pad));
+        }
+    }
     rows.push(status_line(
         e, buffer_id, buffer, focused, real_line, cursor_col, rect.w,
     ));
@@ -1068,6 +1104,13 @@ impl View<'_> {
             if eol_style != Style::default() && end < width {
                 push(rows.last_mut().expect("one row"), " ", eol_style);
             }
+            self.line_end_text(
+                rows.last_mut().expect("one row"),
+                line,
+                end + 2,
+                width,
+                cursorline,
+            );
         } else {
             let (left, right) = (self.hscroll, self.hscroll + width);
             let mut row: Row = Vec::new();
@@ -1090,6 +1133,9 @@ impl View<'_> {
             }
             if eol_style != Style::default() && x_end >= left && x_end < right {
                 push(&mut row, " ", eol_style);
+            }
+            if x_end + 2 >= left {
+                self.line_end_text(&mut row, line, x_end + 2 - left, width, cursorline);
             }
             rows.push(row);
         }
@@ -1123,6 +1169,12 @@ impl View<'_> {
                 }
                 let margin = self.margin.map_or(0, |(_, w)| w);
                 numbers -= margin;
+                if self.changes.is_some() {
+                    numbers -= CHANGE_WIDTH;
+                }
+                if self.fold_starts.is_some() {
+                    numbers -= FOLD_WIDTH;
+                }
                 if numbers > 0 {
                     row.push(if i == 0 {
                         Span::new(
@@ -1151,6 +1203,27 @@ impl View<'_> {
                         Style::default(),
                     );
                 }
+                if let Some(changes) = self.changes {
+                    match changes.get(&line).filter(|_| i == 0) {
+                        Some((text, face)) => {
+                            let text: String = text.chars().take(CHANGE_WIDTH).collect();
+                            let pad = CHANGE_WIDTH.saturating_sub(text_width(&text));
+                            row.push(Span::new(
+                                format!("{text}{}", " ".repeat(pad)),
+                                e.face(face),
+                            ));
+                        }
+                        None => row.push(Span::new(" ".repeat(CHANGE_WIDTH), Style::default())),
+                    }
+                }
+                if let Some(starts) = self.fold_starts {
+                    let chevron = match starts.get(&line).filter(|_| i == 0) {
+                        Some(true) => "▸ ",
+                        Some(false) => "▾ ",
+                        None => "  ",
+                    };
+                    row.push(Span::new(chevron, e.face("fold-column")));
+                }
                 if prefix > 0 {
                     push(&mut row, &" ".repeat(prefix), Style::default());
                 }
@@ -1171,6 +1244,36 @@ impl View<'_> {
     }
 }
 
+impl View<'_> {
+    /// Draws `line`'s end-of-line text on `row` from column `at`, cut at
+    /// `width`; the cursor line's face goes under it. Not on a closed
+    /// fold's line, which ends with its note.
+    fn line_end_text(&self, row: &mut Row, line: usize, at: usize, width: usize, cursorline: bool) {
+        let e = self.e;
+        if self.folds.at(line).is_some() {
+            return;
+        }
+        let Some((text, face)) = e
+            .line_end_texts
+            .get(&self.buffer_id)
+            .and_then(|texts| texts.get(&line))
+        else {
+            return;
+        };
+        let used: usize = row.iter().map(|s| text_width(&s.text)).sum();
+        if at >= width || used > at {
+            return;
+        }
+        let base = if cursorline {
+            e.face("cursorline")
+        } else {
+            Style::default()
+        };
+        push(row, &" ".repeat(at - used), base);
+        push(row, &clip(text, width - at), e.face(face).over(base));
+    }
+}
+
 fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
     let text = if cell.ch == '\t' {
         " ".repeat(shown)
@@ -1183,15 +1286,32 @@ fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
 /// Cells of the sign column, when a buffer has signs.
 const SIGN_WIDTH: usize = 2;
 
+/// Cells of the fold column: a chevron and a space.
+const FOLD_WIDTH: usize = 2;
+/// Cells of the change column (git-gutter's bars).
+const CHANGE_WIDTH: usize = 1;
+
+static NO_FOLD_STARTS: BTreeMap<usize, bool> = BTreeMap::new();
+
+/// A buffer's fold starts, if its fold column shows (`foldcolumn`).
+fn shown_fold_starts(e: &Editor, buffer_id: usize) -> Option<&BTreeMap<usize, bool>> {
+    let starts = e.fold_starts.get(&buffer_id).filter(|s| !s.is_empty());
+    match e.fold_columns.get(&buffer_id).copied().unwrap_or_default() {
+        GutterColumn::Auto => starts,
+        GutterColumn::Yes => Some(starts.unwrap_or(&NO_FOLD_STARTS)),
+        GutterColumn::No => None,
+    }
+}
+
 static NO_SIGNS: BTreeMap<usize, (String, String)> = BTreeMap::new();
 
 /// A buffer's signs if it shows the sign column, else None.
 fn shown_signs(e: &Editor, buffer_id: usize) -> Option<&BTreeMap<usize, (String, String)>> {
     let signs = e.signs.get(&buffer_id).filter(|s| !s.is_empty());
     match e.sign_columns.get(&buffer_id).copied().unwrap_or_default() {
-        SignColumn::Auto => signs,
-        SignColumn::Yes => Some(signs.unwrap_or(&NO_SIGNS)),
-        SignColumn::No => None,
+        GutterColumn::Auto => signs,
+        GutterColumn::Yes => Some(signs.unwrap_or(&NO_SIGNS)),
+        GutterColumn::No => None,
     }
 }
 
@@ -1213,7 +1333,17 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
         SIGN_WIDTH
     } else {
         0
-    } + margin_width(e, buffer_id);
+    } + margin_width(e, buffer_id)
+        + if shown_fold_starts(e, buffer_id).is_some() {
+            FOLD_WIDTH
+        } else {
+            0
+        }
+        + if e.change_marks.contains_key(&buffer_id) {
+            CHANGE_WIDTH
+        } else {
+            0
+        };
     if e.line_numbers == LineNumbers::Off {
         return signs;
     }
@@ -1393,7 +1523,77 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
         .unwrap_or(cells.len())
 }
 
+/// The line whose chevron is at screen cell (`x`, `y`): a fold's first
+/// line, on its first row, in the fold column of the window there.
+pub fn fold_column_at(e: &Editor, x: usize, y: usize) -> Option<usize> {
+    let (id, rect) = e
+        .window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
+    let buffer_id = if id == e.current_window {
+        e.current
+    } else {
+        e.windows[&id].buffer
+    };
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let starts = shown_fold_starts(e, buffer_id)?;
+    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
+    let text = rect.x + indent + gutter;
+    if x >= text || x + FOLD_WIDTH < text {
+        return None;
+    }
+    let line_at = |y| match screen_position(e, x, y) {
+        Some((_, Some(at))) => Some(buffer.offset_to_line(at.min(buffer.len()))),
+        _ => None,
+    };
+    let line = line_at(y)?;
+    // A wrapped line's later rows have no chevron.
+    let first_row = y == rect.y || line_at(y - 1) != Some(line);
+    (first_row && starts.contains_key(&line)).then_some(line)
+}
+
 /// Columns for text in the current window: its width less the gutter.
+/// The text cell at screen cell (`x`, `y`) as (window, line, column),
+/// counting lines from the window's first and ignoring folds and wrapping
+/// (for terminals, which have neither). `None` off a window's text, as on
+/// its status line or gutter.
+pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usize)> {
+    let (id, rect) = e
+        .window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y + 1 < r.y + r.h)?;
+    let (buffer_id, scroll, hscroll) = if id == e.current_window {
+        (e.current, e.scroll, e.hscroll)
+    } else {
+        let w = &e.windows[&id];
+        (w.buffer, w.scroll, w.hscroll)
+    };
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
+        return None;
+    }
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
+    let left = rect.x + indent + gutter;
+    (x >= left).then(|| (id, scroll + y - rect.y, x - left + hscroll))
+}
+
+/// The rows and columns of text window `id` shows, or `None` if there is
+/// no such window.
+pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
+    let buffer_id = if id == e.current_window {
+        e.current
+    } else {
+        e.windows.get(&id)?.buffer
+    };
+    let rect = e.window_rects().into_iter().find(|(w, _)| *w == id)?.1;
+    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let rows = rect
+        .h
+        .saturating_sub(1 + e.footer_rows(buffer_id, rect.h))
+        .max(1);
+    Some((rows, text_area(e, buffer_id, buffer, rect.w).2))
+}
+
 pub fn window_text_width(e: &Editor) -> usize {
     let rect = e.window_rect(e.current_window);
     text_area(e, e.current, &e.buffer, rect.w).2
@@ -1665,7 +1865,8 @@ fn clip_row(row: &Row, width: usize) -> Row {
 }
 
 /// What is at screen cell (`x`, `y`): the window there, and the buffer
-/// offset under the cell, or `None` on its status line. Clicking past a
+/// offset under the cell, or `None` on its status line; nothing at all on
+/// its footer. Clicking past a
 /// line's end gives the end of that screen row. Uses the scroll positions
 /// of the last frame drawn, and the mouse's exact position when its client
 /// sent one (rows of other heights).
@@ -1676,6 +1877,15 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
+    }
+    let footer_buffer = if id == e.current_window {
+        e.current
+    } else {
+        e.windows[&id].buffer
+    };
+    // A click on the footer does nothing.
+    if y + 1 + e.footer_rows(footer_buffer, rect.h) >= rect.y + rect.h {
+        return None;
     }
     // Where in the cell: exactly, or its middle.
     let (fx, fy) = e

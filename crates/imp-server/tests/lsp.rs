@@ -92,6 +92,46 @@ fn diagnostics_are_shown_and_follow_edits() {
     assert_eq!(s.eval("(current-line)").unwrap(), "2");
 }
 
+/// The server has sent one diagnostic for the buffer, shown or not.
+const ARRIVED_ONE: &str = "(= (length (or (hash-try-get *lsp-diagnostics* (lsp-uri)) '())) 1)";
+
+/// Diagnostics move with the text until the server sends new ones: while
+/// typing (new ones held back), and for held ones that arrive before more
+/// typing.
+#[test]
+fn diagnostics_move_with_edits_before_the_server_answers() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, _) = attached("follow.rs", "let bad = 1;\nfine\n");
+    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    // The server won't answer the edits below.
+    s.eval("(set-option! 'lsp-change-delay 100000)").unwrap();
+    type_keys(&mut s, "ggOnew");
+    let rows = s.frame().text_rows();
+    assert!(rows[0].starts_with("  new"), "{rows:?}");
+    assert!(rows[1].starts_with("E let bad"), "{rows:?}");
+    assert_eq!(s.eval("(car (car (buffer-diagnostics)))").unwrap(), "8");
+    type_keys(&mut s, "<esc>");
+
+    // One that arrives while typing lands where its text has gone since.
+    let (mut s, _, _) = attached("follow-held.rs", "fine\n");
+    settle(&mut s);
+    type_keys(&mut s, "Obad");
+    wait_for(&mut s, ARRIVED_ONE);
+    s.eval("(set-option! 'lsp-change-delay 100000)").unwrap();
+    type_keys(&mut s, "<left><left><left>xx<esc>");
+    assert_eq!(s.text(), "xxbad\nfine\n");
+    assert_eq!(
+        s.eval("(car (buffer-diagnostics))")
+            .unwrap()
+            .split(' ')
+            .take(2)
+            .collect::<Vec<_>>(),
+        ["(2", "5"]
+    );
+}
+
 #[test]
 fn diagnostics_wait_for_insert_to_end() {
     if !have_python() {
@@ -101,7 +141,7 @@ fn diagnostics_wait_for_insert_to_end() {
     settle(&mut s);
     // They arrive while typing but don't show: no sign comes and goes.
     type_keys(&mut s, "obad");
-    wait_for(&mut s, "(= (length (buffer-diagnostics)) 1)");
+    wait_for(&mut s, ARRIVED_ONE);
     s.pump(Duration::from_millis(100));
     assert!(
         s.frame().text_rows()[1].starts_with("bad"),
@@ -403,4 +443,50 @@ fn restarting_keeps_the_new_server_when_the_old_one_exits() {
         s.eval("(and (memq 'lsp-mode (minor-modes)) #t)").unwrap(),
         "#true"
     );
+}
+
+/// The fake server's copy of the current buffer, once it has the latest
+/// changes.
+fn server_text(s: &mut imp_server::Server) -> String {
+    s.eval(
+        r#"(begin (lsp-sync!)
+                  (set! *fake-text* #f)
+                  (lsp-request! (lsp-key) "fake/text" (hash "uri" (lsp-uri))
+                                (lambda (r) (set! *fake-text* r))))"#,
+    )
+    .unwrap();
+    wait_for(s, "(string? *fake-text*)");
+    s.eval("*fake-text*").unwrap()
+}
+
+#[test]
+fn changes_are_sent_as_ranges() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, log) = attached("ranges.rs", "let a = 1;\nfine\n");
+    s.eval("(define *fake-text* #f)").unwrap();
+    type_keys(&mut s, "ggOnew line<esc>jddAé!<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+    assert!(std::fs::read_to_string(&log)
+        .unwrap()
+        .contains(r#""contentChanges": [{"range""#));
+    // After an undo the whole text goes.
+    type_keys(&mut s, "u");
+    type_keys(&mut s, "ggix<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+}
+
+#[test]
+fn whole_text_for_a_server_that_wants_it() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, log) = attached_with("whole.rs", "let a = 1;\n", "FAKE_LSP_FULL=1");
+    s.eval("(define *fake-text* #f)").unwrap();
+    type_keys(&mut s, "Ax<esc>");
+    assert_eq!(server_text(&mut s), format!("{:?}", s.text()));
+    let sent = std::fs::read_to_string(&log).unwrap();
+    assert!(sent.contains(r#""contentChanges": [{"text""#));
+    assert!(!sent.contains(r#""contentChanges": [{"range""#));
 }

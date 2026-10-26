@@ -34,6 +34,27 @@ fn which_key_shows_the_next_keys() {
 }
 
 #[test]
+fn backspace_goes_back_a_level() {
+    let mut s = server("x\n");
+    s.eval("(set-option! 'which-key-delay 1000)").unwrap();
+    type_keys(&mut s, " h");
+    // Back at SPC, its popup shown at once despite the delay.
+    type_keys(&mut s, "<bs>");
+    assert_eq!(s.status().trim_end(), "SPC");
+    let r = rows(&mut s);
+    assert!(r.contains("b → +buffer"), "{r}");
+    assert!(!r.contains("describe key"), "{r}");
+    // Still in the sequence: h goes on from SPC.
+    type_keys(&mut s, "h");
+    assert!(s.status().starts_with("SPC h"), "{}", s.status());
+    // <bs> twice: at SPC alone it cancels, and x deletes again.
+    type_keys(&mut s, "<bs><bs>");
+    assert!(!rows(&mut s).contains("+buffer"));
+    type_keys(&mut s, "x");
+    assert_eq!(s.text(), "\n");
+}
+
+#[test]
 fn leader_runs_commands() {
     let mut s = server("(* 6 7)\n");
     type_keys(&mut s, " eb");
@@ -88,4 +109,164 @@ fn which_key_waits_for_its_delay() {
     type_keys(&mut s, "<esc> b");
     s.pump(std::time::Duration::from_millis(200));
     assert!(s.frame().text_rows().join("\n").contains("switch buffer"));
+}
+
+#[test]
+fn keys_have_which_key_labels() {
+    let mut s = server("");
+    let label = |s: &mut imp_server::Server, state: &str, key: &str| {
+        s.eval(&format!("(binding-label '{state} \"{key}\")"))
+            .unwrap()
+    };
+    s.eval(
+        r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")
+           (define-key! 'normal "gB" 'switch-buffer)
+           (define-key! 'normal "gL" (lambda (n) 1))
+           (define-motion! "gX" 'exclusive (lambda (from n) from) "nowhere")
+           (define-operator! "gO" (lambda (s e l) 1) "do nothing")
+           (define-major-mode! 'label-mode #f '() #f)
+           (define-mode-key! 'label-mode 'normal "gb" (lambda (n) 1) "mode's own")"#,
+    )
+    .unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "\"switch buffer\"");
+    // No label: the command's name, or nothing for a procedure.
+    assert_eq!(label(&mut s, "normal", "gB"), "\"switch-buffer\"");
+    assert_eq!(label(&mut s, "normal", "gL"), "#false");
+    assert_eq!(label(&mut s, "normal", "gX"), "\"nowhere\"");
+    assert_eq!(label(&mut s, "visual", "gO"), "\"do nothing\"");
+    assert_eq!(label(&mut s, "normal", "gq"), "#false");
+    // Binding again without a label forgets the old one.
+    s.eval(r#"(define-key! 'normal "gb" (lambda (n) 1))"#)
+        .unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "#false");
+    // A mode's key and label win.
+    s.eval("(set-major-mode! 'label-mode)").unwrap();
+    assert_eq!(label(&mut s, "normal", "gb"), "\"mode's own\"");
+}
+
+#[test]
+fn keys_after_a_vim_prefix() {
+    let mut s = server("");
+    s.eval(
+        r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")
+           (define-key! 'normal "gzq" 'switch-buffer)
+           (define-major-mode! 'label-mode #f '() #f)
+           (define-mode-key! 'label-mode 'normal "gu" (lambda (n) 1) "mode's own")"#,
+    )
+    .unwrap();
+    let keys = |s: &mut imp_server::Server, state: &str, prefix: &str| {
+        s.eval(&format!(
+            "(map (lambda (e) (string-append (car e) \"=\" (cdr e))) (prefix-continuations '{state} \"{prefix}\"))"
+        ))
+        .unwrap()
+    };
+    let normal = keys(&mut s, "normal", "g");
+    // Keymaps, motions and operators; a longer key is a prefix.
+    for k in [
+        "\"b=switch buffer\"",
+        "\"g=",
+        "\"u=",
+        "\"j=",
+        "\"z=+prefix\"",
+    ] {
+        assert!(normal.contains(k), "{k} in {normal}");
+    }
+    // Sorted, each once.
+    assert_eq!(normal.matches("\"b=").count(), 1);
+    assert!(normal.find("\"b=").unwrap() < normal.find("\"g=").unwrap());
+    // Visual has no normal-state keys.
+    let visual = keys(&mut s, "visual", "g");
+    assert!(!visual.contains("switch buffer"), "{visual}");
+    assert!(visual.contains("\"u="), "{visual}");
+    // A mode's key wins over the operator of the same name.
+    s.eval("(set-major-mode! 'label-mode)").unwrap();
+    assert!(keys(&mut s, "normal", "g").contains("\"u=mode's own\""));
+    assert!(keys(&mut s, "normal", "C-w").contains("\"s="));
+}
+
+#[test]
+fn which_key_after_vim_prefixes() {
+    let mut s = server("a\nb\nc\n");
+    s.eval(r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")"#)
+        .unwrap();
+    type_keys(&mut s, "G3g");
+    let r = rows(&mut s);
+    assert!(r.contains("b → switch buffer"), "{r}");
+    // Titled with the count and the prefix.
+    assert!(r.contains("─ 3g ─"), "{r}");
+    // The next key closes it and runs: 3gg.
+    type_keys(&mut s, "g");
+    assert!(!rows(&mut s).contains("switch buffer"));
+    assert_eq!(s.cursor(), 4);
+    // <esc> cancels the prefix and closes it.
+    type_keys(&mut s, "z");
+    assert!(rows(&mut s).contains("─ z ─"));
+    type_keys(&mut s, "<esc>");
+    assert!(!rows(&mut s).contains("─ z ─"));
+    s.keys(&["C-w"]);
+    assert!(rows(&mut s).contains("─ C-w ─"), "{}", rows(&mut s));
+    type_keys(&mut s, "<esc>");
+    // In visual, the keys that work there.
+    type_keys(&mut s, "vg");
+    let r = rows(&mut s);
+    assert!(r.contains("─ g ─") && !r.contains("switch buffer"), "{r}");
+    type_keys(&mut s, "<esc><esc>");
+}
+
+#[test]
+fn no_which_key_for_registers_char_motions_or_operators() {
+    let mut s = server("abc\n");
+    for keys in ["\"", "f", "dg", "gu"] {
+        type_keys(&mut s, keys);
+        let r = rows(&mut s);
+        assert!(!r.contains(" → "), "{keys}: {r}");
+        type_keys(&mut s, "<esc>");
+    }
+}
+
+#[test]
+fn vim_prefix_which_key_waits_for_its_delay() {
+    let mut s = common::server("a\nb\n");
+    s.eval("(set-option! 'which-key-delay 30)").unwrap();
+    type_keys(&mut s, "z");
+    assert!(!s.frame().text_rows().join("\n").contains("─ z ─"));
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(s.frame().text_rows().join("\n").contains("─ z ─"));
+    // A key typed before the delay ends: no popup.
+    type_keys(&mut s, "<esc>G");
+    type_keys(&mut s, "gg");
+    s.pump(std::time::Duration::from_millis(200));
+    assert!(!s.frame().text_rows().join("\n").contains("─ g ─"));
+    assert_eq!(s.cursor(), 0);
+}
+
+#[test]
+fn built_in_keys_after_prefixes_have_labels() {
+    let mut s = server("");
+    // Every key after a prefix in a normal or visual keymap (mode keymaps
+    // included), and every motion and operator after one.
+    let missing = s
+        .eval(
+            r#"(let* ([prefixes (filter (lambda (p) (not (equal? p "\""))) (hash-keys->list *prefix-keys*))]
+                      [after-prefix? (lambda (key)
+                                       (ormap (lambda (p) (and (starts-with? key p) (> (string-length key) (string-length p))))
+                                              prefixes))]
+                      [state-table? (lambda (t)
+                                      (let ([name (symbol->string t)])
+                                        (or (member t '(normal visual)) (ends-with? name ":normal") (ends-with? name ":visual"))))]
+                      [tables (append (filter state-table? (hash-keys->list *keymaps*))
+                                      '(motion operator))]
+                      [keys-of (lambda (t)
+                                 (cond [(eq? t 'motion) (hash-keys->list *motions*)]
+                                       [(eq? t 'operator) (hash-keys->list *operators*)]
+                                       [else (hash-keys->list (keymap t))]))])
+                 (apply append
+                        (map (lambda (t)
+                               (map (lambda (k) (string-append (symbol->string t) " " k))
+                                    (filter (lambda (k) (and (after-prefix? k) (not (binding-label-in t k))))
+                                            (keys-of t))))
+                             tables)))"#,
+        )
+        .unwrap();
+    assert_eq!(missing, "()", "keys without a which-key label");
 }

@@ -87,7 +87,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 
 - **Vim.** Motions, operators, text objects, counts, `.`, registers, macros,
   marks, visual modes, search and `:s`, `:g`, folds, splits and buffers,
-  matched against real Vim's behavior.
+  matched against real Vim's behavior. A pause after `g`, `z`, `[`, `]` or
+  `C-w` shows the keys that can follow.
 - **Space leader.** `SPC` shows what follows it: `f` files, `b` buffers, `w`
   windows, `p` projects, `s` search, `g` git, `c` code, `o` org and
   terminals, `h` help, `t` toggles. `M-x` runs any command by name.
@@ -117,8 +118,11 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   `rename-file`, `copy-file`) act on the current buffer's file unless you
   name another; deleting asks first, and the buffer follows a rename.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
-  Org outlines, TODOs, tables, agenda and capture (templates, a capture
-  window, `C-c C-c` to file, refiling), an editable file browser
+  Org outlines, TODOs, tables, clocking and capture (templates, a capture
+  window, `C-c C-c` to file, refiling, archiving), Org's agenda (day to
+  year views, TODO lists, tag matches, search, custom views, a time grid,
+  habits, filters, bulk actions, log mode and the clock report, with
+  Doom's keys), an editable file browser
   (`:Ex`, with permissions, size and time beside each name; `(` hides
   them), projects with search into a quickfix list, and terminals
   (`:terminal`). Search results open along the bottom and git down the
@@ -146,6 +150,8 @@ runtime and can change anything in it. `c` on the start screen opens it.
 (load-theme! 'gruvbox-dark)                  ; one-dark, gruvbox-dark, everforest-dark, one-light
 
 (define-key! 'normal "C-s" 'save-buffer)
+(run-ex! "inoremap jk <Esc>")                ; Vim's :map family works too
+(define-key! 'normal "gb" 'switch-buffer "switch buffer")  ; labelled in which-key
 
 ;; A command of your own, on the leader and in M-x.
 (define-command! 'insert-date
@@ -180,6 +186,8 @@ imp --connect FILE              # attach a terminal to it
 imp --connect --via 'ssh host imp --bridge'
 ```
 
+The socket is in `$XDG_RUNTIME_DIR/imp`, or `/tmp/imp-$USER` without one, and imp refuses a directory owned by someone else. Whoever can connect controls the editor, and so can run commands as you. The same goes for the agent socket `(mcp-enable!)` opens, whose tools include evaluating Scheme, so enable it only for agents you'd let use your shell.
+
 ## Developing
 
 `make` lists every build and test target (`make run`, `make dev`, `make
@@ -204,9 +212,12 @@ runtime/       the editor, in Scheme
 packages/      opt-in packages that come with imp (use-package!)
 ```
 
-[`docs/HANDOFF.md`](docs/HANDOFF.md) has the design decisions, the
-architecture, the Scheme API, known limitations and the roadmap;
-`docs/design/` has notes per phase.
+The project's notes are [lore](https://github.com/apisandipas/lore) notes:
+[`CONTEXT.md`](CONTEXT.md) at the root and in each directory says what it
+holds and the rules for it, [`docs/decisions`](docs/decisions) has the design
+decisions and [`docs/specs`](docs/specs) what each area of imp does.
+[`.lore/WORKFLOW.md`](.lore/WORKFLOW.md) is how work gets done, and known gaps
+are [issues](https://github.com/apisandipas/imp/issues).
 
 ## License
 

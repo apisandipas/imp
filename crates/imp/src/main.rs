@@ -25,8 +25,8 @@ use std::thread;
 
 use crossterm::cursor::{MoveTo, SetCursorStyle};
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::style::{
     Attribute, Color as TermColor, Print, ResetColor, SetAttribute, SetBackgroundColor,
@@ -353,13 +353,21 @@ fn terminal_session(
 
     let mut out = io::stdout();
     terminal::enable_raw_mode().map_err(|e| e.to_string())?;
-    execute!(out, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
+    // Bracketed paste: a paste arrives as one Event::Paste, not as keys.
+    execute!(
+        out,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )
+    .map_err(|e| e.to_string())?;
 
     let result = event_loop(&mut out, &to_server, &from_server);
 
     let _ = execute!(
         out,
         SetCursorStyle::DefaultUserShape,
+        DisableBracketedPaste,
         DisableMouseCapture,
         LeaveAlternateScreen
     );
@@ -413,6 +421,7 @@ fn event_loop(
             }
             Event::Resize(width, height) => Some(ClientMsg::Resize { width, height }),
             Event::Mouse(mouse) => mouse_msg(mouse),
+            Event::Paste(text) => Some(ClientMsg::Paste(text)),
             _ => None,
         };
         if let Some(msg) = msg {

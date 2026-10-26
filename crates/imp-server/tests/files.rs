@@ -94,8 +94,8 @@ fn autosave_and_recover() {
     .unwrap();
     open(&mut s, &path);
     type_keys(&mut s, "Aunsaved<esc>");
-    // File times are in whole seconds: make the copy clearly newer.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
+    // File times are in milliseconds: make the copy newer.
+    std::thread::sleep(std::time::Duration::from_millis(20));
     s.eval("(autosave-all!)").unwrap();
     // Losing the changes (as a crash would), then opening the file again,
     // finds the copy. (One server per thread: the editor is thread-local.)

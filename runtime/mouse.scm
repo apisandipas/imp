@@ -24,6 +24,10 @@
 ;; it was grabbed at, and `grab` how far into the border.
 (define *mouse-border* #f)
 
+;; Sees mouse events first, as (action button x y); #t from it means
+;; handled. term.scm sets it to pass the mouse to programs that ask.
+(define *mouse-handler* #f)
+
 (define (imp-handle-mouse action button x y)
   "Handles a mouse event from the client, `action` with `button` at
    screen cell `x`, `y`: press, drag, release, scroll-up or scroll-down.
@@ -32,7 +36,8 @@
   (when (and (option 'mouse) (not (eq? *mode* 'cmdline))
              ;; Something reading keys (the leader menu, describe-key)
              ;; owns the next input, except the completion menu.
-             (or (not *key-interceptor*) *menu-open*))
+             (or (not *key-interceptor*) *menu-open*)
+             (not (and *mouse-handler* (*mouse-handler* action button x y))))
     (let ([at (screen-position x y)])
       (cond
         [(and (equal? action "press") (equal? button "left") (border-at x y))
@@ -43,6 +48,8 @@
         [(equal? action "release") (set! *mouse-press* #f) (set! *mouse-border* #f)]
         [at
          (cond
+          [(and (equal? action "press") (equal? button "left") (fold-column-at x y))
+           => (lambda (line) (mouse-toggle-fold! (car at) line))]
           [(and (equal? action "press") (equal? button "left")) (mouse-click! (car at) (cadr at))]
           [(and (equal? action "drag") (equal? button "left")) (mouse-drag! (car at) (cadr at))]
           [(equal? action "release") (set! *mouse-press* #f)]
@@ -59,7 +66,8 @@
     (set! *mouse-border*
           (if (equal? what "width")
               (let ([at (move-border! x y 0)]) (list what at y (- x at)))
-              (list what y x 0)))))
+              (list what y x 0))))
+  void)
 
 (define (mouse-drag-border! x y)
   "Moves the border being dragged to follow the mouse at `x`, `y`."
@@ -69,7 +77,8 @@
          [delta (- (if width? (- x grab) y) at)])
     (unless (= delta 0)
       (let ([now (if width? (move-border! at other delta) (move-border! other at delta))])
-        (when now (set! *mouse-border* (list what now other grab)))))))
+        (when now (set! *mouse-border* (list what now other grab))))))
+  void)
 
 (define (mouse-click! window offset)
   "Focuses `window` and moves the cursor to `offset` there.
@@ -88,7 +97,29 @@
       (set-cursor! offset)
       (unless typing? (normal-clamp!))
       (set! *goal-col* (current-col)))
-    (set! *mouse-press* (and offset (list window (cursor))))))
+    (set! *mouse-press* (and offset (list window (cursor)))))
+  void)
+
+(define (mouse-toggle-fold! window line)
+  "Opens or closes the fold whose chevron is on `line` in `window`, the
+   outermost starting there, focusing the window. The cursor stays,
+   unless the fold closes over it: then it goes to the fold's first line."
+  (close-menu!)
+  (when *popup-shown* (close-popup!))
+  (reset-pending!)
+  (unless (= window (current-window))
+    (if (typing-mode?) (begin (focus-window! window) (run-hooks 'buffer-enter)) (go-to-window! window)))
+  (let ([f (foldl (lambda (f best) (if (and (= (fold-first f) line) (or (not best) (> (fold-size f) (fold-size best)))) f best))
+                  #f (buffer-folds))])
+    (when f
+      (let ([close? (not (fold-closed? f))] [at (current-line)])
+        (fold-set-closed! (fold-id f) close?)
+        (when (and close? (<= (fold-first f) at) (<= at (fold-last f)))
+          (set-cursor! (line-start line))
+          (unless (typing-mode?) (normal-clamp!))
+          (set! *goal-col* (current-col))))))
+  (set! *mouse-press* #f)
+  void)
 
 (define (mouse-drag! window offset)
   "Moves the cursor to `offset` as the left button drags in `window`.
@@ -98,7 +129,8 @@
       (when (typing-mode?) (leave-insert!))
       (enter-visual! 'char (cadr *mouse-press*)))
     (set-cursor! (min offset (max 0 (- (buffer-length) 1))))
-    (set! *goal-col* (current-col))))
+    (set! *goal-col* (current-col)))
+  void)
 
 (define (mouse-scroll! window sign)
   "Scrolls `window` (focusing it for the moment if it isn't current); the
