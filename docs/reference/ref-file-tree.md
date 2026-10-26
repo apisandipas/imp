@@ -26,7 +26,7 @@ The tree shows the project the current file is in (see [Projects](ref-projects.m
 
 Dotfiles, and files git ignores, aren't shown at first: `H` shows or hides dotfiles, and `I` shows or hides ignored files.
 
-When the tree opens, it opens the folders down to the file you're in and puts the cursor on it.
+When the tree opens, it opens the folders down to the file you're in and puts the cursor on it. While it's open, it follows you: switch to another file in one of its projects, and the tree opens the folders down to that file and moves its cursor there. Your cursor stays where you are. Set `file-tree-follow` to `#f` to turn this off.
 
 ## Moving around
 
@@ -71,7 +71,6 @@ The cursor stays in the file you opened, with the tree beside it.
 These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 
 - Git status colours or file icons beside the entries.
-- Following the file you're in as you switch buffers. The tree only shows the current file when it opens.
 
 ## Options
 
@@ -81,3 +80,4 @@ These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 | `file-tree-show-hidden` | `#f` | Whether dotfiles are shown; `H` flips it |
 | `file-tree-show-ignored` | `#f` | Whether files git ignores are shown; `I` flips it |
 | `file-tree-open-at-start` | `#f` | Whether the tree opens when imp starts |
+| `file-tree-follow` | `#t` | Whether the tree moves to each file you switch to |

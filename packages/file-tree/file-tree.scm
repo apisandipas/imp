@@ -18,6 +18,10 @@
 ;;;   q                    close it
 ;;;   ?                    show or hide these keys
 ;;;
+;;; With file-tree-follow on (the default), switching to a buffer whose
+;;; file is under a root moves the tree's cursor to it, opening the
+;;; folders on the way; focus stays where it is.
+;;;
 ;;; With file-tree-open-at-start set, the tree opens beside the first
 ;;; window when imp starts, the cursor left in that window.
 ;;;
@@ -31,6 +35,7 @@
 (define-option! 'file-tree-show-hidden #f '())   ; dotfiles
 (define-option! 'file-tree-show-ignored #f '())  ; files git ignores
 (define-option! 'file-tree-open-at-start #f '())
+(define-option! 'file-tree-follow #t '())  ; reveal the current buffer's file
 
 (define *file-tree-buffer-name* "*file-tree*")
 
@@ -472,6 +477,28 @@
                                "file tree")
         void)))
 
+(define (file-tree-follow-current!)
+  "Moves this frame's tree to the current buffer's file, if it is under
+   one of the tree's roots: the folders down to it open, and the tree
+   window's cursor on it, scrolled into view. Focus moves to the tree and
+   back with focus-window!, which runs no hooks."
+  (let ([entry (file-tree-entry)] [path (and (buffer-path) (absolute (buffer-path)))])
+    (when (and entry path (option 'file-tree-follow) (not (eq? (major-mode) 'file-tree-mode)))
+      (let ([here (current-window)])
+        (focus-window! (car entry))
+        (let ([root (file-tree-root-of path)])
+          (when root
+            (unless (file-tree-line-of path)
+              (file-tree-reveal! root path)
+              (file-tree-render!))
+            (let ([line (file-tree-line-of path)] [top (window-top)] [rows (window-height)])
+              (when line
+                (file-tree-cursor-to! line)
+                (when (or (< line top) (>= line (+ top rows)))
+                  (set-window-top! (max 0 (- line (quotient rows 2)))))))))
+        (focus-window! here))))
+  void)
+
 (define (file-tree-toggle!)
   "Opens the tree, or closes it if this frame shows one."
   (if (file-tree-window) (file-tree-close!) (file-tree-open!)))
@@ -504,3 +531,5 @@
       (let ([w (current-window)])
         (file-tree-open!)
         (go-to-window! w)))))
+
+(add-hook! 'buffer-enter file-tree-follow-current!)

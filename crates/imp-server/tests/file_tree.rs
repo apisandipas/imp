@@ -503,3 +503,70 @@ fn p_offers_the_remembered_projects() {
     let second = other.file_name().unwrap().to_str().unwrap();
     assert!(s.text().contains(&format!("\n{second}\n")), "{}", s.text());
 }
+
+#[test]
+fn it_follows_the_current_buffer() {
+    let dir = project("tree-follow");
+    std::fs::create_dir_all(dir.join("docs/guide")).unwrap();
+    std::fs::write(dir.join("docs/guide/intro.md"), "intro\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    let file_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, " te<C-w>l");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>", dir.join("docs/guide/intro.md").display()),
+    );
+    // Focus stays in the file's window; the tree opened down to it.
+    assert_eq!(eval(&mut s, "(current-window)"), file_window);
+    assert_eq!(s.text(), "intro\n");
+    let rows = s.frame().text_rows();
+    assert!(rows[2].starts_with("    guide/"), "{rows:?}");
+    assert!(rows[3].starts_with("      intro.md"), "{rows:?}");
+    // The tree's cursor is on it.
+    type_keys(&mut s, "<C-w>h");
+    assert_eq!(eval(&mut s, "(current-line)"), "3");
+    assert!(s.text().starts_with(&root));
+}
+
+#[test]
+fn it_scrolls_to_follow_and_leaves_other_files_alone() {
+    let dir = project("tree-follow-scroll");
+    for i in 0..60 {
+        std::fs::write(dir.join(format!("f{i:02}.txt")), "").unwrap();
+    }
+    std::fs::write(dir.join("f59.txt"), "last\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    type_keys(&mut s, " te<C-w>l");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>", dir.join("f59.txt").display()),
+    );
+    let rows = s.frame().text_rows();
+    assert!(rows.iter().any(|r| r.starts_with("  f59.txt")), "{rows:?}");
+    // A file outside the root changes nothing.
+    let outside = temp_path("tree-follow-outside.txt");
+    std::fs::write(&outside, "out\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", outside.display()));
+    type_keys(&mut s, "<C-w>h");
+    assert!(eval(&mut s, "(line-text (current-line))").contains("f59.txt"));
+}
+
+#[test]
+fn with_follow_off_it_stays_put() {
+    let dir = project("tree-follow-off");
+    let mut s = visiting(&dir.join("b.txt"));
+    s.eval("(set-option! 'file-tree-follow #f)").unwrap();
+    type_keys(&mut s, " te<C-w>l");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>", dir.join("src/main.rs").display()),
+    );
+    let rows = s.frame().text_rows();
+    assert!(
+        !rows
+            .iter()
+            .any(|r| r.contains("main.rs") && r.starts_with("    ")),
+        "{rows:?}"
+    );
+}
