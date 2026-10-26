@@ -41,9 +41,15 @@ The tree remembers which folders you opened. Close it and open it again, and the
 
 Press `?` in the tree to see its keys in a popup at the bottom of the screen. Press `?` again to hide it.
 
+## More than one project
+
+Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
+
+To take one out, put the cursor on its name and press `X`. The folder itself isn't touched. The first project, the one the tree opened on, always stays.
+
 ## Adding, renaming and deleting
 
-- `a` asks for a name to add in the folder at the cursor. On a file, it adds beside the file, and on the first line, at the top of the project. A name ending in `/` makes a folder. A name with folders in it, such as `lib/mod.rs`, makes the folders too. The cursor then moves to what you added.
+- `a` asks for a name to add in the folder at the cursor. On a file, it adds beside the file, and on a project's name, at the top of that project. A name ending in `/` makes a folder. A name with folders in it, such as `lib/mod.rs`, makes the folders too. The cursor then moves to what you added.
 - `r` asks for a new path for the entry at the cursor, starting from its current path. Change the name to rename it, or change the folders to move it. A file you have open follows it, so saving writes to the new path.
 - `D` deletes the entry at the cursor, once you answer `y`. A folder is deleted with everything in it.
 
@@ -65,7 +71,6 @@ The cursor stays in the file you opened, with the tree beside it.
 These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 
 - Git status colours or file icons beside the entries.
-- More than one root, or a tree in more than one window.
 - Following the file you're in as you switch buffers. The tree only shows the current file when it opens.
 
 ## Options

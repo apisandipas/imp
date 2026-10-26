@@ -421,3 +421,85 @@ fn the_tree_never_shows_line_numbers() {
     assert!(rows[0].starts_with(&root), "{rows:?}");
     assert!(rows[1].starts_with("  docs/"), "{rows:?}");
 }
+
+/// A server like `visiting`'s, with a state directory of its own, so
+/// roots it adds don't reach other tests.
+fn with_own_state(file: &Path, name: &str) -> imp_server::Server {
+    let mut s = visiting(file);
+    let state = temp_path(&format!("{name}-state"));
+    let _ = std::fs::remove_dir_all(&state);
+    std::fs::create_dir_all(&state).unwrap();
+    s.eval(&format!(
+        "(set-option! 'state-directory {:?})",
+        state.display().to_string()
+    ))
+    .unwrap();
+    s
+}
+
+#[test]
+fn p_adds_roots_and_x_removes_them() {
+    let dir = project("tree-roots");
+    let other = project("tree-roots-other");
+    let mut s = with_own_state(&dir.join("b.txt"), "tree-roots");
+    let (root, second) = (
+        dir.file_name().unwrap().to_str().unwrap().to_string(),
+        other.file_name().unwrap().to_str().unwrap().to_string(),
+    );
+    type_keys(&mut s, " te");
+    type_keys(&mut s, "P");
+    type_keys(&mut s, &format!("{}<ret>", other.display()));
+    let both = format!(
+        "{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n{second}\n  docs/\n  src/\n  A.txt\n  b.txt\n"
+    );
+    assert_eq!(s.text(), both);
+    // The cursor is on the new root's line.
+    assert_eq!(eval(&mut s, "(current-line)"), "5");
+    // Adding it again shows it once.
+    type_keys(&mut s, "P");
+    type_keys(&mut s, &format!("{}/<ret>", other.display()));
+    assert_eq!(s.text(), both);
+    // r works relative to the entry's own root.
+    std::fs::write(other.join("b.txt"), "bee\n").unwrap();
+    type_keys(&mut s, "Gr");
+    type_keys(&mut s, "<C-u>c.txt<ret>");
+    assert_eq!(
+        std::fs::read_to_string(other.join("c.txt")).unwrap(),
+        "bee\n"
+    );
+    assert!(dir.join("b.txt").exists());
+    // Remembered: a new tree shows it too.
+    type_keys(&mut s, "q te");
+    assert!(s.text().contains(&format!("{second}\n")), "{}", s.text());
+    // X on the first root does nothing; on the added one, it goes.
+    type_keys(&mut s, "ggX");
+    assert!(
+        s.status().contains("the first root stays"),
+        "{}",
+        s.status()
+    );
+    type_keys(&mut s, "6GX");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+    assert!(other.exists());
+}
+
+#[test]
+fn p_offers_the_remembered_projects() {
+    let dir = project("tree-offer");
+    let other = project("tree-offer-other");
+    let mut s = with_own_state(&dir.join("b.txt"), "tree-offer");
+    s.eval(&format!(
+        "(remember-project! {:?})",
+        other.display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, " teP");
+    let shown = s.frame().text_rows().join("\n");
+    assert!(shown.contains(&other.display().to_string()), "{shown}");
+    type_keys(&mut s, "<ret>");
+    let second = other.file_name().unwrap().to_str().unwrap();
+    assert!(s.text().contains(&format!("\n{second}\n")), "{}", s.text());
+}

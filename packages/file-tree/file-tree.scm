@@ -1,7 +1,7 @@
 ;;; file-tree.scm -- the project's folders as a tree down the left.
 ;;;
 ;;; The *file-tree* buffer shows the current buffer's project root (or the
-;;; working directory) as a tree, in a window file-tree-width columns wide
+;;; working directory) as a tree, and after it any roots added with P, in a window file-tree-width columns wide
 ;;; on the left of the frame. Dired stays the way to edit a directory as
 ;;; text; this is for finding your way around.
 ;;;
@@ -13,6 +13,7 @@
 ;;;   a                    add a file, or a folder (a name ending in /)
 ;;;   r                    rename or move the entry at the cursor
 ;;;   D                    delete it, after asking
+;;;   P, X                 add a project as another root; remove one
 ;;;   R                    read the folders again
 ;;;   q                    close it
 ;;;   ?                    show or hide these keys
@@ -47,6 +48,8 @@
         (list "D" "delete" (lambda (n) (file-tree-delete-prompt!)))
         (list "H" "show or hide dotfiles" (lambda (n) (file-tree-flip! 'file-tree-show-hidden)))
         (list "I" "show or hide ignored files" (lambda (n) (file-tree-flip! 'file-tree-show-ignored)))
+        (list "P" "add a project as a root" (lambda (n) (file-tree-add-root-prompt!)))
+        (list "X" "remove this root" (lambda (n) (file-tree-remove-root!)))
         (list "R" "read the folders again" (lambda (n) (file-tree-refresh!)))
         (list "q" "close the tree" (lambda (n) (file-tree-close!)))
         (list "?" "show or hide these keys" (lambda (n) (file-tree-help!)))))
@@ -119,23 +122,62 @@
   "Whether folder `path` is shown open."
   (hash-contains? *file-tree-expanded* path))
 
-(define (file-tree-rows dir depth)
-  "The rows for the entries of `dir` and, under each open folder, its
-   own, as (path directory? depth)."
+(define (file-tree-rows dir depth root)
+  "The rows for the entries of `dir` (under `root`) and, under each open
+   folder, its own, as (path directory? depth root)."
   (apply append
          (map (lambda (e)
-                (let* ([path (file-tree-join dir (car e))] [row (list path (cadr e) depth)])
+                (let* ([path (file-tree-join dir (car e))] [row (list path (cadr e) depth root)])
                   (if (and (cadr e) (file-tree-expanded? path))
-                      (cons row (file-tree-rows path (+ depth 1)))
+                      (cons row (file-tree-rows path (+ depth 1) root))
                       (list row))))
               (file-tree-entries dir))))
 
+(define (file-tree-roots-file)
+  "The file listing the roots added with P, in imp's state directory."
+  (string-append (imp-state-dir) "/file-tree-roots"))
+
+(define (file-tree-added-roots)
+  "The roots added with P, in the order they were added."
+  (with-handler (lambda (e) '())
+                (if (file-exists? (file-tree-roots-file))
+                    (filter (lambda (r) (not (equal? r ""))) (text-lines (read-file (file-tree-roots-file))))
+                    '())))
+
+(define (file-tree-save-roots! roots)
+  "Saves `roots` as the added roots. An unwritable state directory only
+   gets a message."
+  (with-handler (lambda (e) (message (error-message e)))
+                (write-text-file! (file-tree-roots-file) (apply string-append (map (lambda (r) (string-append r "\n")) roots))))
+  void)
+
+(define (file-tree-roots)
+  "The tree buffer's roots: its first, then the added ones that are
+   still directories, each once."
+  (let ([first (buffer-local 'file-tree-root)])
+    (cons first (let loop ([rs (file-tree-added-roots)] [seen (list first)])
+                  (cond [(null? rs) '()]
+                        [(or (member (car rs) seen) (not (file-directory? (car rs)))) (loop (cdr rs) seen)]
+                        [else (cons (car rs) (loop (cdr rs) (cons (car rs) seen)))])))))
+
+(define (file-tree-root-of path)
+  "The root `path` is under (the deepest, if roots nest), or #f."
+  (foldl (lambda (r best)
+           (if (and (or (equal? path r) (starts-with? path (string-append r "/")))
+                    (or (not best) (> (string-length r) (string-length best))))
+               r
+               best))
+         #f
+         (file-tree-roots)))
+
 (define (file-tree-row-text row)
-  "The line that shows `row`: indented two columns a level, a directory's
-   name ending in /."
-  (string-append (make-string (* 2 (caddr row)) #\space)
-                 (file-name-of (car row))
-                 (if (cadr row) "/" "")))
+  "The line that shows `row`: a root's name, or an entry indented two
+   columns a level, a directory's name ending in /."
+  (if (= (caddr row) 0)
+      (file-name-of (car row))
+      (string-append (make-string (* 2 (caddr row)) #\space)
+                     (file-name-of (car row))
+                     (if (cadr row) "/" ""))))
 
 (define (file-tree-cursor-to! line)
   "Puts the cursor on the name on `line` of the tree, past its indent."
@@ -144,15 +186,14 @@
                     (if (and lines (< line (vector-length lines))) (* 2 (caddr (vector-ref lines line))) 0)))))
 
 (define (file-tree-render!)
-  "Reads the root's directories afresh and redraws the tree buffer (the
+  "Reads the roots' directories afresh and redraws the tree buffer (the
    current buffer), keeping the cursor on the line it was on."
-  (let* ([root (buffer-local 'file-tree-root)]
-         [rows (file-tree-rows root 1)]
+  (let* ([rows (apply append (map (lambda (root) (cons (list root #t 0 root) (file-tree-rows root 1 root)))
+                                  (file-tree-roots)))]
          [line (current-line)])
-    (set-buffer-local! 'file-tree-lines (list->vector (cons (list root #t 0) rows)))
+    (set-buffer-local! 'file-tree-lines (list->vector rows))
     (set-buffer-contents!
-     (apply string-append (file-name-of root) "\n"
-            (map (lambda (r) (string-append (file-tree-row-text r) "\n")) rows)))
+     (apply string-append (map (lambda (r) (string-append (file-tree-row-text r) "\n")) rows)))
     (set-buffer-unmodified!)
     (file-tree-cursor-to! (min line (- (buffer-line-count) 1)))))
 
@@ -178,12 +219,13 @@
   "Shows the tree of `root` in tree buffer `id`, in the current window,
    with the cursor on `focus` (a path) if the tree shows it."
   (begin
-    (when focus (file-tree-reveal! root focus))
     (go-to-buffer! id)
     (unless (eq? (major-mode) 'file-tree-mode) (set-major-mode! 'file-tree-mode))
     (unless (equal? (buffer-local 'file-tree-root) root)
       (set-buffer-local! 'file-tree-root root)
       (set-cursor! 0))
+    (let ([under (and focus (file-tree-root-of focus))])
+      (when under (file-tree-reveal! under focus)))
     (file-tree-render!)
     (let ([line (and focus (file-tree-line-of focus))])
       (when line (file-tree-cursor-to! line)))))
@@ -220,9 +262,14 @@
     void))
 
 (define (file-tree-row)
-  "The row, (path directory? depth), at the cursor's line of the tree."
+  "The row, (path directory? depth root), at the cursor's line of the
+   tree."
   (let ([lines (buffer-local 'file-tree-lines)] [line (current-line)])
     (and lines (< line (vector-length lines)) (vector-ref lines line))))
+
+(define (file-tree-root-row? row)
+  "Whether `row` is a root's line."
+  (= (caddr row) 0))
 
 (define (file-tree-toggle-folder! path)
   "Opens folder `path` in the tree if it is shut, or shuts it."
@@ -244,7 +291,7 @@
   "<ret>: opens or shuts the folder at the cursor, or opens the file in
    the window the tree came from, moving the cursor there."
   (let ([row (file-tree-row)])
-    (cond [(or (not row) (= (current-line) 0)) void]
+    (cond [(or (not row) (file-tree-root-row? row)) void]
           [(cadr row) (file-tree-toggle-folder! (car row))]
           [else
            (let ([target (file-tree-other-window)])
@@ -269,13 +316,9 @@
   (message (string-append (if (eq? name 'file-tree-show-hidden) "dotfiles " "ignored files ")
                           (if (option name) "shown" "hidden"))))
 
-(define (file-tree-root)
-  "The root the tree buffer (the current buffer) shows."
-  (buffer-local 'file-tree-root))
-
 (define (file-tree-relative path)
-  "`path` relative to the tree's root (\"\" for the root itself)."
-  (let ([root (file-tree-root)])
+  "`path` relative to the root it is under (\"\" for a root itself)."
+  (let ([root (or (file-tree-root-of path) "")])
     (if (starts-with? path (string-append root "/"))
         (substring path (+ (string-length root) 1) (string-length path))
         (if (equal? path root) "" path))))
@@ -285,17 +328,17 @@
   (if (and (> (string-length name) 1) (ends-with? name "/")) (substring name 0 (- (string-length name) 1)) name))
 
 (define (file-tree-target-dir)
-  "The folder `a` adds to: the folder at the cursor, a file's folder, or
-   the root on the first line."
+  "The folder `a` adds to: the folder or root at the cursor, or a file's
+   folder."
   (let ([row (file-tree-row)])
-    (cond [(or (not row) (= (current-line) 0)) (file-tree-root)]
+    (cond [(not row) (buffer-local 'file-tree-root)]
           [(cadr row) (car row)]
           [else (directory-of (car row))])))
 
 (define (file-tree-go-to! path)
   "Redraws the tree with the folders down to `path` open, and the cursor
    on it."
-  (file-tree-reveal! (file-tree-root) path)
+  (let ([root (file-tree-root-of path)]) (when root (file-tree-reveal! root path)))
   (file-tree-render!)
   (let ([line (file-tree-line-of path)])
     (when line (file-tree-cursor-to! line)))
@@ -323,7 +366,7 @@
     (ask (string-append "Add in " (if (equal? rel "") (file-name-of dir) rel) "/: ") ""
          (lambda (name) (file-tree-add! dir name)))))
 
-(define (file-tree-follow! from to)
+(define (file-tree-move-paths! from to)
   "Points buffers visiting `from`, or a file under it, at the same file
    under `to`, and moves the open folders under `from` the same way."
   (let ([moved (lambda (p)
@@ -346,22 +389,22 @@
     void))
 
 (define (file-tree-rename! from text)
-  "Renames or moves `from` to `text`, a path relative to the root,
+  "Renames or moves `from` to `text`, a path relative to its root,
    making the folders it needs."
-  (let* ([to (file-tree-join (file-tree-root) (file-tree-strip-slash text))]
+  (let* ([to (file-tree-join (file-tree-root-of from) (file-tree-strip-slash text))]
          [made (make-directory! (directory-of to))]
          [r (if (string? made) made (rename-file! from to))])
     (if (string? r)
         (message r)
-        (begin (file-tree-follow! from to)
+        (begin (file-tree-move-paths! from to)
                (file-tree-go-to! to)
                (message (string-append "renamed to " (file-tree-relative to)))))))
 
 (define (file-tree-rename-prompt!)
   "r: asks for a new path for the entry at the cursor."
   (let ([row (file-tree-row)])
-    (if (or (not row) (= (current-line) 0))
-        (message "the root can't be renamed here")
+    (if (or (not row) (file-tree-root-row? row))
+        (message "a root can't be renamed here")
         (ask "Rename to: " (file-tree-relative (car row))
              (lambda (text) (file-tree-rename! (car row) text))))))
 
@@ -369,8 +412,8 @@
   "D: deletes the entry at the cursor, a folder with everything in it,
    once you say y."
   (let ([row (file-tree-row)])
-    (if (or (not row) (= (current-line) 0))
-        (message "the root can't be deleted here")
+    (if (or (not row) (file-tree-root-row? row))
+        (message "a root can't be deleted here (X takes it out of the tree)")
         (let ([rel (file-tree-relative (car row))])
           (confirm! (string-append "Delete " rel (if (cadr row) "/ and everything in it?" "?"))
                     (lambda ()
@@ -379,10 +422,37 @@
                             (message r)
                             (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
 
+(define (file-tree-add-root! dir)
+  "Adds directory `dir` as a root after the others, remembered between
+   sessions, and puts the cursor on it."
+  (let ([root (file-tree-strip-slash (absolute dir))])
+    (cond [(not (file-directory? root)) (message (string-append dir " is not a directory"))]
+          [(member root (file-tree-roots)) (file-tree-go-to! root) (message (string-append (file-name-of root) " is already a root"))]
+          [else (file-tree-save-roots! (append (filter (lambda (r) (not (equal? r root))) (file-tree-added-roots))
+                                               (list root)))
+                (file-tree-go-to! root)
+                (message (string-append "added root " root))])))
+
+(define (file-tree-add-root-prompt!)
+  "P: asks for a root to add, from the remembered projects or typed."
+  (let ([roots (file-tree-roots)])
+    (completing-read "Add root: " (filter (lambda (p) (not (member p roots))) (known-projects))
+                     file-tree-add-root!)))
+
+(define (file-tree-remove-root!)
+  "X: takes the added root at the cursor out of the tree; the directory
+   stays. The first root stays too."
+  (let ([row (file-tree-row)])
+    (cond [(or (not row) (not (file-tree-root-row? row))) (message "X works on a root's line")]
+          [(equal? (car row) (buffer-local 'file-tree-root)) (message "the first root stays")]
+          [else (file-tree-save-roots! (filter (lambda (r) (not (equal? r (car row)))) (file-tree-added-roots)))
+                (file-tree-refresh!)
+                (message (string-append "removed root " (car row)))])))
+
 (define (file-tree-tab!)
   "<tab>: opens or shuts the folder at the cursor."
   (let ([row (file-tree-row)])
-    (when (and row (cadr row) (> (current-line) 0)) (file-tree-toggle-folder! (car row)))
+    (when (and row (cadr row) (not (file-tree-root-row? row))) (file-tree-toggle-folder! (car row)))
     void))
 
 (define (file-tree-hide-help!)
