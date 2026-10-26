@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: 75859de48725
+  docs/specs/file-tree.md: cc44b3526907
 ---
 # File tree
 
