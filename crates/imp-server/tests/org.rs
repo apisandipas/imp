@@ -75,6 +75,8 @@ fn shift_tab_cycles_the_buffer() {
 #[test]
 fn ret_cycles_todo_keywords() {
     let mut s = org("todo.org", "** Write it\n");
+    // Logging done is tested in org_clock.rs.
+    s.eval("(set-option! 'org-log-done #f)").unwrap();
     type_keys(&mut s, "<ret>");
     assert_eq!(s.text(), "** TODO Write it\n");
     type_keys(&mut s, "<ret>");
@@ -298,6 +300,7 @@ const KEYWORDS: &str =
 fn keywords_after_the_bar_are_done() {
     let mut s = server("");
     s.eval(KEYWORDS).unwrap();
+    s.eval("(set-option! 'org-log-done #f)").unwrap();
     let path = temp_path("bar.org");
     std::fs::write(&path, "** Write it\n").unwrap();
     type_keys(&mut s, &format!(":e {}<ret>", path.display()));

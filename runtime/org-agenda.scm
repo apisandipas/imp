@@ -16,6 +16,8 @@
 ;;;   F                follow mode: show each entry the cursor is on
 ;;;   gr gR            read the files again (gR: every agenda buffer)
 ;;;   q ZZ             leave; ZQ also closes the files the agenda opened
+;;;   I O cc cg        clock in on the entry, out, cancel, go to the clock
+;;;   gD l, gD R (cr)  log mode, the clock report
 ;;;
 ;;; It loads after org.scm and uses its readers: timestamps
 ;;; (org-parse-stamp), properties and categories, TODO keywords.
@@ -37,6 +39,10 @@
 ;; org-agenda-span days; and whether it turned the grid on or off
 ;; ('default for org-agenda-use-time-grid).
 (define *org-agenda-span* #f)
+;; Whether the dated view shows log mode's lines and the clock report,
+;; as gD's l and R set them until the agenda is opened again.
+(define *org-agenda-log* #f)
+(define *org-agenda-report* #f)
 (define *org-agenda-grid* 'default)
 ;; The line today's header was drawn on, or #f, and each day's header's,
 ;; as (day . line).
@@ -49,6 +55,14 @@
 ;; Whether follow mode is on, and the line it last showed.
 (define *org-agenda-follow* #f)
 (define *org-agenda-followed* #f)
+;; The agenda's filters, as sc, st, se, sr and s^ add them: (kind arg
+;; label), kind category, tag, effort, regexp or top. They stay until S
+;; or another view.
+(define *org-agenda-filters* '())
+;; The marked entries, as org-agenda-mark-key gives them, for the bulk
+;; actions; and the entries the agenda last drew.
+(define *org-agenda-marks* '())
+(define *org-agenda-shown* '())
 ;; Draw a time grid on today, and on other days with something timed:
 ;; a line at each of org-agenda-time-grid's times, and on today a line
 ;; for now.
@@ -69,12 +83,12 @@
 (define (org-line-appointments text)
   "The active timestamps on `text`, parsed, other than its SCHEDULED: and
    DEADLINE: ones, as (start end) where end is the range's last
-   timestamp (<a>--<b>) or #f."
+   timestamp (<a>--<b>) or #f; then its diary dates, as (stamp #f)."
   (let ([n (string-length text)])
     (let loop ([from 0] [acc '()])
       (let ([b (org-stamp-bounds-anywhere text from)])
         (if (not b)
-            (reverse acc)
+            (append (reverse acc) (map (lambda (d) (list d #f)) (org-diary-stamps text)))
             (let* ([before (trim-end (substring text 0 (car b)))]
                    [planned? (or (ends-with? before "SCHEDULED:") (ends-with? before "DEADLINE:"))]
                    [stamp (org-parse-stamp (substring text (car b) (cadr b)))]
@@ -185,21 +199,27 @@
 
 (define (org-stamp-days stamp first last)
   "The days from `first` to `last` that timestamp `stamp` falls on: its
-   date, and with a repeater each interval after it."
+   date, and with a repeater each interval after it; a diary date's
+   days."
   (let ([date (cadr stamp)] [r (cadddr stamp)])
-    (if (not r)
-        (if (and (not (date<? date first)) (not (date<? last date))) (list date) '())
-        (let loop ([k 0] [acc '()])
-          (let ([d (org-shift-date date r k)])
-            (cond [(date<? last d) (reverse acc)]
-                  [(date<? d first) (loop (+ k 1) acc)]
-                  [else (loop (+ k 1) (cons d acc))]))))))
+    (cond
+      [(org-diary-stamp? stamp) (org-diary-days stamp first last)]
+      [(not r)
+       (if (and (not (date<? date first)) (not (date<? last date))) (list date) '())]
+      [else
+       (let loop ([k 0] [acc '()])
+         (let ([d (org-shift-date date r k)])
+           (cond [(date<? last d) (reverse acc)]
+                 [(date<? d first) (loop (+ k 1) acc)]
+                 [else (loop (+ k 1) (cons d acc))])))])))
 
 (define (org-stamp-after-day stamp day)
   "The first day after `day` that timestamp `stamp` falls on, or #f: its
-   date, or with a repeater the first repeat after `day`."
+   date, or with a repeater the first repeat after `day`; a diary
+   date's next day."
   (let ([date (cadr stamp)] [r (cadddr stamp)])
-    (cond [(date<? day date) date]
+    (cond [(org-diary-stamp? stamp) (org-diary-after stamp day)]
+          [(date<? day date) date]
           [(not r) #f]
           [else (let loop ([k 1])
                   (let ([d (org-shift-date date r k)]) (if (date<? day d) d (loop (+ k 1)))))])))
@@ -226,7 +246,7 @@
 (define (org-agenda-title-text e)
   "Agenda entry `e`'s title as the agenda shows it: without its active
    timestamps, which the agenda shows in their own column."
-  (let loop ([t (cadddr e)])
+  (let loop ([t (org-diary-strip (cadddr e))])
     (let ([b (org-stamp-bounds-anywhere t 0)])
       (if (and b (equal? (substring t (car b) (+ (car b) 1)) "<"))
           (let* ([end (cadr b)]
@@ -297,15 +317,22 @@
 ;; The agenda is drawn in two steps: the sections make a list of rows,
 ;; then org-agenda-draw! lays them out, sizing each column of the entry
 ;; rows to what they hold and the window's width. A row is:
-;;   (title NAME COVERS)         the view's name, what it covers under
-;;                               it, then a rule
+;;   (title NAME COVERS FILTER)  the view's name, what it covers under
+;;                               it (FILTER at its right), then a rule
 ;;   (header TEXT KIND [DAY])    a section or day, with a rule under it;
 ;;                               KIND is section, date, weekend or today
-;;   (entry E TIME WHAT KIND O)  entry E, TIME and WHAT strings (or ""),
+;;   (entry E TIME WHAT KIND O [GRAPH])
+;;                               entry E, TIME and WHAT strings (or ""),
 ;;                               KIND the what's kind (org-what-face), O
-;;                               the occurrence shown (or #f). The line's
-;;                               item is (org file line kind date).
+;;                               the occurrence shown (or #f), GRAPH a
+;;                               habit's graph (org-habit-graph). The
+;;                               line's item is (org file line kind date).
+;;                               A log mode line adds LOG, (KEYWORD
+;;                               NOTE): the keyword shown instead of E's,
+;;                               and a dim note before the title.
 ;;   (grid TIME), (now TIME)     a line of the time grid, and the now line
+;;   (report TEXT KIND)          a line of the clock report: KIND rule,
+;;                               head, row or total
 ;;   (blank)
 ;;   (note TEXT)                 a line of its own, dim
 
@@ -316,7 +343,7 @@
          [col (lambda (w) (if (> w 0) (+ w 2) 0))]
          [time-w (widest caddr 17)]
          [what-w (widest cadddr 10)]
-         [kw-w (widest (lambda (r) (or (caddr (cadr r)) "")) 12)]
+         [kw-w (widest (lambda (r) (or (org-row-keyword r) "")) 12)]
          [tags? (>= width 60)]
          [tags-w (if tags? (widest (lambda (r) (org-agenda-tags-text (cadr r))) 30) 0)]
          [cat-w (widest (lambda (r) (list-ref (cadr r) 7)) 14)]
@@ -328,6 +355,7 @@
     (draw-begin!)
     (set! *org-agenda-today-line* #f)
     (set! *org-agenda-day-lines* '())
+    (set! *org-agenda-shown* (map cadr entries))
     (for-each
      (lambda (r)
        (when (and (eq? (car r) 'header) (eq? (caddr r) 'today))
@@ -337,7 +365,13 @@
        (case (car r)
          [(title)
           (draw-line! (list (list " " #f) (list (cadr r) (list "org.agenda.title" (heights 1)))) #f)
-          (draw-line! (list (list " " #f) (list (caddr r) "org.agenda.span")) #f)
+          (let* ([covers (caddr r)] [filter-text (if (pair? (cdddr r)) (cadddr r) "")]
+                 [gap (max 2 (- width 2 (string-length covers) (string-length filter-text)))])
+            (draw-line! (append (list (list " " #f) (list covers "org.agenda.span"))
+                                (if (equal? filter-text "")
+                                    '()
+                                    (list (list (make-string gap #\space) #f) (list filter-text "org.agenda.tag"))))
+                        #f))
           (draw-line! (list (list (rule (- width 1)) "org.agenda.rule")) #f)]
          [(header)
           (let* ([text (cadr r)] [kind (caddr r)]
@@ -351,21 +385,29 @@
             (draw-line! (list (list "  " #f) (list (rule (string-length text)) (list "org.agenda.rule" (heights 2)))) #f))]
          [(entry)
           (let* ([e (cadr r)] [time (caddr r)] [what (cadddr r)] [kind (list-ref r 4)]
-                 [kw (caddr e)]
+                 [kw (org-row-keyword r)]
+                 [note (if (> (length r) 7) (cadr (list-ref r 7)) "")]
                  [title (org-agenda-title-text e)]
                  [prio (and (>= (string-length title) 5) (starts-with? title "[#")
                             (equal? (substring title 3 5) "] ") (substring title 0 4))]
-                 [fitted (org-fit title title-w)]
+                 ;; A habit's graph goes after its title, when there's room.
+                 [graph (and (> (length r) 6) (list-ref r 6))]
+                 [graph (and graph (>= title-w (+ (length graph) 11)) graph)]
+                 [fitted (org-fit title (max 1 (- (if graph (- title-w (length graph) 1) title-w) (string-length note))))]
+                 [marked? (org-agenda-marked? e)]
+                 [title-face (if marked? "org.agenda.marked" #f)]
                  [cell (lambda (text w face) (if (> w 0) (list (list (org-fit text w) face) (list "  " #f)) '()))])
             (draw-line!
-             (append (list (list "    " #f))
+             (append (list (list "  " #f) (if marked? (list "▸ " "org.agenda.marked") (list "  " #f)))
                      (cell time time-w "org.agenda.time")
                      (cell what what-w (org-what-face kind))
-                     (cell (or kw "") kw-w (if (org-entry-done? e) "org.done" "org.todo"))
+                     (cell (or kw "") kw-w (if (and kw (member kw (org-done-keywords))) "org.done" "org.todo"))
+                     (if (equal? note "") '() (list (list note "org.agenda.span")))
                      (if (and prio (> title-w 5))
                          (list (list prio "org.priority")
-                               (list (substring fitted 4 (string-length fitted)) #f))
-                         (list (list fitted #f)))
+                               (list (substring fitted 4 (string-length fitted)) title-face))
+                         (list (list fitted title-face)))
+                     (if graph (cons (list " " #f) (org-habit-parts graph)) '())
                      (if (> tags-w 0)
                          (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
                          '())
@@ -386,6 +428,13 @@
                                     "org.agenda.now"))
                         #f))]
          [(note) (draw-line! (list (list "  " #f) (list (cadr r) "org.agenda.span")) #f)]
+         [(report)
+          (draw-line! (list (list "  " #f)
+                            (list (cadr r) (case (caddr r)
+                                             [(rule) "org.agenda.rule"]
+                                             [(head total) (list "org.agenda.clock-report" "bold")]
+                                             [else "org.agenda.clock-report"])))
+                      #f)]
          [else (draw-line! '() #f)]))
      rows)
     (draw-finish!)))
@@ -446,7 +495,7 @@
           (if (list-ref e 5) (list (list (list-ref e 5) 'deadline #f)) '())
           (map (lambda (a) (list (car a) 'appointment
                                  (and (cadr a) (date<? (cadr (car a)) (cadr (cadr a))) (cadr a))))
-               (org-entry-appointments e))))
+               (filter (lambda (a) (not (org-diary-unknown? (car a)))) (org-entry-appointments e)))))
 
 (define (org-occurrence-days o first last)
   "The days from `first` to `last` occurrence `o` falls on, as (day
@@ -466,6 +515,329 @@
 (define (org-occurrence-label kind)
   "What an occurrence of `kind` says it is on its day."
   (case kind [(scheduled) "Sched."] [(deadline) "Deadline"] [else ""]))
+
+;;; Habits and diary dates
+;;
+;; A diary date is an active timestamp holding a diary sexp, such as
+;; <%%(diary-float 11 4 4)>, read without running Lisp. Its stamp is
+;; (#t #f TIME (diary FORM) #f): no date of its own, and in the
+;; repeater's place the form saying which days it falls on, one of
+;;   (anniversary DATE)       every year on DATE's day, after its year
+;;   (float MONTH DAY N)      the Nth weekday DAY (0 Sunday) of MONTH,
+;;                            #t for every month; N < 0 from the end
+;;   (block FIRST LAST)       each day from FIRST to LAST
+;;   (cyclic N DATE)          every N days from DATE
+;;   (date (YEAR MONTH DAY))  the days matching, #t for any part
+;;   (unknown TEXT)           a sexp the agenda doesn't read, skipped
+
+;; The order a diary sexp's dates are in: 'american (month day year, as
+;; Emacs), 'european (day month year) or 'iso (year month day).
+(define-option! 'calendar-date-style 'american '())
+
+(define (org-diary-stamp? stamp)
+  "Whether timestamp `stamp` is a diary date."
+  (let ([r (cadddr stamp)]) (and (pair? r) (eq? (car r) 'diary))))
+
+(define (org-diary-form stamp)
+  "Diary date `stamp`'s form (see above)."
+  (cadr (cadddr stamp)))
+
+(define (org-diary-unknown? stamp)
+  "Whether `stamp` is a diary date whose sexp the agenda doesn't read."
+  (and (org-diary-stamp? stamp) (eq? (car (org-diary-form stamp)) 'unknown)))
+
+(define (org-diary-ymd args)
+  "The (year month day) three of a diary sexp's arguments give, in
+   calendar-date-style's order."
+  (let ([a (car args)] [b (cadr args)] [c (caddr args)])
+    (case (option 'calendar-date-style)
+      [(european) (list c b a)]
+      [(iso) (list a b c)]
+      [else (list c a b)])))
+
+(define (org-diary-args words)
+  "A diary sexp's argument `words` read: whole numbers, and #t for t;
+   #f if any is something else."
+  (let loop ([ws words] [acc '()])
+    (cond [(null? ws) (reverse acc)]
+          [(equal? (car ws) "t") (loop (cdr ws) (cons #t acc))]
+          [(let ([n (string->number (car ws))]) (and n (integer? n) n))
+           => (lambda (n) (loop (cdr ws) (cons n acc)))]
+          [else #f])))
+
+(define (org-diary-parse inside)
+  "The form (see above) of the diary sexp `inside` its parentheses, as
+   \"diary-float 11 4 4\"; (unknown INSIDE) when it isn't one of the
+   five the agenda reads, or its arguments don't fit."
+  (let* ([words (split-whitespace inside)]
+         [name (if (pair? words) (car words) "")]
+         [args (and (pair? words) (org-diary-args (cdr words)))]
+         [n (if args (length args) 0)]
+         [numbers? (lambda (xs) (foldl (lambda (x ok) (and ok (number? x))) #t xs))])
+    (or (and args
+             (cond
+               [(and (equal? name "diary-anniversary") (= n 3) (numbers? args))
+                (list 'anniversary (org-diary-ymd args))]
+               [(and (equal? name "diary-float") (= n 3)
+                     (or (eq? (car args) #t) (and (number? (car args)) (<= 1 (car args) 12)))
+                     (number? (cadr args)) (<= 0 (cadr args) 6)
+                     (number? (caddr args)) (not (= (caddr args) 0)))
+                (list 'float (car args) (cadr args) (caddr args))]
+               [(and (equal? name "diary-block") (= n 6) (numbers? args))
+                (list 'block (org-diary-ymd args) (org-diary-ymd (list-tail args 3)))]
+               [(and (equal? name "diary-cyclic") (= n 4) (numbers? args) (> (car args) 0))
+                (list 'cyclic (car args) (org-diary-ymd (cdr args)))]
+               [(and (equal? name "diary-date") (= n 3))
+                (list 'date (org-diary-ymd args))]
+               [else #f]))
+        (list 'unknown inside))))
+
+(define (org-diary-bounds text from)
+  "The (start open close end) of the next diary timestamp in `text` at
+   or after `from`: where its <%%( starts, its sexp's parentheses, and
+   just past its >. #f if there is none."
+  (let ([start (string-index-from text "<%%(" from)] [n (string-length text)])
+    (and start
+         (let loop ([i (+ start 4)] [depth 1])
+           (cond [(>= i n) #f]
+                 [(equal? (string-ref text i) #\() (loop (+ i 1) (+ depth 1))]
+                 [(and (equal? (string-ref text i) #\)) (= depth 1))
+                  (let ([gt (string-index-from text ">" i)])
+                    (and gt (list start (+ start 3) i (+ gt 1))))]
+                 [(equal? (string-ref text i) #\)) (loop (+ i 1) (- depth 1))]
+                 [else (loop (+ i 1) depth)])))))
+
+(define (org-diary-stamps text)
+  "The diary timestamps in `text`, as stamps (see above), with the time
+   after the sexp if there is one, <%%(diary-float t 4 1) 19:00>."
+  (let loop ([from 0] [acc '()])
+    (let ([b (org-diary-bounds text from)])
+      (if (not b)
+          (reverse acc)
+          (let* ([inside (substring text (+ (cadr b) 1) (caddr b))]
+                 [after (trim (substring text (+ (caddr b) 1) (- (cadddr b) 1)))]
+                 [time (and (org-time-minutes after) after)])
+            (loop (cadddr b)
+                  (cons (list #t #f time (list 'diary (org-diary-parse inside)) #f) acc)))))))
+
+(define (org-diary-strip text)
+  "`text` without its diary timestamps."
+  (let ([b (org-diary-bounds text 0)])
+    (if b
+        (org-diary-strip (string-append (trim-end (substring text 0 (car b)))
+                                        (substring text (cadddr b) (string-length text))))
+        text)))
+
+(define (org-diary-on? form day)
+  "Whether diary `form` (see above) falls on `day`."
+  (let ([y (car day)] [m (cadr day)] [d (caddr day)])
+    (case (car form)
+      [(anniversary)
+       (let* ([date (cadr form)]
+              ;; 29 February is 1 March in other years, as Emacs.
+              [moved? (and (= (cadr date) 2) (= (caddr date) 29) (not (= (days-in-month y 2) 29)))])
+         (and (> y (car date))
+              (= m (if moved? 3 (cadr date)))
+              (= d (if moved? 1 (caddr date)))))]
+      [(float)
+       (let ([month (cadr form)] [weekday (caddr form)] [k (cadddr form)])
+         (and (or (eq? month #t) (= month m))
+              (= (date-weekday day) weekday)
+              (if (> k 0)
+                  (= (quotient (- d 1) 7) (- k 1))
+                  (= (quotient (- (days-in-month y m) d) 7) (- (- k) 1)))))]
+      [(block) (and (not (date<? day (cadr form))) (not (date<? (caddr form) day)))]
+      [(cyclic)
+       (let ([k (- (date->days day) (date->days (caddr form)))])
+         (and (>= k 0) (= (modulo k (cadr form)) 0)))]
+      [(date)
+       (let ([want (cadr form)])
+         (and (or (eq? (car want) #t) (= (car want) y))
+              (or (eq? (cadr want) #t) (= (cadr want) m))
+              (or (eq? (caddr want) #t) (= (caddr want) d))))]
+      [else #f])))
+
+(define (org-diary-days stamp first last)
+  "The days from `first` to `last` diary date `stamp` falls on."
+  (let ([form (org-diary-form stamp)])
+    (filter (lambda (day) (org-diary-on? form day))
+            (map (lambda (k) (date-add-days first k))
+                 (range 0 (+ 1 (- (date->days last) (date->days first))))))))
+
+(define (org-diary-after stamp day)
+  "The first day after `day` diary date `stamp` falls on, looking four
+   years ahead, or #f."
+  (let ([form (org-diary-form stamp)])
+    (if (eq? (car form) 'block)
+        (cond [(date<? day (cadr form)) (cadr form)]
+              [(date<? day (caddr form)) (date-add-days day 1)]
+              [else #f])
+        (let loop ([k 1])
+          (cond [(> k 1462) #f]
+                [(org-diary-on? form (date-add-days day k)) (date-add-days day k)]
+                [else (loop (+ k 1))])))))
+
+(define (org-ordinal-suffix n)
+  "The suffix of `n`'s ordinal: \"st\" for 1 and 21, \"th\" for 11."
+  (cond [(memv (modulo n 100) '(11 12 13)) "th"]
+        [(= (modulo n 10) 1) "st"]
+        [(= (modulo n 10) 2) "nd"]
+        [(= (modulo n 10) 3) "rd"]
+        [else "th"]))
+
+(define (org-replace-all text needle new)
+  "`text` with each `needle` in it made `new`."
+  (let ([i (string-index-from text needle 0)])
+    (if i
+        (string-append (substring text 0 i) new
+                       (org-replace-all (substring text (+ i (string-length needle)) (string-length text)) needle new))
+        text)))
+
+(define (org-diary-entry e o day)
+  "Agenda entry `e` as shown on `day` for occurrence `o`: an
+   anniversary's title with %d made the count of years and %s its
+   ordinal's suffix, as Emacs's diary does; else `e`."
+  (let ([stamp (car o)])
+    (if (and day (org-diary-stamp? stamp) (eq? (car (org-diary-form stamp)) 'anniversary))
+        (let* ([years (- (car day) (car (cadr (org-diary-form stamp))))]
+               [title (org-replace-all (org-replace-all (cadddr e) "%d" (number->string years))
+                                     "%s" (org-ordinal-suffix years))])
+          (append (take e 3) (list title) (list-tail e 4)))
+        e)))
+
+(define (org-diary-skipped entries)
+  "How many diary timestamps in `entries` the agenda doesn't read."
+  (length (filter (lambda (a) (org-diary-unknown? (car a)))
+                  (apply append (map org-entry-appointments entries)))))
+
+;; A habit is an entry whose STYLE property is habit, with a repeating
+;; SCHEDULED: date. It shows on today only, with a graph of the days
+;; around it, as Org's org-habit draws it.
+(define-option! 'org-habit-preceding-days 21 '())
+(define-option! 'org-habit-following-days 7 '())
+
+(define (org-habit? e)
+  "Whether agenda entry `e` is a habit."
+  (let ([s (list-ref e 4)])
+    (and s (cadddr s) (not (org-diary-stamp? s))
+         (equal? (org-entry-prop e "STYLE") "habit"))))
+
+(define (org-interval-days n unit)
+  "How many days `n` of `unit` (\"d\" \"w\" \"m\" \"y\") are, as Org's
+   habits count them: a month 30 days, a year 365."
+  (* n (case (string->symbol unit) [(w) 7] [(m) 30] [(y) 365] [else 1])))
+
+(define (org-habit-done-days e)
+  "The days, as day numbers (date->days), habit `e` was done, oldest
+   first: from the state changes to a done keyword logged in its text,
+   and its LAST_REPEAT property."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)]
+         [stamp-day (lambda (text)
+                      (let ([b (org-stamp-bounds-anywhere text 0)])
+                        (and b (let ([s (org-parse-stamp (substring text (car b) (cadr b)))])
+                                 (and s (date->days (cadr s)))))))]
+         [logged
+          (let loop ([i (+ (cadr e) 1)] [acc '()])
+            (if (or (>= i n) (org-level-of (vector-ref lines i)))
+                acc
+                (let* ([t (trim (vector-ref lines i))]
+                       [kw (and (starts-with? t "- State \"")
+                                (let ([close (string-index-from t "\"" 9)]) (and close (substring t 9 close))))]
+                       [day (and kw (member kw (org-done-keywords)) (stamp-day t))])
+                  (loop (+ i 1) (if day (cons day acc) acc)))))]
+         [last (let ([p (org-entry-prop e "LAST_REPEAT")]) (and p (stamp-day p)))]
+         [all (sort (if last (cons last logged) logged) <)])
+    (let loop ([ds all] [acc '()])
+      (cond [(null? ds) (reverse acc)]
+            [(and (pair? acc) (= (car acc) (car ds))) (loop (cdr ds) acc)]
+            [else (loop (cdr ds) (cons (car ds) acc))]))))
+
+(define (org-habit-faces day scheduled deadline donep)
+  "The (past . future) faces of habit graph cell `day`, with the habit
+   due from `scheduled` to `deadline` (day numbers), as Org's
+   org-habit-get-faces: clear before it is due, ready while it may be
+   done, alert on its last day, overdue after."
+  (cond [(< day scheduled) (cons "clear" "clear-future")]
+        [(< day deadline) (cons "ready" "ready-future")]
+        [(= day deadline) (if donep (cons "ready" "ready-future") (cons "alert" "alert-future"))]
+        [else (cons "overdue" "overdue-future")]))
+
+(define (org-habit-graph e today)
+  "Habit `e`'s graph on `today`: a (glyph face) cell for each of the
+   org-habit-preceding-days before today, today, and the days after up
+   to org-habit-following-days, as Org's org-habit-build-graph. A * is
+   a day it was done, ! today."
+  (let* ([stamp (list-ref e 4)] [r (cadddr stamp)] [type (car r)]
+         [s-repeat (org-interval-days (cadr r) (caddr r))]
+         [d-repeat (if (= (length r) 4) (org-interval-days (car (cadddr r)) (cadr (cadddr r))) s-repeat)]
+         [scheduled (date->days (cadr stamp))]
+         [deadline (+ scheduled (- d-repeat s-repeat))]
+         [all (org-habit-done-days e)]
+         [now (date->days today)]
+         [start (- now (option 'org-habit-preceding-days))]
+         [end (+ now (option 'org-habit-following-days))]
+         ;; Where the habit was scheduled when `day` was today, `done`
+         ;; the done days not yet passed and `last` the last one passed.
+         [scheduled-then
+          (lambda (done last)
+            (cond [(null? done) scheduled]
+                  [(equal? type ".+") (+ last s-repeat)]
+                  [(equal? type "+") (- scheduled (* (length done) s-repeat))]
+                  [else
+                   ;; ++: from the first done day, each later one moves
+                   ;; it on by as many whole repeats as get it past.
+                   (let* ([first (car all)] [shift (modulo (- scheduled first) s-repeat)]
+                          [s (+ first (if (= shift 0) s-repeat shift))])
+                     (if (= first last)
+                         s
+                         (let loop ([ds (cdr all)] [s s])
+                           (if (null? ds)
+                               s
+                               (let ([s (+ s (* (+ 1 (quotient (max (- (car ds) s) 0) s-repeat)) s-repeat))])
+                                 (if (= (car ds) last) s (loop (cdr ds) s)))))))]))])
+    (let skip ([done all] [last #f])
+      (if (and (pair? done) (< (car done) start))
+          (skip (cdr done) (car done))
+          (let loop ([day start] [done done] [last last] [acc '()])
+            (if (>= day end)
+                (reverse acc)
+                (let* ([past? (< day now)] [today? (= day now)]
+                       [done? (and (pair? done) (= day (car done)))]
+                       [faces (if (and past? (not last) (not (< scheduled now)))
+                                  (if (and (pair? all) (= (car all) day))
+                                      (cons "ready" "ready-future")
+                                      (cons "clear" "clear-future"))
+                                  (let ([s (if (and past? last) (scheduled-then done last) scheduled)])
+                                    (org-habit-faces day s (+ s (- deadline scheduled)) done?)))]
+                       [face (if (or past? today?) (car faces) (cdr faces))]
+                       ;; A past day it wasn't done on, not overdue, is drawn lighter.
+                       [face (if (and past? (not (equal? face "overdue")) (not done?)) (cdr faces) face)])
+                  (loop (+ day 1)
+                        (if done? (filter (lambda (d) (> d day)) done) done)
+                        (if done? day last)
+                        (cons (list (cond [done? "*"] [today? "!"] [else " "])
+                                    (string-append "org.agenda.habit." face))
+                              acc)))))))))
+
+(define (org-habit-parts cells)
+  "Graph `cells` as draw-line! parts, a run of one face as one part."
+  (let loop ([cs cells] [acc '()])
+    (cond [(null? cs) (reverse acc)]
+          [(and (pair? acc) (equal? (cadr (car acc)) (cadr (car cs))))
+           (loop (cdr cs) (cons (list (string-append (car (car acc)) (car (car cs))) (cadr (car cs))) (cdr acc)))]
+          [else (loop (cdr cs) (cons (car cs) acc))])))
+
+(define (org-habit-rows x day today)
+  "The rows habit occurrence `x`, (occurrence entry), has on `day`: on
+   today only, once it is due, with its graph; Sched. 3x when it was
+   due 3 days ago."
+  (let* ([o (car x)] [e (cadr x)] [date (cadr (car o))])
+    (if (and (equal? day today) (not (date<? today date)))
+        (let ([n (- (date->days today) (date->days date))])
+          (list (list 'entry e (or (caddr (car o)) "")
+                      (if (> n 0) (string-append "Sched. " (number->string n) "x") "Sched.")
+                      'scheduled o (org-habit-graph e today))))
+        '())))
 
 (define (org-agenda-setting settings name default)
   "Block setting `name` from `settings`, ((span . 1) (header . \"Work\")),
@@ -524,6 +896,8 @@
                     (org-sort-entries rows (lambda (r) (let ([m (org-time-minutes (caddr r))])
                                                          (if m (+ (* m 100) (rank (cadr r))) (+ 200000 (rank (cadr r))))))))]
          [days-since (lambda (d) (- (date->days today) (date->days d)))]
+         ;; A habit's SCHEDULED: shows on today only, with its graph.
+         [habit? (lambda (x) (and (eq? (cadr (car x)) 'scheduled) (org-habit? (cadr x))))]
          [overdue
           (map (lambda (x)
                  (let* ([o (car x)] [stamp (car o)] [n (days-since (cadr stamp))])
@@ -533,7 +907,7 @@
                              (string-append (number->string n) " d. ago"))
                          'overdue o)))
                (org-sort-entries
-                (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline))
+                (filter (lambda (x) (and (memq (cadr (car x)) '(scheduled deadline)) (not (habit? x))
                                          (date<? (cadr (car (car x))) today)))
                         occs)
                 (lambda (x) (date->days (cadr (car (car x)))))))]
@@ -551,13 +925,17 @@
             (org-with-grid
              (append
               (by-time
-              (apply append
+              (append
+               (apply append
                      (map (lambda (x)
                             (let ([o (car x)])
-                              (map (lambda (d) (list 'entry (cadr x) (if (cadr d) "" (time-of (car o)))
-                                                     (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
-                                   (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day)))))
-                          occs)))
+                              (if (habit? x)
+                                  (org-habit-rows x day today)
+                                  (map (lambda (d) (list 'entry (org-diary-entry (cadr x) o (car d)) (if (cadr d) "" (time-of (car o)))
+                                                         (or (cadr d) (org-occurrence-label (cadr o))) (cadr o) o))
+                                       (filter (lambda (d) (equal? (car d) day)) (org-occurrence-days o day day))))))
+                          occs))
+               (if *org-agenda-log* (org-agenda-log-rows entries day) '())))
               (if (equal? day today) upcoming '()))
              (equal? day today)))]
          [later
@@ -570,11 +948,11 @@
                                                             (org-stamp-after-day (car o) last))])
                                  (and next
                                       (cons (date->days next)
-                                            (list 'entry (cadr x)
+                                            (list 'entry (org-diary-entry (cadr x) o next)
                                                   (string-append (org-short-date next)
                                                                  (if (caddr (car o)) (string-append " " (caddr (car o))) ""))
                                                   (org-occurrence-label (cadr o)) (cadr o) o)))))
-                             occs))
+                             (filter (lambda (x) (not (habit? x))) occs)))
                 car))]
          [todos (org-sort-entries (filter (lambda (e) (and (caddr e) (null? (org-entry-occurrences e)))) open) rank)]
          [section (lambda (name items)
@@ -791,15 +1169,16 @@
    covers, then each block's sections, a block agenda's each under its
    own header."
   (let* ([r *org-agenda-restriction*]
-         [entries (if r
+         [all (if r
                       (filter (lambda (e) (or (null? (cdr r)) (<= (cadr r) (cadr e) (caddr r))))
                               (org-file-entries (car r)))
                       (apply append (map org-file-entries (org-agenda-file-list))))]
+         [entries (org-agenda-filtered all)]
          [blocks (cadr *org-agenda-view*)]
          [drawn (map (lambda (b) (org-agenda-block entries b)) blocks)])
     (org-agenda-draw!
      (append
-      (list (list 'title (car *org-agenda-view*) (car (car drawn))))
+      (list (list 'title (car *org-agenda-view*) (car (car drawn)) (org-agenda-filter-text)))
       (if (null? (cdr blocks))
           (cadr (car drawn))
           (apply append
@@ -808,10 +1187,18 @@
                        '()
                        (cons (append (list '(blank) (list 'header (org-agenda-block-name (car bs)) 'block)) (cadr (car ds)))
                              (loop (cdr bs) (cdr ds)))))))
-      (if (null? entries)
+      (if *org-agenda-report* (org-agenda-clock-report entries) '())
+      (if (null? all)
           (list '(blank) (list 'note (string-append "no entries in " (option 'org-directory)
                                                     " (set org-directory or org-agenda-files)")))
-          '()))
+          '())
+      (let ([skipped (org-diary-skipped entries)])
+        (if (and (> skipped 0) (pair? (filter (lambda (b) (eq? (car b) 'agenda)) blocks)))
+            (list '(blank)
+                  (list 'note (string-append (number->string skipped)
+                                             (if (= skipped 1) " diary sexp" " diary sexps")
+                                             " skipped: the agenda reads diary-anniversary, -float, -block, -cyclic and -date")))
+            '())))
      (window-text-width))))
 
 (define (org-agenda-cursor-home!)
@@ -850,6 +1237,8 @@
                (list "t" "fortnight" (lambda () (org-agenda-view-span! 'fortnight)))
                (list "m" "month" (lambda () (org-agenda-view-span! 'month)))
                (list "y" "year" (lambda () (org-agenda-view-span! 'year)))
+               (list "l" "log mode" (lambda () (org-agenda-toggle-log!)))
+               (list "R" "clock report" (lambda () (org-agenda-toggle-report!)))
                (list "g" "time grid" (lambda ()
                                        (set! *org-agenda-grid* (not (org-agenda-grid?)))
                                        (org-render-agenda!)
@@ -869,6 +1258,10 @@
   (set! *org-agenda-start* #f)
   (set! *org-agenda-span* #f)
   (set! *org-agenda-grid* 'default)
+  (set! *org-agenda-filters* '())
+  (set! *org-agenda-marks* '())
+  (set! *org-agenda-log* #f)
+  (set! *org-agenda-report* #f)
   (org-render-agenda!)
   (org-agenda-cursor-home!))
 
@@ -1131,14 +1524,17 @@
   "Moves the date the line at the cursor shows `days` days on (back when
    negative)."
   (let ([item (line-item)])
-    (if (not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
-        (message "no date on this line")
-        (org-agenda-act!
+    (cond
+      [(not (and (pair? item) (eq? (car item) 'org) (list-ref item 3)))
+       (message "no date on this line")]
+      [(not (list-ref item 4)) (message "a diary date can't be moved")]
+      [else
+       (org-agenda-act!
          (lambda (line)
            (case (list-ref item 3)
              [(scheduled) (org-shift-planning! line "SCHEDULED:" days)]
              [(deadline) (org-shift-planning! line "DEADLINE:" days)]
-             [else (org-shift-appointment! line (list-ref item 4) days)]))))))
+             [else (org-shift-appointment! line (list-ref item 4) days)])))])))
 
 (define (org-agenda-entry-at)
   "The agenda entry (as org-file-entries gives it) of the line at the
@@ -1278,6 +1674,502 @@
     (when (and item (eq? (car item) 'org))
       (org-agenda-open-entry! item))))
 
+;;; Filters and bulk actions
+
+(define (org-effort-minutes text)
+  "Effort `text` (\"1:30\", \"0:45\" or \"45\") in minutes, or #f."
+  (let* ([t (trim text)] [colon (string-index-from t ":" 0)])
+    (if colon
+        (let ([h (string->number (substring t 0 colon))]
+              [m (string->number (substring t (+ colon 1) (string-length t)))])
+          (and h m (+ (* h 60) m)))
+        (string->number t))))
+
+(define (org-agenda-top-heading e)
+  "The first and last line of the top-level heading agenda entry `e` is
+   under (its own if it is one), and its title: (first last title)."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)]
+         [first (let loop ([l (cadr e)])
+                  (if (or (<= l 0) (eqv? (org-level-of (vector-ref lines l)) 1)) l (loop (- l 1))))]
+         [last (let loop ([l (+ first 1)])
+                 (if (or (>= l n) (eqv? (org-level-of (vector-ref lines l)) 1)) (- l 1) (loop (+ l 1))))]
+         [text (vector-ref lines first)]
+         [level (or (org-level-of text) 0)]
+         [rest (substring text (min (string-length text) (+ level 1)) (string-length text))]
+         [kw (org-keyword-in rest)]
+         [title (org-without-tags (if kw (trim-start (substring rest (string-length kw) (string-length rest))) rest))])
+    (list first last (trim title))))
+
+(define (org-agenda-keeps? e filter)
+  "Whether agenda entry `e` passes `filter` (see *org-agenda-filters*)."
+  (let ([arg (cadr filter)])
+    (case (car filter)
+      [(category) (equal? (list-ref e 7) arg)]
+      [(tag) (eq? (and (member (car arg) (map car (org-entry-tags e))) #t) (cdr arg))]
+      [(effort)
+       (let ([have (let ([v (org-entry-prop e "Effort")]) (and v (org-effort-minutes v)))])
+         ;; Like a match, an entry without an effort passes only <>.
+         (if have
+             (org-compare-with (car arg) (< have (cadr arg)) (= have (cadr arg)))
+             (equal? (car arg) "<>")))]
+      [(regexp) (regexp-match? arg (org-agenda-title-text e))]
+      [(top) (and (equal? (car e) (car arg)) (<= (cadr arg) (cadr e) (caddr arg)))]
+      [else #t])))
+
+(define (org-agenda-filtered entries)
+  "`entries` that pass every filter."
+  (filter (lambda (e) (andmap (lambda (f) (org-agenda-keeps? e f)) *org-agenda-filters*)) entries))
+
+(define (org-agenda-filter-text)
+  "The filters as the title line shows them, \"Filter: +work -home\", or
+   \"\"."
+  (if (null? *org-agenda-filters*)
+      ""
+      (string-append "Filter: " (string-join (map caddr *org-agenda-filters*) " "))))
+
+(define (org-agenda-add-filter! kind arg label)
+  "Adds a filter and redraws, keeping the cursor where it can."
+  (let ([f (list kind arg label)] [item (line-item)] [at (current-line)])
+    (unless (member f *org-agenda-filters*)
+      (set! *org-agenda-filters* (append *org-agenda-filters* (list f))))
+    (org-agenda-redraw-at! item at)
+    (message (org-agenda-filter-text))))
+
+(define (org-agenda-filter-category!)
+  "sc: keeps the entries in the category of the entry at the cursor."
+  (let ([e (org-agenda-entry-at)])
+    (if e
+        (org-agenda-add-filter! 'category (list-ref e 7) (string-append "cat:" (list-ref e 7)))
+        (message "not on an agenda entry"))))
+
+(define (org-agenda-filter-tag!)
+  "st: asks for a tag and keeps the entries with it, or with -tag those
+   without it."
+  (let ([tags (org-known-tags)])
+    (completing-read "Filter by tag (-tag leaves it out): "
+                     (append tags (map (lambda (t) (string-append "-" t)) tags))
+                     (lambda (text)
+                       (let* ([text (trim text)]
+                              [out? (starts-with? text "-")]
+                              [tag (org-trim-colons (if (or out? (starts-with? text "+"))
+                                                        (substring text 1 (string-length text))
+                                                        text))])
+                         (unless (equal? tag "")
+                           (org-agenda-add-filter! 'tag (cons tag (not out?))
+                                                   (string-append (if out? "-" "+") tag))))))))
+
+(define (org-agenda-filter-effort!)
+  "se: asks for a comparison and an effort, as <1:00, and keeps the
+   entries whose effort fits; = when no comparison is given."
+  (open-cmdline! "Filter by effort (as <1:00): " ""
+                 (lambda (text)
+                   (let* ([t (trim text)]
+                          [op (list-find (lambda (o) (starts-with? t o)) '("<=" ">=" "<>" "<" ">" "="))]
+                          [value (org-effort-minutes (if op (substring t (string-length op) (string-length t)) t))])
+                     (if value
+                         (org-agenda-add-filter! 'effort (list (or op "=") value)
+                                                 (string-append "effort" (or op "=") (org-hhmm value)))
+                         (message (string-append "not an effort: " t)))))
+                 #f #f))
+
+(define (org-agenda-filter-regexp!)
+  "sr: asks for a regexp and keeps the entries whose title matches it."
+  (open-cmdline! "Filter by regexp: " ""
+                 (lambda (text)
+                   (let ([re (trim text)])
+                     (cond [(equal? re "") void]
+                           [(not (with-handler (lambda (err) #f) (begin (regexp-match? re "") #t)))
+                            (message (string-append "bad regexp: " re))]
+                           [else (org-agenda-add-filter! 'regexp re (string-append "{" re "}"))])))
+                 #f #f))
+
+(define (org-agenda-filter-top!)
+  "s^: keeps the entries under the top-level heading of the entry at the
+   cursor."
+  (let ([e (org-agenda-entry-at)])
+    (if e
+        (let ([top (org-agenda-top-heading e)])
+          (org-agenda-add-filter! 'top (list (car e) (car top) (cadr top))
+                                  (string-append "^" (org-fit (caddr top) (min 20 (string-length (caddr top)))))))
+        (message "not on an agenda entry"))))
+
+(define (org-agenda-filter-clear!)
+  "S: removes every filter."
+  (let ([item (line-item)] [at (current-line)])
+    (set! *org-agenda-filters* '())
+    (org-agenda-redraw-at! item at)
+    (message "filters off")))
+
+(define (org-agenda-mark-key e)
+  "What marks agenda entry `e`: its file and its title without its
+   priority, which stay put as other entries' changes move its line."
+  (let ([t (org-agenda-title-text e)])
+    (list (car e) (if (and (>= (string-length t) 5) (starts-with? t "[#") (equal? (substring t 3 5) "] "))
+                      (substring t 5 (string-length t))
+                      t))))
+
+(define (org-agenda-marked? e)
+  "Whether agenda entry `e` is marked."
+  (and (member (org-agenda-mark-key e) *org-agenda-marks*) #t))
+
+(define (org-agenda-item-entry item)
+  "The shown agenda entry of line item `item`, or #f."
+  (and (pair? item) (eq? (car item) 'org)
+       (list-find (lambda (e) (and (equal? (car e) (cadr item)) (= (cadr e) (caddr item)))) *org-agenda-shown*)))
+
+(define (org-agenda-shown-entries)
+  "The entries the agenda shows, each once, in the order shown."
+  (let loop ([es *org-agenda-shown*] [seen '()] [acc '()])
+    (cond [(null? es) (reverse acc)]
+          [(member (org-agenda-mark-key (car es)) seen) (loop (cdr es) seen acc)]
+          [else (loop (cdr es) (cons (org-agenda-mark-key (car es)) seen) (cons (car es) acc))])))
+
+(define (org-agenda-set-marks! keys)
+  "Marks exactly `keys` and redraws, keeping the cursor."
+  (let ([item (line-item)] [at (current-line)])
+    (set! *org-agenda-marks* keys)
+    (org-agenda-redraw-at! item at)
+    (message (string-append (number->string (length keys)) " marked"))))
+
+(define (org-agenda-mark!)
+  "m: marks the entry at the cursor, or unmarks it, and moves down."
+  (let ([e (org-agenda-item-entry (line-item))])
+    (if (not e)
+        (message "not on an agenda entry")
+        (let ([key (org-agenda-mark-key e)])
+          (org-agenda-set-marks! (if (member key *org-agenda-marks*)
+                                     (filter (lambda (k) (not (equal? k key))) *org-agenda-marks*)
+                                     (append *org-agenda-marks* (list key))))
+          (org-agenda-next-entry! 1 1)))))
+
+(define (org-agenda-mark-all! pred)
+  "Marks every shown entry `pred` holds for, adding to the marks."
+  (org-agenda-set-marks!
+   (append *org-agenda-marks*
+           (filter (lambda (k) (not (member k *org-agenda-marks*)))
+                   (map org-agenda-mark-key (filter pred (org-agenda-shown-entries)))))))
+
+(define (org-agenda-toggle-marks!)
+  "~: marks every shown entry that isn't, and unmarks those that are."
+  (org-agenda-set-marks! (map org-agenda-mark-key
+                              (filter (lambda (e) (not (org-agenda-marked? e))) (org-agenda-shown-entries)))))
+
+(define (org-agenda-mark-regexp!)
+  "%: asks for a regexp and marks the shown entries whose title matches."
+  (open-cmdline! "Mark by regexp: " ""
+                 (lambda (text)
+                   (let ([re (trim text)])
+                     (cond [(equal? re "") void]
+                           [(not (with-handler (lambda (err) #f) (begin (regexp-match? re "") #t)))
+                            (message (string-append "bad regexp: " re))]
+                           [else (org-agenda-mark-all! (lambda (e) (regexp-match? re (org-agenda-title-text e))))])))
+                 #f #f))
+
+(define (org-dedupe-strings items)
+  "`items` with each string once, in order."
+  (let loop ([xs items] [acc '()])
+    (cond [(null? xs) (reverse acc)]
+          [(member (car xs) acc) (loop (cdr xs) acc)]
+          [else (loop (cdr xs) (cons (car xs) acc))])))
+
+(define (org-agenda-marked-entries)
+  "The marked entries the agenda shows, each once."
+  (filter org-agenda-marked? (org-agenda-shown-entries)))
+
+(define (org-agenda-bulk! proc verb)
+  "Runs (proc entry) on each marked entry, read afresh from its file's
+   buffer, one file at a time and each file's changes as one undo; saves
+   each buffer that had no unsaved changes before, clears the marks and
+   redraws. `verb` says what was done, as \"scheduled\"."
+  (let* ([marked (org-agenda-marked-entries)]
+         [files (let loop ([es marked] [acc '()])
+                  (cond [(null? es) (reverse acc)]
+                        [(member (car (car es)) acc) (loop (cdr es) acc)]
+                        [else (loop (cdr es) (cons (car (car es)) acc))]))]
+         [item (line-item)] [at (current-line)]
+         [changed '()])
+    (for-each
+     (lambda (file)
+       (let ([id (org-agenda-entry-buffer! file)]
+             [keys (map org-agenda-mark-key (filter (lambda (e) (equal? (car e) file)) marked))])
+         (when id
+           (let ([clean? (not (buffer-modified-by-id? id))])
+             (with-buffer id
+               (lambda ()
+                 (with-undo-group
+                  (lambda ()
+                    ;; Each found again, as the changes before it move lines.
+                    (for-each (lambda (key)
+                                (let ([e (list-find (lambda (x) (equal? (org-agenda-mark-key x) key))
+                                                    (org-file-entries file))])
+                                  (when e (proc e))))
+                              keys)))))
+             (when clean? (with-buffer id (lambda () (save-buffer!))))
+             (set! changed (cons (list id clean?) changed))))))
+     files)
+    ;; One file's changes undo together; several files' can't.
+    (set! *org-agenda-last-change* (if (= (length changed) 1) (car changed) #f))
+    (set! *org-agenda-marks* '())
+    (org-agenda-redraw-at! item at)
+    (message (string-append verb " " (number->string (length marked))
+                            (if (= (length marked) 1) " entry" " entries")))))
+
+(define (org-agenda-bulk-shift! e days)
+  "Moves agenda entry `e`'s SCHEDULED: and DEADLINE: dates `days` days
+   on, or its first appointment's when it has neither."
+  (let ([line (cadr e)])
+    (when (list-ref e 4) (org-shift-planning! line "SCHEDULED:" days))
+    (when (list-ref e 5) (org-shift-planning! line "DEADLINE:" days))
+    (when (and (not (list-ref e 4)) (not (list-ref e 5)) (pair? (org-entry-appointments e)))
+      (org-shift-appointment! line (cadr (car (car (org-entry-appointments e)))) days))))
+
+(define (org-agenda-bulk-tag! e tag add?)
+  "Adds `tag` to agenda entry `e`'s heading, or with `add?` #f removes it."
+  (let* ([line (cadr e)] [now (org-heading-tags line)])
+    (cond [(and add? (not (member tag now))) (org-set-heading-tags! line (append now (list tag)))]
+          [(and (not add?) (member tag now)) (org-set-heading-tags! line (filter (lambda (t) (not (equal? t tag))) now))]
+          [else void])))
+
+(define (org-agenda-bulk-plan! key prompt verb)
+  "Asks for a date and sets each marked entry's `key` to it."
+  (read-date prompt #f
+             (lambda (d)
+               (let ([stamp (date-timestamp (take d 3) (cadddr d) #t)])
+                 (org-agenda-bulk! (lambda (e) (org-set-planning! (cadr e) key stamp)) verb)))))
+
+(define (org-agenda-bulk-menu!)
+  "x: a menu of actions on the marked entries. Each asks once for what it
+   needs, then acts on each one."
+  (let* ([marked (org-agenda-marked-entries)] [n (length marked)])
+    (if (= n 0)
+        (message "no marked entries (m marks one)")
+        (menu! (string-append "On " (number->string n) (if (= n 1) " marked entry" " marked entries"))
+               (list
+                (list "t" "set TODO keyword"
+                      (lambda ()
+                        (completing-read "Keyword: " (append (org-keywords) (list "(none)"))
+                                         (lambda (kw)
+                                           (org-agenda-bulk! (lambda (e) (org-todo-set! (cadr e) (if (equal? kw "(none)") #f kw)))
+                                                             "changed")))))
+                (list "s" "schedule" (lambda () (org-agenda-bulk-plan! "SCHEDULED:" "Schedule: " "scheduled")))
+                (list "d" "deadline" (lambda () (org-agenda-bulk-plan! "DEADLINE:" "Deadline: " "gave a deadline to")))
+                (list "+" "add a tag"
+                      (lambda ()
+                        (completing-read "Add tag: " (org-known-tags)
+                                         (lambda (tag)
+                                           (let ([tag (trim (org-trim-colons tag))])
+                                             (unless (equal? tag "")
+                                               (org-agenda-bulk! (lambda (e) (org-agenda-bulk-tag! e tag #t)) "tagged")))))))
+                (list "-" "remove a tag"
+                      (lambda ()
+                        (completing-read "Remove tag: "
+                                         (org-dedupe-strings (apply append (map (lambda (e) (map car (filter cdr (org-entry-tags e)))) marked)))
+                                         (lambda (tag)
+                                           (org-agenda-bulk! (lambda (e) (org-agenda-bulk-tag! e (trim (org-trim-colons tag)) #f)) "untagged")))))
+                (list "r" "refile"
+                      (lambda ()
+                        (let ([targets (org-refile-targets)])
+                          (completing-read "Refile under: " (map car targets)
+                                           (lambda (choice)
+                                             (let ([hit (assoc choice targets)])
+                                               (when hit
+                                                 (org-agenda-bulk! (lambda (e) (org-refile-to! (cadr e) hit)) "refiled")
+                                                 (set! *org-agenda-last-change* #f))))))))
+                (list "$" "archive"
+                      (lambda ()
+                        (org-agenda-bulk! (lambda (e) (org-archive! (cadr e))) "archived")
+                        (set! *org-agenda-last-change* #f)))
+                (list "S" "move dates by days"
+                      (lambda ()
+                        (open-cmdline! "Move dates by days: " ""
+                                       (lambda (text)
+                                         (let ([days (string->number (trim text))])
+                                           (if (and days (integer? days))
+                                               (org-agenda-bulk! (lambda (e) (org-agenda-bulk-shift! e days)) "moved")
+                                               (message (string-append "not a number of days: " text)))))
+                                       #f #f)))
+                (list "k" "delete"
+                      (lambda ()
+                        (confirm! (string-append "Delete " (number->string n) (if (= n 1) " entry" " entries")
+                                                 " and everything under them?")
+                                  (lambda ()
+                                    (org-agenda-bulk!
+                                     (lambda (e)
+                                       (let* ([line (cadr e)] [end (org-subtree-end line)])
+                                         (begin-change!)
+                                         (replace-range! (line-start line) (min (buffer-length) (+ (line-end end) 1)) "")))
+                                     "deleted"))))))))))
+
+;; Clocking, log mode and the clock report
+
+(define (org-row-keyword r)
+  "The keyword entry row `r` shows: a log line's own, else its entry's."
+  (if (> (length r) 7) (car (list-ref r 7)) (caddr (cadr r))))
+
+(define (org-entry-body e)
+  "The lines of agenda entry `e`'s text, up to the next heading."
+  (let* ([lines (list-ref e 11)] [n (vector-length lines)])
+    (let loop ([l (+ (cadr e) 1)] [acc '()])
+      (if (or (>= l n) (org-level-of (vector-ref lines l)))
+          (reverse acc)
+          (loop (+ l 1) (cons (vector-ref lines l) acc))))))
+
+(define (org-log-stamp text from)
+  "The (date time) of the timestamp at or after index `from` of `text`,
+   or #f."
+  (let ([b (and from (org-stamp-bounds-anywhere text from))])
+    (and b (let ([st (org-parse-stamp (substring text (car b) (cadr b)))])
+             (and st (list (cadr st) (caddr st)))))))
+
+(define (org-quoted text from)
+  "The text between the first two double quotes at or after index
+   `from` of `text`, and the index after them, or #f."
+  (let* ([open (string-index-from text "\"" from)]
+         [close (and open (string-index-from text "\"" (+ open 1)))])
+    (and close (list (substring text (+ open 1) close) (+ close 1)))))
+
+(define (org-entry-log e)
+  "What agenda entry `e`'s text logs, as (date time what keyword note):
+   its CLOSED: stamp, its state changes and its finished clocks."
+  (filter
+   (lambda (x) x)
+   (map (lambda (line)
+          (let ([t (trim line)])
+            (cond
+              [(and (org-planning-line? t) (string-index-from t "CLOSED:" 0))
+               => (lambda (at)
+                    (let ([st (org-log-stamp t (+ at 7))])
+                      (and st (list (car st) (cadr st) "Closed" (caddr e) ""))))]
+              [(starts-with? t "- State \"")
+               (let* ([new (org-quoted t 7)]
+                      [from (and new (string-index-from t "from" (cadr new)))]
+                      [old (and from (org-quoted t from))]
+                      [st (org-log-stamp t (if old (cadr old) 0))])
+                 (and new st (list (car st) (cadr st) "State" (car new)
+                                   (string-append "from " (if (and old (not (equal? (car old) ""))) (car old) "none") "  "))))]
+              [(and (starts-with? t "CLOCK: [") (string-index-from t "]--[" 0) (string-index-from t "=>" 0))
+               => (lambda (arrow)
+                    (let ([st (org-log-stamp t 7)])
+                      (and st (list (car st) (cadr st) "Clocked" (caddr e)
+                                    (string-append "(" (trim (substring t (+ arrow 2) (string-length t))) ")  ")))))]
+              [else #f])))
+        (org-entry-body e))))
+
+(define (org-agenda-log-rows entries day)
+  "Log mode's rows for `day`: what each of `entries` logs on it, done
+   entries included, each at its time."
+  (apply append
+         (map (lambda (e)
+                (map (lambda (x) (list 'entry e (or (cadr x) "") (caddr x) 'log #f #f (list (cadddr x) (list-ref x 4))))
+                     (filter (lambda (x) (equal? (car x) day)) (org-entry-log e))))
+              entries)))
+
+(define (org-agenda-toggle-log!)
+  "gD l: turns log mode on or off."
+  (set! *org-agenda-log* (not *org-agenda-log*))
+  (org-render-agenda!)
+  (message (if *org-agenda-log* "log mode on" "log mode off")))
+
+(define (org-entry-clocked e first last)
+  "The minutes agenda entry `e`'s own finished clocks ran that started
+   from day `first` to `last`."
+  (foldl (lambda (line sum)
+           (let* ([t (trim line)] [mid (and (starts-with? t "CLOCK: [") (string-index-from t "]--[" 0))])
+             (if (not mid)
+                 sum
+                 (let* ([start (substring t 7 (+ mid 1))]
+                        [close (string-index-from t "]" (+ mid 3))]
+                        [end (and close (substring t (+ mid 3) (+ close 1)))]
+                        [day (string->date (substring start 1 11))]
+                        [a (org-stamp-minutes start)] [b (and end (org-stamp-minutes end))])
+                   (if (and day a b (not (date<? day first)) (not (date<? last day)))
+                       (+ sum (max 0 (- b a)))
+                       sum)))))
+         0 (org-entry-body e)))
+
+(define (org-clock-report-files entries first last)
+  "The clock report's figures: for each file of `entries` with time
+   clocked from `first` to `last`, (file total headings), headings
+   being (level title minutes) for levels 1 and 2, each with the time of
+   the headings under it."
+  (let loop ([es entries] [acc '()])
+    (if (null? es)
+        (reverse acc)
+        (let* ([file (car (car es))]
+               [mine (let take ([es es] [acc '()])
+                       (if (and (pair? es) (equal? (car (car es)) file)) (take (cdr es) (cons (car es) acc)) (reverse acc)))]
+               [rest (list-tail es (length mine))]
+               [own (map (lambda (e) (cons e (org-entry-clocked e first last))) mine)]
+               ;; Each heading's time with the time of those under it.
+               [totals (let walk ([xs own] [acc '()])
+                         (if (null? xs)
+                             (reverse acc)
+                             (let* ([level (org-entry-level (car (car xs)))]
+                                    [under (let span ([ys (cdr xs)] [sum 0])
+                                             (if (and (pair? ys) (> (org-entry-level (car (car ys))) level))
+                                                 (span (cdr ys) (+ sum (cdr (car ys))))
+                                                 sum))])
+                               (walk (cdr xs) (cons (list level (org-heading-title (vector-ref (list-ref (car (car xs)) 11) (cadr (car (car xs)))))
+                                                          (+ (cdr (car xs)) under))
+                                                    acc)))))]
+               [total (foldl (lambda (x sum) (+ sum (cdr x))) 0 own)])
+          (loop rest (if (> total 0)
+                         (cons (list file total (filter (lambda (h) (and (<= (car h) 2) (> (caddr h) 0))) totals)) acc)
+                         acc))))))
+
+(define (org-agenda-clock-report entries)
+  "The clock report's rows, as Org's clocktable: for the dated view's
+   span, the time clocked on each file and on each heading under it,
+   two levels deep, with each file's total and the total for all."
+  (let* ([first (org-agenda-first-day)]
+         [last (date-add-days first (- (org-agenda-span) 1))]
+         [files (org-clock-report-files entries first last)]
+         [total (foldl (lambda (f sum) (+ sum (cadr f))) 0 files)]
+         [cells (apply append
+                       (map (lambda (f)
+                              (cons (list (file-name-of (car f)) "File time" (org-duration (cadr f)) 'head)
+                                    (map (lambda (h) (list "" (string-append (if (= (car h) 2) "  " "") (cadr h))
+                                                           (org-duration (caddr h)) 'row))
+                                         (caddr f))))
+                            files))]
+         [w1 (foldl (lambda (c m) (max m (string-length (car c)))) 4 cells)]
+         [w2 (min 50 (foldl (lambda (c m) (max m (string-length (cadr c)))) 7 cells))]
+         [w3 (foldl (lambda (c m) (max m (string-length (caddr c)))) 4 cells)]
+         [line (lambda (a b c kind)
+                 (list 'report (string-append (pad-right a w1) "  " (pad-right (org-fit b w2) w2) "  " (org-pad-left c w3)) kind))]
+         [rule (list 'report (make-string (+ w1 w2 w3 4) #\─) 'rule)])
+    (append
+     (list '(blank) (list 'header "Clock report" 'section)
+           (line "File" "Heading" "Time" 'head) rule)
+     (map (lambda (c) (line (car c) (cadr c) (caddr c) (cadddr c))) cells)
+     (if (null? cells) '() (list rule))
+     (list (line "Total" "" (org-duration total) 'total)))))
+
+(define (org-agenda-toggle-report!)
+  "gD R and cr: shows or hides the clock report."
+  (set! *org-agenda-report* (not *org-agenda-report*))
+  (org-render-agenda!)
+  (message (if *org-agenda-report* "clock report on" "clock report off")))
+
+(define (org-agenda-clock-redraw!)
+  "Redraws the agenda after a clock change, the cursor where it was."
+  (org-agenda-redraw-at! (line-item) (current-line)))
+
+(define (org-agenda-clock-in!)
+  "I: clocks in on the entry at the cursor (org-clock-in!)."
+  (when (org-agenda-entry-line? (current-line))
+    (org-agenda-act! org-clock-in!)))
+
+(define (org-agenda-clock-out!)
+  "O: clocks out, wherever the clock runs."
+  (org-clock-out!)
+  (org-agenda-clock-redraw!))
+
+(define (org-agenda-clock-cancel!)
+  "cc: cancels the running clock."
+  (org-clock-cancel!)
+  (org-agenda-clock-redraw!))
+
 (define-major-mode! 'org-agenda-mode 'special-mode '() #f)
 (define (org-agenda-key! key proc label)
   "Binds `key` in the agenda, in normal state, labelled `label`."
@@ -1330,6 +2222,13 @@
 (org-agenda-key! "ZZ" (lambda (n) (org-agenda-quit! #f)) "quit")
 (org-agenda-key! "ZQ" (lambda (n) (org-agenda-quit! #t)) "quit, closing its files")
 
+;; The clock.
+(org-agenda-key! "I" (lambda (n) (org-agenda-clock-in!)) "clock in")
+(org-agenda-key! "O" (lambda (n) (org-agenda-clock-out!)) "clock out")
+(org-agenda-key! "cc" (lambda (n) (org-agenda-clock-cancel!)) "cancel clock")
+(org-agenda-key! "cg" (lambda (n) (org-clock-goto!)) "go to clock")
+(org-agenda-key! "cr" (lambda (n) (org-agenda-toggle-report!)) "clock report")
+
 (define-command! 'org-agenda-list
   (lambda (count)
     "Show the agenda: this week's scheduled, due and timed entries."
@@ -1357,3 +2256,15 @@
 (define-leader! "oaa" 'org-agenda-list "agenda")
 (define-ex! '("OrgAgenda") (lambda (ex) (org-agenda-dispatch!)))
 (define-leader! "oA" 'org-agenda "agenda dispatcher")
+(org-agenda-key! "sc" (lambda (n) (org-agenda-filter-category!)) "filter by category")
+(org-agenda-key! "st" (lambda (n) (org-agenda-filter-tag!)) "filter by tag")
+(org-agenda-key! "se" (lambda (n) (org-agenda-filter-effort!)) "filter by effort")
+(org-agenda-key! "sr" (lambda (n) (org-agenda-filter-regexp!)) "filter by regexp")
+(org-agenda-key! "s^" (lambda (n) (org-agenda-filter-top!)) "filter by top heading")
+(org-agenda-key! "S" (lambda (n) (org-agenda-filter-clear!)) "remove filters")
+(org-agenda-key! "m" (lambda (n) (org-agenda-mark!)) "mark")
+(org-agenda-key! "~" (lambda (n) (org-agenda-toggle-marks!)) "toggle marks")
+(org-agenda-key! "*" (lambda (n) (org-agenda-mark-all! (lambda (e) #t))) "mark all")
+(org-agenda-key! "%" (lambda (n) (org-agenda-mark-regexp!)) "mark by regexp")
+(org-agenda-key! "M" (lambda (n) (org-agenda-set-marks! '())) "unmark all")
+(org-agenda-key! "x" (lambda (n) (org-agenda-bulk-menu!)) "bulk action")

@@ -21,6 +21,8 @@
 ;;;   C-c C-d    give it a deadline (DEADLINE:)
 ;;;   C-c .      put a timestamp at the cursor, or change the one there
 ;;;   C-c C-x p  set a property of the heading (SPC m P); empty removes it
+;;;   C-c C-x C-i, C-o, C-q, C-j   clock in on the heading, clock out,
+;;;              cancel the clock, go to it (SPC m c i, o, c, g)
 ;;;
 ;;; A timestamp ending in a repeater, <2026-10-24 Sat +1w> (or ++1w, .+1w),
 ;;; moves on when its heading is marked done, and the heading goes back
@@ -52,6 +54,12 @@
 ;; times the font. Levels past the list are the font's size; '() makes
 ;; them all so. Window clients only: a terminal draws one size.
 (define-option! 'org-heading-heights '(1.4 1.25 1.1) '())
+;; Marking a heading done adds CLOSED: [stamp] to its planning line
+;; ('time, as Doom); #f doesn't. Leaving done removes it.
+(define-option! 'org-log-done 'time '())
+;; Marking a repeating heading done sets its LAST_REPEAT property and
+;; logs the state change at the top of its :LOGBOOK: ('time); #f doesn't.
+(define-option! 'org-log-repeat 'time '())
 
 ;;; Headings and subtrees
 
@@ -290,13 +298,17 @@
          [current (org-keyword-in rest)]
          [title (if current (trim-start (substring rest (string-length current) (string-length rest))) rest)]
          [repeat? (and next (member next (org-done-keywords))
-                       (pair? (org-repeating-stamps line (org-body-end line))))]
+                       (pair? (org-repeating-stamps line (org-body-end line)))
+                       (list next))]
          [next (if repeat? (car kws) next)])
-    (begin-change!)
-    (org-set-line! line (string-append (make-string level #\*) " " (if next (string-append next " ") "") title))
-    (let ([moved (and repeat? (org-repeat-entry! line))])
-      (set-cursor! (line-start line))
-      (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))
+    (with-undo-group
+     (lambda ()
+       (begin-change!)
+       (org-set-line! line (string-append (make-string level #\*) " " (if next (string-append next " ") "") title))
+       (org-log-change! line current (if repeat? (car repeat?) next) repeat?)
+       (let ([moved (and repeat? (org-repeat-entry! line))])
+         (set-cursor! (line-start line))
+         (message (if moved (string-append "repeats: " moved) (or next "no keyword"))))))))
 
 (define (org-todo-cycle! line)
   "Moves the heading on `line` to the next TODO keyword (none after the last)."
@@ -1063,15 +1075,30 @@
                                   (loop (cdr ws) time repeater warning #f)]
                                  [(and (not time) (char-digit? c) (string-index-from w ":" 0))
                                   (loop (cdr ws) w repeater warning #f)]
-                                 [(and (not repeater) (org-interval w '("++" ".+" "+")))
+                                 [(and (not repeater) (org-repeater w))
                                   => (lambda (r) (loop (cdr ws) time r warning #f))]
                                  [(and (not warning) (org-interval w '("--" "-")))
                                   => (lambda (r) (loop (cdr ws) time repeater r #f))]
                                  [else #f])))))))))))
 
+(define (org-repeater text)
+  "The repeater `text` is, as org-interval gives it, \".+2d\" -> (\".+\" 2
+   \"d\"); a habit's may give the most it may wait after a slash,
+   \".+2d/4d\" -> (\".+\" 2 \"d\" (4 \"d\")). #f if it is something else."
+  (let ([slash (string-index-from text "/" 0)])
+    (if (not slash)
+        (org-interval text '("++" ".+" "+"))
+        (let ([r (org-interval (substring text 0 slash) '("++" ".+" "+"))]
+              [most (org-interval (string-append "+" (substring text (+ slash 1) (string-length text))) '("+"))])
+          (and r most (append r (list (cdr most))))))))
+
 (define (org-interval->string interval)
-  "`interval`, a (prefix n unit), written as Org does: \"+1w\"."
-  (string-append (car interval) (number->string (cadr interval)) (caddr interval)))
+  "`interval`, a (prefix n unit), written as Org does: \"+1w\"; a
+   habit's repeater with its most after a slash, \".+2d/4d\"."
+  (string-append (car interval) (number->string (cadr interval)) (caddr interval)
+                 (if (= (length interval) 4)
+                     (string-append "/" (number->string (car (cadddr interval))) (cadr (cadddr interval)))
+                     "")))
 
 (define (org-stamp->string stamp)
   "The timestamp `stamp`, parts as org-parse-stamp gives them, written
@@ -1135,6 +1162,267 @@
                text))
            #f
            (org-repeating-stamps heading (org-body-end heading)))))
+
+;;; Logging: CLOSED: stamps, LAST_REPEAT and the :LOGBOOK: drawer, as
+;;; Org writes them (org-log-into-drawer, as Doom sets it). The clock's
+;;; CLOCK: lines go in the same drawer, newest first.
+
+(define (org-now)
+  "The time now, as \"11:42\"."
+  (trim (cadr (run-shell "date +%H:%M" ""))))
+
+(define (org-now-stamp)
+  "An inactive timestamp for now: \"[2026-10-25 Sun 11:42]\"."
+  (date-timestamp (calendar-today) (org-now) #f))
+
+(define (org-logbook-line heading)
+  "The :LOGBOOK: line in the text of the heading on line `heading`, or #f."
+  (let ([end (org-body-end heading)])
+    (let loop ([l (+ heading 1)])
+      (cond [(> l end) #f]
+            [(equal? (string-upcase (trim (line-text l))) ":LOGBOOK:") l]
+            [else (loop (+ l 1))]))))
+
+(define (org-logbook-insert! heading text)
+  "Puts line `text` at the top of the :LOGBOOK: drawer of the heading on
+   line `heading`, making the drawer after its planning line and
+   properties if it has none. Returns the line `text` is on."
+  (let ([at (org-logbook-line heading)])
+    (if at
+        (begin (buffer-insert! (line-end at) (string-append "\n" text)) (+ at 1))
+        (let* ([lines (org-buffer-lines)]
+               [d (org-drawer-at lines heading)]
+               [after (cond [d (cadr d)]
+                            [(and (<= (+ heading 1) (last-line)) (org-planning-line? (line-text (+ heading 1))))
+                             (+ heading 1)]
+                            [else heading])])
+          (buffer-insert! (line-end after) (string-append "\n:LOGBOOK:\n" text "\n:END:"))
+          (+ after 2)))))
+
+(define (org-set-closed! heading stamp)
+  "Sets the CLOSED: date of the heading on line `heading` to `stamp`, at
+   the start of its planning line (made if there isn't one), or removes
+   it when `stamp` is #f, with the line if nothing else is on it."
+  (let* ([next (+ heading 1)]
+         [planning? (and (<= next (last-line)) (org-planning-line? (line-text next)))]
+         [text (if planning? (line-text next) "")]
+         [at (and planning? (string-index-from text "CLOSED:" 0))]
+         [bounds (and at (org-stamp-bounds text (+ at 7)))])
+    (cond
+      [(and bounds stamp)
+       (replace-range! (+ (line-start next) (car bounds)) (+ (line-start next) (cadr bounds)) stamp)]
+      [bounds
+       (let* ([rest (trim (string-append (substring text 0 at) (substring text (cadr bounds) (string-length text))))])
+         (if (equal? rest "")
+             (replace-range! (line-end heading) (line-end next) "")
+             (org-set-line! next rest)))]
+      [(not stamp) void]
+      [planning?
+       (let ([indent (- (string-length text) (string-length (trim-start text)))])
+         (buffer-insert! (+ (line-start next) indent) (string-append "CLOSED: " stamp " ")))]
+      [else (buffer-insert! (line-end heading) (string-append "\nCLOSED: " stamp))])
+    void))
+
+(define (org-pad text width)
+  "`text` with spaces after it to `width` columns."
+  (if (< (string-length text) width) (string-append text (make-string (- width (string-length text)) #\space)) text))
+
+(define (org-state-line new old stamp)
+  "The logbook line for a change from keyword `old` (or #f) to `new`, as
+   Org writes it: - State \"DONE\"       from \"TODO\"       [stamp]."
+  (string-append "- State " (org-pad (string-append "\"" new "\"") 12)
+                 " from " (org-pad (if old (string-append "\"" old "\"") "") 12) " " stamp))
+
+(define (org-log-change! heading old new repeat?)
+  "Logs the heading on line `heading` going from keyword `old` to `new`:
+   a CLOSED: stamp on done, removed on leaving done (org-log-done); on a
+   repeat, LAST_REPEAT and a state line instead (org-log-repeat)."
+  (let ([done (org-done-keywords)])
+    (cond
+      [repeat?
+       (when (option 'org-log-repeat)
+         (let ([stamp (org-now-stamp)])
+           (org-set-property! heading "LAST_REPEAT" stamp)
+           (org-logbook-insert! heading (org-state-line new old stamp))))]
+      [(and new (member new done))
+       (when (option 'org-log-done) (org-set-closed! heading (org-now-stamp)))]
+      [else (org-set-closed! heading #f)])
+    void))
+
+;;; Clocking: C-c C-x C-i (SPC m c i) clocks in on the heading, C-c C-x
+;;; C-o (SPC m c o) clocks out, C-c C-x C-q (SPC m c c) cancels the
+;;; clock, C-c C-x C-j (SPC m c g) goes to its heading. One clock runs at
+;;; a time: an open CLOCK: line at the top of its heading's :LOGBOOK:.
+;;; The clock remembers its file and finds the open line there again, so
+;;; edits above it don't lose it; one left running in an agenda file is
+;;; picked up shortly after imp starts. %{org-clock} in the status line
+;;; shows it, as [0:23/1:00] Write report, the heading's effort after /.
+
+;; The running clock, as (path title start effort), or #f.
+(define *org-clock* #f)
+;; The timer that redraws %{org-clock} each minute, or #f.
+(define *org-clock-timer* #f)
+
+(define (org-stamp-minutes stamp)
+  "The minutes from day 0 inactive timestamp text `stamp` is at, as for
+   \"[2026-10-25 Sun 11:42]\", or #f without a date and time."
+  (let* ([n (string-length stamp)]
+         [date (and (>= n 12) (string->date (substring stamp 1 11)))]
+         [time (and date (>= n 18) (substring stamp (- n 6) (- n 1)))])
+    (and time (equal? (string-ref time 2) #\:)
+         (let ([h (string->number (substring time 0 2))] [m (string->number (substring time 3 5))])
+           (and h m (+ (* 1440 (date->days date)) (* 60 h) m))))))
+
+(define (org-duration minutes)
+  "`minutes` as Org writes a duration: 75 as \"1:15\"."
+  (string-append (number->string (quotient minutes 60)) ":" (two-digits (modulo minutes 60))))
+
+(define (org-clock-open-start text)
+  "The start stamp of line `text` when it is a running clock, \"CLOCK:
+   [2026-10-25 Sun 11:42]\" with no end, else #f."
+  (let ([t (trim text)])
+    (and (starts-with? t "CLOCK: [") (not (string-index-from t "]--[" 0))
+         (let ([close (string-index-from t "]" 0)])
+           (and close (substring t 7 (+ close 1)))))))
+
+(define (org-clock-line)
+  "The line of the current buffer's running clock, or #f."
+  (let loop ([l 0])
+    (cond [(> l (last-line)) #f]
+          [(org-clock-open-start (line-text l)) l]
+          [else (loop (+ l 1))])))
+
+(define (org-clock-buffer)
+  "The id of the buffer visiting the clock's file, opening it in the
+   background if none does, or #f after saying why."
+  (let ([path (car *org-clock*)])
+    (or (buffer-for-path path)
+        (let ([id (buffer-open! path)]) (if (string? id) (begin (message id) #f) id)))))
+
+(define (org-clock-elapsed)
+  "The minutes the running clock has run."
+  (max 0 (- (or (org-stamp-minutes (org-now-stamp)) 0) (or (org-stamp-minutes (caddr *org-clock*)) 0))))
+
+(define (org-clock-show!)
+  "Sets %{org-clock} in the status line to the running clock, or clears it."
+  (set-status-value! "org-clock"
+                     (if *org-clock*
+                         (let ([effort (cadddr *org-clock*)])
+                           (string-append "[" (org-duration (org-clock-elapsed))
+                                          (if effort (string-append "/" effort) "") "] " (cadr *org-clock*) "  "))
+                         "")
+                     #t))
+
+(define (org-clock-start! clock)
+  "Makes `clock`, a (path title start effort), the running one."
+  (set! *org-clock* clock)
+  (unless *org-clock-timer* (set! *org-clock-timer* (run-every! 60000 org-clock-show!)))
+  (org-clock-show!))
+
+(define (org-clock-stop!)
+  "Forgets the running clock."
+  (set! *org-clock* #f)
+  (when *org-clock-timer* (cancel-timer! *org-clock-timer*) (set! *org-clock-timer* #f))
+  (org-clock-show!))
+
+(define (org-clock-edit! proc)
+  "Runs (proc line) on the running clock's line in its file's buffer, as
+   one change, saving the buffer if it isn't the current one and had no
+   unsaved changes. Returns whether the line was found."
+  (let ([id (org-clock-buffer)])
+    (and id
+         (let ([clean? (not (buffer-modified-by-id? id))] [here? (= id (current-buffer))])
+           (let ([found (with-buffer id
+                                     (lambda ()
+                                       (let ([l (org-clock-line)])
+                                         (and l (with-undo-group (lambda () (begin-change!) (proc l) #t))))))])
+             (when (and found clean? (not here?)) (with-buffer id (lambda () (save-buffer!))))
+             found)))))
+
+(define (org-clock-in! heading)
+  "Clocks in on the heading on line `heading` of the current buffer,
+   clocking out the running clock first."
+  (cond
+    [(not (buffer-path)) (message "the buffer has no file")]
+    [else
+     (when *org-clock* (org-clock-out!))
+     (let ([stamp (org-now-stamp)]
+           [title (org-heading-title (line-text heading))]
+           [effort (org-entry-property heading "Effort")])
+       (with-undo-group
+        (lambda () (begin-change!) (org-logbook-insert! heading (string-append "CLOCK: " stamp))))
+       (org-clock-start! (list (absolute-path (buffer-path)) title stamp effort))
+       (message (string-append "clocked in: " title)))]))
+
+(define (org-clock-out!)
+  "Clocks out: ends the running clock's line with now and its length."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (let* ([now (org-now-stamp)]
+             [took (org-duration (org-clock-elapsed))]
+             [title (cadr *org-clock*)])
+        (org-clock-edit!
+         (lambda (l)
+           (let* ([text (line-text l)]
+                  [indent (substring text 0 (- (string-length text) (string-length (trim-start text))))])
+             (org-set-line! l (string-append indent "CLOCK: " (org-clock-open-start text) "--" now " => "
+                                             (make-string (max 0 (- 5 (string-length took))) #\space) took)))))
+        (org-clock-stop!)
+        (message (string-append "clocked out: " title " (" took ")")))))
+
+(define (org-clock-cancel!)
+  "Cancels the running clock, removing its line, and its :LOGBOOK: when
+   that leaves it empty."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (begin
+        (org-clock-edit!
+         (lambda (l)
+           (let ([empty? (and (> l 0) (< l (last-line))
+                              (equal? (string-upcase (trim (line-text (- l 1)))) ":LOGBOOK:")
+                              (equal? (string-upcase (trim (line-text (+ l 1)))) ":END:"))])
+             (if empty?
+                 (replace-range! (line-end (- l 2)) (line-end (+ l 1)) "")
+                 (replace-range! (line-end (- l 1)) (line-end l) "")))))
+        (org-clock-stop!)
+        (message "clock canceled"))))
+
+(define (org-clock-goto!)
+  "Goes to the running clock's heading, opening its file."
+  (if (not *org-clock*)
+      (message "no clock is running")
+      (let ([id (open-file! (car *org-clock*))])
+        (when id
+          (let ([l (org-clock-line)])
+            (if l
+                (begin (set-cursor! (line-start (or (org-heading-line l) l)))
+                       (message (string-append "clocked: " (cadr *org-clock*))))
+                (message "the clock's line is gone")))))))
+
+(define (org-clock-resume!)
+  "Picks up a clock left running in an agenda file: the first open
+   CLOCK: line found."
+  (unless *org-clock*
+    (let loop ([files (org-agenda-file-list)])
+      (when (pair? files)
+        (let* ([file (car files)]
+               [lines (if (file-exists? file) (list->vector (split-many (org-file-text file) "\n")) (vector))]
+               [at (let find ([i 0])
+                     (cond [(>= i (vector-length lines)) #f]
+                           [(org-clock-open-start (vector-ref lines i)) i]
+                           [else (find (+ i 1))]))]
+               [h (and at (org-heading-above lines at))])
+          (if h
+              (org-clock-start! (list (absolute-path file) (org-heading-title (vector-ref lines h))
+                                      (org-clock-open-start (vector-ref lines at))
+                                      (org-lines-property lines h "Effort" #f)))
+              (loop (cdr files))))))))
+
+(add-hook! 'startup (lambda () (run-after! 1000 org-clock-resume!)))
+
+(define (org-clock-at-heading proc)
+  "Runs (proc heading) on the heading the cursor is under, or says it isn't."
+  (let ([h (org-heading-line (current-line))]) (if h (proc h) (message "not under a heading"))))
 
 (define (org-restamp old new)
   "Timestamp `new` with the repeater and warning of timestamp `old`, so
@@ -1871,6 +2159,10 @@
 (org-key! '(normal insert) "C-cC-xC-a" (lambda args (org-archive-prompt!)))
 (org-key! '(normal insert) "C-cC-w" (lambda args (org-refile-prompt! (lambda (moved?) void))))
 (org-key! '(normal insert) "C-cC-xe" (lambda args (org-effort-prompt!)))
+(org-key! '(normal insert) "C-cC-xC-i" (lambda args (org-clock-at-heading org-clock-in!)))
+(org-key! '(normal insert) "C-cC-xC-o" (lambda args (org-clock-out!)))
+(org-key! '(normal insert) "C-cC-xC-q" (lambda args (org-clock-cancel!)))
+(org-key! '(normal insert) "C-cC-xC-j" (lambda args (org-clock-goto!)))
 (define-mode-leader! 'org-mode "i" (lambda (n) (run-command 'org-indent-mode)) "toggle indent")
 (define-mode-leader! 'org-mode "l" (lambda (n) (run-command 'org-toggle-link-display)) "toggle link display")
 (define-mode-leader! 'org-mode "s" (lambda (n) (org-schedule!)) "schedule")
@@ -1885,6 +2177,10 @@
 (define-mode-leader! 'org-mode "r" (lambda (n) (org-refile-prompt! (lambda (moved?) void))) "refile")
 (define-mode-leader-group! 'org-mode "c" "clock")
 (define-mode-leader! 'org-mode "cE" (lambda (n) (org-effort-prompt!)) "set effort")
+(define-mode-leader! 'org-mode "ci" (lambda (n) (org-clock-at-heading org-clock-in!)) "clock in")
+(define-mode-leader! 'org-mode "co" (lambda (n) (org-clock-out!)) "clock out")
+(define-mode-leader! 'org-mode "cc" (lambda (n) (org-clock-cancel!)) "cancel clock")
+(define-mode-leader! 'org-mode "cg" (lambda (n) (org-clock-goto!)) "go to clock")
 (define-mode-leader! 'org-mode "o" (lambda (n) (let ([l (org-link-at (cursor))]) (if l (org-follow! l) (message "no link here")))) "open link")
 (define-mode-leader! 'org-mode "b" (lambda (n) (when (org-table-line? (current-line)) (org-table-align! (current-line)))) "align table")
 
