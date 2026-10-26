@@ -669,14 +669,23 @@
 (define-option! 'linebreak #f '(lbr))
 (watch-option! 'linebreak set-linebreak!)
 
+(define (line-numbers-mode number relative)
+  "The line numbers Rust draws for `number` and `relativenumber`."
+  (cond [(and number relative) "hybrid"]
+        [number "absolute"]
+        [relative "relative"]
+        [else "off"]))
+
 (define (update-line-numbers! value)
-  "Tells Rust which line numbers to draw, from number and relativenumber.
-   The watcher of both options; `value` is ignored."
-  (set-line-numbers!
-   (cond [(and (option 'number) (option 'relativenumber)) "hybrid"]
-         [(option 'number) "absolute"]
-         [(option 'relativenumber) "relative"]
-         [else "off"])))
+  "Tells Rust which line numbers to draw: everyone's from the global
+   number and relativenumber, and the current buffer's own if it sets
+   either locally, so each window keeps its buffer's whichever is
+   focused. The watcher of both options; `value` is ignored."
+  (set-line-numbers! (line-numbers-mode (hash-ref *options* 'number) (hash-ref *options* 'relativenumber)))
+  (let ([local (buffer-locals)])
+    (set-buffer-line-numbers!
+     (and (or (hash-contains? local '(option number)) (hash-contains? local '(option relativenumber)))
+          (line-numbers-mode (option 'number) (option 'relativenumber))))))
 
 (watch-option! 'number update-line-numbers!)
 (watch-option! 'relativenumber update-line-numbers!)

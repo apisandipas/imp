@@ -406,3 +406,18 @@ fn the_cursor_sits_on_the_name() {
     assert_eq!(eval(&mut s, "(current-line)"), "3");
     assert_eq!(eval(&mut s, "(current-col)"), "4");
 }
+
+#[test]
+fn the_tree_never_shows_line_numbers() {
+    let dir = project("tree-numbers");
+    let mut s = visiting(&dir.join("b.txt"));
+    s.eval("(set-option! 'number #t)").unwrap();
+    type_keys(&mut s, " te");
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    assert!(s.frame().text_rows()[0].starts_with(&root));
+    // Opening a file moves the cursor out of the tree; still no numbers.
+    type_keys(&mut s, "ggjjj<ret>");
+    let rows = s.frame().text_rows();
+    assert!(rows[0].starts_with(&root), "{rows:?}");
+    assert!(rows[1].starts_with("  docs/"), "{rows:?}");
+}

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/buffers-and-windows]]"
 frozen:
-  docs/specs/buffers-and-windows.md: 21bd8d3245c3
+  docs/specs/buffers-and-windows.md: b71f00fec527
 ---
 # Buffers and windows
 
@@ -71,6 +71,8 @@ To choose where a buffer opens, give a rule in `init.scm` with the start of its 
 Long lines wrap onto the next row, as in Vim. Turn on `linebreak` to wrap between words, not in the middle of one. Turn off `wrap` and long lines scroll sideways instead.
 
 Wide characters take two cells, and combining marks take none.
+
+A buffer that sets `number` or `relativenumber` with `:setlocal` keeps its own line numbers, even while you work in another window. Special buffers such as the file tree and terminals turn them off this way.
 
 | Option | Shows |
 |---|---|

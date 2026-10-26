@@ -43,6 +43,17 @@ fn popup_line(value: &SteelVal) -> crate::editor::PopupLine {
     }
 }
 
+/// Line numbers from their name: "absolute", "relative", "hybrid", else off.
+fn line_numbers(mode: &str) -> crate::render::LineNumbers {
+    use crate::render::LineNumbers;
+    match mode {
+        "absolute" => LineNumbers::Absolute,
+        "relative" => LineNumbers::Relative,
+        "hybrid" => LineNumbers::Hybrid,
+        _ => LineNumbers::Off,
+    }
+}
+
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
 }
@@ -783,16 +794,20 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
     });
 
-    // "off", "absolute", "relative" or "hybrid".
+    // "off", "absolute", "relative" or "hybrid": the line numbers of
+    // buffers that don't set their own.
     engine.register_fn("set-line-numbers!", |mode: String| {
-        use crate::render::LineNumbers;
+        editor::with(|e| e.line_numbers = line_numbers(&mode))
+    });
+    // The current buffer's own line numbers, as set-line-numbers! takes,
+    // or #f to use everyone's.
+    engine.register_fn("set-buffer-line-numbers!", |mode: Option<String>| {
         editor::with(|e| {
-            e.line_numbers = match mode.as_str() {
-                "absolute" => LineNumbers::Absolute,
-                "relative" => LineNumbers::Relative,
-                "hybrid" => LineNumbers::Hybrid,
-                _ => LineNumbers::Off,
-            }
+            let id = e.current;
+            match mode {
+                Some(mode) => e.buffer_line_numbers.insert(id, line_numbers(&mode)),
+                None => e.buffer_line_numbers.remove(&id),
+            };
         })
     });
     // When the current buffer shows its sign column: "yes", "no" or
