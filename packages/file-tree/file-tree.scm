@@ -9,6 +9,8 @@
 ;;;
 ;;;   SPC t e, :FileTree   open or close the tree
 ;;;   <ret>, <tab>         open or shut a folder; <ret> opens a file
+;;;   H, I                 show or hide dotfiles, files git ignores
+;;;   R                    read the folders again
 ;;;   q                    close it
 ;;;
 ;;; Each frame has at most one tree window. It isn't a popup (special.scm):
@@ -194,6 +196,23 @@
                  (begin (go-to-window! target) (open-file-buffer! (car row)) void)
                  (message "no window to open it in")))])))
 
+(define (file-tree-refresh!)
+  "Reads the folders again and redraws the tree, the cursor staying on
+   the entry it was on if that is still shown."
+  (let* ([row (file-tree-row)] [path (and row (car row))])
+    (file-tree-render!)
+    (let ([line (and path (file-tree-line-of path))])
+      (when line (set-cursor! (line-start line))))
+    void))
+
+(define (file-tree-flip! name)
+  "Turns option `name` (file-tree-show-hidden or -ignored) over, and
+   redraws the tree."
+  (set-option! name (not (option name)))
+  (file-tree-refresh!)
+  (message (string-append (if (eq? name 'file-tree-show-hidden) "dotfiles " "ignored files ")
+                          (if (option name) "shown" "hidden"))))
+
 (define (file-tree-toggle!)
   "Opens the tree, or closes it if this frame shows one."
   (if (file-tree-window) (file-tree-close!) (file-tree-open!)))
@@ -219,4 +238,7 @@
 (define-mode-key! 'file-tree-mode 'normal "<tab>"
   (lambda (n) (let ([row (file-tree-row)]) (when (and row (cadr row) (> (current-line) 0)) (file-tree-toggle-folder! (car row)))))
   "open or shut a folder")
+(define-mode-key! 'file-tree-mode 'normal "H" (lambda (n) (file-tree-flip! 'file-tree-show-hidden)) "show or hide dotfiles")
+(define-mode-key! 'file-tree-mode 'normal "I" (lambda (n) (file-tree-flip! 'file-tree-show-ignored)) "show or hide ignored files")
+(define-mode-key! 'file-tree-mode 'normal "R" (lambda (n) (file-tree-refresh!)) "read the folders again")
 (define-mode-key! 'file-tree-mode 'normal "q" (lambda (n) (file-tree-close!)) "close the tree")

@@ -26,7 +26,7 @@ Press `SPC t e`, or type `:FileTree`, to open the tree. It opens down the left, 
 
 The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
 
-Dotfiles, and files git ignores, aren't shown.
+Dotfiles, and files git ignores, aren't shown at first: `H` shows or hides dotfiles, and `I` shows or hides ignored files.
 
 When the tree opens, it opens the folders down to the file you're in and puts the cursor on it.
 
@@ -37,6 +37,8 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 - `<ret>` or `<tab>` on a folder opens it in place, its contents indented under it. Press it again to shut it.
 - `<ret>` on a file opens it in the window you opened the tree from, and moves the cursor there. The tree stays open.
 
+The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
+
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
 
 ## Options
@@ -44,3 +46,5 @@ The tree remembers which folders you opened. Close it and open it again, and the
 | Option | Default | What it does |
 |---|---|---|
 | `file-tree-width` | `30` | How many columns wide the tree opens |
+| `file-tree-show-hidden` | `#f` | Whether dotfiles are shown; `H` flips it |
+| `file-tree-show-ignored` | `#f` | Whether files git ignores are shown; `I` flips it |

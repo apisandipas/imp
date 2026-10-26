@@ -173,3 +173,61 @@ fn opening_reveals_the_current_file() {
     );
     assert_eq!(eval(&mut s, "(current-line)"), "3");
 }
+
+#[test]
+fn h_and_i_show_dotfiles_and_ignored_files() {
+    let dir = project("tree-hidden");
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    type_keys(&mut s, "H");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  .git/\n  docs/\n  src/\n  .env\n  .gitignore\n  A.txt\n  b.txt\n")
+    );
+    // The cursor stays on b.txt.
+    assert_eq!(eval(&mut s, "(current-line)"), "7");
+    type_keys(&mut s, "HI");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  target/\n  A.txt\n  b.txt\n  debug.log\n")
+    );
+    type_keys(&mut s, "I");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+}
+
+#[test]
+fn the_options_set_what_it_starts_with() {
+    let dir = project("tree-options");
+    let mut s = visiting(&dir.join("b.txt"));
+    s.eval("(set-option! 'file-tree-show-hidden #t)").unwrap();
+    s.eval("(set-option! 'file-tree-show-ignored #t)").unwrap();
+    type_keys(&mut s, " te");
+    assert!(s.text().contains("  .env\n"), "{}", s.text());
+    assert!(s.text().contains("  debug.log\n"), "{}", s.text());
+}
+
+#[test]
+fn r_and_reopening_read_the_folders_again() {
+    let dir = project("tree-refresh");
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    std::fs::write(dir.join("c.txt"), "").unwrap();
+    type_keys(&mut s, "R");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n  c.txt\n")
+    );
+    // The cursor is still on b.txt.
+    assert_eq!(eval(&mut s, "(current-line)"), "4");
+    std::fs::remove_file(dir.join("c.txt")).unwrap();
+    type_keys(&mut s, "q te");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+}
