@@ -186,8 +186,13 @@
 
 ;; (lambda (name) ...) -> an icon (a short string) drawn before entry
 ;; `name` (ending in / for a directory), or #f. The nerd-icons package
-;; sets it.
+;; sets it; the file-tree package uses it too.
 (define *dired-icon* (lambda (name) #f))
+
+;; The icon of an open folder (a short string), or #f: the file-tree
+;; package's, beside *dired-icon*'s shut one. The nerd-icons package sets
+;; it.
+(define *open-folder-icon* #f)
 
 ;; After an edit, in normal mode (not on every key typed in insert mode).
 (add-hook! 'post-command

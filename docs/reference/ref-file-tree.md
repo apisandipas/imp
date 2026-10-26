@@ -41,6 +41,10 @@ The tree remembers which folders you opened. Close it and open it again, and the
 
 Press `?` in the tree to see its keys in a popup at the bottom of the screen. Press `?` again to hide it.
 
+## Icons
+
+With the [nerd-icons](ref-packages.md) package loaded, each entry has an icon before its name: the file's type, or a folder, open or shut. Your font needs Nerd Font icons.
+
 ## Git status
 
 In a git repository, the tree shows what's changed. A changed file's name is coloured, with a letter after it:
@@ -86,12 +90,6 @@ To have the tree open whenever imp starts, set `file-tree-open-at-start` after l
 ```
 
 The cursor stays in the file you opened, with the tree beside it.
-
-## What it doesn't do yet
-
-These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
-
-- File icons beside the entries.
 
 ## Options
 

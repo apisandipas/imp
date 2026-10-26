@@ -702,3 +702,46 @@ fn outside_a_repository_nothing_has_a_status() {
     s.pump(std::time::Duration::from_millis(300));
     assert_eq!(face(&mut s, &dir.join("b.txt")), "#false");
 }
+
+#[test]
+fn entries_show_icons_before_their_names() {
+    let dir = project("tree-icons");
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    s.eval(r#"(set! *dired-icon* (lambda (name) (if (ends-with? name "/") "D" "F")))"#)
+        .unwrap();
+    s.eval(r#"(set! *open-folder-icon* "O")"#).unwrap();
+    type_keys(&mut s, " te");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  D docs/\n  D src/\n  F A.txt\n  F b.txt\n")
+    );
+    // The cursor is on the name, past the icon.
+    assert_eq!(eval(&mut s, "(current-col)"), "4");
+    // An open folder has the open icon.
+    type_keys(&mut s, "ggjj<ret>");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  D docs/\n  O src/\n    F main.rs\n  F A.txt\n  F b.txt\n")
+    );
+    // r still starts from the path, without the icon.
+    type_keys(&mut s, "jr");
+    assert!(s
+        .frame()
+        .text_rows()
+        .last()
+        .unwrap()
+        .contains("src/main.rs"));
+}
+
+#[test]
+fn nerd_icons_gives_the_tree_its_icons() {
+    let dir = project("tree-nerd");
+    let mut s = visiting(&dir.join("b.txt"));
+    s.eval("(use-package! 'nerd-icons)").unwrap();
+    type_keys(&mut s, " teggjj<ret>");
+    let text = s.text();
+    // Nerd Font's shut (U+F07B) and open (U+F07C) folders.
+    assert!(text.contains("  \u{f07b} docs/\n"), "{text}");
+    assert!(text.contains("  \u{f07c} src/\n"), "{text}");
+}

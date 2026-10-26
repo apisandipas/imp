@@ -9,7 +9,7 @@
 ;;; (a file's by its type, a buffer's by its mode, a command's...); the
 ;;; insert-mode completion menu gets the language server's kind of each
 ;;; candidate (function, variable, class...) and file and folder icons;
-;;; dired gets each entry's icon before its name.
+;;; dired and the file tree get each entry's icon before its name.
 ;;;
 ;;; The icons are in Nerd Fonts' private-use characters, so the font
 ;;; needs them: a "Nerd Font Mono" (set-option! 'font "VictorMono Nerd
@@ -134,6 +134,7 @@
           [else (nerd-icon 'lsp-kind 1)])))
 
 (set! *dired-icon* nerd-file-icon)
+(set! *open-folder-icon* (nerd "F07C"))
 (for-each (lambda (id) (with-buffer id (lambda () (when (eq? (major-mode) 'dired-mode) (dired-show-details!)))))
           (buffer-list))
 

@@ -191,20 +191,38 @@
          #f
          (file-tree-roots)))
 
+(define (file-tree-row-icon row)
+  "The icon before `row`'s name, from the runtime's icon hooks (the
+   nerd-icons package sets them), or #f: an open folder's, else what
+   *dired-icon* gives the name (ending in / for a folder)."
+  (let ([name (string-append (file-name-of (car row)) (if (cadr row) "/" ""))])
+    (or (and (cadr row) (file-tree-expanded? (car row)) *open-folder-icon*)
+        (*dired-icon* name))))
+
+(define (file-tree-row-prefix row)
+  "What comes before `row`'s name on its line: two columns a level, then
+   its icon and a space if it has one. A root's line has none."
+  (if (= (caddr row) 0)
+      ""
+      (let ([icon (file-tree-row-icon row)])
+        (string-append (make-string (* 2 (caddr row)) #\space) (if icon (string-append icon " ") "")))))
+
 (define (file-tree-row-text row)
-  "The line that shows `row`: a root's name, or an entry indented two
-   columns a level, a directory's name ending in /."
+  "The line that shows `row`: a root's name, or an entry's prefix and
+   name, a directory's ending in /."
   (if (= (caddr row) 0)
       (file-name-of (car row))
-      (string-append (make-string (* 2 (caddr row)) #\space)
-                     (file-name-of (car row))
-                     (if (cadr row) "/" ""))))
+      (string-append (file-tree-row-prefix row) (file-name-of (car row)) (if (cadr row) "/" ""))))
+
+(define (file-tree-name-col line)
+  "The column where the name on `line` of the tree starts."
+  (let ([cols (buffer-local 'file-tree-name-cols)])
+    (if (and cols (< line (vector-length cols))) (vector-ref cols line) 0)))
 
 (define (file-tree-cursor-to! line)
-  "Puts the cursor on the name on `line` of the tree, past its indent."
-  (let ([lines (buffer-local 'file-tree-lines)])
-    (set-cursor! (+ (line-start line)
-                    (if (and lines (< line (vector-length lines))) (* 2 (caddr (vector-ref lines line))) 0)))))
+  "Puts the cursor on the name on `line` of the tree, past its indent and
+   icon."
+  (set-cursor! (+ (line-start line) (file-tree-name-col line))))
 
 (define (file-tree-render!)
   "Reads the roots' directories afresh and redraws the tree buffer (the
@@ -213,6 +231,7 @@
                                   (file-tree-roots)))]
          [line (current-line)])
     (set-buffer-local! 'file-tree-lines (list->vector rows))
+    (set-buffer-local! 'file-tree-name-cols (list->vector (map (lambda (r) (string-length (file-tree-row-prefix r))) rows)))
     (set-buffer-contents!
      (apply string-append (map (lambda (r) (string-append (file-tree-row-text r) "\n")) rows)))
     (set-buffer-unmodified!)
@@ -325,7 +344,7 @@
           (let* ([row (vector-ref lines i)]
                  [face (and (> (caddr row) 0) (file-tree-row-face row))]
                  [letter (and (> (caddr row) 0) (not (cadr row)) (not (list-ref row 4)) (file-tree-row-status row))]
-                 [start (+ (line-start i) (* 2 (caddr row)))])
+                 [start (+ (line-start i) (file-tree-name-col i))])
             (when face
               (buffer-highlight-add! "file-tree-status" start (+ (line-start i) (string-length (line-text i))) face))
             (when letter (set-line-end-text! i letter face))
@@ -650,7 +669,7 @@
     (set-local-option! 'signcolumn "no")
     (set-local-option! 'wrap #f)
     (buffer-highlight-pattern! "file-tree-dir" "^ *[^ ].*/$" "dired.directory")
-    (buffer-highlight-pattern! "file-tree-hidden" "^ *\\.[^/]*/?$" "dired.hidden")))
+    (buffer-highlight-pattern! "file-tree-hidden" "(^| )\\.[^ /]*/?$" "dired.hidden")))
 
 (define-command! 'file-tree
   (lambda (count)
