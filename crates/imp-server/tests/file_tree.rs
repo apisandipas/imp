@@ -350,3 +350,49 @@ fn question_mark_shows_and_hides_the_keys() {
     type_keys(&mut s, "?q");
     assert!(!screen(&mut s).contains("rename or move"));
 }
+
+#[test]
+fn it_can_open_at_start() {
+    let dir = project("tree-start");
+    std::fs::write(dir.join("b.txt"), "bee\n").unwrap();
+    let config = temp_path("tree-start-init.scm");
+    std::fs::write(
+        &config,
+        "(use-package! 'file-tree)\n(set-option! 'file-tree-open-at-start #t)\n",
+    )
+    .unwrap();
+    let mut s = imp_server::Server::new(
+        imp_core::Buffer::open(&dir.join("b.txt")).unwrap(),
+        imp_server::Options {
+            user_config: Some(config),
+        },
+    )
+    .expect("runtime loads");
+    // The tree is open on the left, the cursor still in the file.
+    assert_eq!(eval(&mut s, "(length (window-list))"), "2");
+    assert_eq!(s.text(), "bee\n");
+    assert_eq!(
+        eval(&mut s, "(window-buffer (car (window-list)))"),
+        eval(&mut s, "(file-tree-buffer)")
+    );
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    assert!(
+        s.frame().text_rows()[0].starts_with(&root),
+        "{:?}",
+        s.frame().text_rows()[0]
+    );
+}
+
+#[test]
+fn it_starts_closed_by_default() {
+    let config = temp_path("tree-closed-init.scm");
+    std::fs::write(&config, "(use-package! 'file-tree)\n").unwrap();
+    let mut s = imp_server::Server::new(
+        imp_core::Buffer::from_text(""),
+        imp_server::Options {
+            user_config: Some(config),
+        },
+    )
+    .expect("runtime loads");
+    assert_eq!(eval(&mut s, "(length (window-list))"), "1");
+}

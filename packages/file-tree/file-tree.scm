@@ -17,6 +17,9 @@
 ;;;   q                    close it
 ;;;   ?                    show or hide these keys
 ;;;
+;;; With file-tree-open-at-start set, the tree opens beside the first
+;;; window when imp starts, the cursor left in that window.
+;;;
 ;;; Each frame has at most one tree window. It isn't a popup (special.scm):
 ;;; a popup shares its side with the others and closes through popup
 ;;; handling, while the tree stays put beside them.
@@ -24,6 +27,7 @@
 (define-option! 'file-tree-width 30 '())
 (define-option! 'file-tree-show-hidden #f '())   ; dotfiles
 (define-option! 'file-tree-show-ignored #f '())  ; files git ignores
+(define-option! 'file-tree-open-at-start #f '())
 
 (define *file-tree-buffer-name* "*file-tree*")
 
@@ -391,3 +395,11 @@
 
 (for-each (lambda (k) (define-mode-key! 'file-tree-mode 'normal (car k) (caddr k) (cadr k)))
           *file-tree-keys*)
+
+;; After init.scm, so the option set there counts.
+(add-hook! 'startup
+  (lambda ()
+    (when (option 'file-tree-open-at-start)
+      (let ([w (current-window)])
+        (file-tree-open!)
+        (go-to-window! w)))))

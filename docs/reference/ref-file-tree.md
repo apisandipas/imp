@@ -8,10 +8,6 @@ frozen:
 
 The file tree shows your project's folders as a tree down the left of the screen, as most editors' sidebars do. It sits beside the [file browser](ref-dired.md), which stays the way to edit a directory as text.
 
-## Not yet in imp
-
-- The file tree is being built ([issue #55](https://github.com/apisandipas/imp/issues/55)). It can't open by itself when imp starts yet.
-
 ## Turning it on
 
 The file tree is an opt-in package. Load it near the top of your `init.scm`:
@@ -51,6 +47,25 @@ Press `?` in the tree to see its keys in a popup at the bottom of the screen. Pr
 
 There's no copy and paste of files, and no drag and drop. For changing many names at once, the [file browser](ref-dired.md) lets you edit a folder's listing as text.
 
+## Opening it when imp starts
+
+To have the tree open whenever imp starts, set `file-tree-open-at-start` after loading the package:
+
+```scheme
+(use-package! 'file-tree
+  'config (lambda () (set-option! 'file-tree-open-at-start #t)))
+```
+
+The cursor stays in the file you opened, with the tree beside it.
+
+## What it doesn't do yet
+
+These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
+
+- Git status colours or file icons beside the entries.
+- More than one root, or a tree in more than one window.
+- Following the file you're in as you switch buffers. The tree only shows the current file when it opens.
+
 ## Options
 
 | Option | Default | What it does |
@@ -58,3 +73,4 @@ There's no copy and paste of files, and no drag and drop. For changing many name
 | `file-tree-width` | `30` | How many columns wide the tree opens |
 | `file-tree-show-hidden` | `#f` | Whether dotfiles are shown; `H` flips it |
 | `file-tree-show-ignored` | `#f` | Whether files git ignores are shown; `I` flips it |
+| `file-tree-open-at-start` | `#f` | Whether the tree opens when imp starts |

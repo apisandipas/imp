@@ -22,4 +22,4 @@ The tree is the `*file-tree*` buffer, redrawn from a model kept in Scheme: the r
 - [x] `H` and `I` toggle dotfiles and ignored files, starting from `file-tree-show-hidden` and `file-tree-show-ignored`. `R` reads the directories again, as opening does. All with tests.
 - [x] `a` adds a file, or a directory when the name ends in `/`, with its parents, and puts the cursor on it. `r` renames or moves the entry, and a buffer visiting it follows. `D` deletes after `confirm!`, a directory recursively. All with tests.
 - [x] `?` shows the tree's keys in a which-key popup, and a second `?` hides it, with a test.
-- [ ] With `file-tree-open-at-start` set, the tree opens at startup beside the first window, with the cursor left in that window, with a test.
+- [x] With `file-tree-open-at-start` set, the tree opens at startup beside the first window, with the cursor left in that window, with a test.
