@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/file-tree]]"]
 issue: https://github.com/apisandipas/imp/issues/55
 frozen:
@@ -16,7 +16,7 @@ The tree is the `*file-tree*` buffer, redrawn from a model kept in Scheme: the r
 
 ## Tasks
 
-- [ ] Add a `directory-ignored` primitive that gives the names in a directory git ignores (a list, empty outside a repository), using the `ignore` crate, with a Rust test.
+- [x] Add a `directory-ignored` primitive that gives the names in a directory git ignores (a list, empty outside a repository), using the `ignore` crate, with a Rust test.
 - [ ] Add the package: `SPC t e` and `:FileTree` toggle a read-only `*file-tree*` buffer in `file-tree-mode`, down the left at `file-tree-width` columns, at most one per frame. The cursor moves into it, and goes back to the window it came from when it closes, `q` included. It shows the project root's name, then the root's entries, directories first and ending in `/`, each group alphabetical. Dotfiles and ignored files are hidden. Write the reference page's first sections (started with the spec, saying nothing works yet), and add the row in `ref-packages.md` and the README line.
 - [ ] Expand and collapse: `<ret>` and `<tab>` on a directory open or shut it in place, with entries indented two columns a level. `<ret>` on a file opens it in the window the tree came from, and the cursor goes there. Expanded directories are remembered across closing and reopening, and opening reveals the current buffer's file. All with tests.
 - [ ] `H` and `I` toggle dotfiles and ignored files, starting from `file-tree-show-hidden` and `file-tree-show-ignored`. `R` reads the directories again, as opening does. All with tests.

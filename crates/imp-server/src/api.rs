@@ -364,6 +364,10 @@ pub fn register(engine: &mut Engine) {
             Err(err) => SteelVal::StringV(format!("{path}: {err}").into()),
         },
     );
+    // The names in a directory git ignores, for the file tree.
+    engine.register_fn("directory-ignored", |path: String| {
+        crate::files::ignored(&path)
+    });
     let outcome = |r: std::io::Result<()>, what: &str| match r {
         Ok(()) => SteelVal::BoolV(true),
         Err(err) => SteelVal::StringV(format!("{what}: {err}").into()),

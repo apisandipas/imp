@@ -24,6 +24,32 @@ pub fn list(root: &str, limit: usize) -> Vec<String> {
     files
 }
 
+/// The names in directory `dir` that git ignores, sorted: those its
+/// .gitignore files (the parents' too) leave out. Empty outside a
+/// repository, or if `dir` can't be read.
+pub fn ignored(dir: &str) -> Vec<String> {
+    let dir = Path::new(dir);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let kept: std::collections::HashSet<std::ffi::OsString> = WalkBuilder::new(dir)
+        .max_depth(Some(1))
+        .hidden(false)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.depth() == 1)
+        .map(|entry| entry.file_name().to_owned())
+        .collect();
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.file_name())
+        .filter(|name| !kept.contains(name))
+        .map(|name| name.to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
 /// A file's type and permissions as `ls -l` shows them: "drwxr-xr-x".
 pub fn permissions(m: &std::fs::Metadata) -> String {
     let t = m.file_type();
@@ -71,6 +97,28 @@ mod permission_tests {
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         let m = std::fs::symlink_metadata(&dir).unwrap();
         assert_eq!(super::permissions(&m), "drwxr-xr-x");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod ignored_tests {
+    #[test]
+    fn names_what_git_ignores() {
+        let dir = std::env::temp_dir().join(format!("imp-ignored-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        for f in ["a.rs", "x.log", ".env", "src/b.rs", "src/y.log"] {
+            std::fs::write(dir.join(f), "").unwrap();
+        }
+        std::fs::write(dir.join(".gitignore"), "target/\n*.log\n").unwrap();
+        let d = dir.display().to_string();
+        assert!(super::ignored(&d).is_empty(), "outside a repository");
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        assert_eq!(super::ignored(&d), ["target", "x.log"]);
+        assert_eq!(super::ignored(&format!("{d}/src")), ["y.log"]);
+        assert!(super::ignored(&format!("{d}/missing")).is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
