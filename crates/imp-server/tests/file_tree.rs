@@ -102,3 +102,74 @@ fn with_no_file_it_shows_the_working_directorys_project() {
         s.text()
     );
 }
+
+#[test]
+fn folders_open_and_shut_in_place() {
+    let dir = project("tree-expand");
+    std::fs::create_dir_all(dir.join("src/deep")).unwrap();
+    std::fs::write(dir.join("src/deep/inner.rs"), "").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    // src/ is the third line (the cursor starts on b.txt, the current
+    // file): <ret> opens it, its entries indented a
+    // level more, and the cursor stays on it.
+    type_keys(&mut s, "ggjj<ret>");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n    deep/\n    main.rs\n  A.txt\n  b.txt\n")
+    );
+    assert_eq!(eval(&mut s, "(current-line)"), "2");
+    type_keys(&mut s, "j<tab>");
+    assert_eq!(
+        s.text(),
+        format!(
+            "{root}\n  docs/\n  src/\n    deep/\n      inner.rs\n    main.rs\n  A.txt\n  b.txt\n"
+        )
+    );
+    // <tab> shuts src/ again; reopened, deep/ is still open.
+    type_keys(&mut s, "k<tab>");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+    type_keys(&mut s, "<ret>");
+    assert!(s.text().contains("      inner.rs\n"), "{}", s.text());
+    // Closed and opened again, the tree looks the same.
+    type_keys(&mut s, "q te");
+    assert!(s.text().contains("      inner.rs\n"), "{}", s.text());
+}
+
+#[test]
+fn ret_on_a_file_opens_it_in_the_window_it_came_from() {
+    let dir = project("tree-open");
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let file_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, " te");
+    let tree_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, "ggjj<ret>j<ret>");
+    assert_eq!(eval(&mut s, "(current-window)"), file_window);
+    assert_eq!(s.text(), "fn main() {}\n");
+    // The tree stays open beside it.
+    assert_eq!(eval(&mut s, "(length (window-list))"), "2");
+    assert_eq!(
+        eval(&mut s, &format!("(window-buffer {tree_window})")),
+        eval(&mut s, "(file-tree-buffer)")
+    );
+}
+
+#[test]
+fn opening_reveals_the_current_file() {
+    let dir = project("tree-reveal");
+    std::fs::create_dir_all(dir.join("docs/guide")).unwrap();
+    std::fs::write(dir.join("docs/guide/intro.md"), "").unwrap();
+    let mut s = visiting(&dir.join("docs/guide/intro.md"));
+    type_keys(&mut s, " te");
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n    guide/\n      intro.md\n  src/\n  A.txt\n  b.txt\n")
+    );
+    assert_eq!(eval(&mut s, "(current-line)"), "3");
+}
