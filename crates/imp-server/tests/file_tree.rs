@@ -231,3 +231,92 @@ fn r_and_reopening_read_the_folders_again() {
         format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
     );
 }
+
+#[test]
+fn a_adds_files_and_folders() {
+    let dir = project("tree-add");
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    // On src/, a adds inside it, making the folders on the way.
+    type_keys(&mut s, "ggjja");
+    type_keys(&mut s, "lib/mod.rs<ret>");
+    assert!(dir.join("src/lib/mod.rs").is_file());
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n    lib/\n      mod.rs\n    main.rs\n  A.txt\n  b.txt\n")
+    );
+    assert_eq!(eval(&mut s, "(current-line)"), "4");
+    // On a file, a adds beside it; a name ending in / is a folder.
+    type_keys(&mut s, "anotes/<ret>");
+    assert!(dir.join("src/lib/notes").is_dir());
+    assert_eq!(eval(&mut s, "(current-line)"), "4");
+    assert!(
+        s.text().contains("      notes/\n      mod.rs\n"),
+        "{}",
+        s.text()
+    );
+    // On the root line, a adds at the top; an existing name says so.
+    type_keys(&mut s, "gga");
+    type_keys(&mut s, "b.txt<ret>");
+    assert!(s.status().contains("b.txt already exists"));
+}
+
+#[test]
+fn r_renames_and_moves_and_buffers_follow() {
+    let dir = project("tree-rename");
+    std::fs::write(dir.join("b.txt"), "bee\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    // The cursor starts on b.txt; the prompt holds its path.
+    type_keys(&mut s, "r");
+    type_keys(&mut s, "<C-u>docs/bee.txt<ret>");
+    assert!(!dir.join("b.txt").exists());
+    assert_eq!(read(&dir, "docs/bee.txt"), "bee\n");
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n    bee.txt\n  src/\n  A.txt\n")
+    );
+    assert_eq!(eval(&mut s, "(current-line)"), "2");
+    // The buffer visiting it now visits the new path.
+    let file_buffer = eval(
+        &mut s,
+        "(window-buffer (cdr (assv (current-window) *file-tree-origins*)))",
+    );
+    let path = eval(&mut s, &format!("(with-buffer {file_buffer} buffer-path)"));
+    assert!(path.ends_with("docs/bee.txt\""), "{path}");
+    // A folder's files follow it too.
+    type_keys(&mut s, "kr");
+    type_keys(&mut s, "<C-u>guide<ret>");
+    assert_eq!(read(&dir, "guide/bee.txt"), "bee\n");
+    let path = eval(&mut s, &format!("(with-buffer {file_buffer} buffer-path)"));
+    assert!(path.ends_with("guide/bee.txt\""), "{path}");
+}
+
+#[test]
+fn d_deletes_after_asking() {
+    let dir = project("tree-delete");
+    std::fs::write(dir.join("docs/a.md"), "").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    type_keys(&mut s, " te");
+    // n keeps it.
+    type_keys(&mut s, "ggjDn");
+    assert!(dir.join("docs/a.md").exists());
+    // y deletes the folder and what's in it.
+    type_keys(&mut s, "D");
+    assert!(s
+        .status()
+        .contains("Delete docs/ and everything in it? (y or n)"));
+    type_keys(&mut s, "y");
+    assert!(!dir.join("docs").exists());
+    assert_eq!(s.text(), format!("{root}\n  src/\n  A.txt\n  b.txt\n"));
+    type_keys(&mut s, "GDy");
+    assert!(!dir.join("b.txt").exists());
+    assert_eq!(s.text(), format!("{root}\n  src/\n  A.txt\n"));
+}
+
+fn read(dir: &Path, name: &str) -> String {
+    std::fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))
+}

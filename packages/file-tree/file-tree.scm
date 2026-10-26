@@ -10,6 +10,9 @@
 ;;;   SPC t e, :FileTree   open or close the tree
 ;;;   <ret>, <tab>         open or shut a folder; <ret> opens a file
 ;;;   H, I                 show or hide dotfiles, files git ignores
+;;;   a                    add a file, or a folder (a name ending in /)
+;;;   r                    rename or move the entry at the cursor
+;;;   D                    delete it, after asking
 ;;;   R                    read the folders again
 ;;;   q                    close it
 ;;;
@@ -213,6 +216,116 @@
   (message (string-append (if (eq? name 'file-tree-show-hidden) "dotfiles " "ignored files ")
                           (if (option name) "shown" "hidden"))))
 
+(define (file-tree-root)
+  "The root the tree buffer (the current buffer) shows."
+  (buffer-local 'file-tree-root))
+
+(define (file-tree-relative path)
+  "`path` relative to the tree's root (\"\" for the root itself)."
+  (let ([root (file-tree-root)])
+    (if (starts-with? path (string-append root "/"))
+        (substring path (+ (string-length root) 1) (string-length path))
+        (if (equal? path root) "" path))))
+
+(define (file-tree-strip-slash name)
+  "`name` without a trailing /."
+  (if (and (> (string-length name) 1) (ends-with? name "/")) (substring name 0 (- (string-length name) 1)) name))
+
+(define (file-tree-target-dir)
+  "The folder `a` adds to: the folder at the cursor, a file's folder, or
+   the root on the first line."
+  (let ([row (file-tree-row)])
+    (cond [(or (not row) (= (current-line) 0)) (file-tree-root)]
+          [(cadr row) (car row)]
+          [else (directory-of (car row))])))
+
+(define (file-tree-go-to! path)
+  "Redraws the tree with the folders down to `path` open, and the cursor
+   on it."
+  (file-tree-reveal! (file-tree-root) path)
+  (file-tree-render!)
+  (let ([line (file-tree-line-of path)])
+    (when line (set-cursor! (line-start line))))
+  void)
+
+(define (file-tree-add! dir name)
+  "Makes `name` in folder `dir`: a folder if it ends in /, else an empty
+   file, with any folders it needs on the way."
+  (let* ([path (file-tree-join dir (file-tree-strip-slash name))]
+         [folder? (ends-with? name "/")]
+         [r (cond [(file-exists? path) (string-append (file-tree-relative path) " already exists")]
+                  [folder? (make-directory! path)]
+                  [else (let ([made (make-directory! (directory-of path))])
+                          (if (string? made)
+                              made
+                              (with-handler (lambda (e) (error-message e)) (write-text-file! path "") #t)))])])
+    (if (string? r)
+        (message r)
+        (begin (file-tree-go-to! path)
+               (message (string-append "added " (file-tree-relative path) (if folder? "/" "")))))))
+
+(define (file-tree-add-prompt!)
+  "a: asks for a name to add in the folder at the cursor."
+  (let* ([dir (file-tree-target-dir)] [rel (file-tree-relative dir)])
+    (ask (string-append "Add in " (if (equal? rel "") (file-name-of dir) rel) "/: ") ""
+         (lambda (name) (file-tree-add! dir name)))))
+
+(define (file-tree-follow! from to)
+  "Points buffers visiting `from`, or a file under it, at the same file
+   under `to`, and moves the open folders under `from` the same way."
+  (let ([moved (lambda (p)
+                 (cond [(equal? p from) to]
+                       [(starts-with? p (string-append from "/"))
+                        (string-append to (substring p (string-length from) (string-length p)))]
+                       [else #f]))])
+    (for-each (lambda (id)
+                (with-buffer id
+                  (lambda ()
+                    (let* ([p (buffer-path)] [new (and p (moved (absolute p)))])
+                      (when new (set-buffer-path! new))))))
+              (buffer-list))
+    (set! *file-tree-expanded*
+          (let loop ([keys (hash-keys->list *file-tree-expanded*)] [h *file-tree-expanded*])
+            (if (null? keys)
+                h
+                (let ([new (moved (car keys))])
+                  (loop (cdr keys) (if new (hash-insert (hash-remove h (car keys)) new #t) h))))))
+    void))
+
+(define (file-tree-rename! from text)
+  "Renames or moves `from` to `text`, a path relative to the root,
+   making the folders it needs."
+  (let* ([to (file-tree-join (file-tree-root) (file-tree-strip-slash text))]
+         [made (make-directory! (directory-of to))]
+         [r (if (string? made) made (rename-file! from to))])
+    (if (string? r)
+        (message r)
+        (begin (file-tree-follow! from to)
+               (file-tree-go-to! to)
+               (message (string-append "renamed to " (file-tree-relative to)))))))
+
+(define (file-tree-rename-prompt!)
+  "r: asks for a new path for the entry at the cursor."
+  (let ([row (file-tree-row)])
+    (if (or (not row) (= (current-line) 0))
+        (message "the root can't be renamed here")
+        (ask "Rename to: " (file-tree-relative (car row))
+             (lambda (text) (file-tree-rename! (car row) text))))))
+
+(define (file-tree-delete-prompt!)
+  "D: deletes the entry at the cursor, a folder with everything in it,
+   once you say y."
+  (let ([row (file-tree-row)])
+    (if (or (not row) (= (current-line) 0))
+        (message "the root can't be deleted here")
+        (let ([rel (file-tree-relative (car row))])
+          (confirm! (string-append "Delete " rel (if (cadr row) "/ and everything in it?" "?"))
+                    (lambda ()
+                      (let ([r (delete-path! (car row))])
+                        (if (string? r)
+                            (message r)
+                            (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
+
 (define (file-tree-toggle!)
   "Opens the tree, or closes it if this frame shows one."
   (if (file-tree-window) (file-tree-close!) (file-tree-open!)))
@@ -240,5 +353,8 @@
   "open or shut a folder")
 (define-mode-key! 'file-tree-mode 'normal "H" (lambda (n) (file-tree-flip! 'file-tree-show-hidden)) "show or hide dotfiles")
 (define-mode-key! 'file-tree-mode 'normal "I" (lambda (n) (file-tree-flip! 'file-tree-show-ignored)) "show or hide ignored files")
+(define-mode-key! 'file-tree-mode 'normal "a" (lambda (n) (file-tree-add-prompt!)) "add a file or folder/")
+(define-mode-key! 'file-tree-mode 'normal "r" (lambda (n) (file-tree-rename-prompt!)) "rename or move")
+(define-mode-key! 'file-tree-mode 'normal "D" (lambda (n) (file-tree-delete-prompt!)) "delete")
 (define-mode-key! 'file-tree-mode 'normal "R" (lambda (n) (file-tree-refresh!)) "read the folders again")
 (define-mode-key! 'file-tree-mode 'normal "q" (lambda (n) (file-tree-close!)) "close the tree")

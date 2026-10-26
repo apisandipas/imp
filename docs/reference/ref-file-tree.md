@@ -10,7 +10,7 @@ The file tree shows your project's folders as a tree down the left of the screen
 
 ## Not yet in imp
 
-- The file tree is being built ([issue #55](https://github.com/apisandipas/imp/issues/55)). You can't add, rename or delete files from it yet.
+- The file tree is being built ([issue #55](https://github.com/apisandipas/imp/issues/55)). `?` doesn't show its keys yet.
 
 ## Turning it on
 
@@ -40,6 +40,14 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
+
+## Adding, renaming and deleting
+
+- `a` asks for a name to add in the folder at the cursor. On a file, it adds beside the file, and on the first line, at the top of the project. A name ending in `/` makes a folder. A name with folders in it, such as `lib/mod.rs`, makes the folders too. The cursor then moves to what you added.
+- `r` asks for a new path for the entry at the cursor, starting from its current path. Change the name to rename it, or change the folders to move it. A file you have open follows it, so saving writes to the new path.
+- `D` deletes the entry at the cursor, once you answer `y`. A folder is deleted with everything in it.
+
+There's no copy and paste of files, and no drag and drop. For changing many names at once, the [file browser](ref-dired.md) lets you edit a folder's listing as text.
 
 ## Options
 
