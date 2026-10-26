@@ -2,11 +2,13 @@
 type: Page
 spec: "[[spec/start-screen]]"
 frozen:
-  docs/specs/start-screen.md: 3d569d3bf3ea
+  docs/specs/start-screen.md: 42f7b180dfe3
 ---
 # Start screen
 
 When you start imp without a file, it shows a start screen. From there you can open a recent file, jump into a project, or start typing.
+
+At the top is imp's logo, with the version under it.
 
 ## Opening something
 

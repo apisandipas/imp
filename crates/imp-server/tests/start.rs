@@ -49,6 +49,25 @@ fn the_start_screen_lists_recent_files_and_opens_them() {
 }
 
 #[test]
+fn the_start_screen_shows_the_logo_and_the_version() {
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'state-directory {:?})",
+        temp_path("start-logo-state").display().to_string()
+    ))
+    .unwrap();
+    s.eval("(imp-start-screen)").unwrap();
+    let text = s.text();
+    assert!(text.contains(":   █  █   █ █▄▄▄▀ ▐█"), "{text}");
+    let version = s.eval("(imp-version)").unwrap();
+    let version = version.trim_matches('"');
+    assert!(
+        text.contains(&format!("{version} · Vim keys, Scheme all the way down")),
+        "{text}"
+    );
+}
+
+#[test]
 fn typing_on_the_start_screen_goes_to_an_empty_buffer() {
     let mut s = server("");
     s.eval("(imp-start-screen)").unwrap();

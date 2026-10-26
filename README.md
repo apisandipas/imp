@@ -1,5 +1,13 @@
 # imp
 
+```
+  ▗▄▄▄▖▄▄▄▄  ▄▄▄▄
+:   █  █ █ █ █   █
+:   █  █   █ █▄▄▄▀ ▐█
+  ▗▄█▄▖      █
+             ▀
+```
+
 An editor as flexible as Emacs, with Vim editing by default. A small Rust
 core runs the buffers, rendering and parsing; the editor itself (every key,
 command, mode and package) is Scheme ([Steel](https://github.com/mattwparas/steel))

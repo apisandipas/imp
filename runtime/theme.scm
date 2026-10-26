@@ -188,6 +188,7 @@
      (list "start.heading" (fg 'magenta "bold"))
      (list "start.key" (fg 'yellow "bold"))
      (list "start.dim" (fg 'comment))
+     (list "start.cursor" (fg 'green "bold"))
      (list "start.file" "")
      (list "start.project" (fg 'cyan))
      (list "diff.added" (fg 'green))

@@ -491,6 +491,7 @@
    (list "start.heading" 'name #f "" #f)
    (list "start.key" 'keybind #f "bold" #f)
    (list "start.dim" 'fg-dim #f "" #f)
+   (list "start.cursor" 'cursor #f "" #f)
    (list "start.file" #f #f "" #f)
    (list "start.project" 'accent-0 #f "" #f)
    ;; Diffs: diff-added, -removed, -hunk-header, -file-header; the git

@@ -95,6 +95,15 @@
   "The entries of `entries` drawn in `face`: one section of the screen."
   (filter (lambda (e) (equal? (caddr e) face)) entries))
 
+;; The logo: imp on a command line, a prompt's colon before it and a
+;; block cursor after. Each row is (colon letters cursor).
+(define *start-logo*
+  (list (list "  " "▗▄▄▄▖▄▄▄▄  ▄▄▄▄  " "  ")
+        (list ": " "  █  █ █ █ █   █ " "  ")
+        (list ": " "  █  █   █ █▄▄▄▀ " "▐█")
+        (list "  " "▗▄█▄▖      █     " "  ")
+        (list "  " "           ▀     " "  ")))
+
 (define (start-draw!)
   "Draws the start screen into the current buffer, centred in the
    window, with the cursor on the first entry."
@@ -105,7 +114,7 @@
          [width (apply max (cons 30 (map (lambda (e) (+ 4 (string-length (cadr e)))) entries)))]
          [left (max 2 (quotient (- (window-width) width) 2))]
          [pad (make-string left #\space)]
-         [body (+ 3 (if (null? files) 0 (+ 2 (length files))) (if (null? projects) 0 (+ 2 (length projects)))
+         [body (+ 7 (if (null? files) 0 (+ 2 (length files))) (if (null? projects) 0 (+ 2 (length projects)))
                   (length commands))]
          [top (max 1 (quotient (- (window-height) body) 3))]
          [entry-line (lambda (e)
@@ -117,10 +126,13 @@
                     (draw-line! (list (list pad #f) (list text "start.heading")) #f))])
     (draw-begin!)
     (let loop ([i 0]) (when (< i top) (draw-line! '() #f) (loop (+ i 1))))
-    (draw-line! (list (list pad #f) (list "imp" "start.title")
-                      (list (string-append "  " (imp-version)) "start.dim"))
+    (for-each (lambda (row)
+                (draw-line! (list (list pad #f) (list (car row) "start.dim") (list (cadr row) "start.title")
+                                  (list (caddr row) "start.cursor"))
+                            #f))
+              *start-logo*)
+    (draw-line! (list (list pad #f) (list (string-append (imp-version) " · Vim keys, Scheme all the way down") "start.dim"))
                 #f)
-    (draw-line! (list (list pad #f) (list "Vim keys, Scheme all the way down" "start.dim")) #f)
     (unless (null? files) (heading "Recent files") (for-each entry-line files))
     (unless (null? projects) (heading "Projects") (for-each entry-line projects))
     (draw-line! '() #f)
