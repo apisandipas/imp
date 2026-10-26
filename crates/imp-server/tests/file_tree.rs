@@ -745,3 +745,28 @@ fn nerd_icons_gives_the_tree_its_icons() {
     assert!(text.contains("  \u{f07b} docs/\n"), "{text}");
     assert!(text.contains("  \u{f07c} src/\n"), "{text}");
 }
+
+#[test]
+fn git_statuses_map_to_letters() {
+    let mut s = server("");
+    s.eval("(use-package! 'file-tree)").unwrap();
+    for (xy, letter) in [
+        ("UU", "\"!\""),
+        ("AA", "\"!\""),
+        ("DU", "\"!\""),
+        ("??", "\"U\""),
+        ("A ", "\"A\""),
+        ("AM", "\"A\""),
+        ("R ", "\"A\""),
+        (" M", "\"M\""),
+        ("M ", "\"M\""),
+        ("MM", "\"M\""),
+        ("!!", "#false"),
+    ] {
+        assert_eq!(
+            eval(&mut s, &format!("(file-tree-status-letter {xy:?})")),
+            letter,
+            "{xy}"
+        );
+    }
+}

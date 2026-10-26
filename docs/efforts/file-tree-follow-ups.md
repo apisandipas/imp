@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/file-tree]]"]
 issue: https://github.com/apisandipas/imp/issues/78
 frozen:

@@ -1,9 +1,10 @@
 ;;; file-tree.scm -- the project's folders as a tree down the left.
 ;;;
 ;;; The *file-tree* buffer shows the current buffer's project root (or the
-;;; working directory) as a tree, and after it any roots added with P, in a window file-tree-width columns wide
-;;; on the left of the frame. Dired stays the way to edit a directory as
-;;; text; this is for finding your way around.
+;;; working directory) as a tree, and after it any roots added with P, in
+;;; a window file-tree-width columns wide on the left of the frame. Dired
+;;; stays the way to edit a directory as text; this is for finding your
+;;; way around.
 ;;;
 ;;;   (use-package! 'file-tree)
 ;;;
