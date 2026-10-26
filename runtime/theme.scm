@@ -118,6 +118,12 @@
      (list "dired.permissions" (fg 'dim))
      (list "dired.size" (fg 'cyan))
      (list "dired.date" (fg 'comment))
+     ;; The file-tree package's git statuses
+     (list "file-tree.modified" (fg 'orange))
+     (list "file-tree.added" (fg 'green))
+     (list "file-tree.untracked" (fg 'green))
+     (list "file-tree.conflict" (fg 'red "bold"))
+     (list "file-tree.ignored" (fg 'dim))
      ;; Org
      ;; The date picker (calendar.scm)
      (list "calendar.selected" (string-append "fg=" (c 'bg) " bg=" (c 'blue) " bold"))

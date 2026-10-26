@@ -570,3 +570,135 @@ fn with_follow_off_it_stays_put() {
         "{rows:?}"
     );
 }
+
+fn git(dir: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A real repository: a.txt and src/lib.rs committed, then a.txt
+/// changed, src/new.rs added to the index, notes.txt untracked, and a
+/// committed debug.log that .gitignore now ignores.
+fn repo(name: &str) -> PathBuf {
+    let dir = temp_path(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["config", "user.name", "Ada"]);
+    git(&dir, &["config", "user.email", "ada@example.com"]);
+    git(&dir, &["config", "commit.gpgsign", "false"]);
+    std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+    std::fs::write(dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(dir.join(".gitignore"), "*.log\n").unwrap();
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "start"]);
+    std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+    std::fs::write(dir.join("src/new.rs"), "").unwrap();
+    git(&dir, &["add", "src/new.rs"]);
+    std::fs::write(dir.join("notes.txt"), "").unwrap();
+    std::fs::write(dir.join("debug.log"), "").unwrap();
+    dir
+}
+
+/// The tree's rows once its git status has come in.
+fn wait_for(s: &mut imp_server::Server, what: impl Fn(&[String]) -> bool) -> Vec<String> {
+    for _ in 0..60 {
+        s.pump(std::time::Duration::from_millis(50));
+        let rows: Vec<String> = s
+            .frame()
+            .text_rows()
+            .iter()
+            .map(|r| r.trim_end().to_string())
+            .collect();
+        if what(&rows) {
+            return rows;
+        }
+    }
+    panic!("never: {:?}", s.frame().text_rows());
+}
+
+fn face(s: &mut imp_server::Server, path: &Path) -> String {
+    eval(
+        s,
+        &format!("(file-tree-face-of {:?})", path.display().to_string()),
+    )
+}
+
+#[test]
+fn changed_entries_show_their_git_status() {
+    let dir = repo("tree-git");
+    let mut s = visiting(&dir.join("a.txt"));
+    s.set_size(100, 24);
+    type_keys(&mut s, " te");
+    type_keys(&mut s, "ggj<ret>");
+    let rows = wait_for(&mut s, |r| r.iter().any(|l| l.starts_with("  a.txt  M")));
+    assert!(
+        rows.iter().any(|l| l.starts_with("  notes.txt  U")),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter().any(|l| l.starts_with("    new.rs  A")),
+        "{rows:?}"
+    );
+    // Unchanged files and folders get no letter.
+    assert!(
+        rows.iter()
+            .any(|l| l.split('│').next().unwrap().trim_end() == "    lib.rs"),
+        "{rows:?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|l| l.split('│').next().unwrap().trim_end() == "  src/"),
+        "{rows:?}"
+    );
+    assert_eq!(face(&mut s, &dir.join("a.txt")), "\"file-tree.modified\"");
+    assert_eq!(
+        face(&mut s, &dir.join("notes.txt")),
+        "\"file-tree.untracked\""
+    );
+    assert_eq!(face(&mut s, &dir.join("src/new.rs")), "\"file-tree.added\"");
+    // A folder takes its most serious change's face.
+    assert_eq!(face(&mut s, &dir.join("src")), "\"file-tree.added\"");
+    assert_eq!(face(&mut s, &dir.join("src/lib.rs")), "#false");
+    // Shown, an ignored file is dimmed.
+    type_keys(&mut s, "I");
+    assert_eq!(
+        face(&mut s, &dir.join("debug.log")),
+        "\"file-tree.ignored\""
+    );
+}
+
+#[test]
+fn saving_a_file_refreshes_the_status() {
+    let dir = repo("tree-git-save");
+    std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+    let mut s = visiting(&dir.join("a.txt"));
+    s.set_size(100, 24);
+    type_keys(&mut s, " te");
+    wait_for(&mut s, |r| {
+        r.iter().any(|l| l.starts_with("  notes.txt  U"))
+    });
+    assert_eq!(face(&mut s, &dir.join("a.txt")), "#false");
+    type_keys(&mut s, "<C-w>lccthree<esc>:w<ret>");
+    wait_for(&mut s, |r| r.iter().any(|l| l.starts_with("  a.txt  M")));
+}
+
+#[test]
+fn outside_a_repository_nothing_has_a_status() {
+    let dir = project("tree-no-git");
+    std::fs::remove_dir_all(dir.join(".git")).unwrap();
+    std::fs::write(dir.join(".project"), "").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    type_keys(&mut s, " te");
+    s.pump(std::time::Duration::from_millis(300));
+    assert_eq!(face(&mut s, &dir.join("b.txt")), "#false");
+}

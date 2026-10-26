@@ -18,6 +18,11 @@
 ;;;   q                    close it
 ;;;   ?                    show or hide these keys
 ;;;
+;;; In a git repository, changed entries show a letter after the name and
+;;; a face on it: M changed, A added, U untracked, ! a conflict; a folder
+;;; takes the face of the most serious change inside it. git status runs
+;;; in the background, on opening, R, a, r, D, and saving a file.
+;;;
 ;;; With file-tree-follow on (the default), switching to a buffer whose
 ;;; file is under a root moves the tree's cursor to it, opening the
 ;;; folders on the way; focus stays where it is.
@@ -61,6 +66,14 @@
 
 ;; Whether ? is showing the tree's keys.
 (define *file-tree-help* #f)
+
+;; Git status by root: root -> (letters . folders), where letters maps a
+;; changed file's path to "M", "A", "U" or "!", and folders maps a folder
+;; holding changes to the most serious one's letter.
+(define *file-tree-status* (hash))
+
+;; The top of the git repository of each root, or #f outside one.
+(define *file-tree-git-tops* (hash))
 
 ;; The folders shown open, path -> #t, kept while imp runs.
 (define *file-tree-expanded* (hash))
@@ -109,17 +122,17 @@
     (if (equal? la lb) (string<? a b) (string<? la lb))))
 
 (define (file-tree-entries dir)
-  "The entries of `dir` the tree shows, as (name directory?): directories
-   first, then files, each alphabetical, without dotfiles and ignored
-   files unless the options say to show them."
+  "The entries of `dir` the tree shows, as (name directory? ignored?):
+   directories first, then files, each alphabetical, without dotfiles
+   and ignored files unless the options say to show them."
   (let ([entries (directory-entries dir)])
     (if (string? entries)
         (begin (message entries) '())
-        (let* ([ignored (if (option 'file-tree-show-ignored) '() (directory-ignored dir))]
+        (let* ([ignored (directory-ignored dir)]
                [shown (filter (lambda (e)
                                 (and (or (option 'file-tree-show-hidden) (not (starts-with? (car e) ".")))
-                                     (not (member (car e) ignored))))
-                              entries)]
+                                     (or (option 'file-tree-show-ignored) (not (member (car e) ignored)))))
+                              (map (lambda (e) (list (car e) (cadr e) (and (member (car e) ignored) #t))) entries))]
                [by-name (lambda (es) (sort es (lambda (a b) (file-tree-name<? (car a) (car b)))))])
           (append (by-name (filter cadr shown)) (by-name (filter (lambda (e) (not (cadr e))) shown)))))))
 
@@ -127,14 +140,17 @@
   "Whether folder `path` is shown open."
   (hash-contains? *file-tree-expanded* path))
 
-(define (file-tree-rows dir depth root)
+(define (file-tree-rows dir depth root ignored)
   "The rows for the entries of `dir` (under `root`) and, under each open
-   folder, its own, as (path directory? depth root)."
+   folder, its own, as (path directory? depth root ignored?). Everything
+   in an `ignored` folder is ignored too."
   (apply append
          (map (lambda (e)
-                (let* ([path (file-tree-join dir (car e))] [row (list path (cadr e) depth root)])
+                (let* ([path (file-tree-join dir (car e))]
+                       [gone (or ignored (caddr e))]
+                       [row (list path (cadr e) depth root gone)])
                   (if (and (cadr e) (file-tree-expanded? path))
-                      (cons row (file-tree-rows path (+ depth 1) root))
+                      (cons row (file-tree-rows path (+ depth 1) root gone))
                       (list row))))
               (file-tree-entries dir))))
 
@@ -193,14 +209,134 @@
 (define (file-tree-render!)
   "Reads the roots' directories afresh and redraws the tree buffer (the
    current buffer), keeping the cursor on the line it was on."
-  (let* ([rows (apply append (map (lambda (root) (cons (list root #t 0 root) (file-tree-rows root 1 root)))
+  (let* ([rows (apply append (map (lambda (root) (cons (list root #t 0 root #f) (file-tree-rows root 1 root #f)))
                                   (file-tree-roots)))]
          [line (current-line)])
     (set-buffer-local! 'file-tree-lines (list->vector rows))
     (set-buffer-contents!
      (apply string-append (map (lambda (r) (string-append (file-tree-row-text r) "\n")) rows)))
     (set-buffer-unmodified!)
+    (file-tree-decorate!)
     (file-tree-cursor-to! (min line (- (buffer-line-count) 1)))))
+
+;;; Git status
+
+(define (file-tree-severity letter)
+  "How serious a status letter is: a conflict, then a change, then a new
+   file."
+  (cond [(equal? letter "!") 3] [(equal? letter "M") 2] [letter 1] [else 0]))
+
+(define (file-tree-status-letter xy)
+  "The tree's letter for git's two-letter porcelain status `xy`, or #f."
+  (cond [(member xy '("DD" "AU" "UD" "UA" "DU" "AA" "UU")) "!"]
+        [(equal? xy "??") "U"]
+        [(equal? xy "!!") #f]
+        [(memv (string-ref xy 0) '(#\A #\R #\C)) "A"]
+        [else "M"]))
+
+(define (file-tree-unquote path)
+  "`path` as git prints it, without the quotes it puts round odd names."
+  (if (and (> (string-length path) 1) (starts-with? path "\"") (ends-with? path "\""))
+      (substring path 1 (- (string-length path) 1))
+      path))
+
+(define (file-tree-parse-status top root text)
+  "The (letters . folders) of `git status --porcelain` output `text`, run
+   at the repository's top `top`, for the paths under `root`."
+  (let loop ([lines (text-lines text)] [letters (hash)] [folders (hash)])
+    (if (null? lines)
+        (cons letters folders)
+        (let* ([line (car lines)]
+               [letter (and (> (string-length line) 3) (file-tree-status-letter (substring line 0 2)))]
+               [name (and letter (substring line 3 (string-length line)))]
+               ;; A rename reads "old -> new": the new name is the one shown.
+               [name (and name (let ([parts (split-many name " -> ")]) (if (> (length parts) 1) (last parts) name)))]
+               [path (and name (file-tree-strip-slash (file-tree-join top (file-tree-unquote name))))])
+          (if (and path (starts-with? path (string-append root "/")))
+              (loop (cdr lines)
+                    (hash-insert letters path letter)
+                    (let up ([dir (directory-of path)] [fs folders])
+                      (if (or (< (string-length dir) (string-length root)) (not (starts-with? dir root)))
+                          fs
+                          (let ([had (hash-try-get fs dir)])
+                            (up (directory-of dir)
+                                (if (> (file-tree-severity letter) (file-tree-severity had))
+                                    (hash-insert fs dir letter)
+                                    fs))))))
+              (loop (cdr lines) letters folders))))))
+
+(define (file-tree-git-top root)
+  "The top of the git repository holding `root`, or #f, asked once."
+  (if (hash-contains? *file-tree-git-tops* root)
+      (hash-ref *file-tree-git-tops* root)
+      (let ([top (git-root-of root)])
+        (set! *file-tree-git-tops* (hash-insert *file-tree-git-tops* root top))
+        top)))
+
+(define (file-tree-git-refresh!)
+  "Runs git status in the background for each of the tree buffer's (the
+   current buffer's) roots, then redraws the statuses of every open tree."
+  (for-each
+   (lambda (root)
+     (let ([top (file-tree-git-top root)] [out ""])
+       (if (not top)
+           (set! *file-tree-status* (hash-remove *file-tree-status* root))
+           (start-job! (string-append (git-command top "status --porcelain --untracked-files=all") " 2>/dev/null") ""
+                       (lambda (text stream) (when (equal? stream "stdout") (set! out (string-append out text))))
+                       (lambda (code)
+                         (when (= code 0)
+                           (set! *file-tree-status*
+                                 (hash-insert *file-tree-status* root (file-tree-parse-status top root out)))
+                           (file-tree-decorate-all!)))))))
+   (file-tree-roots))
+  void)
+
+(define (file-tree-row-status row)
+  "The status letter of `row`: its own for a file, its folder's most
+   serious for a folder, or #f."
+  (let ([st (hash-try-get *file-tree-status* (list-ref row 3))])
+    (and st (if (cadr row) (hash-try-get (cdr st) (car row)) (hash-try-get (car st) (car row))))))
+
+(define (file-tree-row-face row)
+  "The face of `row`'s name for its git status, or #f."
+  (let ([letter (file-tree-row-status row)])
+    (cond [(list-ref row 4) "file-tree.ignored"]
+          [(equal? letter "!") "file-tree.conflict"]
+          [(equal? letter "M") "file-tree.modified"]
+          [(equal? letter "A") "file-tree.added"]
+          [(equal? letter "U") "file-tree.untracked"]
+          [else #f])))
+
+(define (file-tree-face-of path)
+  "The face the tree gives `path`'s name now, or #f: for tests and
+   describe."
+  (let ([line (file-tree-line-of path)])
+    (and line (file-tree-row-face (vector-ref (buffer-local 'file-tree-lines) line)))))
+
+(define (file-tree-decorate!)
+  "Puts the git status faces and letters on the tree buffer's (the
+   current buffer's) lines."
+  (let ([lines (buffer-local 'file-tree-lines)])
+    (for-each (lambda (l) (set-line-end-text! l #f "")) (or (buffer-local 'file-tree-lettered) '()))
+    (buffer-highlight-clear! "file-tree-status")
+    (let loop ([i 0] [lettered '()])
+      (if (>= i (vector-length lines))
+          (set-buffer-local! 'file-tree-lettered lettered)
+          (let* ([row (vector-ref lines i)]
+                 [face (and (> (caddr row) 0) (file-tree-row-face row))]
+                 [letter (and (> (caddr row) 0) (not (cadr row)) (not (list-ref row 4)) (file-tree-row-status row))]
+                 [start (+ (line-start i) (* 2 (caddr row)))])
+            (when face
+              (buffer-highlight-add! "file-tree-status" start (+ (line-start i) (string-length (line-text i))) face))
+            (when letter (set-line-end-text! i letter face))
+            (loop (+ i 1) (if letter (cons i lettered) lettered))))))
+  void)
+
+(define (file-tree-decorate-all!)
+  "Redraws the git statuses of every open tree, every client's."
+  (for-each (lambda (o) (when (memv (caddr o) (buffer-list)) (with-buffer (caddr o) file-tree-decorate!)))
+            *file-tree-origins*)
+  void)
 
 (define (file-tree-line-of path)
   "The tree buffer's line showing `path`, or #f."
@@ -232,6 +368,7 @@
     (let ([under (and focus (file-tree-root-of focus))])
       (when under (file-tree-reveal! under focus)))
     (file-tree-render!)
+    (file-tree-git-refresh!)
     (let ([line (and focus (file-tree-line-of focus))])
       (when line (file-tree-cursor-to! line)))))
 
@@ -309,6 +446,7 @@
    the entry it was on if that is still shown."
   (let* ([row (file-tree-row)] [path (and row (car row))])
     (file-tree-render!)
+    (file-tree-git-refresh!)
     (let ([line (and path (file-tree-line-of path))])
       (when line (file-tree-cursor-to! line)))
     void))
@@ -345,6 +483,7 @@
    on it."
   (let ([root (file-tree-root-of path)]) (when root (file-tree-reveal! root path)))
   (file-tree-render!)
+  (file-tree-git-refresh!)
   (let ([line (file-tree-line-of path)])
     (when line (file-tree-cursor-to! line)))
   void)
@@ -533,3 +672,14 @@
         (go-to-window! w)))))
 
 (add-hook! 'buffer-enter file-tree-follow-current!)
+
+;; A saved file under a tree's root changes its status.
+(add-hook! 'after-save
+  (lambda ()
+    (let ([path (and (buffer-path) (absolute (buffer-path)))])
+      (when path
+        (for-each (lambda (o)
+                    (when (memv (caddr o) (buffer-list))
+                      (with-buffer (caddr o)
+                        (lambda () (when (file-tree-root-of path) (file-tree-git-refresh!))))))
+                  *file-tree-origins*)))))

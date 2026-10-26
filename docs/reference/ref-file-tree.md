@@ -41,6 +41,27 @@ The tree remembers which folders you opened. Close it and open it again, and the
 
 Press `?` in the tree to see its keys in a popup at the bottom of the screen. Press `?` again to hide it.
 
+## Git status
+
+In a git repository, the tree shows what's changed. A changed file's name is coloured, with a letter after it:
+
+| Letter | Means | Face |
+|---|---|---|
+| `M` | Changed since the last commit, staged or not | `file-tree.modified` |
+| `A` | A new file, added to the index | `file-tree.added` |
+| `U` | A new file git doesn't track yet | `file-tree.untracked` |
+| `!` | A merge conflict | `file-tree.conflict` |
+
+A folder with changes inside it takes the colour of the most serious one: a conflict, then a change, then a new file. It has no letter. When you show ignored files with `I`, they're dimmed, in `file-tree.ignored`.
+
+The status updates when the tree opens, when you press `R`, after `a`, `r` or `D`, and when you save a file in one of the tree's projects. Git runs in the background, so the tree appears first and the colours follow a moment later. Outside a repository, nothing is coloured.
+
+Change the colours in `init.scm`:
+
+```scheme
+(set-face! "file-tree.modified" "fg=#e69875")
+```
+
 ## More than one project
 
 Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
@@ -70,7 +91,7 @@ The cursor stays in the file you opened, with the tree beside it.
 
 These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 
-- Git status colours or file icons beside the entries.
+- File icons beside the entries.
 
 ## Options
 
