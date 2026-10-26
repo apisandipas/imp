@@ -113,6 +113,12 @@
                  (file-name-of (car row))
                  (if (cadr row) "/" "")))
 
+(define (file-tree-cursor-to! line)
+  "Puts the cursor on the name on `line` of the tree, past its indent."
+  (let ([lines (buffer-local 'file-tree-lines)])
+    (set-cursor! (+ (line-start line)
+                    (if (and lines (< line (vector-length lines))) (* 2 (caddr (vector-ref lines line))) 0)))))
+
 (define (file-tree-render!)
   "Reads the root's directories afresh and redraws the tree buffer (the
    current buffer), keeping the cursor on the line it was on."
@@ -124,7 +130,7 @@
      (apply string-append (file-name-of root) "\n"
             (map (lambda (r) (string-append (file-tree-row-text r) "\n")) rows)))
     (set-buffer-unmodified!)
-    (set-cursor! (line-start (min line (- (buffer-line-count) 1))))))
+    (file-tree-cursor-to! (min line (- (buffer-line-count) 1)))))
 
 (define (file-tree-line-of path)
   "The tree buffer's line showing `path`, or #f."
@@ -157,7 +163,7 @@
       (set-cursor! 0))
     (file-tree-render!)
     (let ([line (and focus (file-tree-line-of focus))])
-      (when line (set-cursor! (line-start line))))))
+      (when line (file-tree-cursor-to! line)))))
 
 (define (file-tree-open!)
   "Opens the tree down the left of the frame, file-tree-width columns
@@ -227,7 +233,7 @@
   (let* ([row (file-tree-row)] [path (and row (car row))])
     (file-tree-render!)
     (let ([line (and path (file-tree-line-of path))])
-      (when line (set-cursor! (line-start line))))
+      (when line (file-tree-cursor-to! line)))
     void))
 
 (define (file-tree-flip! name)
@@ -267,7 +273,7 @@
   (file-tree-reveal! (file-tree-root) path)
   (file-tree-render!)
   (let ([line (file-tree-line-of path)])
-    (when line (set-cursor! (line-start line))))
+    (when line (file-tree-cursor-to! line)))
   void)
 
 (define (file-tree-add! dir name)

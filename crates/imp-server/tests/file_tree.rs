@@ -396,3 +396,13 @@ fn it_starts_closed_by_default() {
     .expect("runtime loads");
     assert_eq!(eval(&mut s, "(length (window-list))"), "1");
 }
+
+#[test]
+fn the_cursor_sits_on_the_name() {
+    let dir = project("tree-cursor");
+    let mut s = visiting(&dir.join("src/main.rs"));
+    type_keys(&mut s, " te");
+    // main.rs, two levels in.
+    assert_eq!(eval(&mut s, "(current-line)"), "3");
+    assert_eq!(eval(&mut s, "(current-col)"), "4");
+}

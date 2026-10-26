@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: f6711257a42f
+  docs/specs/file-tree.md: 75859de48725
 ---
 # File tree
 
@@ -65,6 +65,8 @@ These are planned in [issue #78](https://github.com/apisandipas/imp/issues/78):
 - Git status colours or file icons beside the entries.
 - More than one root, or a tree in more than one window.
 - Following the file you're in as you switch buffers. The tree only shows the current file when it opens.
+
+With the [daemon](ref-daemon.md), every client shares the same tree. If two clients open it on different projects, both show the one opened last.
 
 ## Options
 

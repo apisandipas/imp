@@ -1,10 +1,10 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/file-tree]]"]
 issue: https://github.com/apisandipas/imp/issues/55
 frozen:
-  docs/specs/file-tree.md: f6711257a42f
+  docs/specs/file-tree.md: 75859de48725
 ---
 # File tree package
 

@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/55
+anchors: [packages/file-tree/file-tree.scm, crates/imp-server/tests/file_tree.rs]
 summary: "The file-tree package: the project's folders as an expandable tree down the left, toggled with SPC t e."
 ---
 # File tree
@@ -36,3 +37,5 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 - Following the current buffer while the tree stays open: it reveals the file when it opens, not as you switch buffers. Planned in #78.
 
 ## Known gaps
+
+- Daemon clients share the one `*file-tree*` buffer, so a tree opened on another project in one client shows that project in the other client's tree too.
