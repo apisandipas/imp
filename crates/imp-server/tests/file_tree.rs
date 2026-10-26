@@ -320,3 +320,33 @@ fn d_deletes_after_asking() {
 fn read(dir: &Path, name: &str) -> String {
     std::fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
+
+fn screen(s: &mut imp_server::Server) -> String {
+    s.frame().text_rows().join("\n")
+}
+
+#[test]
+fn question_mark_shows_and_hides_the_keys() {
+    let dir = project("tree-help");
+    let mut s = visiting(&dir.join("b.txt"));
+    type_keys(&mut s, " te");
+    assert!(!screen(&mut s).contains("show or hide dotfiles"));
+    type_keys(&mut s, "?");
+    let shown = screen(&mut s);
+    for label in [
+        "add a file, or a folder/",
+        "rename or move",
+        "show or hide dotfiles",
+        "close the tree",
+    ] {
+        assert!(shown.contains(label), "{label}: {shown}");
+    }
+    // It stays up as you move, until ? again.
+    type_keys(&mut s, "k");
+    assert!(screen(&mut s).contains("rename or move"));
+    type_keys(&mut s, "?");
+    assert!(!screen(&mut s).contains("rename or move"));
+    // Closing the tree takes it down too.
+    type_keys(&mut s, "?q");
+    assert!(!screen(&mut s).contains("rename or move"));
+}

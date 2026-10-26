@@ -10,7 +10,7 @@ The file tree shows your project's folders as a tree down the left of the screen
 
 ## Not yet in imp
 
-- The file tree is being built ([issue #55](https://github.com/apisandipas/imp/issues/55)). `?` doesn't show its keys yet.
+- The file tree is being built ([issue #55](https://github.com/apisandipas/imp/issues/55)). It can't open by itself when imp starts yet.
 
 ## Turning it on
 
@@ -40,6 +40,8 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
+
+Press `?` in the tree to see its keys in a popup at the bottom of the screen. Press `?` again to hide it.
 
 ## Adding, renaming and deleting
 

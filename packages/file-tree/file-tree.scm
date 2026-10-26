@@ -15,6 +15,7 @@
 ;;;   D                    delete it, after asking
 ;;;   R                    read the folders again
 ;;;   q                    close it
+;;;   ?                    show or hide these keys
 ;;;
 ;;; Each frame has at most one tree window. It isn't a popup (special.scm):
 ;;; a popup shares its side with the others and closes through popup
@@ -28,6 +29,22 @@
 
 ;; (tree-window . origin): the window each open tree was opened from.
 (define *file-tree-origins* '())
+
+;; The tree's keys, (key label procedure), bound at the end and shown by ?.
+(define *file-tree-keys*
+  (list (list "<ret>" "open a file, open or shut a folder" (lambda (n) (file-tree-visit!)))
+        (list "<tab>" "open or shut a folder" (lambda (n) (file-tree-tab!)))
+        (list "a" "add a file, or a folder/" (lambda (n) (file-tree-add-prompt!)))
+        (list "r" "rename or move" (lambda (n) (file-tree-rename-prompt!)))
+        (list "D" "delete" (lambda (n) (file-tree-delete-prompt!)))
+        (list "H" "show or hide dotfiles" (lambda (n) (file-tree-flip! 'file-tree-show-hidden)))
+        (list "I" "show or hide ignored files" (lambda (n) (file-tree-flip! 'file-tree-show-ignored)))
+        (list "R" "read the folders again" (lambda (n) (file-tree-refresh!)))
+        (list "q" "close the tree" (lambda (n) (file-tree-close!)))
+        (list "?" "show or hide these keys" (lambda (n) (file-tree-help!)))))
+
+;; Whether ? is showing the tree's keys.
+(define *file-tree-help* #f)
 
 ;; The folders shown open, path -> #t, kept while imp runs.
 (define *file-tree-expanded* (hash))
@@ -160,6 +177,7 @@
    was opened from."
   (let* ([w (file-tree-window)] [entry (assv w *file-tree-origins*)] [origin (and entry (cdr entry))])
     (when w
+      (file-tree-hide-help!)
       (leave-pending-states!)
       (close-window! w)
       (set! *file-tree-origins* (filter (lambda (o) (not (eqv? (car o) w))) *file-tree-origins*))
@@ -326,6 +344,29 @@
                             (message r)
                             (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
 
+(define (file-tree-tab!)
+  "<tab>: opens or shuts the folder at the cursor."
+  (let ([row (file-tree-row)])
+    (when (and row (cadr row) (> (current-line) 0)) (file-tree-toggle-folder! (car row)))
+    void))
+
+(define (file-tree-hide-help!)
+  "Takes down the popup of the tree's keys, if ? put it up."
+  (when *file-tree-help*
+    (set! *file-tree-help* #f)
+    (set-popup! '()))
+  void)
+
+(define (file-tree-help!)
+  "?: shows the tree's keys in a which-key popup, or hides it."
+  (if *file-tree-help*
+      (file-tree-hide-help!)
+      (begin
+        (set! *file-tree-help* #t)
+        (show-which-key-popup! (which-key-table (map (lambda (k) (cons (key-label (car k)) (cadr k))) *file-tree-keys*))
+                               "file tree")
+        void)))
+
 (define (file-tree-toggle!)
   "Opens the tree, or closes it if this frame shows one."
   (if (file-tree-window) (file-tree-close!) (file-tree-open!)))
@@ -347,14 +388,6 @@
 
 (define-ex! "FileTree" (lambda (ex) (file-tree-toggle!)))
 (define-leader! "te" 'file-tree "file tree")
-(define-mode-key! 'file-tree-mode 'normal "<ret>" (lambda (n) (file-tree-visit!)) "open")
-(define-mode-key! 'file-tree-mode 'normal "<tab>"
-  (lambda (n) (let ([row (file-tree-row)]) (when (and row (cadr row) (> (current-line) 0)) (file-tree-toggle-folder! (car row)))))
-  "open or shut a folder")
-(define-mode-key! 'file-tree-mode 'normal "H" (lambda (n) (file-tree-flip! 'file-tree-show-hidden)) "show or hide dotfiles")
-(define-mode-key! 'file-tree-mode 'normal "I" (lambda (n) (file-tree-flip! 'file-tree-show-ignored)) "show or hide ignored files")
-(define-mode-key! 'file-tree-mode 'normal "a" (lambda (n) (file-tree-add-prompt!)) "add a file or folder/")
-(define-mode-key! 'file-tree-mode 'normal "r" (lambda (n) (file-tree-rename-prompt!)) "rename or move")
-(define-mode-key! 'file-tree-mode 'normal "D" (lambda (n) (file-tree-delete-prompt!)) "delete")
-(define-mode-key! 'file-tree-mode 'normal "R" (lambda (n) (file-tree-refresh!)) "read the folders again")
-(define-mode-key! 'file-tree-mode 'normal "q" (lambda (n) (file-tree-close!)) "close the tree")
+
+(for-each (lambda (k) (define-mode-key! 'file-tree-mode 'normal (car k) (caddr k) (cadr k)))
+          *file-tree-keys*)
