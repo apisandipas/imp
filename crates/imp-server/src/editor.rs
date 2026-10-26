@@ -87,7 +87,12 @@ pub struct Editor {
     /// With wrap, rows end between words rather than inside one (Vim's
     /// 'linebreak').
     pub linebreak: bool,
+    /// The line numbers of buffers without their own (`line_numbers`).
     pub line_numbers: crate::render::LineNumbers,
+    /// Line numbers by buffer id, for buffers that set `number` or
+    /// `relativenumber` locally, so a window shows its own buffer's
+    /// whichever window is focused.
+    pub buffer_line_numbers: HashMap<usize, crate::render::LineNumbers>,
     /// Whether the cursor's line is drawn with the "cursorline" face.
     pub cursorline: bool,
     pub width: u16,
@@ -336,6 +341,7 @@ impl Editor {
         self.line_end_texts.remove(&id);
         self.signs.remove(&id);
         self.sign_columns.remove(&id);
+        self.buffer_line_numbers.remove(&id);
         self.change_marks.remove(&id);
         self.outline_indents.remove(&id);
         self.margins.remove(&id);

@@ -1179,7 +1179,7 @@ impl View<'_> {
                     row.push(if i == 0 {
                         Span::new(
                             gutter_text(
-                                e,
+                                line_numbers(e, self.buffer_id),
                                 line,
                                 self.cursor_line,
                                 self.folds.distance(line, self.cursor_line),
@@ -1344,7 +1344,7 @@ fn gutter_width(e: &Editor, buffer_id: usize, buffer: &Buffer) -> usize {
         } else {
             0
         };
-    if e.line_numbers == LineNumbers::Off {
+    if line_numbers(e, buffer_id) == LineNumbers::Off {
         return signs;
     }
     let digits = buffer.line_count().to_string().len();
@@ -1363,22 +1363,31 @@ fn margin_width(e: &Editor, buffer_id: usize) -> usize {
         .map_or(0, |w| w + 1)
 }
 
+/// The line numbers a window showing buffer `buffer_id` draws: its own,
+/// if it set them locally, else everyone's.
+fn line_numbers(e: &Editor, buffer_id: usize) -> LineNumbers {
+    e.buffer_line_numbers
+        .get(&buffer_id)
+        .copied()
+        .unwrap_or(e.line_numbers)
+}
+
 /// `distance` is how far `line` is from the cursor's, counting a closed
 /// fold as one line.
 fn gutter_text(
-    e: &Editor,
+    mode: LineNumbers,
     line: usize,
     cursor_line: usize,
     distance: usize,
     gutter: usize,
 ) -> String {
-    let n = match e.line_numbers {
+    let n = match mode {
         LineNumbers::Absolute => line + 1,
         LineNumbers::Hybrid if line == cursor_line => line + 1,
         _ => distance,
     };
     // Hybrid numbers sit left on the cursor's line, as in Vim.
-    if e.line_numbers == LineNumbers::Hybrid && line == cursor_line {
+    if mode == LineNumbers::Hybrid && line == cursor_line {
         format!("{:<w$} ", n, w = gutter - 1)
     } else {
         format!("{:>w$} ", n, w = gutter - 1)
