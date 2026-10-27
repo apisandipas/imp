@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/tree-sitter]]"]
 issue: https://github.com/apisandipas/imp/issues/81
 frozen:
-  docs/specs/tree-sitter.md: 5ef9165969ad
+  docs/specs/tree-sitter.md: b388bc7bc1c2
 ---
 # Bundled grammars
 
