@@ -92,6 +92,22 @@ fn the_wheel_scrolls_without_moving_the_cursor() {
 }
 
 #[test]
+fn a_click_on_text_runs_the_mouse_click_hook() {
+    let mut s = server("hello world\nsecond line\n");
+    s.eval("(define clicks '()) (add-hook! 'mouse-click (lambda (at) (set! clicks (cons (list at (cursor)) clicks))))")
+        .unwrap();
+    // It runs once the cursor has moved, with the offset clicked, before
+    // normal mode keeps the cursor off the line's end.
+    click(&mut s, 6, 1);
+    assert_eq!(s.eval("clicks").unwrap(), "((18 18))");
+    click(&mut s, 50, 1);
+    assert_eq!(s.eval("(car clicks)").unwrap(), "(23 22)");
+    // A click on the status line (row 22) only focuses the window.
+    click(&mut s, 6, 22);
+    assert_eq!(s.eval("(length clicks)").unwrap(), "2");
+}
+
+#[test]
 fn a_click_in_another_window_focuses_it() {
     let mut s = server("left text\n");
     type_keys(&mut s, ":vnew<ret>iright<esc>");

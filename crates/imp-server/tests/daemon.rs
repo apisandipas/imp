@@ -298,3 +298,36 @@ fn a_popup_stays_in_its_client() {
     assert!(a.until(|f| !split(f) && f.text_rows()[0].starts_with("text")));
     kill_server(&mut a);
 }
+
+#[test]
+fn each_client_has_its_own_file_tree() {
+    let socket = start_daemon("file-trees");
+    let project = |name: &str| {
+        let dir = common::temp_path(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join(format!("{name}.txt")), "").unwrap();
+        dir
+    };
+    let (one, two) = (project("tree-one"), project("tree-two"));
+    let mut a = Client::connect(&socket);
+    ex(&mut a, "eval (use-package! 'file-tree)");
+    ex(&mut a, &format!("e {}", one.join("tree-one.txt").display()));
+    a.keys(&[" ", "t", "e"]);
+    assert!(a.until(|f| f.text_rows()[0].starts_with("tree-one")));
+    let mut b = Client::connect(&socket);
+    ex(&mut b, &format!("e {}", two.join("tree-two.txt").display()));
+    b.keys(&[" ", "t", "e"]);
+    assert!(b.until(|f| f.text_rows()[0].starts_with("tree-two")));
+    // a's tree still shows its own project, in its own buffer.
+    a.keys(&["k"]);
+    assert!(a
+        .until(|f| f.text_rows()[0].starts_with("tree-one")
+            && f.text_rows()[1].contains("tree-one.txt")));
+    // Closing b's tree leaves a's.
+    b.keys(&["q"]);
+    assert!(b.until(|f| f.text_rows()[0].trim_end().is_empty()));
+    a.keys(&["j"]);
+    assert!(a.until(|f| f.text_rows()[0].starts_with("tree-one")));
+    kill_server(&mut a);
+}
