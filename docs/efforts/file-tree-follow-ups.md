@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/file-tree]]"]
 issue: https://github.com/apisandipas/imp/issues/78
 frozen:
-  docs/specs/file-tree.md: cc44b3526907
+  docs/specs/file-tree.md: ca9762e7a370
 ---
 # File tree follow-ups
 
@@ -23,3 +23,4 @@ Each task ends with tests in `crates/imp-server/tests/file_tree.rs` and updates 
 - [x] `file-tree-follow` (on): switching to a buffer whose file is under a root expands the tree down to it and moves the tree window's cursor there, without moving focus. A file under no root changes nothing, and with the option off nothing follows. All with tests.
 - [x] Git status: a background `git status` per root's repository gives `M`, `A`, `U` and `!` as end-of-line letters, with the name in `file-tree.modified`, `file-tree.added`, `file-tree.untracked` or `file-tree.conflict`. A folder takes the face of its most serious change, with no letter, and shown ignored files are in `file-tree.ignored`. It refreshes on open, on `R`, after `a`, `r` and `D`, and after a file under a root is saved. Add the faces to `theme.scm` and the Modus themes. Test against a real repository.
 - [x] Icons: the runtime's `*dired-icon*` gives a file's or shut folder's icon, and a new `*open-folder-icon*` beside it in `dired.scm` an open folder's, drawn between the indent and the name, with the cursor on the name. nerd-icons sets both. Test with stub icons and with nerd-icons loaded.
+- [x] Clicks: a `mouse-click` hook in `runtime/mouse.scm`, run after a left click lands in a window's text, and the tree acts on it as `<ret>` does: a folder opens or shuts, a file opens in the tree's origin window. A click on a root's line or below the last entry does nothing more. Tests in `mouse.rs` and `file_tree.rs`.

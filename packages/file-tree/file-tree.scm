@@ -691,6 +691,14 @@
         (file-tree-open!)
         (go-to-window! w)))))
 
+;; A click opens what it lands on, as <ret> does; one below the last
+;; entry, kept on it by normal mode, doesn't.
+(add-hook! 'mouse-click
+  (lambda (offset)
+    (when (and (eq? (major-mode) 'file-tree-mode) (= (offset->line offset) (current-line)))
+      (file-tree-visit!))
+    void))
+
 (add-hook! 'buffer-enter file-tree-follow-current!)
 
 ;; A saved file under a tree's root changes its status.

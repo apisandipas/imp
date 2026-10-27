@@ -10,6 +10,9 @@
 ;;; - dragging the border between side-by-side windows, or a status line
 ;;;   with a window below it, resizes the windows (window-divider-width
 ;;;   makes that border wider, so easier to grab);
+;;; - after a left click lands in a window's text, the mouse-click hook
+;;;   runs with the offset clicked (before normal mode keeps the cursor
+;;;   off a line's end), the window current, so a mode can act on it;
 ;;; - the wheel scrolls the window under the mouse by mouse-scroll lines.
 ;;;
 ;;; :set nomouse ignores the mouse. While the terminal reports it, most
@@ -50,7 +53,9 @@
          (cond
           [(and (equal? action "press") (equal? button "left") (fold-column-at x y))
            => (lambda (line) (mouse-toggle-fold! (car at) line))]
-          [(and (equal? action "press") (equal? button "left")) (mouse-click! (car at) (cadr at))]
+          [(and (equal? action "press") (equal? button "left"))
+           (mouse-click! (car at) (cadr at))
+           (when (cadr at) (run-hooks 'mouse-click (cadr at)))]
           [(and (equal? action "drag") (equal? button "left")) (mouse-drag! (car at) (cadr at))]
           [(equal? action "release") (set! *mouse-press* #f)]
           [(equal? action "scroll-up") (mouse-scroll! (car at) -1)]

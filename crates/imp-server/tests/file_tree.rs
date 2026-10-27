@@ -159,6 +159,55 @@ fn ret_on_a_file_opens_it_in_the_window_it_came_from() {
     );
 }
 
+fn click(s: &mut imp_server::Server, x: u16, y: u16) {
+    s.frame(); // positions are worked out from the last frame drawn
+    for action in ["press", "release"] {
+        s.handle(imp_core::ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x,
+            y,
+            fine: None,
+        });
+    }
+    assert!(!s.status().starts_with("error"), "{}", s.status());
+}
+
+#[test]
+fn clicks_open_folders_and_files() {
+    let dir = project("tree-click");
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let root = dir.file_name().unwrap().to_str().unwrap().to_string();
+    let file_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, " te");
+    // Clicks on the root's line and below the last entry only move the
+    // cursor.
+    click(&mut s, 2, 0);
+    click(&mut s, 2, 10);
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+    // A click on src/ opens it, and another shuts it.
+    click(&mut s, 3, 2);
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n    main.rs\n  A.txt\n  b.txt\n")
+    );
+    click(&mut s, 3, 2);
+    assert_eq!(
+        s.text(),
+        format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
+    );
+    // From the other window, a click on a file opens it there.
+    click(&mut s, 3, 2);
+    type_keys(&mut s, "<c-w>l");
+    click(&mut s, 5, 3);
+    assert_eq!(eval(&mut s, "(current-window)"), file_window);
+    assert_eq!(s.text(), "fn main() {}\n");
+}
+
 #[test]
 fn opening_reveals_the_current_file() {
     let dir = project("tree-reveal");

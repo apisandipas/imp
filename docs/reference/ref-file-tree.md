@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: cc44b3526907
+  docs/specs/file-tree.md: ca9762e7a370
 ---
 # File tree
 
@@ -34,6 +34,7 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 
 - `<ret>` or `<tab>` on a folder opens it in place, its contents indented under it. Press it again to shut it.
 - `<ret>` on a file opens it in the window you opened the tree from, and moves the cursor there. The tree stays open.
+- Clicking does the same: click a folder to open or shut it, or a file to open it.
 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 
