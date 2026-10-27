@@ -27,20 +27,6 @@ use tree_sitter::{
 /// change to a big file, tree-sitter's error recovery can take seconds.
 const PARSE_BUDGET: Duration = Duration::from_millis(8);
 
-/// YAML's key patterns, put before its query. The query is written for
-/// Neovim, where a later pattern wins, and captures every plain scalar as
-/// a string before it captures keys as properties; here the earlier wins.
-const YAML_KEYS: &str = r#"
-(block_mapping_pair
-  key: (flow_node [(double_quote_scalar) (single_quote_scalar)] @property))
-(block_mapping_pair
-  key: (flow_node (plain_scalar (string_scalar) @property)))
-(flow_mapping
-  (_ key: (flow_node [(double_quote_scalar) (single_quote_scalar)] @property)))
-(flow_mapping
-  (_ key: (flow_node (plain_scalar (string_scalar) @property))))
-"#;
-
 /// A grammar and its highlight query.
 pub struct Lang {
     pub name: &'static str,
@@ -75,8 +61,8 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                     tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
                 ),
             ),
-            // TypeScript's query only adds to JavaScript's, as in the
-            // grammar's own setup.
+            // TypeScript's query only adds to JavaScript's. Combined
+            // queries go in the order the grammar's own setup gives.
             (
                 "typescript",
                 tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -92,8 +78,8 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 format!(
                     "{}\n{}\n{}",
                     tree_sitter_typescript::HIGHLIGHTS_QUERY,
-                    tree_sitter_javascript::HIGHLIGHT_QUERY,
-                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::HIGHLIGHT_QUERY
                 ),
             ),
             (
@@ -124,7 +110,7 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
             (
                 "yaml",
                 tree_sitter_yaml::LANGUAGE.into(),
-                format!("{YAML_KEYS}\n{}", tree_sitter_yaml::HIGHLIGHTS_QUERY),
+                tree_sitter_yaml::HIGHLIGHTS_QUERY.into(),
             ),
             (
                 "toml",
@@ -339,10 +325,9 @@ impl Syntax {
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,
     /// end char, faces to try), in the order they win where they overlap,
     /// as in tree-sitter's own highlighter: the narrower capture first, so
-    /// an escape wins over the string around it. Of two captures of the
-    /// same text, the earlier pattern wins, except that a more specific
-    /// one wins over its general one: `comment.documentation` over the
-    /// `comment` the Rust query lists first.
+    /// an escape wins over the string around it, and of two captures of
+    /// the same text, the later pattern, so a Rust doc comment is
+    /// `comment.documentation`, not the `comment` listed before it.
     pub fn highlights(
         &self,
         rope: &Rope,
@@ -372,32 +357,10 @@ impl Syntax {
                 &lang.faces[c.index as usize],
             ));
         }
-        // Narrower first, then lower pattern index, so painting "only
-        // where nothing is painted yet" gives those priority.
-        out.sort_by_key(|&(pattern, start, end, _)| (end - start, pattern));
-        let mut first: HashMap<(usize, usize), usize> = HashMap::new();
-        for i in 0..out.len() {
-            let range = (out[i].1, out[i].2);
-            match first.get(&range) {
-                Some(&j) if more_specific(out[i].3, out[j].3) => out.swap(i, j),
-                Some(_) => {}
-                None => {
-                    first.insert(range, i);
-                }
-            }
-        }
+        // Narrower first, then the later pattern, so painting "only where
+        // nothing is painted yet" gives those priority.
+        out.sort_by_key(|&(pattern, start, end, _)| (end - start, std::cmp::Reverse(pattern)));
         out.into_iter().map(|(_, s, e, f)| (s, e, f)).collect()
-    }
-}
-
-/// Whether the faces of capture `a` are a more specific form of `b`'s:
-/// `syntax.comment.documentation` of `syntax.comment`.
-fn more_specific(a: &[String], b: &[String]) -> bool {
-    match (a.first(), b.first()) {
-        (Some(a), Some(b)) => {
-            a.len() > b.len() && a.starts_with(b.as_str()) && a[b.len()..].starts_with('.')
-        }
-        _ => false,
     }
 }
 
