@@ -281,11 +281,12 @@ impl Syntax {
     }
 
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,
-    /// end char, faces to try). Earlier patterns win where captures
-    /// overlap, as tree-sitter's queries are written to expect, except
-    /// that of two captures of the same text, a more specific one wins
-    /// over its general one: `comment.documentation` over the `comment`
-    /// the Rust query lists first.
+    /// end char, faces to try), in the order they win where they overlap,
+    /// as in tree-sitter's own highlighter: the narrower capture first, so
+    /// an escape wins over the string around it. Of two captures of the
+    /// same text, the earlier pattern wins, except that a more specific
+    /// one wins over its general one: `comment.documentation` over the
+    /// `comment` the Rust query lists first.
     pub fn highlights(
         &self,
         rope: &Rope,
@@ -315,9 +316,9 @@ impl Syntax {
                 &lang.faces[c.index as usize],
             ));
         }
-        // Lower pattern index first, so painting "only where nothing is
-        // painted yet" gives earlier patterns priority.
-        out.sort_by_key(|(pattern, ..)| *pattern);
+        // Narrower first, then lower pattern index, so painting "only
+        // where nothing is painted yet" gives those priority.
+        out.sort_by_key(|&(pattern, start, end, _)| (end - start, pattern));
         let mut first: HashMap<(usize, usize), usize> = HashMap::new();
         for i in 0..out.len() {
             let range = (out[i].1, out[i].2);

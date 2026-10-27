@@ -45,6 +45,22 @@ fn a_more_specific_capture_of_the_same_text_wins() {
 }
 
 #[test]
+fn a_narrower_capture_wins_over_the_one_around_it() {
+    // The Rust query lists strings before escapes; the escape inside a
+    // string still wins.
+    let mut s = server("");
+    open(&mut s, "esc.rs", "fn f() { \"a\\nb\"; }\n");
+    let at = s.text().find("\\n").unwrap();
+    assert_eq!(
+        s.eval(&format!(
+            "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+        ))
+        .unwrap(),
+        "\"syntax.escape\""
+    );
+}
+
+#[test]
 fn highlighting_follows_edits() {
     let mut s = server("");
     open(&mut s, "edit.rs", "x\n");
