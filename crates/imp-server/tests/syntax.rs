@@ -98,21 +98,32 @@ fn every_bundled_language_attaches() {
         ("a.sh", "bash"),
         ("a.c", "c"),
         ("a.h", "c"),
-        ("a.cpp", "cpp"),
         ("a.go", "go"),
         ("a.py", "python"),
         ("a.lua", "lua"),
-        ("a.ex", "elixir"),
-        ("a.exs", "elixir"),
-        ("a.rb", "ruby"),
-        ("Rakefile", "ruby"),
-        ("Gemfile", "ruby"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
     }
     open(&mut s, "a.txt", "x\n");
     assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+}
+
+#[test]
+fn cpp_elixir_and_ruby_have_modes_but_no_bundled_grammar() {
+    let mut s = server("");
+    for (file, mode) in [
+        ("a.cpp", "cpp-mode"),
+        ("a.ex", "elixir-mode"),
+        ("a.exs", "elixir-mode"),
+        ("a.rb", "ruby-mode"),
+        ("Rakefile", "ruby-mode"),
+        ("Gemfile", "ruby-mode"),
+    ] {
+        open(&mut s, file, "x\n");
+        assert_eq!(s.eval("(major-mode)").unwrap(), mode);
+        assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+    }
 }
 
 /// The syntax face drawn on the first `word` in `text`, opened as `file`.
@@ -194,24 +205,12 @@ fn yaml_toml_and_bash_are_highlighted() {
 }
 
 #[test]
-fn c_cpp_go_and_python_are_highlighted() {
+fn c_go_and_python_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [
         (
             "hl.c",
             "int main(void) { return 0; }\n",
-            "return",
-            "syntax.keyword",
-        ),
-        (
-            "hl.cpp",
-            "class A { public: int x; };\n",
-            "class",
-            "syntax.keyword",
-        ),
-        (
-            "hl.cpp",
-            "int main() { return 0; }\n",
             "return",
             "syntax.keyword",
         ),
@@ -249,7 +248,7 @@ fn c_cpp_go_and_python_are_highlighted() {
 }
 
 #[test]
-fn lua_elixir_and_ruby_are_highlighted() {
+fn lua_is_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [
         (
@@ -264,20 +263,6 @@ fn lua_elixir_and_ruby_are_highlighted() {
             "\"hi\"",
             "syntax.string",
         ),
-        (
-            "hl.ex",
-            "defmodule A do\n  def f, do: :ok\nend\n",
-            "defmodule",
-            "syntax.keyword",
-        ),
-        (
-            "hl.ex",
-            "defmodule A do\n  def f, do: :ok\nend\n",
-            ":ok",
-            "syntax.string.special",
-        ),
-        ("hl.rb", "def f\n  \"hi\"\nend\n", "def", "syntax.keyword"),
-        ("hl.rb", "def f\n  \"hi\"\nend\n", "\"hi\"", "syntax.string"),
     ] {
         assert_eq!(
             face_on(&mut s, file, text, word),
@@ -288,7 +273,7 @@ fn lua_elixir_and_ruby_are_highlighted() {
 }
 
 #[test]
-fn lua_elixir_and_ruby_text_objects() {
+fn lua_text_objects() {
     let mut s = server("");
     for (i, (file, text, keys, left)) in [
         (
@@ -298,16 +283,6 @@ fn lua_elixir_and_ruby_text_objects() {
             "\nx = 1\n",
         ),
         ("o.lua", "f(a, b)\n", "fadaa", "f(b)\n"),
-        ("o.ex", "f = fn a ->\n  a\nend\n", "jdaf", "f = \n"),
-        ("o.ex", "f(a, b)\n", "fadaa", "f(b)\n"),
-        (
-            "o.rb",
-            "def f(a, b)\n  a\nend\nx = 1\n",
-            "jdaf",
-            "\nx = 1\n",
-        ),
-        ("o.rb", "class A\n  X = 1\nend\n", "jdac", "\n"),
-        ("o.rb", "f(a, b)\n", "fadaa", "f(b)\n"),
     ]
     .into_iter()
     .enumerate()
@@ -325,7 +300,7 @@ fn after(s: &mut imp_server::Server, file: &str, text: &str, keys: &str) -> Stri
 }
 
 #[test]
-fn c_cpp_go_and_python_text_objects() {
+fn c_go_and_python_text_objects() {
     let mut s = server("");
     for (i, (file, text, keys, left)) in [
         (
@@ -340,13 +315,6 @@ fn c_cpp_go_and_python_text_objects() {
             "int f(int a, int b) {}\n",
             "fadaa",
             "int f(int b) {}\n",
-        ),
-        ("o.cpp", "class A {\n    int x;\n};\n", "jdac", ";\n"),
-        (
-            "o.cpp",
-            "void f() {\n    g();\n}\n",
-            "jdif",
-            "void f() {\n}\n",
         ),
         (
             "o.go",

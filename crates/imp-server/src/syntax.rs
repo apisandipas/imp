@@ -3,8 +3,10 @@
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
 //! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML,
-//! Bash, C, C++, Go, Python, Lua, Elixir and Ruby. Which language a buffer uses is
-//! up to Scheme (major modes call `set-buffer-language!`).
+//! Bash, C, Go, Python and Lua. C++, Ruby and Elixir are left to be
+//! installed: they're most of the binary's size and fewer people need
+//! them. Which language a buffer uses is up to Scheme (major modes call
+//! `set-buffer-language!`).
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -127,17 +129,6 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 tree_sitter_c::LANGUAGE.into(),
                 tree_sitter_c::HIGHLIGHT_QUERY.into(),
             ),
-            // C++'s query adds to C's, in the order the grammar's own
-            // setup gives.
-            (
-                "cpp",
-                tree_sitter_cpp::LANGUAGE.into(),
-                format!(
-                    "{}\n{}",
-                    tree_sitter_c::HIGHLIGHT_QUERY,
-                    tree_sitter_cpp::HIGHLIGHT_QUERY
-                ),
-            ),
             (
                 "go",
                 tree_sitter_go::LANGUAGE.into(),
@@ -152,16 +143,6 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "lua",
                 tree_sitter_lua::LANGUAGE.into(),
                 tree_sitter_lua::HIGHLIGHTS_QUERY.into(),
-            ),
-            (
-                "elixir",
-                tree_sitter_elixir::LANGUAGE.into(),
-                tree_sitter_elixir::HIGHLIGHTS_QUERY.into(),
-            ),
-            (
-                "ruby",
-                tree_sitter_ruby::LANGUAGE.into(),
-                tree_sitter_ruby::HIGHLIGHTS_QUERY.into(),
             ),
         ];
         specs
@@ -680,9 +661,7 @@ mod tests {
             [
                 "bash",
                 "c",
-                "cpp",
                 "css",
-                "elixir",
                 "go",
                 "html",
                 "javascript",
@@ -691,7 +670,6 @@ mod tests {
                 "markdown",
                 "nix",
                 "python",
-                "ruby",
                 "rust",
                 "scheme",
                 "toml",
