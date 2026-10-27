@@ -17,7 +17,8 @@
         'nix-mode "nix" 'markdown-mode "markdown"
         'html-mode "html" 'css-mode "css" 'json-mode "json"
         'yaml-mode "yaml" 'toml-mode "toml" 'shell-mode "bash"
-        'c-mode "c" 'cpp-mode "cpp" 'go-mode "go" 'python-mode "python"))
+        'c-mode "c" 'cpp-mode "cpp" 'go-mode "go" 'python-mode "python"
+        'lua-mode "lua" 'elixir-mode "elixir" 'ruby-mode "ruby"))
 
 (define (language-for-buffer)
   "The tree-sitter language for the current buffer, or #f for none.
@@ -117,6 +118,18 @@
 (define-syntax-objects! "python" '("function_definition" "lambda")
   '("class_definition")
   '("argument_list" "parameters" "list" "tuple"))
+
+;; Lua has no classes. Elixir's def is a call like any other, so only fn
+;; is a function node.
+(define-syntax-objects! "lua" '("function_declaration" "function_definition") '()
+  '("arguments" "parameters" "table_constructor"))
+
+(define-syntax-objects! "elixir" '("anonymous_function") '()
+  '("arguments" "list" "tuple" "map_content"))
+
+(define-syntax-objects! "ruby" '("method" "singleton_method" "lambda")
+  '("class" "module" "singleton_class")
+  '("argument_list" "method_parameters" "lambda_parameters" "block_parameters" "array"))
 
 (define (enclosing-node at kinds n)
   "The `n`th innermost node around `at` whose kind is in `kinds`."

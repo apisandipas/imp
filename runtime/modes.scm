@@ -298,6 +298,8 @@
        (list 'cpp-mode '("cc" "cpp" "cxx" "hpp" "hh") "// %s" #t 4)
        (list 'shell-mode '("sh" "bash" "zsh" "fish") "# %s" #t 2)
        (list 'lua-mode '("lua") "-- %s" #t 2)
+       (list 'elixir-mode '("ex" "exs") "# %s" #t 2)
+       (list 'ruby-mode '("rb" "rake") "# %s" #t 2)
        (list 'toml-mode '("toml") "# %s" #t 2)
        (list 'yaml-mode '("yml" "yaml") "# %s" #t 2)
        (list 'html-mode '("html" "htm" "xml" "svg") "<!-- %s -->" #t 2)
@@ -313,6 +315,8 @@
 (define-file-name-mode! "init.scm" 'scheme-mode)
 (define-file-name-mode! "flake.lock" 'json-mode)
 (define-file-name-mode! "Cargo.lock" 'toml-mode)
+(define-file-name-mode! "Rakefile" 'ruby-mode)
+(define-file-name-mode! "Gemfile" 'ruby-mode)
 
 ;;; Scheme mode: the editor's own language
 

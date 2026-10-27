@@ -3,7 +3,7 @@
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
 //! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML,
-//! Bash, C, C++, Go and Python. Which language a buffer uses is
+//! Bash, C, C++, Go, Python, Lua, Elixir and Ruby. Which language a buffer uses is
 //! up to Scheme (major modes call `set-buffer-language!`).
 
 use std::collections::HashMap;
@@ -147,6 +147,21 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "python",
                 tree_sitter_python::LANGUAGE.into(),
                 tree_sitter_python::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "lua",
+                tree_sitter_lua::LANGUAGE.into(),
+                tree_sitter_lua::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "elixir",
+                tree_sitter_elixir::LANGUAGE.into(),
+                tree_sitter_elixir::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "ruby",
+                tree_sitter_ruby::LANGUAGE.into(),
+                tree_sitter_ruby::HIGHLIGHTS_QUERY.into(),
             ),
         ];
         specs
@@ -584,13 +599,16 @@ mod tests {
                 "c",
                 "cpp",
                 "css",
+                "elixir",
                 "go",
                 "html",
                 "javascript",
                 "json",
+                "lua",
                 "markdown",
                 "nix",
                 "python",
+                "ruby",
                 "rust",
                 "scheme",
                 "toml",

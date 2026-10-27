@@ -101,6 +101,12 @@ fn every_bundled_language_attaches() {
         ("a.cpp", "cpp"),
         ("a.go", "go"),
         ("a.py", "python"),
+        ("a.lua", "lua"),
+        ("a.ex", "elixir"),
+        ("a.exs", "elixir"),
+        ("a.rb", "ruby"),
+        ("Rakefile", "ruby"),
+        ("Gemfile", "ruby"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
@@ -239,6 +245,75 @@ fn c_cpp_go_and_python_are_highlighted() {
             format!("\"{face}\""),
             "{word} in {file}"
         );
+    }
+}
+
+#[test]
+fn lua_elixir_and_ruby_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.lua",
+            "local x = \"hi\" -- c\n",
+            "local",
+            "syntax.keyword",
+        ),
+        (
+            "hl.lua",
+            "local x = \"hi\" -- c\n",
+            "\"hi\"",
+            "syntax.string",
+        ),
+        (
+            "hl.ex",
+            "defmodule A do\n  def f, do: :ok\nend\n",
+            "defmodule",
+            "syntax.keyword",
+        ),
+        (
+            "hl.ex",
+            "defmodule A do\n  def f, do: :ok\nend\n",
+            ":ok",
+            "syntax.string.special",
+        ),
+        ("hl.rb", "def f\n  \"hi\"\nend\n", "def", "syntax.keyword"),
+        ("hl.rb", "def f\n  \"hi\"\nend\n", "\"hi\"", "syntax.string"),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn lua_elixir_and_ruby_text_objects() {
+    let mut s = server("");
+    for (i, (file, text, keys, left)) in [
+        (
+            "o.lua",
+            "function f(a, b)\n  return a\nend\nx = 1\n",
+            "jdaf",
+            "\nx = 1\n",
+        ),
+        ("o.lua", "f(a, b)\n", "fadaa", "f(b)\n"),
+        ("o.ex", "f = fn a ->\n  a\nend\n", "jdaf", "f = \n"),
+        ("o.ex", "f(a, b)\n", "fadaa", "f(b)\n"),
+        (
+            "o.rb",
+            "def f(a, b)\n  a\nend\nx = 1\n",
+            "jdaf",
+            "\nx = 1\n",
+        ),
+        ("o.rb", "class A\n  X = 1\nend\n", "jdac", "\n"),
+        ("o.rb", "f(a, b)\n", "fadaa", "f(b)\n"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let file = format!("{i}{file}");
+        assert_eq!(after(&mut s, &file, text, keys), left, "{keys} in {text:?}");
     }
 }
 
