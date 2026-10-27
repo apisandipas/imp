@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: c9c187a5e3d9
+  docs/specs/tree-sitter.md: 40d82a5af590
 ---
 # Tree-sitter
 
@@ -18,7 +18,7 @@ imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, M
 
 ## Syntax colors
 
-Each kind of thing in the code, such as a keyword or a function name, is drawn in its own face. The faces are named `syntax.` and the kind: `syntax.keyword`, `syntax.function`, `syntax.function.method`. A face that isn't set falls back to the shorter name, so `syntax.function.method` looks like `syntax.function` unless you set it.
+Each kind of thing in the code, such as a keyword or a function name, is drawn in its own face. The faces are named `syntax.` and the kind: `syntax.keyword`, `syntax.function`, `syntax.function.method`. A face that isn't set falls back to the shorter name, so `syntax.function.method` looks like `syntax.function` unless you set it. A few grammars use older names, such as `conditional` and `method`; those fall back to the current names' faces, `syntax.keyword` and `syntax.function`.
 
 Change one with `set-face!`:
 

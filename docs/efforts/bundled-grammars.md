@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/tree-sitter]]"]
 issue: https://github.com/apisandipas/imp/issues/81
 frozen:
-  docs/specs/tree-sitter.md: c9c187a5e3d9
+  docs/specs/tree-sitter.md: 40d82a5af590
 ---
 # Bundled grammars
 
@@ -23,4 +23,4 @@ Each task's test opens a sample file in each of its languages and checks that a 
 - [x] YAML, TOML and Bash: `yaml-mode`, `toml-mode` and `shell-mode` parse with them and highlight, with tests. YAML's keys are `property`.
 - [x] C, C++, Go and Python: their modes parse with them and highlight, and `af`, `ac` and `aa` work with each grammar's function, class or type, and argument-list node kinds, with tests.
 - [x] Lua, Elixir and Ruby: new `elixir-mode` (`.ex`, `.exs`) and `ruby-mode` (`.rb`, `.rake`, `Rakefile`, `Gemfile`), with their comment strings and indentation like the other modes. All three parse and highlight, with text objects as above, and tests.
-- [ ] Every capture the new queries use is drawn in a face the default theme and the Modus themes set, through fallback if not by name. A test checks the captures of each new query against the theme.
+- [x] Every capture the new queries use is drawn in a face the default theme and the Modus themes set, through fallback if not by name. A test checks the captures of each new query against the theme.

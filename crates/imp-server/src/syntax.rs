@@ -191,12 +191,40 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
     })
 }
 
+/// Capture names some queries still use from before Neovim renamed them,
+/// with the names themes set faces for.
+const OLD_CAPTURES: &[(&str, &str)] = &[
+    ("conditional", "keyword.conditional"),
+    ("repeat", "keyword.repeat"),
+    ("field", "property"),
+    ("method", "function.method"),
+    ("parameter", "variable.parameter"),
+    ("preproc", "keyword.directive"),
+    ("delimiter", "punctuation.delimiter"),
+];
+
+/// The faces to try for `capture`, most specific first: `syntax.a.b`,
+/// then `syntax.a`. An old name (`method.call`) tries its new one's
+/// (`syntax.function.method.call`, down to `syntax.function`) after its own.
 fn face_candidates(capture: &str) -> Vec<String> {
-    let parts: Vec<&str> = capture.split('.').collect();
-    (1..=parts.len())
-        .rev()
-        .map(|n| format!("syntax.{}", parts[..n].join(".")))
-        .collect()
+    let chain = |capture: &str| -> Vec<String> {
+        let parts: Vec<&str> = capture.split('.').collect();
+        (1..=parts.len())
+            .rev()
+            .map(|n| format!("syntax.{}", parts[..n].join(".")))
+            .collect()
+    };
+    let mut faces = chain(capture);
+    let (head, rest) = capture.split_once('.').unwrap_or((capture, ""));
+    if let Some((_, new)) = OLD_CAPTURES.iter().find(|(old, _)| *old == head) {
+        let renamed = if rest.is_empty() {
+            new.to_string()
+        } else {
+            format!("{new}.{rest}")
+        };
+        faces.extend(chain(&renamed));
+    }
+    faces
 }
 
 impl std::fmt::Debug for Syntax {
@@ -583,6 +611,61 @@ mod tests {
                 t.elapsed()
             );
         }
+    }
+
+    #[test]
+    fn every_capture_has_a_face_in_the_themes() {
+        // Variables are drawn in the text's own color, by design, and
+        // @none means no highlighting.
+        let unstyled = ["variable", "none"];
+        let faces = |source: &str| -> std::collections::HashSet<String> {
+            regex::Regex::new(r#""(syntax\.[a-z.]+)""#)
+                .unwrap()
+                .captures_iter(source)
+                .map(|c| c[1].to_string())
+                .collect()
+        };
+        for (theme, set) in [
+            (
+                "theme.scm",
+                faces(include_str!("../../../runtime/theme.scm")),
+            ),
+            (
+                "modus-themes.scm",
+                faces(include_str!(
+                    "../../../packages/modus-themes/modus-themes.scm"
+                )),
+            ),
+        ] {
+            for lang in languages().values() {
+                for (capture, candidates) in lang.highlights.capture_names().iter().zip(&lang.faces)
+                {
+                    if capture.starts_with('_') || unstyled.contains(capture) {
+                        continue;
+                    }
+                    assert!(
+                        candidates.iter().any(|f| set.contains(f)),
+                        "{}'s @{capture} has no face in {theme}",
+                        lang.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn old_capture_names_fall_back_to_new_ones() {
+        assert_eq!(
+            face_candidates("method.call"),
+            [
+                "syntax.method.call",
+                "syntax.method",
+                "syntax.function.method.call",
+                "syntax.function.method",
+                "syntax.function"
+            ]
+        );
+        assert_eq!(face_candidates("keyword"), ["syntax.keyword"]);
     }
 
     #[test]
