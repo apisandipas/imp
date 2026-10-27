@@ -93,6 +93,9 @@ fn every_bundled_language_attaches() {
         ("a.css", "css"),
         ("a.scss", "css"),
         ("a.json", "json"),
+        ("a.yaml", "yaml"),
+        ("a.toml", "toml"),
+        ("a.sh", "bash"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
@@ -138,6 +141,36 @@ fn html_css_and_json_are_highlighted() {
             "hl.json",
             "{\"k\": \"v\", \"n\": 1}\n",
             "\"v\"",
+            "syntax.string",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn yaml_toml_and_bash_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        ("hl.yaml", "name: imp # c\n", "name", "syntax.property"),
+        ("hl.yaml", "name: imp # c\n", "imp", "syntax.string"),
+        ("hl.yaml", "name: imp # c\n", "# c", "syntax.comment"),
+        ("hl.toml", "[a]\nx = 1\n", "x", "syntax.type"),
+        ("hl.toml", "[a]\nx = 1\n", "1", "syntax.number"),
+        (
+            "hl.sh",
+            "if true; then echo \"hi\"; fi\n",
+            "if",
+            "syntax.keyword",
+        ),
+        (
+            "hl.sh",
+            "if true; then echo \"hi\"; fi\n",
+            "\"hi\"",
             "syntax.string",
         ),
     ] {

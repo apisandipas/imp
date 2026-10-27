@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: 383d97c7c226
+  docs/specs/tree-sitter.md: bf5e9824fe78
 ---
 # Tree-sitter
 
@@ -10,7 +10,7 @@ imp reads the structure of your code with tree-sitter. That gives it syntax colo
 
 ## Languages
 
-imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, Markdown, HTML, CSS and JSON. Each major mode names the grammar it uses. HTML's grammar also reads XML and SVG files, and CSS's reads SCSS. To parse another mode with one of these, name it in `init.scm`:
+imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML and Bash (for shell scripts). Each major mode names the grammar it uses. HTML's grammar also reads XML and SVG files, and CSS's reads SCSS. To parse another mode with one of these, name it in `init.scm`:
 
 ```scheme
 (define-mode-language! 'lisp-mode "scheme")

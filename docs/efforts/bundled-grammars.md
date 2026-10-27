@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/tree-sitter]]"]
 issue: https://github.com/apisandipas/imp/issues/81
 frozen:
-  docs/specs/tree-sitter.md: 383d97c7c226
+  docs/specs/tree-sitter.md: bf5e9824fe78
 ---
 # Bundled grammars
 
@@ -20,7 +20,7 @@ Each task's test opens a sample file in each of its languages and checks that a 
 
 - [x] HTML, CSS and JSON: `html-mode` (`.html`, `.htm`, `.xml`, `.svg`), `css-mode` (`.css`, `.scss`) and `json-mode` parse with them and highlight, with tests.
 - [x] Where captures overlap, the narrower one wins; of captures of the same text, the earlier pattern (or the more specific one) still wins. Test with a nested capture, and check the existing languages' tests still pass.
-- [ ] YAML, TOML and Bash: `yaml-mode`, `toml-mode` and `shell-mode` parse with them and highlight, with tests. YAML's query, written for Neovim's order, gets patterns of imp's own after it so its keys are `property`.
+- [x] YAML, TOML and Bash: `yaml-mode`, `toml-mode` and `shell-mode` parse with them and highlight, with tests. YAML's query, written for Neovim's order, gets patterns of imp's own before it so its keys are `property`.
 - [ ] C, C++, Go and Python: their modes parse with them and highlight, and `af`, `ac` and `aa` work with each grammar's function, class or type, and argument-list node kinds, with tests.
 - [ ] Lua, Elixir and Ruby: new `elixir-mode` (`.ex`, `.exs`) and `ruby-mode` (`.rb`, `.rake`, `Rakefile`, `Gemfile`), with their comment strings and indentation like the other modes. All three parse and highlight, with text objects as above, and tests.
 - [ ] Every capture the new queries use is drawn in a face the default theme and the Modus themes set, through fallback if not by name. A test checks the captures of each new query against the theme.

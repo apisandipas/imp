@@ -2,7 +2,8 @@
 //! for highlighting and structural text objects.
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
-//! and TSX, JavaScript, Nix, Markdown, HTML, CSS and JSON. Which language a buffer uses is
+//! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML and
+//! Bash. Which language a buffer uses is
 //! up to Scheme (major modes call `set-buffer-language!`).
 
 use std::collections::HashMap;
@@ -25,6 +26,20 @@ use tree_sitter::{
 /// background thread. Typing must never wait on the parser: after a big
 /// change to a big file, tree-sitter's error recovery can take seconds.
 const PARSE_BUDGET: Duration = Duration::from_millis(8);
+
+/// YAML's key patterns, put before its query. The query is written for
+/// Neovim, where a later pattern wins, and captures every plain scalar as
+/// a string before it captures keys as properties; here the earlier wins.
+const YAML_KEYS: &str = r#"
+(block_mapping_pair
+  key: (flow_node [(double_quote_scalar) (single_quote_scalar)] @property))
+(block_mapping_pair
+  key: (flow_node (plain_scalar (string_scalar) @property)))
+(flow_mapping
+  (_ key: (flow_node [(double_quote_scalar) (single_quote_scalar)] @property)))
+(flow_mapping
+  (_ key: (flow_node (plain_scalar (string_scalar) @property))))
+"#;
 
 /// A grammar and its highlight query.
 pub struct Lang {
@@ -105,6 +120,21 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "json",
                 tree_sitter_json::LANGUAGE.into(),
                 tree_sitter_json::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "yaml",
+                tree_sitter_yaml::LANGUAGE.into(),
+                format!("{YAML_KEYS}\n{}", tree_sitter_yaml::HIGHLIGHTS_QUERY),
+            ),
+            (
+                "toml",
+                tree_sitter_toml_ng::LANGUAGE.into(),
+                tree_sitter_toml_ng::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "bash",
+                tree_sitter_bash::LANGUAGE.into(),
+                tree_sitter_bash::HIGHLIGHT_QUERY.into(),
             ),
         ];
         specs
@@ -561,6 +591,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "bash",
                 "css",
                 "html",
                 "javascript",
@@ -569,8 +600,10 @@ mod tests {
                 "nix",
                 "rust",
                 "scheme",
+                "toml",
                 "tsx",
-                "typescript"
+                "typescript",
+                "yaml"
             ]
         );
         for lang in languages().values() {
