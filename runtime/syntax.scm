@@ -16,7 +16,8 @@
         'javascript-mode "javascript" 'typescript-mode "typescript"
         'nix-mode "nix" 'markdown-mode "markdown"
         'html-mode "html" 'css-mode "css" 'json-mode "json"
-        'yaml-mode "yaml" 'toml-mode "toml" 'shell-mode "bash"))
+        'yaml-mode "yaml" 'toml-mode "toml" 'shell-mode "bash"
+        'c-mode "c" 'cpp-mode "cpp" 'go-mode "go" 'python-mode "python"))
 
 (define (language-for-buffer)
   "The tree-sitter language for the current buffer, or #f for none.
@@ -100,6 +101,22 @@
   '("formals" "list_expression"))
 
 (define-syntax-objects! "scheme" '("list") '("list") '("list"))
+
+(define-syntax-objects! "c" '("function_definition")
+  '("struct_specifier" "enum_specifier" "union_specifier")
+  '("argument_list" "parameter_list" "initializer_list"))
+
+(define-syntax-objects! "cpp" '("function_definition" "lambda_expression")
+  '("class_specifier" "struct_specifier" "enum_specifier" "union_specifier" "namespace_definition")
+  '("argument_list" "parameter_list" "template_argument_list" "template_parameter_list" "initializer_list"))
+
+(define-syntax-objects! "go" '("function_declaration" "method_declaration" "func_literal")
+  '("type_declaration")
+  '("argument_list" "parameter_list" "literal_value"))
+
+(define-syntax-objects! "python" '("function_definition" "lambda")
+  '("class_definition")
+  '("argument_list" "parameters" "list" "tuple"))
 
 (define (enclosing-node at kinds n)
   "The `n`th innermost node around `at` whose kind is in `kinds`."

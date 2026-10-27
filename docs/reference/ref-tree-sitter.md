@@ -10,7 +10,7 @@ imp reads the structure of your code with tree-sitter. That gives it syntax colo
 
 ## Languages
 
-imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML and Bash (for shell scripts). Each major mode names the grammar it uses. HTML's grammar also reads XML and SVG files, and CSS's reads SCSS. To parse another mode with one of these, name it in `init.scm`:
+imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML, Bash (for shell scripts), C, C++, Go and Python. Each major mode names the grammar it uses. HTML's grammar also reads XML and SVG files, and CSS's reads SCSS. To parse another mode with one of these, name it in `init.scm`:
 
 ```scheme
 (define-mode-language! 'lisp-mode "scheme")

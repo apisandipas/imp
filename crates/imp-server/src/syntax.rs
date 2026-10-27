@@ -2,8 +2,8 @@
 //! for highlighting and structural text objects.
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
-//! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML and
-//! Bash. Which language a buffer uses is
+//! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML,
+//! Bash, C, C++, Go and Python. Which language a buffer uses is
 //! up to Scheme (major modes call `set-buffer-language!`).
 
 use std::collections::HashMap;
@@ -135,6 +135,32 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "bash",
                 tree_sitter_bash::LANGUAGE.into(),
                 tree_sitter_bash::HIGHLIGHT_QUERY.into(),
+            ),
+            (
+                "c",
+                tree_sitter_c::LANGUAGE.into(),
+                tree_sitter_c::HIGHLIGHT_QUERY.into(),
+            ),
+            // C++'s query adds to C's, in the order the grammar's own
+            // setup gives.
+            (
+                "cpp",
+                tree_sitter_cpp::LANGUAGE.into(),
+                format!(
+                    "{}\n{}",
+                    tree_sitter_c::HIGHLIGHT_QUERY,
+                    tree_sitter_cpp::HIGHLIGHT_QUERY
+                ),
+            ),
+            (
+                "go",
+                tree_sitter_go::LANGUAGE.into(),
+                tree_sitter_go::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "python",
+                tree_sitter_python::LANGUAGE.into(),
+                tree_sitter_python::HIGHLIGHTS_QUERY.into(),
             ),
         ];
         specs
@@ -592,12 +618,16 @@ mod tests {
             names,
             [
                 "bash",
+                "c",
+                "cpp",
                 "css",
+                "go",
                 "html",
                 "javascript",
                 "json",
                 "markdown",
                 "nix",
+                "python",
                 "rust",
                 "scheme",
                 "toml",

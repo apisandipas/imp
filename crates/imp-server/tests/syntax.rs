@@ -96,6 +96,11 @@ fn every_bundled_language_attaches() {
         ("a.yaml", "yaml"),
         ("a.toml", "toml"),
         ("a.sh", "bash"),
+        ("a.c", "c"),
+        ("a.h", "c"),
+        ("a.cpp", "cpp"),
+        ("a.go", "go"),
+        ("a.py", "python"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
@@ -179,6 +184,122 @@ fn yaml_toml_and_bash_are_highlighted() {
             format!("\"{face}\""),
             "{word} in {file}"
         );
+    }
+}
+
+#[test]
+fn c_cpp_go_and_python_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.c",
+            "int main(void) { return 0; }\n",
+            "return",
+            "syntax.keyword",
+        ),
+        (
+            "hl.cpp",
+            "class A { public: int x; };\n",
+            "class",
+            "syntax.keyword",
+        ),
+        (
+            "hl.cpp",
+            "int main() { return 0; }\n",
+            "return",
+            "syntax.keyword",
+        ),
+        (
+            "hl.go",
+            "func main() { s := \"hi\" }\n",
+            "func",
+            "syntax.keyword",
+        ),
+        (
+            "hl.go",
+            "func main() { s := \"hi\" }\n",
+            "\"hi\"",
+            "syntax.string",
+        ),
+        (
+            "hl.py",
+            "def f():\n    return \"hi\"\n",
+            "def",
+            "syntax.keyword",
+        ),
+        (
+            "hl.py",
+            "def f():\n    return \"hi\"\n",
+            "f()",
+            "syntax.function",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+/// The text left after typing `keys` in `text`, opened as `file`.
+fn after(s: &mut imp_server::Server, file: &str, text: &str, keys: &str) -> String {
+    open(s, file, text);
+    type_keys(s, keys);
+    s.text()
+}
+
+#[test]
+fn c_cpp_go_and_python_text_objects() {
+    let mut s = server("");
+    for (i, (file, text, keys, left)) in [
+        (
+            "o.c",
+            "int f(int a, int b) {\n    return a;\n}\nint g;\n",
+            "jdaf",
+            "\nint g;\n",
+        ),
+        ("o.c", "struct P {\n    int x;\n};\n", "jdac", ";\n"),
+        (
+            "o.c",
+            "int f(int a, int b) {}\n",
+            "fadaa",
+            "int f(int b) {}\n",
+        ),
+        ("o.cpp", "class A {\n    int x;\n};\n", "jdac", ";\n"),
+        (
+            "o.cpp",
+            "void f() {\n    g();\n}\n",
+            "jdif",
+            "void f() {\n}\n",
+        ),
+        (
+            "o.go",
+            "func f(a int, b int) {\n\tg()\n}\n",
+            "jdif",
+            "func f(a int, b int) {\n}\n",
+        ),
+        (
+            "o.go",
+            "func f(a int, b int) {}\n",
+            "fadaa",
+            "func f(b int) {}\n",
+        ),
+        ("o.go", "type P struct {\n\tx int\n}\n", "jdac", "\n"),
+        (
+            "o.py",
+            "def f(a, b):\n    return a\n\nx = 1\n",
+            "jdaf",
+            "\n\nx = 1\n",
+        ),
+        ("o.py", "class A:\n    x = 1\n", "jdac", "\n"),
+        ("o.py", "f(a, b)\n", "fadaa", "f(b)\n"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let file = format!("{i}{file}");
+        assert_eq!(after(&mut s, &file, text, keys), left, "{keys} in {text:?}");
     }
 }
 
