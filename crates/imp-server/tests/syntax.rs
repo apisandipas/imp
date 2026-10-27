@@ -72,12 +72,65 @@ fn every_bundled_language_attaches() {
         ("a.js", "javascript"),
         ("a.nix", "nix"),
         ("a.md", "markdown"),
+        ("a.html", "html"),
+        ("a.svg", "html"),
+        ("a.css", "css"),
+        ("a.scss", "css"),
+        ("a.json", "json"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
     }
     open(&mut s, "a.txt", "x\n");
     assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+}
+
+/// The syntax face drawn on the first `word` in `text`, opened as `file`.
+fn face_on(s: &mut imp_server::Server, file: &str, text: &str, word: &str) -> String {
+    open(s, file, text);
+    let at = text.find(word).unwrap();
+    s.eval(&format!(
+        "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+    ))
+    .unwrap()
+}
+
+#[test]
+fn html_css_and_json_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.html",
+            "<div class=\"x\">hi</div>\n",
+            "div",
+            "syntax.tag",
+        ),
+        (
+            "hl.html",
+            "<div class=\"x\">hi</div>\n",
+            "class",
+            "syntax.attribute",
+        ),
+        ("hl.css", "a { color: red; }\n", "color", "syntax.property"),
+        (
+            "hl.json",
+            "{\"k\": \"v\", \"n\": 1}\n",
+            "1",
+            "syntax.number",
+        ),
+        (
+            "hl.json",
+            "{\"k\": \"v\", \"n\": 1}\n",
+            "\"v\"",
+            "syntax.string",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
 }
 
 #[test]

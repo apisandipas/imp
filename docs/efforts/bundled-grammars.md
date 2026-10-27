@@ -18,7 +18,7 @@ Each task's test opens a sample file in each of its languages and checks that a 
 
 ## Tasks
 
-- [ ] HTML, CSS and JSON: `html-mode` (`.html`, `.htm`, `.xml`, `.svg`), `css-mode` (`.css`, `.scss`) and `json-mode` parse with them and highlight, with tests.
+- [x] HTML, CSS and JSON: `html-mode` (`.html`, `.htm`, `.xml`, `.svg`), `css-mode` (`.css`, `.scss`) and `json-mode` parse with them and highlight, with tests.
 - [ ] YAML, TOML and Bash: `yaml-mode`, `toml-mode` and `shell-mode` parse with them and highlight, with tests.
 - [ ] C, C++, Go and Python: their modes parse with them and highlight, and `af`, `ac` and `aa` work with each grammar's function, class or type, and argument-list node kinds, with tests.
 - [ ] Lua, Elixir and Ruby: new `elixir-mode` (`.ex`, `.exs`) and `ruby-mode` (`.rb`, `.rake`, `Rakefile`, `Gemfile`), with their comment strings and indentation like the other modes. All three parse and highlight, with text objects as above, and tests.

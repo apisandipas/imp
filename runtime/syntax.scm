@@ -14,7 +14,8 @@
 (define *mode-languages*
   (hash 'rust-mode "rust" 'scheme-mode "scheme" 'repl-mode "scheme"
         'javascript-mode "javascript" 'typescript-mode "typescript"
-        'nix-mode "nix" 'markdown-mode "markdown"))
+        'nix-mode "nix" 'markdown-mode "markdown"
+        'html-mode "html" 'css-mode "css" 'json-mode "json"))
 
 (define (language-for-buffer)
   "The tree-sitter language for the current buffer, or #f for none.

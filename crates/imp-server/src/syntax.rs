@@ -2,7 +2,7 @@
 //! for highlighting and structural text objects.
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
-//! and TSX, JavaScript, Nix and Markdown. Which language a buffer uses is
+//! and TSX, JavaScript, Nix, Markdown, HTML, CSS and JSON. Which language a buffer uses is
 //! up to Scheme (major modes call `set-buffer-language!`).
 
 use std::collections::HashMap;
@@ -90,6 +90,21 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "markdown",
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.into(),
+            ),
+            (
+                "html",
+                tree_sitter_html::LANGUAGE.into(),
+                tree_sitter_html::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "css",
+                tree_sitter_css::LANGUAGE.into(),
+                tree_sitter_css::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "json",
+                tree_sitter_json::LANGUAGE.into(),
+                tree_sitter_json::HIGHLIGHTS_QUERY.into(),
             ),
         ];
         specs
@@ -545,7 +560,10 @@ mod tests {
         assert_eq!(
             names,
             [
+                "css",
+                "html",
                 "javascript",
+                "json",
                 "markdown",
                 "nix",
                 "rust",
