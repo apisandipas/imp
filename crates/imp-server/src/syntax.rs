@@ -58,7 +58,62 @@ struct Injections {
 fn injections_source(name: &str) -> &'static str {
     match name {
         "html" => tree_sitter_html::INJECTIONS_QUERY,
+        "markdown" => tree_sitter_md::INJECTION_QUERY_BLOCK,
         _ => "",
+    }
+}
+
+/// Other names for languages, as a Markdown fence's info string gives
+/// them, lowercase. An alias of a language that isn't bundled (`rb`)
+/// names nothing until that grammar is installed.
+const BUNDLED_ALIASES: &[(&str, &str)] = &[
+    ("js", "javascript"),
+    ("jsx", "javascript"),
+    ("mjs", "javascript"),
+    ("cjs", "javascript"),
+    ("ts", "typescript"),
+    ("mts", "typescript"),
+    ("sh", "bash"),
+    ("shell", "bash"),
+    ("zsh", "bash"),
+    ("console", "bash"),
+    ("py", "python"),
+    ("python3", "python"),
+    ("rb", "ruby"),
+    ("ex", "elixir"),
+    ("exs", "elixir"),
+    ("c++", "cpp"),
+    ("cxx", "cpp"),
+    ("hpp", "cpp"),
+    ("h", "c"),
+    ("rs", "rust"),
+    ("golang", "go"),
+    ("yml", "yaml"),
+    ("md", "markdown"),
+    ("htm", "html"),
+    ("xhtml", "html"),
+    ("xml", "html"),
+    ("svg", "html"),
+    ("scss", "css"),
+    ("jsonc", "json"),
+    ("scm", "scheme"),
+];
+
+/// The aliases: the bundled ones and those `define-language-alias!` adds.
+fn aliases() -> &'static std::sync::RwLock<HashMap<String, String>> {
+    static ALIASES: OnceLock<std::sync::RwLock<HashMap<String, String>>> = OnceLock::new();
+    ALIASES.get_or_init(|| {
+        let bundled = BUNDLED_ALIASES
+            .iter()
+            .map(|(alias, lang)| (alias.to_string(), lang.to_string()));
+        std::sync::RwLock::new(bundled.collect())
+    })
+}
+
+/// Makes `alias` another name for `language`, for embedded languages.
+pub fn define_alias(alias: &str, language: &str) {
+    if let Ok(mut aliases) = aliases().write() {
+        aliases.insert(alias.to_lowercase(), language.to_lowercase());
     }
 }
 
@@ -655,9 +710,14 @@ fn injections(
     out
 }
 
-/// The bundled language an injection names.
+/// The bundled language an injection names: by its name, then an alias,
+/// ignoring case.
 fn language_named(name: &str) -> Option<&'static Lang> {
-    languages().get(name.to_lowercase().as_str())
+    let name = name.to_lowercase();
+    languages().get(name.as_str()).or_else(|| {
+        let aliases = aliases().read().ok()?;
+        languages().get(aliases.get(&name)?.as_str())
+    })
 }
 
 /// `node`'s byte ranges, less its children's unless `include_children`,

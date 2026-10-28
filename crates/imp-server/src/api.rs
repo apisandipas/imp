@@ -1555,6 +1555,12 @@ pub fn register(engine: &mut Engine) {
             }
         })
     });
+    engine.register_fn(
+        "define-language-alias!",
+        |alias: String, language: String| {
+            crate::syntax::define_alias(&alias, &language);
+        },
+    );
     engine.register_fn("buffer-language", || {
         editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
     });

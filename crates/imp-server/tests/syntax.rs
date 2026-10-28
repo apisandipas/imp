@@ -216,6 +216,63 @@ fn typing_in_a_script_keeps_it_highlighted() {
 }
 
 #[test]
+fn markdown_fences_are_their_languages() {
+    let mut s = server("");
+    s.eval("(define-language-alias! \"Snek\" \"python\")")
+        .unwrap();
+    for (i, (info, code)) in [
+        ("python", "if x:\n    y"),
+        ("PY", "if x:\n    y"),
+        ("snek", "if x:\n    y"),
+        ("sh", "if true; then y; fi"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let text = format!("# Code\n\n```{info}\n{code}\n```\n");
+        assert_eq!(
+            face_on(&mut s, &format!("fence{i}.md"), &text, "if"),
+            "\"syntax.keyword\"",
+            "{info}"
+        );
+    }
+}
+
+#[test]
+fn an_unknown_fence_language_is_left_as_markdown_draws_it() {
+    let mut s = server("");
+    let plain = face_on(&mut s, "plain.md", "```\ndef f\n```\n", "def");
+    assert_ne!(plain, "\"syntax.keyword\"");
+    // Ruby has an alias but no bundled grammar.
+    for (i, info) in ["zzz", "rb"].into_iter().enumerate() {
+        let text = format!("```{info}\ndef f\n```\n");
+        assert_eq!(
+            face_on(&mut s, &format!("unknown{i}.md"), &text, "def"),
+            plain,
+            "{info}"
+        );
+        let rows = s.frame().text_rows().join("\n");
+        assert!(
+            !rows.contains("grammar") && !rows.contains("ruby"),
+            "{rows}"
+        );
+    }
+}
+
+#[test]
+fn markdown_front_matter_is_yaml_or_toml() {
+    let mut s = server("");
+    assert_eq!(
+        face_on(&mut s, "front.md", "---\ntitle: x\n---\n# H\n", "title"),
+        "\"syntax.property\""
+    );
+    assert_eq!(
+        face_on(&mut s, "front2.md", "+++\ntitle = 1\n+++\n# H\n", "1"),
+        "\"syntax.number\""
+    );
+}
+
+#[test]
 fn yaml_toml_and_bash_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [
