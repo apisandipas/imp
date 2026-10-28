@@ -59,6 +59,7 @@ fn injections_source(name: &str) -> &'static str {
     match name {
         "html" => tree_sitter_html::INJECTIONS_QUERY,
         "markdown" => tree_sitter_md::INJECTION_QUERY_BLOCK,
+        "markdown_inline" => tree_sitter_md::INJECTION_QUERY_INLINE,
         _ => "",
     }
 }
@@ -171,6 +172,13 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "markdown",
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.into(),
+            ),
+            // Markdown's inline syntax, embedded in each of its paragraphs
+            // and headings; no mode names it.
+            (
+                "markdown_inline",
+                tree_sitter_md::INLINE_LANGUAGE.into(),
+                tree_sitter_md::HIGHLIGHT_QUERY_INLINE.into(),
             ),
             (
                 "html",
@@ -720,8 +728,9 @@ fn language_named(name: &str) -> Option<&'static Lang> {
     })
 }
 
-/// `node`'s byte ranges, less its children's unless `include_children`,
-/// as tree-sitter's own highlighter takes an injection's content.
+/// `node`'s byte ranges, less its named children's unless
+/// `include_children`, as Neovim takes an injection's content: Markdown's
+/// block grammar leaves anonymous tokens in the inline text it embeds.
 fn content_ranges(node: Node, include_children: bool) -> Vec<tree_sitter::Range> {
     let mut ranges = Vec::new();
     let (mut from, mut from_point) = (node.start_byte(), node.start_position());
@@ -737,7 +746,7 @@ fn content_ranges(node: Node, include_children: bool) -> Vec<tree_sitter::Range>
     };
     if !include_children {
         let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
+        for child in node.named_children(&mut cursor) {
             piece(child.start_byte(), child.start_position(), from, from_point);
             (from, from_point) = (child.end_byte(), child.end_position());
         }
@@ -1044,6 +1053,7 @@ mod tests {
                 "json",
                 "lua",
                 "markdown",
+                "markdown_inline",
                 "nix",
                 "python",
                 "rust",

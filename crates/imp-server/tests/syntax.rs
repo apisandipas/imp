@@ -273,6 +273,27 @@ fn markdown_front_matter_is_yaml_or_toml() {
 }
 
 #[test]
+fn markdown_inline_syntax_is_highlighted() {
+    let mut s = server("");
+    let text = "# A *b* title\n\nSome *em*, **strong**, `code` and [a link](https://x.y).\n";
+    for (word, face) in [
+        ("em*", "syntax.text.emphasis"),
+        ("b*", "syntax.text.emphasis"),
+        ("strong", "syntax.text.strong"),
+        ("code", "syntax.text.literal"),
+        ("a link", "syntax.text.reference"),
+        ("https", "syntax.text.uri"),
+    ] {
+        assert_eq!(
+            face_on(&mut s, "inline.md", text, word),
+            format!("\"{face}\""),
+            "{word}"
+        );
+    }
+    assert_eq!(face_on(&mut s, "inline.md", text, "Some"), "#false");
+}
+
+#[test]
 fn yaml_toml_and_bash_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [

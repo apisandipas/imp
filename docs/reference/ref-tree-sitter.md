@@ -30,7 +30,7 @@ Diagnostics, search matches and the selection are drawn over the syntax colors. 
 
 ## Embedded languages
 
-Code in another language inside a file is colored as that language: JavaScript in an HTML `<script>` and CSS in a `<style>`, over HTML's own colors. In Markdown, a fenced code block is colored in the language after its opening fence, and YAML (`---`) or TOML (`+++`) front matter as YAML or TOML. It keeps up as you type, like the rest of the file. Text objects and indentation follow the file's own language, not the embedded one.
+Code in another language inside a file is colored as that language: JavaScript in an HTML `<script>` and CSS in a `<style>`, over HTML's own colors. In Markdown, a fenced code block is colored in the language after its opening fence, YAML (`---`) or TOML (`+++`) front matter as YAML or TOML, and the inline syntax in paragraphs and headings (emphasis, strong, code spans, links) in the `syntax.text.*` faces. It keeps up as you type, like the rest of the file. Text objects and indentation follow the file's own language, not the embedded one.
 
 A fence's language is matched by grammar name, then by alias, ignoring case. The common aliases come built in: `js`, `ts`, `sh`, `shell`, `zsh`, `py`, `rs`, `yml`, `md`, `htm`, `xml`, `scm` and more. Add your own in `init.scm`:
 
