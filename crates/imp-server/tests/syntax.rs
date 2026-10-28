@@ -294,6 +294,58 @@ fn markdown_inline_syntax_is_highlighted() {
 }
 
 #[test]
+fn embedded_languages_nest() {
+    let mut s = server("");
+    let text = "# Page\n\n```html\n<script>\nconst x = 1;\n</script>\n```\n";
+    assert_eq!(
+        face_on(&mut s, "nest.md", text, "const"),
+        "\"syntax.keyword\""
+    );
+    assert_eq!(face_on(&mut s, "nest.md", text, "script"), "\"syntax.tag\"");
+}
+
+#[test]
+fn the_other_bundled_grammars_embed_languages() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        // A macro's body is Rust.
+        (
+            "inj.rs",
+            "fn f() { println!(\"{}\", g(1)); }\n",
+            "g(",
+            "syntax.function",
+        ),
+        // A build phase is Bash.
+        (
+            "inj.nix",
+            "{ buildPhase = ''\n  if true; then make; fi\n''; }\n",
+            "if",
+            "syntax.keyword",
+        ),
+        // A tagged template is its tag's language.
+        (
+            "inj.js",
+            "const s = css`a { color: red; }`;\n",
+            "color",
+            "syntax.property",
+        ),
+        // LuaJIT's ffi.cdef is C.
+        (
+            "inj.lua",
+            "ffi.cdef[[ int f(void); ]]\n",
+            "int",
+            "syntax.type",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
 fn yaml_toml_and_bash_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [

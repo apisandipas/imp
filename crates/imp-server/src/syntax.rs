@@ -57,6 +57,10 @@ struct Injections {
 /// The injections query a bundled grammar's crate gives.
 fn injections_source(name: &str) -> &'static str {
     match name {
+        "rust" => tree_sitter_rust::INJECTIONS_QUERY,
+        "javascript" => tree_sitter_javascript::INJECTIONS_QUERY,
+        "nix" => tree_sitter_nix::INJECTIONS_QUERY,
+        "lua" => tree_sitter_lua::INJECTIONS_QUERY,
         "html" => tree_sitter_html::INJECTIONS_QUERY,
         "markdown" => tree_sitter_md::INJECTION_QUERY_BLOCK,
         "markdown_inline" => tree_sitter_md::INJECTION_QUERY_INLINE,
@@ -949,6 +953,18 @@ mod tests {
         assert!(hl
             .iter()
             .any(|(s, e, f)| (*s, *e) == (13, 16) && f[0] == "syntax.keyword"));
+    }
+
+    #[test]
+    fn embedded_languages_stop_four_deep() {
+        // Each macro's body is Rust, with the next macro in it.
+        let code = "fn f() { a!(b!(c!(d!(e!(g!(1)))))); }\n";
+        let mut buffer = Buffer::from_text(code);
+        buffer.track_edits(true);
+        let mut syntax = Syntax::new("rust").unwrap();
+        syntax.update(&mut buffer, 1, None);
+        let deepest = syntax.layers.iter().map(|l| l.depth).max();
+        assert_eq!(deepest, Some(MAX_DEPTH));
     }
 
     #[test]
