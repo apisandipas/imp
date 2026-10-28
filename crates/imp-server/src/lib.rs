@@ -292,8 +292,8 @@ impl Server {
             // Daemon events are handled by its own loop (daemon.rs).
             Event::FromClient(_, msg) => self.handle(msg),
             Event::Connected(..) | Event::Disconnected(_) => {}
-            Event::Parsed(id, version, tree) => {
-                editor::with(|e| e.syntax_parsed(id, version, tree))
+            Event::Parsed(id, version, parse) => {
+                editor::with(|e| e.syntax_parsed(id, version, *parse))
             }
             Event::SocketOpened(listener, conn, stream) => {
                 editor::with(|e| e.background.connection_opened(conn, stream));

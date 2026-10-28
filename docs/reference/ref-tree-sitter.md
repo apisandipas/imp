@@ -28,6 +28,10 @@ Change one with `set-face!`:
 
 Diagnostics, search matches and the selection are drawn over the syntax colors. See [Look](ref-look.md) for themes and faces.
 
+## Embedded languages
+
+Code in another language inside a file is colored as that language: JavaScript in an HTML `<script>` and CSS in a `<style>`, over HTML's own colors. It keeps up as you type, like the rest of the file. Text objects and indentation follow the file's own language, not the embedded one.
+
 ## Text objects
 
 These work with every operator, such as `d`, `c` and `y`, and in visual mode:

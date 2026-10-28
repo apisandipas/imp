@@ -363,10 +363,10 @@ impl Editor {
     }
 
     /// A background parse of buffer `id` finished.
-    pub fn syntax_parsed(&mut self, id: usize, version: u64, tree: tree_sitter::Tree) {
+    pub fn syntax_parsed(&mut self, id: usize, version: u64, parse: crate::syntax::Parse) {
         if let Some(mut syntax) = self.syntax.remove(&id) {
             if let Some(buffer) = self.buffer_by_id(id) {
-                syntax.background_parsed(buffer, version, tree);
+                syntax.background_parsed(buffer, version, parse);
             }
             self.syntax.insert(id, syntax);
         }

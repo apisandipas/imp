@@ -175,6 +175,47 @@ fn html_css_and_json_are_highlighted() {
 }
 
 #[test]
+fn html_script_and_style_are_their_languages() {
+    let mut s = server("");
+    let page =
+        "<p>const</p>\n<script>\nconst x = 1;\n</script>\n<style>\na { color: red; }\n</style>\n";
+    for (word, face) in [
+        ("const x", "syntax.keyword"),
+        ("1;", "syntax.number"),
+        ("color", "syntax.property"),
+        ("script", "syntax.tag"),
+    ] {
+        assert_eq!(
+            face_on(&mut s, "embed.html", page, word),
+            format!("\"{face}\""),
+            "{word}"
+        );
+    }
+    // HTML's own text isn't JavaScript.
+    assert_eq!(face_on(&mut s, "embed.html", page, "const"), "#false");
+}
+
+#[test]
+fn typing_in_a_script_keeps_it_highlighted() {
+    let mut s = server("");
+    open(&mut s, "typed.html", "<script>\nlet x = 1;\n</script>\n");
+    type_keys(&mut s, "jOreturn<esc>");
+    let text = s.text();
+    assert_eq!(text, "<script>\nreturn\nlet x = 1;\n</script>\n");
+    for word in ["return", "let"] {
+        let at = text.find(word).unwrap();
+        assert_eq!(
+            s.eval(&format!(
+                "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+            ))
+            .unwrap(),
+            "\"syntax.keyword\"",
+            "{word}"
+        );
+    }
+}
+
+#[test]
 fn yaml_toml_and_bash_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [
