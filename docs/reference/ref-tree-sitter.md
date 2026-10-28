@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: b388bc7bc1c2
+  docs/specs/tree-sitter.md: 0f8ff7a1b057
 ---
 # Tree-sitter
 
@@ -25,13 +25,13 @@ Grammars imp doesn't come with, such as Ruby's, can be installed from their git 
 (define-grammar! "php" "https://github.com/tree-sitter/tree-sitter-php" "v0.23.11" "php")
 ```
 
-Then run `:TSInstallGrammar`. It installs every declared grammar that isn't built at its declared revision, so after changing a revision it builds just that one. `:TSInstallGrammar ruby` installs, or rebuilds, only Ruby. Installing runs in the background, and the message line says what it's doing and when each grammar is done or failed. Each grammar is:
+Then run M-x `install-grammars`. It installs every declared grammar that isn't built at its declared revision, so after changing a revision it builds just that one. M-x `install-grammar` asks which one to install, showing whether each is built, so you can rebuild a single grammar. Installing runs in the background, and the message line says what it's doing and when each grammar is done or failed. Each grammar is:
 
 1. fetched with `git` into `~/.local/share/imp/grammars/` (`$XDG_DATA_HOME/imp/grammars/`) at the declared revision;
 2. compiled from its `src/parser.c`, and `src/scanner.c` or `src/scanner.cc` if it has one, with `$CC` (else `cc`), and `$CXX` (else `c++`) for a C++ scanner;
 3. used from then on like a bundled grammar, including in place of a bundled grammar of the same name. Its colors come from the repository's `queries/highlights.scm`, and its embedded languages from `queries/injections.scm`. Files already open in its language are highlighted as soon as it's built, without reopening them.
 
-Only the declared revision is fetched, without the repository's history, since grammar repositories can be hundreds of megabytes. Opening a file whose grammar is declared but not built says to run `:TSInstallGrammar`, and nothing is downloaded or built until you do.
+Only the declared revision is fetched, without the repository's history, since grammar repositories can be hundreds of megabytes. Opening a file whose grammar is declared but not built says to run M-x `install-grammars`, and nothing is downloaded or built until you do.
 
 A grammar needs `git` and a C compiler to install, and the message line says which is missing. A repository without a generated `src/parser.c` can't be built, since generating one needs the tree-sitter CLI. To remove a grammar, delete its files under `grammars/`.
 

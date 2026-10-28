@@ -2,7 +2,7 @@
 ;;;
 ;;;   (define-grammar! "ruby" "https://github.com/tree-sitter/tree-sitter-ruby" "v0.23.1")
 ;;;
-;;; declares one, and :TSInstallGrammar clones and builds each declared
+;;; declares one, and M-x install-grammars clones and builds each declared
 ;;; grammar that isn't built at its revision, in the background. A build
 ;;; is grammars/NAME@REV.so under $XDG_DATA_HOME/imp, one file for each
 ;;; revision: dlopen hands back the library it already has for a path it
@@ -51,8 +51,8 @@
 (define (define-grammar! name url rev . subdir)
   "Declares tree-sitter grammar `name`, from the git repository at `url`
    at revision `rev` (a tag, branch or commit), and in its subdirectory
-   `subdir` when the repository has several grammars. :TSInstallGrammar
-   builds it; once built it's used like a bundled grammar, in place of a
+   `subdir` when the repository has several grammars. M-x
+   install-grammars builds it; once built it's used like a bundled grammar, in place of a
    bundled one of the same name.
 
      (define-grammar! \"ruby\" \"https://github.com/tree-sitter/tree-sitter-ruby\" \"v0.23.1\")
@@ -147,22 +147,33 @@
     (install-grammar! (car names) (lambda () (install-grammars! (cdr names)))))
   void)
 
-;; :TSInstallGrammar installs every declared grammar not built at its
-;; revision; :TSInstallGrammar NAME installs or rebuilds that one.
-(define-ex! '("TSInstallGrammar")
-  (lambda (ex)
-    (let ([name (ex-args ex)])
-      (cond
-        [(not (equal? name ""))
-         (if (hash-try-get *grammars* name)
-             (install-grammars! (list name))
-             (message (string-append "no grammar " name " is declared (see define-grammar!)")))]
-        [else
-         (let ([todo (filter (lambda (n) (not (grammar-built? n)))
-                             (sort (hash-keys->list *grammars*) string<?))])
-           (if (null? todo)
-               (message "every declared grammar is built")
-               (install-grammars! todo)))]))))
+;; Commands, not ex commands (see lore:decision/0019).
+(define-command! 'install-grammars
+  (lambda (count)
+    "Install every declared tree-sitter grammar that isn't built at its
+     declared revision, in the background."
+    (let ([todo (filter (lambda (n) (not (grammar-built? n)))
+                        (sort (hash-keys->list *grammars*) string<?))])
+      (if (null? todo)
+          (message "every declared grammar is built")
+          (install-grammars! todo)))))
+
+(define-command! 'install-grammar
+  (lambda (count)
+    "Install or rebuild one declared tree-sitter grammar, chosen by name."
+    (let ([names (sort (hash-keys->list *grammars*) string<?)])
+      (if (null? names)
+          (message "no grammar is declared (see define-grammar!)")
+          (completing-read "Install grammar: " names
+                           (lambda (name)
+                             (if (hash-try-get *grammars* name)
+                                 (install-grammars! (list name))
+                                 (message (string-append "no grammar " name " is declared (see define-grammar!)"))))
+                           (lambda (name)
+                             (let ([rev (cadr (hash-try-get *grammars* name))])
+                               (if (grammar-built? name)
+                                   (string-append "built at " rev)
+                                   (string-append "not built at " rev)))))))))
 
 ;; A buffer whose language is declared but not built says how to build
 ;; it; nothing is cloned or built unasked. (Here, not in syntax.scm's
@@ -171,4 +182,4 @@
            (lambda (mode)
              (let ([language (language-for-buffer)])
                (when (and language (hash-try-get *grammars* language) (not (grammar-built? language)))
-                 (message (string-append "grammar " language " isn't built: run :TSInstallGrammar"))))))
+                 (message (string-append "grammar " language " isn't built: run M-x install-grammars"))))))

@@ -455,7 +455,7 @@ fn load_grammar(name: &str, library: &Path) -> Result<Language, String> {
     );
     if !(min..=max).contains(&abi) {
         return Err(format!(
-            "grammar {name}: built for tree-sitter ABI {abi}, and imp reads {min} to {max}; rebuild it with :TSInstallGrammar {name}"
+            "grammar {name}: built for tree-sitter ABI {abi}, and imp reads {min} to {max}; rebuild it with M-x install-grammar"
         ));
     }
     Ok(language)

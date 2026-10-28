@@ -1,4 +1,4 @@
-//! :TSInstallGrammar, against a local git repository of the fixture
+//! M-x install-grammars and install-grammar, against a local git repository of the fixture
 //! grammar (tests/fixtures/imptest), with the real git and cc. One test,
 //! in order: it changes $CC, which the whole process shares.
 
@@ -51,6 +51,17 @@ fn repo(name: &str, subdir: &str) -> (PathBuf, String) {
     git(&dir, &["commit", "-q", "-m", "Add the grammar"]);
     let rev = git(&dir, &["rev-parse", "HEAD"]);
     (dir, rev)
+}
+
+fn m_x(s: &mut imp_server::Server, command: &str) {
+    s.keys(&["M-x"]);
+    type_keys(s, &format!("{command}<ret>"));
+}
+
+/// M-x install-grammar, answering `name`.
+fn install_one(s: &mut imp_server::Server, name: &str) {
+    m_x(s, "install-grammar");
+    type_keys(s, &format!("<C-u>{name}<ret>"));
 }
 
 /// The last message, once one starting with `grammar NAME:` says it's
@@ -110,16 +121,16 @@ fn installing_grammars() {
     .unwrap();
 
     // Nothing declared.
-    type_keys(&mut s, ":TSInstallGrammar<ret>");
+    m_x(&mut s, "install-grammars");
     assert_eq!(
         s.eval("(car *messages*)").unwrap(),
         "\"every declared grammar is built\""
     );
-    type_keys(&mut s, ":TSInstallGrammar nope<ret>");
-    assert!(s
-        .eval("(car *messages*)")
-        .unwrap()
-        .contains("no grammar nope is declared"));
+    m_x(&mut s, "install-grammar");
+    assert_eq!(
+        s.eval("(car *messages*)").unwrap(),
+        "\"no grammar is declared (see define-grammar!)\""
+    );
 
     // The bare command installs what's declared and not built.
     let (url, rev) = repo("imptest-repo", "");
@@ -136,10 +147,20 @@ fn installing_grammars() {
     assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
     assert_eq!(
         s.eval("(car *messages*)").unwrap(),
-        "\"grammar imptest isn't built: run :TSInstallGrammar\""
+        "\"grammar imptest isn't built: run M-x install-grammars\""
     );
     assert!(!grammars.join("imptest").exists());
-    type_keys(&mut s, ":TSInstallGrammar<ret>");
+    // install-grammar offers the declared ones, saying which are built,
+    // and names one that isn't declared.
+    m_x(&mut s, "install-grammar");
+    let rows = s.frame().text_rows().join("\n");
+    assert!(rows.contains(&format!("not built at {rev}")), "{rows}");
+    type_keys(&mut s, "<C-u>nope<ret>");
+    assert!(s
+        .eval("(car *messages*)")
+        .unwrap()
+        .contains("no grammar nope is declared"));
+    m_x(&mut s, "install-grammars");
     assert_eq!(
         wait_for_install(&mut s, "imptest"),
         "\"grammar imptest: installed\""
@@ -161,7 +182,7 @@ fn installing_grammars() {
         face_on(&mut s, "a.imptest", "let x = 1;\n", "let"),
         "\"syntax.keyword\""
     );
-    type_keys(&mut s, ":TSInstallGrammar<ret>");
+    m_x(&mut s, "install-grammars");
     assert_eq!(
         s.eval("(car *messages*)").unwrap(),
         "\"every declared grammar is built\""
@@ -181,7 +202,7 @@ fn installing_grammars() {
         url.display().to_string()
     ))
     .unwrap();
-    type_keys(&mut s, ":TSInstallGrammar<ret>");
+    m_x(&mut s, "install-grammars");
     assert_eq!(
         wait_for_install(&mut s, "imptest"),
         "\"grammar imptest: installed\""
@@ -192,7 +213,7 @@ fn installing_grammars() {
         "\"syntax.string\""
     );
     // Named, it rebuilds one that's built.
-    type_keys(&mut s, ":TSInstallGrammar imptest<ret>");
+    install_one(&mut s, "imptest");
     assert_eq!(
         wait_for_install(&mut s, "imptest"),
         "\"grammar imptest: installed\""
@@ -206,7 +227,7 @@ fn installing_grammars() {
     ))
     .unwrap();
     let _ = std::fs::remove_dir_all(grammars.join("imptest"));
-    type_keys(&mut s, ":TSInstallGrammar imptest<ret>");
+    install_one(&mut s, "imptest");
     assert_eq!(
         wait_for_install(&mut s, "imptest"),
         "\"grammar imptest: installed\""
@@ -219,7 +240,7 @@ fn installing_grammars() {
 
     // Without a C compiler, it says so.
     std::env::set_var("CC", "no-such-cc");
-    type_keys(&mut s, ":TSInstallGrammar imptest<ret>");
+    install_one(&mut s, "imptest");
     let said = wait_for_install(&mut s, "imptest");
     std::env::remove_var("CC");
     assert!(
@@ -230,7 +251,7 @@ fn installing_grammars() {
     // A repository that isn't there.
     s.eval("(define-grammar! \"missing\" \"/no/such/repo\" \"main\")")
         .unwrap();
-    type_keys(&mut s, ":TSInstallGrammar missing<ret>");
+    install_one(&mut s, "missing");
     let said = wait_for_install(&mut s, "missing");
     assert!(said.contains("failed"), "{said}");
 

@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/tree-sitter]]"]
 issue: https://github.com/apisandipas/imp/issues/81
 frozen:
-  docs/specs/tree-sitter.md: b388bc7bc1c2
+  docs/specs/tree-sitter.md: 0f8ff7a1b057
 ---
 # Runtime grammars
 
@@ -29,9 +29,9 @@ The tests use a tiny grammar, generated once with the tree-sitter CLI and commit
 
 - [x] Loading: the test grammar fixture, `register-grammar!` and the lazy lookup with `libloading`. A registered grammar works like a bundled one: `set-buffer-language!` and `define-mode-language!` use it, it highlights, it has text objects through `define-syntax-objects!`, and a Markdown fence names it by name or alias. A grammar registered with a bundled one's name takes its place. A library without the `tree_sitter_NAME` symbol, or one built for an incompatible tree-sitter, gives a message naming the problem, and the buffer is plain. Tests compile the fixture with `cc`.
 - [x] Queries: highlights and injections come from the grammar repository's `queries/`. `queries/NAME/highlights.scm` and `queries/NAME/injections.scm` in the config directory replace them for any language, bundled or not. `; inherits: a,b` puts those languages' queries first, each once, and a cycle stops. With tests, including an override of a bundled language's highlights.
-- [x] Installing: `(define-grammar! "name" "git-url" "rev" [subdir])` and `:TSInstallGrammar [name]`:
-  - The bare command installs every declared grammar not built at its declared revision. With a name, it installs or rebuilds that one.
+- [x] Installing: `(define-grammar! "name" "git-url" "rev" [subdir])` and the commands `install-grammars` and `install-grammar` (renamed from `:TSInstallGrammar`, [[0019-interactive-features-are-m-x-commands-ex-commands-are-vim-s]]):
+  - `install-grammars` installs every declared grammar not built at its declared revision. `install-grammar` asks for one, saying which are built, and installs or rebuilds it.
   - Installing clones (or fetches) into `grammars/NAME/`, checks out the revision, and compiles `src/parser.c`, plus `src/scanner.c` or `src/scanner.cc` if present, with `$CC`, else `cc`, or `c++` for a C++ scanner. The build goes to `NAME@REV.so` through a temporary file, and the old revisions' libraries are removed.
   - It runs in the background, saying in the message line what it's doing and when each grammar is done or failed. Without `git` or a C compiler it fails with a message naming what's missing.
   - With tests against a local repository of the fixture, including a subdirectory grammar and a rebuild.
-- [x] On use: a buffer whose language is declared but not built shows a message saying to run `:TSInstallGrammar`, and nothing is cloned or built. When an install finishes, buffers already open in that language are highlighted without reopening them. `define-grammar!` of an already built grammar makes it available at startup without loading it. With tests, and a manual check, with a screenshot, that `ruby-mode` lights up with the real Ruby grammar installed from GitHub.
+- [x] On use: a buffer whose language is declared but not built shows a message saying to run M-x `install-grammars`, and nothing is cloned or built. When an install finishes, buffers already open in that language are highlighted without reopening them. `define-grammar!` of an already built grammar makes it available at startup without loading it. With tests, and a manual check, with a screenshot, that `ruby-mode` lights up with the real Ruby grammar installed from GitHub.
