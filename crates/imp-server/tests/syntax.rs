@@ -175,6 +175,177 @@ fn html_css_and_json_are_highlighted() {
 }
 
 #[test]
+fn html_script_and_style_are_their_languages() {
+    let mut s = server("");
+    let page =
+        "<p>const</p>\n<script>\nconst x = 1;\n</script>\n<style>\na { color: red; }\n</style>\n";
+    for (word, face) in [
+        ("const x", "syntax.keyword"),
+        ("1;", "syntax.number"),
+        ("color", "syntax.property"),
+        ("script", "syntax.tag"),
+    ] {
+        assert_eq!(
+            face_on(&mut s, "embed.html", page, word),
+            format!("\"{face}\""),
+            "{word}"
+        );
+    }
+    // HTML's own text isn't JavaScript.
+    assert_eq!(face_on(&mut s, "embed.html", page, "const"), "#false");
+}
+
+#[test]
+fn typing_in_a_script_keeps_it_highlighted() {
+    let mut s = server("");
+    open(&mut s, "typed.html", "<script>\nlet x = 1;\n</script>\n");
+    type_keys(&mut s, "jOreturn<esc>");
+    let text = s.text();
+    assert_eq!(text, "<script>\nreturn\nlet x = 1;\n</script>\n");
+    for word in ["return", "let"] {
+        let at = text.find(word).unwrap();
+        assert_eq!(
+            s.eval(&format!(
+                "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+            ))
+            .unwrap(),
+            "\"syntax.keyword\"",
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn markdown_fences_are_their_languages() {
+    let mut s = server("");
+    s.eval("(define-language-alias! \"Snek\" \"python\")")
+        .unwrap();
+    for (i, (info, code)) in [
+        ("python", "if x:\n    y"),
+        ("PY", "if x:\n    y"),
+        ("snek", "if x:\n    y"),
+        ("sh", "if true; then y; fi"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let text = format!("# Code\n\n```{info}\n{code}\n```\n");
+        assert_eq!(
+            face_on(&mut s, &format!("fence{i}.md"), &text, "if"),
+            "\"syntax.keyword\"",
+            "{info}"
+        );
+    }
+}
+
+#[test]
+fn an_unknown_fence_language_is_left_as_markdown_draws_it() {
+    let mut s = server("");
+    let plain = face_on(&mut s, "plain.md", "```\ndef f\n```\n", "def");
+    assert_ne!(plain, "\"syntax.keyword\"");
+    // Ruby has an alias but no bundled grammar.
+    for (i, info) in ["zzz", "rb"].into_iter().enumerate() {
+        let text = format!("```{info}\ndef f\n```\n");
+        assert_eq!(
+            face_on(&mut s, &format!("unknown{i}.md"), &text, "def"),
+            plain,
+            "{info}"
+        );
+        let rows = s.frame().text_rows().join("\n");
+        assert!(
+            !rows.contains("grammar") && !rows.contains("ruby"),
+            "{rows}"
+        );
+    }
+}
+
+#[test]
+fn markdown_front_matter_is_yaml_or_toml() {
+    let mut s = server("");
+    assert_eq!(
+        face_on(&mut s, "front.md", "---\ntitle: x\n---\n# H\n", "title"),
+        "\"syntax.property\""
+    );
+    assert_eq!(
+        face_on(&mut s, "front2.md", "+++\ntitle = 1\n+++\n# H\n", "1"),
+        "\"syntax.number\""
+    );
+}
+
+#[test]
+fn markdown_inline_syntax_is_highlighted() {
+    let mut s = server("");
+    let text = "# A *b* title\n\nSome *em*, **strong**, `code` and [a link](https://x.y).\n";
+    for (word, face) in [
+        ("em*", "syntax.text.emphasis"),
+        ("b*", "syntax.text.emphasis"),
+        ("strong", "syntax.text.strong"),
+        ("code", "syntax.text.literal"),
+        ("a link", "syntax.text.reference"),
+        ("https", "syntax.text.uri"),
+    ] {
+        assert_eq!(
+            face_on(&mut s, "inline.md", text, word),
+            format!("\"{face}\""),
+            "{word}"
+        );
+    }
+    assert_eq!(face_on(&mut s, "inline.md", text, "Some"), "#false");
+}
+
+#[test]
+fn embedded_languages_nest() {
+    let mut s = server("");
+    let text = "# Page\n\n```html\n<script>\nconst x = 1;\n</script>\n```\n";
+    assert_eq!(
+        face_on(&mut s, "nest.md", text, "const"),
+        "\"syntax.keyword\""
+    );
+    assert_eq!(face_on(&mut s, "nest.md", text, "script"), "\"syntax.tag\"");
+}
+
+#[test]
+fn the_other_bundled_grammars_embed_languages() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        // A macro's body is Rust.
+        (
+            "inj.rs",
+            "fn f() { println!(\"{}\", g(1)); }\n",
+            "g(",
+            "syntax.function",
+        ),
+        // A build phase is Bash.
+        (
+            "inj.nix",
+            "{ buildPhase = ''\n  if true; then make; fi\n''; }\n",
+            "if",
+            "syntax.keyword",
+        ),
+        // A tagged template is its tag's language.
+        (
+            "inj.js",
+            "const s = css`a { color: red; }`;\n",
+            "color",
+            "syntax.property",
+        ),
+        // LuaJIT's ffi.cdef is C.
+        (
+            "inj.lua",
+            "ffi.cdef[[ int f(void); ]]\n",
+            "int",
+            "syntax.type",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
 fn yaml_toml_and_bash_are_highlighted() {
     let mut s = server("");
     for (file, text, word, face) in [
