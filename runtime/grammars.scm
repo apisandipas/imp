@@ -62,17 +62,18 @@
   void)
 
 (define (grammar-fetch-command name url rev)
-  "A shell command that clones grammar `name` from `url`, or fetches it if
-   it's cloned already, and checks out `rev`: a branch as the remote has
-   it, otherwise a tag or commit."
-  (let ([dir (shell-quote (grammar-clone name))] [rev (shell-quote rev)])
+  "A shell command that fetches revision `rev` (a tag, branch or commit)
+   of grammar `name` from `url` into its clone and checks it out. Only
+   that revision, with no history: grammar repositories commit every
+   generated parser, so a full clone of one can be hundreds of megabytes."
+  (let ([dir (shell-quote (grammar-clone name))])
     (string-append
      "{ command -v git >/dev/null || { echo \"git isn't installed\"; exit 1; }; "
      "mkdir -p " (shell-quote (grammars-dir)) " && "
-     "if [ -d " dir "/.git ]; then git -C " dir " fetch --quiet --tags --force origin; "
-     "else GIT_TERMINAL_PROMPT=0 git clone --quiet " (shell-quote url) " " dir "; fi && "
-     "{ git -C " dir " checkout --quiet --detach origin/" rev " 2>/dev/null"
-     " || git -C " dir " checkout --quiet --detach " rev "; }; } 2>&1")))
+     "{ [ -d " dir "/.git ] || { git init --quiet " dir " && git -C " dir " remote add origin " (shell-quote url) "; }; } && "
+     "git -C " dir " remote set-url origin " (shell-quote url) " && "
+     "GIT_TERMINAL_PROMPT=0 git -C " dir " fetch --quiet --depth 1 origin " (shell-quote rev) " && "
+     "git -C " dir " checkout --quiet --detach FETCH_HEAD; } 2>&1")))
 
 (define (grammar-build-command name rev)
   "A shell command that compiles grammar `name`'s src/parser.c, and its
@@ -124,10 +125,21 @@
         name (grammar-build-command name rev)
         (lambda ()
           (register-built-grammar! name)
+          (attach-grammar! name)
           (message (string-append "grammar " name ": installed"))
           (then))
         then))
      then)))
+
+(define (attach-grammar! name)
+  "Parses the open buffers whose language is `name` with its grammar as
+   it is now, so a grammar just installed highlights them in place."
+  (for-each (lambda (id)
+              (with-buffer id (lambda ()
+                                (when (equal? (language-for-buffer) name)
+                                  (set-buffer-language! name)))))
+            (buffer-list))
+  void)
 
 (define (install-grammars! names)
   "Installs grammars `names`, one after another."
@@ -151,3 +163,12 @@
            (if (null? todo)
                (message "every declared grammar is built")
                (install-grammars! todo)))]))))
+
+;; A buffer whose language is declared but not built says how to build
+;; it; nothing is cloned or built unasked. (Here, not in syntax.scm's
+;; hook, which runs first: that file can't see this one's definitions.)
+(add-hook! 'major-mode
+           (lambda (mode)
+             (let ([language (language-for-buffer)])
+               (when (and language (hash-try-get *grammars* language) (not (grammar-built? language)))
+                 (message (string-append "grammar " language " isn't built: run :TSInstallGrammar"))))))

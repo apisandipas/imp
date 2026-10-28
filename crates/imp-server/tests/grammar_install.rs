@@ -66,8 +66,9 @@ fn wait_for_install(s: &mut imp_server::Server, name: &str) -> String {
         }
     }
     panic!(
-        "grammar {name} never finished: {}",
-        s.eval("(car *messages*)").unwrap()
+        "grammar {name} never finished: {}\nstatus: {}",
+        s.eval("*messages*").unwrap(),
+        status_row(s)
     );
 }
 
@@ -127,12 +128,30 @@ fn installing_grammars() {
         url.display().to_string()
     ))
     .unwrap();
+    // Declared but not built: a buffer says how to build it, and nothing
+    // is cloned.
+    let early = temp_path("early.imptest");
+    std::fs::write(&early, "let x = 1;\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", early.display()));
+    assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+    assert_eq!(
+        s.eval("(car *messages*)").unwrap(),
+        "\"grammar imptest isn't built: run :TSInstallGrammar\""
+    );
+    assert!(!grammars.join("imptest").exists());
     type_keys(&mut s, ":TSInstallGrammar<ret>");
     assert_eq!(
         wait_for_install(&mut s, "imptest"),
         "\"grammar imptest: installed\""
     );
     assert_eq!(libraries(&grammars), [format!("imptest@{rev}.so")]);
+    // The buffer open meanwhile is highlighted, without reopening it.
+    assert_eq!(s.eval("(buffer-language)").unwrap(), "\"imptest\"");
+    assert_eq!(
+        s.eval("(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at 0)))")
+            .unwrap(),
+        "\"syntax.keyword\""
+    );
     // It said what it was doing.
     for step in [format!("fetching {rev}..."), "building...".to_string()] {
         let said = format!("(and (member \"grammar imptest: {step}\" *messages*) #t)");
@@ -214,4 +233,22 @@ fn installing_grammars() {
     type_keys(&mut s, ":TSInstallGrammar missing<ret>");
     let said = wait_for_install(&mut s, "missing");
     assert!(said.contains("failed"), "{said}");
+
+    // A new server that declares a built grammar has it at once. (Last:
+    // the editor is per thread, so `s` is done with.)
+    let mut fresh = server("");
+    fresh
+        .eval(&format!(
+            "(set! *grammars-dir* {:?})
+             (define-grammar! \"imptest\" {:?} \"main\" \"grammars/imptest\")
+             (define-major-mode! 'imptest-mode 'prog-mode '(\"imptest\") (lambda () void))
+             (define-mode-language! 'imptest-mode \"imptest\")",
+            grammars.display().to_string(),
+            url.display().to_string()
+        ))
+        .unwrap();
+    assert_eq!(
+        face_on(&mut fresh, "d.imptest", "let x = 1;\n", "let"),
+        "\"syntax.keyword\""
+    );
 }
