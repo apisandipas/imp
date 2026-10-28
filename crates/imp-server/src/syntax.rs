@@ -8,7 +8,7 @@
 //! them. Which language a buffer uses is up to Scheme (major modes call
 //! `set-buffer-language!`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
@@ -123,10 +123,10 @@ pub fn define_alias(alias: &str, language: &str) {
     }
 }
 
-/// Every bundled language, compiled once on first use.
-pub fn languages() -> &'static HashMap<&'static str, Lang> {
-    static LANGS: OnceLock<HashMap<&'static str, Lang>> = OnceLock::new();
-    LANGS.get_or_init(|| {
+/// Every bundled grammar, with its crate's highlight query.
+fn bundled() -> &'static HashMap<&'static str, (Language, String)> {
+    static BUNDLED: OnceLock<HashMap<&'static str, (Language, String)>> = OnceLock::new();
+    BUNDLED.get_or_init(|| {
         let specs: Vec<(&'static str, Language, String)> = vec![
             (
                 "rust",
@@ -238,10 +238,7 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
         ];
         specs
             .into_iter()
-            .filter_map(|(name, language, source)| {
-                let lang = make_lang(name, language, &source, injections_source(name))?;
-                Some((name, lang))
-            })
+            .map(|(name, language, source)| (name, (language, source)))
             .collect()
     })
 }
@@ -279,13 +276,16 @@ fn make_lang(
     })
 }
 
-/// A grammar built at runtime: its library, the directory of its
-/// repository's queries, and the language once it's loaded (or why it
-/// couldn't be).
+/// The names of the bundled languages.
+pub fn bundled_names() -> Vec<&'static str> {
+    bundled().keys().copied().collect()
+}
+
+/// A grammar built at runtime: its library, and the directory of its
+/// repository's queries.
 struct Grammar {
     library: PathBuf,
     queries: PathBuf,
-    loaded: Option<Result<&'static Lang, String>>,
 }
 
 fn grammars() -> &'static RwLock<HashMap<String, Grammar>> {
@@ -293,18 +293,31 @@ fn grammars() -> &'static RwLock<HashMap<String, Grammar>> {
     GRAMMARS.get_or_init(Default::default)
 }
 
+/// A language looked up so far, with its queries compiled, or why it
+/// couldn't be loaded.
+type Compiled = Result<&'static Lang, String>;
+
+fn compiled() -> &'static RwLock<HashMap<String, Compiled>> {
+    static COMPILED: OnceLock<RwLock<HashMap<String, Compiled>>> = OnceLock::new();
+    COMPILED.get_or_init(Default::default)
+}
+
+/// Forgets every compiled language, so the next lookup of each reads its
+/// queries again. Buffers already attached keep the one they have.
+fn forget_compiled() {
+    if let Ok(mut compiled) = compiled().write() {
+        compiled.clear();
+    }
+}
+
 /// Records a built grammar, loaded the first time its language is looked
 /// up. It takes the place of a bundled grammar of the same name, and of an
 /// earlier registration, for buffers that attach from now on.
 pub fn register_grammar(name: &str, library: PathBuf, queries: PathBuf) {
     if let Ok(mut grammars) = grammars().write() {
-        let grammar = Grammar {
-            library,
-            queries,
-            loaded: None,
-        };
-        grammars.insert(name.to_string(), grammar);
+        grammars.insert(name.to_string(), Grammar { library, queries });
     }
+    forget_compiled();
 }
 
 /// The names of the registered grammars.
@@ -315,24 +328,113 @@ pub fn registered_names() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Language `name`: a registered grammar, loading it if it isn't yet, else
-/// a bundled one. None if there's neither; an error saying why if a
-/// registered one won't load.
-pub fn lookup(name: &str) -> Result<Option<&'static Lang>, String> {
-    if let Ok(mut grammars) = grammars().write() {
-        if let Some(grammar) = grammars.get_mut(name) {
-            let loaded = grammar
-                .loaded
-                .get_or_insert_with(|| load_grammar(name, &grammar.library, &grammar.queries));
-            return loaded.clone().map(Some);
+fn query_dir() -> &'static RwLock<Option<PathBuf>> {
+    static DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+    DIR.get_or_init(Default::default)
+}
+
+/// Sets the directory whose `NAME/highlights.scm` and
+/// `NAME/injections.scm` replace a language's own queries: `queries/` in
+/// the config directory, or none.
+pub fn set_query_dir(dir: Option<PathBuf>) {
+    if let Ok(mut d) = query_dir().write() {
+        *d = dir;
+    }
+    forget_compiled();
+}
+
+/// The source of language `name`'s query of `kind` ("highlights" or
+/// "injections"), with the queries it inherits put before it.
+fn query_source(name: &str, kind: &str) -> String {
+    let mut seen = HashSet::from([name.to_string()]);
+    resolve_query(name, kind, &mut seen)
+}
+
+/// `name`'s own query of `kind`, after those its `; inherits: a,b` names,
+/// each resolved the same way. A language in `seen` is left out, so each
+/// is included once and a cycle stops.
+fn resolve_query(name: &str, kind: &str, seen: &mut HashSet<String>) -> String {
+    let own = own_query(name, kind);
+    let mut out = String::new();
+    for parent in inherited(&own) {
+        if seen.insert(parent.clone()) {
+            out.push_str(&resolve_query(&parent, kind, seen));
+            out.push('\n');
         }
     }
-    Ok(languages().get(name))
+    out + &own
+}
+
+/// The languages a query's leading comments say it inherits.
+fn inherited(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .take_while(|l| l.trim().is_empty() || l.trim_start().starts_with(';'))
+        .filter_map(|l| l.split_once("inherits:"))
+        .flat_map(|(_, names)| names.split(',').map(|n| n.trim().to_string()))
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
+/// `name`'s query of `kind` before inheriting: the config directory's,
+/// else its runtime grammar repository's, else the bundled crate's.
+fn own_query(name: &str, kind: &str) -> String {
+    let file = |dir: &Path| std::fs::read_to_string(dir.join(format!("{kind}.scm"))).ok();
+    let configured = query_dir()
+        .read()
+        .ok()
+        .and_then(|d| d.as_ref().and_then(|d| file(&d.join(name))));
+    let repository = || {
+        let grammars = grammars().read().ok()?;
+        file(&grammars.get(name)?.queries)
+    };
+    configured
+        .or_else(repository)
+        .unwrap_or_else(|| match kind {
+            "highlights" => bundled()
+                .get(name)
+                .map(|(_, q)| q.clone())
+                .unwrap_or_default(),
+            _ => injections_source(name).to_string(),
+        })
+}
+
+/// Language `name`: a registered grammar, loading it if it isn't yet, else
+/// a bundled one, with its queries compiled the first time. None if
+/// there's neither; an error saying why if a registered one won't load.
+pub fn lookup(name: &str) -> Result<Option<&'static Lang>, String> {
+    if let Some(done) = compiled().read().ok().and_then(|c| c.get(name).cloned()) {
+        return done.map(Some);
+    }
+    // No lock is held while loading: resolving the queries takes them.
+    let library = grammars()
+        .read()
+        .ok()
+        .and_then(|g| g.get(name).map(|g| g.library.clone()));
+    let language = match library {
+        Some(library) => load_grammar(name, &library),
+        None => match bundled().get(name) {
+            Some((language, _)) => Ok(language.clone()),
+            None => return Ok(None),
+        },
+    };
+    let lang = language.and_then(|language| {
+        let name: &'static str = Box::leak(name.to_string().into_boxed_str());
+        let highlights = query_source(name, "highlights");
+        let injections = query_source(name, "injections");
+        let lang = make_lang(name, language, &highlights, &injections)
+            .ok_or_else(|| format!("grammar {name}: its queries don't load"))?;
+        Ok(&*Box::leak(Box::new(lang)))
+    });
+    if let Ok(mut compiled) = compiled().write() {
+        compiled.insert(name.to_string(), lang.clone());
+    }
+    lang.map(Some)
 }
 
 /// Loads grammar `name` from `library`, calling its `tree_sitter_NAME`
-/// (dashes as underscores), with the queries in `queries`.
-fn load_grammar(name: &str, library: &Path, queries: &Path) -> Result<&'static Lang, String> {
+/// (dashes as underscores).
+fn load_grammar(name: &str, library: &Path) -> Result<Language, String> {
     let shown = library.display();
     // SAFETY: a grammar library is generated C that defines its language
     // tables and the function returning them; loading it runs nothing else.
@@ -356,13 +458,7 @@ fn load_grammar(name: &str, library: &Path, queries: &Path) -> Result<&'static L
             "grammar {name}: built for tree-sitter ABI {abi}, and imp reads {min} to {max}; rebuild it with :TSInstallGrammar {name}"
         ));
     }
-    let read = |kind: &str| {
-        std::fs::read_to_string(queries.join(format!("{kind}.scm"))).unwrap_or_default()
-    };
-    let name: &'static str = Box::leak(name.to_string().into_boxed_str());
-    let lang = make_lang(name, language, &read("highlights"), &read("injections"))
-        .ok_or_else(|| format!("grammar {name}: its queries don't load"))?;
-    Ok(Box::leak(Box::new(lang)))
+    Ok(language)
 }
 
 /// Capture names some queries still use from before Neovim renamed them,
@@ -1002,6 +1098,14 @@ fn field_of<'a>(parent: Node<'a>, child: Node<'a>) -> Option<&'static str> {
 mod tests {
     use super::*;
 
+    /// Every bundled language, compiled.
+    fn all_bundled() -> Vec<&'static Lang> {
+        bundled_names()
+            .into_iter()
+            .map(|name| lookup(name).unwrap().unwrap())
+            .collect()
+    }
+
     #[test]
     fn slow_parses_move_to_the_background() {
         let code: String = (0..25_000)
@@ -1119,7 +1223,7 @@ mod tests {
                 )),
             ),
         ] {
-            for lang in languages().values() {
+            for lang in all_bundled() {
                 for (capture, candidates) in lang.highlights.capture_names().iter().zip(&lang.faces)
                 {
                     if capture.starts_with('_') || unstyled.contains(capture) {
@@ -1153,7 +1257,7 @@ mod tests {
     #[test]
     fn every_language_loads_with_highlights() {
         let names: Vec<&str> = {
-            let mut v: Vec<&str> = languages().keys().copied().collect();
+            let mut v: Vec<&str> = bundled_names();
             v.sort();
             v
         };
@@ -1180,7 +1284,7 @@ mod tests {
                 "yaml"
             ]
         );
-        for lang in languages().values() {
+        for lang in all_bundled() {
             assert!(
                 lang.highlights.pattern_count() > 0,
                 "{} has no highlight patterns",

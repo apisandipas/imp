@@ -15,6 +15,10 @@
           {
             "type": "SYMBOL",
             "name": "let"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "raw"
           }
         ]
       }
@@ -143,6 +147,31 @@
           "value": ";"
         }
       ]
+    },
+    "raw": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "raw"
+        },
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "raw_text"
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
+    },
+    "raw_text": {
+      "type": "PATTERN",
+      "value": "[^}]*"
     },
     "identifier": {
       "type": "PATTERN",

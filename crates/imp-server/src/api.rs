@@ -1571,12 +1571,17 @@ pub fn register(engine: &mut Engine) {
             crate::syntax::register_grammar(&name, library.into(), queries.into());
         },
     );
+    // Where queries/NAME/highlights.scm and injections.scm replace a
+    // language's own; "" for nowhere.
+    engine.register_fn("set-query-dir!", |dir: String| {
+        crate::syntax::set_query_dir((!dir.is_empty()).then(|| dir.into()));
+    });
     engine.register_fn("buffer-language", || {
         editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
     });
     engine.register_fn("syntax-languages", || {
-        let mut names: Vec<String> = crate::syntax::languages()
-            .keys()
+        let mut names: Vec<String> = crate::syntax::bundled_names()
+            .into_iter()
             .map(|n| n.to_string())
             .chain(crate::syntax::registered_names())
             .collect();

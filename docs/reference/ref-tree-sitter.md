@@ -48,6 +48,17 @@ A fence's language is matched by grammar name, then by alias, ignoring case. The
 
 A block in a language imp has no grammar for (Ruby's `rb`, say, since Ruby isn't bundled) is drawn as Markdown draws code, with no message.
 
+## Queries
+
+A language's colors come from its highlights query, and the languages embedded in it from its injections query. A bundled grammar uses its crate's queries, and a grammar you registered uses the `highlights.scm` and `injections.scm` in its queries directory. To change them for any language, put your own in imp's config directory, as `queries/NAME/highlights.scm` or `queries/NAME/injections.scm`. Yours replaces the language's own, for files opened after imp starts.
+
+A query can build on others. If its first comment lines include `; inherits: javascript,jsx`, those languages' queries, found the same way, come before it. A language inherited twice is included once, and a language that inherits back is left out, so a cycle stops:
+
+```scheme
+; inherits: rust
+((identifier) @variable.builtin (#eq? @variable.builtin "self"))
+```
+
 ## Text objects
 
 These work with every operator, such as `d`, `c` and `y`, and in visual mode:

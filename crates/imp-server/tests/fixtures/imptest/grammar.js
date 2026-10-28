@@ -6,11 +6,14 @@ module.exports = grammar({
   word: $ => $.identifier,
   extras: $ => [/\s/, $.comment],
   rules: {
-    source_file: $ => repeat(choice($.function, $.let)),
+    source_file: $ => repeat(choice($.function, $.let, $.raw)),
     function: $ => seq('fn', field('name', $.identifier), $.parameters, $.block),
     parameters: $ => seq('(', optional(seq($.identifier, repeat(seq(',', $.identifier)))), ')'),
     block: $ => seq('{', repeat($.let), '}'),
     let: $ => seq('let', $.identifier, '=', choice($.number, $.string), ';'),
+    // Its text is another language, which queries/injections.scm names.
+    raw: $ => seq('raw', '{', $.raw_text, '}'),
+    raw_text: _ => /[^}]*/,
     identifier: _ => /[a-z_]+/,
     number: _ => /\d+/,
     string: _ => /"[^"]*"/,

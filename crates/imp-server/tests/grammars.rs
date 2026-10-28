@@ -151,3 +151,56 @@ fn a_grammar_that_wont_load_says_why() {
     let said = s.eval("(car *messages*)").unwrap();
     assert!(said.contains("ABI 99"), "{said}");
 }
+
+#[test]
+fn queries_come_from_the_repository_or_the_config_directory() {
+    let mut s = server("");
+    // Named apart from the other tests' grammar: the query directory is
+    // the whole process's.
+    register(&mut s, "queried", "queried");
+    mode(&mut s, "queried", "queried");
+    // The repository's injections query makes a raw block Python.
+    assert_eq!(
+        face_on(&mut s, "a.queried", "raw { if x: y }\n", "if"),
+        "\"syntax.keyword\""
+    );
+
+    let dir = temp_path("queries");
+    for (file, query) in [
+        // A bundled language's, replaced.
+        ("rust/highlights.scm", "\"fn\" @string\n"),
+        // A runtime grammar's, replaced, inheriting from a language that
+        // inherits back.
+        (
+            "queried/highlights.scm",
+            "; a comment\n; inherits: shared\n(number) @string\n",
+        ),
+        (
+            "shared/highlights.scm",
+            "; inherits: queried\n\"let\" @function\n",
+        ),
+        (
+            "queried/injections.scm",
+            "((raw_text) @injection.content (#set! injection.language \"bash\"))\n",
+        ),
+    ] {
+        let path = dir.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, query).unwrap();
+    }
+    s.eval(&format!("(set-query-dir! {:?})", dir.display().to_string()))
+        .unwrap();
+    assert_eq!(
+        face_on(&mut s, "b.rs", "fn main() {}\n", "fn"),
+        "\"syntax.string\""
+    );
+    let text = "let x = 1;\nraw { if true; then y; fi }\n";
+    for (word, face) in [
+        ("let", "\"syntax.function\""),
+        ("1", "\"syntax.string\""),
+        ("then", "\"syntax.keyword\""),
+    ] {
+        assert_eq!(face_on(&mut s, "b.queried", text, word), face, "{word}");
+    }
+    s.eval("(set-query-dir! \"\")").unwrap();
+}
