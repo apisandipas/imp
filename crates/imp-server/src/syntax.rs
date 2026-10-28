@@ -10,8 +10,9 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::events::Event;
@@ -238,38 +239,130 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
         specs
             .into_iter()
             .filter_map(|(name, language, source)| {
-                // A query a grammar update broke shouldn't take the editor
-                // down; that language just goes without highlighting.
-                let highlights = Query::new(&language, &source)
-                    .or_else(|_| Query::new(&language, ""))
-                    .ok()?;
-                let faces = highlights
-                    .capture_names()
-                    .iter()
-                    .map(|capture| face_candidates(capture))
-                    .collect();
-                let injections = Query::new(&language, injections_source(name))
-                    .ok()
-                    .and_then(|query| {
-                        Some(Injections {
-                            content: query.capture_index_for_name("injection.content")?,
-                            language: query.capture_index_for_name("injection.language"),
-                            query,
-                        })
-                    });
-                Some((
-                    name,
-                    Lang {
-                        name,
-                        language,
-                        highlights,
-                        faces,
-                        injections,
-                    },
-                ))
+                let lang = make_lang(name, language, &source, injections_source(name))?;
+                Some((name, lang))
             })
             .collect()
     })
+}
+
+/// A language from its grammar and query sources.
+fn make_lang(
+    name: &'static str,
+    language: Language,
+    highlights: &str,
+    injections: &str,
+) -> Option<Lang> {
+    // A query a grammar update broke shouldn't take the editor down; that
+    // language just goes without highlighting.
+    let highlights = Query::new(&language, highlights)
+        .or_else(|_| Query::new(&language, ""))
+        .ok()?;
+    let faces = highlights
+        .capture_names()
+        .iter()
+        .map(|capture| face_candidates(capture))
+        .collect();
+    let injections = Query::new(&language, injections).ok().and_then(|query| {
+        Some(Injections {
+            content: query.capture_index_for_name("injection.content")?,
+            language: query.capture_index_for_name("injection.language"),
+            query,
+        })
+    });
+    Some(Lang {
+        name,
+        language,
+        highlights,
+        faces,
+        injections,
+    })
+}
+
+/// A grammar built at runtime: its library, the directory of its
+/// repository's queries, and the language once it's loaded (or why it
+/// couldn't be).
+struct Grammar {
+    library: PathBuf,
+    queries: PathBuf,
+    loaded: Option<Result<&'static Lang, String>>,
+}
+
+fn grammars() -> &'static RwLock<HashMap<String, Grammar>> {
+    static GRAMMARS: OnceLock<RwLock<HashMap<String, Grammar>>> = OnceLock::new();
+    GRAMMARS.get_or_init(Default::default)
+}
+
+/// Records a built grammar, loaded the first time its language is looked
+/// up. It takes the place of a bundled grammar of the same name, and of an
+/// earlier registration, for buffers that attach from now on.
+pub fn register_grammar(name: &str, library: PathBuf, queries: PathBuf) {
+    if let Ok(mut grammars) = grammars().write() {
+        let grammar = Grammar {
+            library,
+            queries,
+            loaded: None,
+        };
+        grammars.insert(name.to_string(), grammar);
+    }
+}
+
+/// The names of the registered grammars.
+pub fn registered_names() -> Vec<String> {
+    grammars()
+        .read()
+        .map(|g| g.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Language `name`: a registered grammar, loading it if it isn't yet, else
+/// a bundled one. None if there's neither; an error saying why if a
+/// registered one won't load.
+pub fn lookup(name: &str) -> Result<Option<&'static Lang>, String> {
+    if let Ok(mut grammars) = grammars().write() {
+        if let Some(grammar) = grammars.get_mut(name) {
+            let loaded = grammar
+                .loaded
+                .get_or_insert_with(|| load_grammar(name, &grammar.library, &grammar.queries));
+            return loaded.clone().map(Some);
+        }
+    }
+    Ok(languages().get(name))
+}
+
+/// Loads grammar `name` from `library`, calling its `tree_sitter_NAME`
+/// (dashes as underscores), with the queries in `queries`.
+fn load_grammar(name: &str, library: &Path, queries: &Path) -> Result<&'static Lang, String> {
+    let shown = library.display();
+    // SAFETY: a grammar library is generated C that defines its language
+    // tables and the function returning them; loading it runs nothing else.
+    let library = unsafe { libloading::Library::new(library) }
+        .map_err(|e| format!("grammar {name}: can't load {shown}: {e}"))?;
+    let symbol = format!("tree_sitter_{}", name.replace('-', "_"));
+    // SAFETY: tree_sitter_NAME takes nothing and returns a TSLanguage.
+    let function = unsafe { library.get::<unsafe extern "C" fn() -> *const ()>(symbol.as_bytes()) }
+        .map_err(|_| format!("grammar {name}: {shown} has no {symbol}"))?;
+    let language: Language =
+        unsafe { tree_sitter_language::LanguageFn::from_raw(*function) }.into();
+    // The language's tables live in the library, so it stays loaded.
+    std::mem::forget(library);
+    let abi = language.abi_version();
+    let (min, max) = (
+        tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION,
+        tree_sitter::LANGUAGE_VERSION,
+    );
+    if !(min..=max).contains(&abi) {
+        return Err(format!(
+            "grammar {name}: built for tree-sitter ABI {abi}, and imp reads {min} to {max}; rebuild it with :TSInstallGrammar {name}"
+        ));
+    }
+    let read = |kind: &str| {
+        std::fs::read_to_string(queries.join(format!("{kind}.scm"))).unwrap_or_default()
+    };
+    let name: &'static str = Box::leak(name.to_string().into_boxed_str());
+    let lang = make_lang(name, language, &read("highlights"), &read("injections"))
+        .ok_or_else(|| format!("grammar {name}: its queries don't load"))?;
+    Ok(Box::leak(Box::new(lang)))
 }
 
 /// Capture names some queries still use from before Neovim renamed them,
@@ -383,11 +476,17 @@ impl std::fmt::Debug for Parse {
 }
 
 impl Syntax {
-    pub fn new(name: &str) -> Option<Syntax> {
-        let lang = languages().get(name)?;
+    /// A tree for language `name`: None if there's no such language, an
+    /// error if its grammar won't load.
+    pub fn new(name: &str) -> Result<Option<Syntax>, String> {
+        let Some(lang) = lookup(name)? else {
+            return Ok(None);
+        };
         let mut parser = Parser::new();
-        parser.set_language(&lang.language).ok()?;
-        Some(Syntax {
+        parser
+            .set_language(&lang.language)
+            .map_err(|e| format!("grammar {name}: {e}"))?;
+        Ok(Some(Syntax {
             lang,
             parser,
             tree: None,
@@ -395,7 +494,7 @@ impl Syntax {
             stale: true,
             reset: true,
             parsing: None,
-        })
+        }))
     }
 
     /// Brings the trees up to date with `buffer`'s edits since last time:
@@ -726,9 +825,10 @@ fn injections(
 /// ignoring case.
 fn language_named(name: &str) -> Option<&'static Lang> {
     let name = name.to_lowercase();
-    languages().get(name.as_str()).or_else(|| {
+    let found = |name: &str| lookup(name).ok().flatten();
+    found(&name).or_else(|| {
         let aliases = aliases().read().ok()?;
-        languages().get(aliases.get(&name)?.as_str())
+        found(aliases.get(&name)?)
     })
 }
 
@@ -910,7 +1010,7 @@ mod tests {
         let mut buffer = Buffer::from_text(&code);
         buffer.track_edits(true);
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut syntax = Syntax::new("rust").unwrap();
+        let mut syntax = Syntax::new("rust").unwrap().unwrap();
         // The first parse of a big file is over budget: it goes to a
         // thread and returns at once.
         let t = Instant::now();
@@ -937,7 +1037,7 @@ mod tests {
         let mut buffer = Buffer::from_text(&page);
         buffer.track_edits(true);
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut syntax = Syntax::new("html").unwrap();
+        let mut syntax = Syntax::new("html").unwrap().unwrap();
         syntax.update(&mut buffer, 3, Some(&tx));
         assert!(syntax.root().is_none());
         match rx.recv_timeout(Duration::from_secs(60)).unwrap() {
@@ -961,7 +1061,7 @@ mod tests {
         let code = "fn f() { a!(b!(c!(d!(e!(g!(1)))))); }\n";
         let mut buffer = Buffer::from_text(code);
         buffer.track_edits(true);
-        let mut syntax = Syntax::new("rust").unwrap();
+        let mut syntax = Syntax::new("rust").unwrap().unwrap();
         syntax.update(&mut buffer, 1, None);
         let deepest = syntax.layers.iter().map(|l| l.depth).max();
         assert_eq!(deepest, Some(MAX_DEPTH));
@@ -977,7 +1077,7 @@ mod tests {
             .collect();
         let mut buffer = Buffer::from_text(&code);
         buffer.track_edits(true);
-        let mut syntax = Syntax::new("rust").unwrap();
+        let mut syntax = Syntax::new("rust").unwrap().unwrap();
         let t = std::time::Instant::now();
         syntax.update(&mut buffer, 1, None);
         eprintln!("first parse {:?}", t.elapsed());
@@ -1093,7 +1193,7 @@ mod tests {
     fn incremental_parse_and_highlight() {
         let mut buffer = Buffer::from_text("fn main() {}\n");
         buffer.track_edits(true);
-        let mut syntax = Syntax::new("rust").unwrap();
+        let mut syntax = Syntax::new("rust").unwrap().unwrap();
         syntax.update(&mut buffer, 1, None);
         let hl = syntax.highlights(buffer.rope(), 0..buffer.rope().len_bytes());
         assert!(hl

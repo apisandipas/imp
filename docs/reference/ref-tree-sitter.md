@@ -16,6 +16,14 @@ imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, M
 (define-mode-language! 'lisp-mode "scheme")
 ```
 
+A grammar you built yourself, as a shared library, can be used the same way. Register it with the library's path and the directory of its `highlights.scm` (and `injections.scm`, if it has one). The library is loaded the first time a buffer or a code fence uses the language:
+
+```scheme
+(register-grammar! "ruby" "/path/to/ruby.so" "/path/to/tree-sitter-ruby/queries")
+```
+
+It works like a bundled grammar: modes, aliases, text objects and code fences all use it, and one with a bundled grammar's name takes its place. If the library won't load, because it has no `tree_sitter_ruby` function or was built for a tree-sitter imp can't read, the message line says so and the buffer is plain.
+
 ## Syntax colors
 
 Each kind of thing in the code, such as a keyword or a function name, is drawn in its own face. The faces are named `syntax.` and the kind: `syntax.keyword`, `syntax.function`, `syntax.function.method`. A face that isn't set falls back to the shorter name, so `syntax.function.method` looks like `syntax.function` unless you set it. A few grammars use older names, such as `conditional` and `method`; those fall back to the current names' faces, `syntax.keyword` and `syntax.function`.

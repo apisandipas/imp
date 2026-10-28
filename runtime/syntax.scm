@@ -35,7 +35,9 @@
 
 (add-hook! 'major-mode
            (lambda (mode)
-             (set-buffer-language! (or (language-for-buffer) ""))
+             ;; A grammar that won't load says why, and the buffer is plain.
+             (let ([loaded (set-buffer-language! (or (language-for-buffer) ""))])
+               (when (string? loaded) (message loaded)))
              ;; Brace languages indent after { ( [ .
              (when (memq 'prog-mode (mode-lineage mode))
                (set-local-option! 'smartindent (not (memq mode '(scheme-mode lisp-mode repl-mode)))))))

@@ -1542,15 +1542,18 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let id = e.current;
             match crate::syntax::Syntax::new(&name) {
-                Some(syntax) => {
+                Ok(Some(syntax)) => {
                     e.buffer.track_edits(true);
                     e.syntax.insert(id, syntax);
-                    true
+                    SteelVal::BoolV(true)
                 }
-                None => {
+                other => {
                     e.buffer.track_edits(false);
                     e.syntax.remove(&id);
-                    false
+                    match other {
+                        Err(why) => SteelVal::StringV(why.into()),
+                        _ => SteelVal::BoolV(false),
+                    }
                 }
             }
         })
@@ -1561,6 +1564,13 @@ pub fn register(engine: &mut Engine) {
             crate::syntax::define_alias(&alias, &language);
         },
     );
+    // A grammar built at runtime (runtime/grammars.scm builds them).
+    engine.register_fn(
+        "register-grammar!",
+        |name: String, library: String, queries: String| {
+            crate::syntax::register_grammar(&name, library.into(), queries.into());
+        },
+    );
     engine.register_fn("buffer-language", || {
         editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
     });
@@ -1568,8 +1578,10 @@ pub fn register(engine: &mut Engine) {
         let mut names: Vec<String> = crate::syntax::languages()
             .keys()
             .map(|n| n.to_string())
+            .chain(crate::syntax::registered_names())
             .collect();
         names.sort();
+        names.dedup();
         names
     });
     // The named nodes around char offset `at`, innermost first, as
