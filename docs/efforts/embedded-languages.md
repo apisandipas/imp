@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/tree-sitter]]"]
 issue: https://github.com/apisandipas/imp/issues/81
 frozen:
