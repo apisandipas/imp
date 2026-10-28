@@ -45,6 +45,22 @@ fn a_more_specific_capture_of_the_same_text_wins() {
 }
 
 #[test]
+fn a_narrower_capture_wins_over_the_one_around_it() {
+    // The Rust query lists strings before escapes; the escape inside a
+    // string still wins.
+    let mut s = server("");
+    open(&mut s, "esc.rs", "fn f() { \"a\\nb\"; }\n");
+    let at = s.text().find("\\n").unwrap();
+    assert_eq!(
+        s.eval(&format!(
+            "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+        ))
+        .unwrap(),
+        "\"syntax.escape\""
+    );
+}
+
+#[test]
 fn highlighting_follows_edits() {
     let mut s = server("");
     open(&mut s, "edit.rs", "x\n");
@@ -72,12 +88,262 @@ fn every_bundled_language_attaches() {
         ("a.js", "javascript"),
         ("a.nix", "nix"),
         ("a.md", "markdown"),
+        ("a.html", "html"),
+        ("a.svg", "html"),
+        ("a.css", "css"),
+        ("a.scss", "css"),
+        ("a.json", "json"),
+        ("a.yaml", "yaml"),
+        ("a.toml", "toml"),
+        ("a.sh", "bash"),
+        ("a.c", "c"),
+        ("a.h", "c"),
+        ("a.go", "go"),
+        ("a.py", "python"),
+        ("a.lua", "lua"),
     ] {
         open(&mut s, file, "x\n");
         assert_eq!(s.eval("(buffer-language)").unwrap(), format!("\"{lang}\""));
     }
     open(&mut s, "a.txt", "x\n");
     assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+}
+
+#[test]
+fn cpp_elixir_and_ruby_have_modes_but_no_bundled_grammar() {
+    let mut s = server("");
+    for (file, mode) in [
+        ("a.cpp", "cpp-mode"),
+        ("a.ex", "elixir-mode"),
+        ("a.exs", "elixir-mode"),
+        ("a.rb", "ruby-mode"),
+        ("Rakefile", "ruby-mode"),
+        ("Gemfile", "ruby-mode"),
+    ] {
+        open(&mut s, file, "x\n");
+        assert_eq!(s.eval("(major-mode)").unwrap(), mode);
+        assert_eq!(s.eval("(buffer-language)").unwrap(), "#false");
+    }
+}
+
+/// The syntax face drawn on the first `word` in `text`, opened as `file`.
+fn face_on(s: &mut imp_server::Server, file: &str, text: &str, word: &str) -> String {
+    open(s, file, text);
+    let at = text.find(word).unwrap();
+    s.eval(&format!(
+        "(list-find (lambda (f) (starts-with? f \"syntax.\")) (reverse (faces-at {at})))"
+    ))
+    .unwrap()
+}
+
+#[test]
+fn html_css_and_json_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.html",
+            "<div class=\"x\">hi</div>\n",
+            "div",
+            "syntax.tag",
+        ),
+        (
+            "hl.html",
+            "<div class=\"x\">hi</div>\n",
+            "class",
+            "syntax.attribute",
+        ),
+        ("hl.css", "a { color: red; }\n", "color", "syntax.property"),
+        (
+            "hl.json",
+            "{\"k\": \"v\", \"n\": 1}\n",
+            "1",
+            "syntax.number",
+        ),
+        (
+            "hl.json",
+            "{\"k\": \"v\", \"n\": 1}\n",
+            "\"v\"",
+            "syntax.string",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn yaml_toml_and_bash_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        ("hl.yaml", "name: imp # c\n", "name", "syntax.property"),
+        ("hl.yaml", "name: imp # c\n", "imp", "syntax.string"),
+        ("hl.yaml", "name: imp # c\n", "# c", "syntax.comment"),
+        ("hl.toml", "[a]\nx = 1\n", "x", "syntax.type"),
+        ("hl.toml", "[a]\nx = 1\n", "1", "syntax.number"),
+        (
+            "hl.sh",
+            "if true; then echo \"hi\"; fi\n",
+            "if",
+            "syntax.keyword",
+        ),
+        (
+            "hl.sh",
+            "if true; then echo \"hi\"; fi\n",
+            "\"hi\"",
+            "syntax.string",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn c_go_and_python_are_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.c",
+            "int main(void) { return 0; }\n",
+            "return",
+            "syntax.keyword",
+        ),
+        (
+            "hl.go",
+            "func main() { s := \"hi\" }\n",
+            "func",
+            "syntax.keyword",
+        ),
+        (
+            "hl.go",
+            "func main() { s := \"hi\" }\n",
+            "\"hi\"",
+            "syntax.string",
+        ),
+        (
+            "hl.py",
+            "def f():\n    return \"hi\"\n",
+            "def",
+            "syntax.keyword",
+        ),
+        (
+            "hl.py",
+            "def f():\n    return \"hi\"\n",
+            "f()",
+            "syntax.function",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn lua_is_highlighted() {
+    let mut s = server("");
+    for (file, text, word, face) in [
+        (
+            "hl.lua",
+            "local x = \"hi\" -- c\n",
+            "local",
+            "syntax.keyword",
+        ),
+        (
+            "hl.lua",
+            "local x = \"hi\" -- c\n",
+            "\"hi\"",
+            "syntax.string",
+        ),
+    ] {
+        assert_eq!(
+            face_on(&mut s, file, text, word),
+            format!("\"{face}\""),
+            "{word} in {file}"
+        );
+    }
+}
+
+#[test]
+fn lua_text_objects() {
+    let mut s = server("");
+    for (i, (file, text, keys, left)) in [
+        (
+            "o.lua",
+            "function f(a, b)\n  return a\nend\nx = 1\n",
+            "jdaf",
+            "\nx = 1\n",
+        ),
+        ("o.lua", "f(a, b)\n", "fadaa", "f(b)\n"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let file = format!("{i}{file}");
+        assert_eq!(after(&mut s, &file, text, keys), left, "{keys} in {text:?}");
+    }
+}
+
+/// The text left after typing `keys` in `text`, opened as `file`.
+fn after(s: &mut imp_server::Server, file: &str, text: &str, keys: &str) -> String {
+    open(s, file, text);
+    type_keys(s, keys);
+    s.text()
+}
+
+#[test]
+fn c_go_and_python_text_objects() {
+    let mut s = server("");
+    for (i, (file, text, keys, left)) in [
+        (
+            "o.c",
+            "int f(int a, int b) {\n    return a;\n}\nint g;\n",
+            "jdaf",
+            "\nint g;\n",
+        ),
+        ("o.c", "struct P {\n    int x;\n};\n", "jdac", ";\n"),
+        (
+            "o.c",
+            "int f(int a, int b) {}\n",
+            "fadaa",
+            "int f(int b) {}\n",
+        ),
+        (
+            "o.go",
+            "func f(a int, b int) {\n\tg()\n}\n",
+            "jdif",
+            "func f(a int, b int) {\n}\n",
+        ),
+        (
+            "o.go",
+            "func f(a int, b int) {}\n",
+            "fadaa",
+            "func f(b int) {}\n",
+        ),
+        ("o.go", "type P struct {\n\tx int\n}\n", "jdac", "\n"),
+        (
+            "o.py",
+            "def f(a, b):\n    return a\n\nx = 1\n",
+            "jdaf",
+            "\n\nx = 1\n",
+        ),
+        ("o.py", "class A:\n    x = 1\n", "jdac", "\n"),
+        ("o.py", "f(a, b)\n", "fadaa", "f(b)\n"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let file = format!("{i}{file}");
+        assert_eq!(after(&mut s, &file, text, keys), left, "{keys} in {text:?}");
+    }
 }
 
 #[test]

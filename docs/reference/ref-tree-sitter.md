@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: 4076738b1a06
+  docs/specs/tree-sitter.md: b388bc7bc1c2
 ---
 # Tree-sitter
 
@@ -10,7 +10,7 @@ imp reads the structure of your code with tree-sitter. That gives it syntax colo
 
 ## Languages
 
-imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix and Markdown. Each major mode names the grammar it uses. To parse another mode with one of these, name it in `init.scm`:
+imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML, Bash (for shell scripts), C, Go, Python and Lua. Each major mode names the grammar it uses. C++, Elixir and Ruby files have their modes (`cpp-mode`, `elixir-mode`, `ruby-mode`) and text objects, but no bundled grammar, so they aren't highlighted yet; installing grammars at runtime is still to come. HTML's grammar also reads XML and SVG files, and CSS's reads SCSS. To parse another mode with one of these, name it in `init.scm`:
 
 ```scheme
 (define-mode-language! 'lisp-mode "scheme")
@@ -18,7 +18,7 @@ imp comes with grammars for Rust, Scheme, TypeScript and TSX, JavaScript, Nix an
 
 ## Syntax colors
 
-Each kind of thing in the code, such as a keyword or a function name, is drawn in its own face. The faces are named `syntax.` and the kind: `syntax.keyword`, `syntax.function`, `syntax.function.method`. A face that isn't set falls back to the shorter name, so `syntax.function.method` looks like `syntax.function` unless you set it.
+Each kind of thing in the code, such as a keyword or a function name, is drawn in its own face. The faces are named `syntax.` and the kind: `syntax.keyword`, `syntax.function`, `syntax.function.method`. A face that isn't set falls back to the shorter name, so `syntax.function.method` looks like `syntax.function` unless you set it. A few grammars use older names, such as `conditional` and `method`; those fall back to the current names' faces, `syntax.keyword` and `syntax.function`.
 
 Change one with `set-face!`:
 

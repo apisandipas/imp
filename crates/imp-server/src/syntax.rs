@@ -2,8 +2,11 @@
 //! for highlighting and structural text objects.
 //!
 //! The grammars bundled are the owner's choice: Rust, Scheme, TypeScript
-//! and TSX, JavaScript, Nix and Markdown. Which language a buffer uses is
-//! up to Scheme (major modes call `set-buffer-language!`).
+//! and TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML,
+//! Bash, C, Go, Python and Lua. C++, Ruby and Elixir are left to be
+//! installed: they're most of the binary's size and fewer people need
+//! them. Which language a buffer uses is up to Scheme (major modes call
+//! `set-buffer-language!`).
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -60,8 +63,8 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                     tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
                 ),
             ),
-            // TypeScript's query only adds to JavaScript's, as in the
-            // grammar's own setup.
+            // TypeScript's query only adds to JavaScript's. Combined
+            // queries go in the order the grammar's own setup gives.
             (
                 "typescript",
                 tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -77,8 +80,8 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 format!(
                     "{}\n{}\n{}",
                     tree_sitter_typescript::HIGHLIGHTS_QUERY,
-                    tree_sitter_javascript::HIGHLIGHT_QUERY,
-                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::HIGHLIGHT_QUERY
                 ),
             ),
             (
@@ -90,6 +93,56 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
                 "markdown",
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.into(),
+            ),
+            (
+                "html",
+                tree_sitter_html::LANGUAGE.into(),
+                tree_sitter_html::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "css",
+                tree_sitter_css::LANGUAGE.into(),
+                tree_sitter_css::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "json",
+                tree_sitter_json::LANGUAGE.into(),
+                tree_sitter_json::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "yaml",
+                tree_sitter_yaml::LANGUAGE.into(),
+                tree_sitter_yaml::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "toml",
+                tree_sitter_toml_ng::LANGUAGE.into(),
+                tree_sitter_toml_ng::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "bash",
+                tree_sitter_bash::LANGUAGE.into(),
+                tree_sitter_bash::HIGHLIGHT_QUERY.into(),
+            ),
+            (
+                "c",
+                tree_sitter_c::LANGUAGE.into(),
+                tree_sitter_c::HIGHLIGHT_QUERY.into(),
+            ),
+            (
+                "go",
+                tree_sitter_go::LANGUAGE.into(),
+                tree_sitter_go::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "python",
+                tree_sitter_python::LANGUAGE.into(),
+                tree_sitter_python::HIGHLIGHTS_QUERY.into(),
+            ),
+            (
+                "lua",
+                tree_sitter_lua::LANGUAGE.into(),
+                tree_sitter_lua::HIGHLIGHTS_QUERY.into(),
             ),
         ];
         specs
@@ -119,12 +172,40 @@ pub fn languages() -> &'static HashMap<&'static str, Lang> {
     })
 }
 
+/// Capture names some queries still use from before Neovim renamed them,
+/// with the names themes set faces for.
+const OLD_CAPTURES: &[(&str, &str)] = &[
+    ("conditional", "keyword.conditional"),
+    ("repeat", "keyword.repeat"),
+    ("field", "property"),
+    ("method", "function.method"),
+    ("parameter", "variable.parameter"),
+    ("preproc", "keyword.directive"),
+    ("delimiter", "punctuation.delimiter"),
+];
+
+/// The faces to try for `capture`, most specific first: `syntax.a.b`,
+/// then `syntax.a`. An old name (`method.call`) tries its new one's
+/// (`syntax.function.method.call`, down to `syntax.function`) after its own.
 fn face_candidates(capture: &str) -> Vec<String> {
-    let parts: Vec<&str> = capture.split('.').collect();
-    (1..=parts.len())
-        .rev()
-        .map(|n| format!("syntax.{}", parts[..n].join(".")))
-        .collect()
+    let chain = |capture: &str| -> Vec<String> {
+        let parts: Vec<&str> = capture.split('.').collect();
+        (1..=parts.len())
+            .rev()
+            .map(|n| format!("syntax.{}", parts[..n].join(".")))
+            .collect()
+    };
+    let mut faces = chain(capture);
+    let (head, rest) = capture.split_once('.').unwrap_or((capture, ""));
+    if let Some((_, new)) = OLD_CAPTURES.iter().find(|(old, _)| *old == head) {
+        let renamed = if rest.is_empty() {
+            new.to_string()
+        } else {
+            format!("{new}.{rest}")
+        };
+        faces.extend(chain(&renamed));
+    }
+    faces
 }
 
 impl std::fmt::Debug for Syntax {
@@ -266,11 +347,11 @@ impl Syntax {
     }
 
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,
-    /// end char, faces to try). Earlier patterns win where captures
-    /// overlap, as tree-sitter's queries are written to expect, except
-    /// that of two captures of the same text, a more specific one wins
-    /// over its general one: `comment.documentation` over the `comment`
-    /// the Rust query lists first.
+    /// end char, faces to try), in the order they win where they overlap,
+    /// as in tree-sitter's own highlighter: the narrower capture first, so
+    /// an escape wins over the string around it, and of two captures of
+    /// the same text, the later pattern, so a Rust doc comment is
+    /// `comment.documentation`, not the `comment` listed before it.
     pub fn highlights(
         &self,
         rope: &Rope,
@@ -300,32 +381,10 @@ impl Syntax {
                 &lang.faces[c.index as usize],
             ));
         }
-        // Lower pattern index first, so painting "only where nothing is
-        // painted yet" gives earlier patterns priority.
-        out.sort_by_key(|(pattern, ..)| *pattern);
-        let mut first: HashMap<(usize, usize), usize> = HashMap::new();
-        for i in 0..out.len() {
-            let range = (out[i].1, out[i].2);
-            match first.get(&range) {
-                Some(&j) if more_specific(out[i].3, out[j].3) => out.swap(i, j),
-                Some(_) => {}
-                None => {
-                    first.insert(range, i);
-                }
-            }
-        }
+        // Narrower first, then the later pattern, so painting "only where
+        // nothing is painted yet" gives those priority.
+        out.sort_by_key(|&(pattern, start, end, _)| (end - start, std::cmp::Reverse(pattern)));
         out.into_iter().map(|(_, s, e, f)| (s, e, f)).collect()
-    }
-}
-
-/// Whether the faces of capture `a` are a more specific form of `b`'s:
-/// `syntax.comment.documentation` of `syntax.comment`.
-fn more_specific(a: &[String], b: &[String]) -> bool {
-    match (a.first(), b.first()) {
-        (Some(a), Some(b)) => {
-            a.len() > b.len() && a.starts_with(b.as_str()) && a[b.len()..].starts_with('.')
-        }
-        _ => false,
     }
 }
 
@@ -536,6 +595,61 @@ mod tests {
     }
 
     #[test]
+    fn every_capture_has_a_face_in_the_themes() {
+        // Variables are drawn in the text's own color, by design, and
+        // @none means no highlighting.
+        let unstyled = ["variable", "none"];
+        let faces = |source: &str| -> std::collections::HashSet<String> {
+            regex::Regex::new(r#""(syntax\.[a-z.]+)""#)
+                .unwrap()
+                .captures_iter(source)
+                .map(|c| c[1].to_string())
+                .collect()
+        };
+        for (theme, set) in [
+            (
+                "theme.scm",
+                faces(include_str!("../../../runtime/theme.scm")),
+            ),
+            (
+                "modus-themes.scm",
+                faces(include_str!(
+                    "../../../packages/modus-themes/modus-themes.scm"
+                )),
+            ),
+        ] {
+            for lang in languages().values() {
+                for (capture, candidates) in lang.highlights.capture_names().iter().zip(&lang.faces)
+                {
+                    if capture.starts_with('_') || unstyled.contains(capture) {
+                        continue;
+                    }
+                    assert!(
+                        candidates.iter().any(|f| set.contains(f)),
+                        "{}'s @{capture} has no face in {theme}",
+                        lang.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn old_capture_names_fall_back_to_new_ones() {
+        assert_eq!(
+            face_candidates("method.call"),
+            [
+                "syntax.method.call",
+                "syntax.method",
+                "syntax.function.method.call",
+                "syntax.function.method",
+                "syntax.function"
+            ]
+        );
+        assert_eq!(face_candidates("keyword"), ["syntax.keyword"]);
+    }
+
+    #[test]
     fn every_language_loads_with_highlights() {
         let names: Vec<&str> = {
             let mut v: Vec<&str> = languages().keys().copied().collect();
@@ -545,13 +659,23 @@ mod tests {
         assert_eq!(
             names,
             [
+                "bash",
+                "c",
+                "css",
+                "go",
+                "html",
                 "javascript",
+                "json",
+                "lua",
                 "markdown",
                 "nix",
+                "python",
                 "rust",
                 "scheme",
+                "toml",
                 "tsx",
-                "typescript"
+                "typescript",
+                "yaml"
             ]
         );
         for lang in languages().values() {

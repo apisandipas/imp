@@ -14,7 +14,11 @@
 (define *mode-languages*
   (hash 'rust-mode "rust" 'scheme-mode "scheme" 'repl-mode "scheme"
         'javascript-mode "javascript" 'typescript-mode "typescript"
-        'nix-mode "nix" 'markdown-mode "markdown"))
+        'nix-mode "nix" 'markdown-mode "markdown"
+        'html-mode "html" 'css-mode "css" 'json-mode "json"
+        'yaml-mode "yaml" 'toml-mode "toml" 'shell-mode "bash"
+        'c-mode "c" 'cpp-mode "cpp" 'go-mode "go" 'python-mode "python"
+        'lua-mode "lua" 'elixir-mode "elixir" 'ruby-mode "ruby"))
 
 (define (language-for-buffer)
   "The tree-sitter language for the current buffer, or #f for none.
@@ -98,6 +102,34 @@
   '("formals" "list_expression"))
 
 (define-syntax-objects! "scheme" '("list") '("list") '("list"))
+
+(define-syntax-objects! "c" '("function_definition")
+  '("struct_specifier" "enum_specifier" "union_specifier")
+  '("argument_list" "parameter_list" "initializer_list"))
+
+(define-syntax-objects! "cpp" '("function_definition" "lambda_expression")
+  '("class_specifier" "struct_specifier" "enum_specifier" "union_specifier" "namespace_definition")
+  '("argument_list" "parameter_list" "template_argument_list" "template_parameter_list" "initializer_list"))
+
+(define-syntax-objects! "go" '("function_declaration" "method_declaration" "func_literal")
+  '("type_declaration")
+  '("argument_list" "parameter_list" "literal_value"))
+
+(define-syntax-objects! "python" '("function_definition" "lambda")
+  '("class_definition")
+  '("argument_list" "parameters" "list" "tuple"))
+
+;; Lua has no classes. Elixir's def is a call like any other, so only fn
+;; is a function node.
+(define-syntax-objects! "lua" '("function_declaration" "function_definition") '()
+  '("arguments" "parameters" "table_constructor"))
+
+(define-syntax-objects! "elixir" '("anonymous_function") '()
+  '("arguments" "list" "tuple" "map_content"))
+
+(define-syntax-objects! "ruby" '("method" "singleton_method" "lambda")
+  '("class" "module" "singleton_class")
+  '("argument_list" "method_parameters" "lambda_parameters" "block_parameters" "array"))
 
 (define (enclosing-node at kinds n)
   "The `n`th innermost node around `at` whose kind is in `kinds`."
