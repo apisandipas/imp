@@ -3225,6 +3225,9 @@
 (define (ex-args ex)
   "The argument text of parsed command `ex`, after its name."
   (cadddr ex))
+(define (ex-range-text ex)
+  "The range of parsed command `ex` as typed (\"3\", \"%\"), or \"\"."
+  (list-ref ex 4))
 
 (define (char-at s i)
   "The char at index `i` of `s`, or #f past its end."
@@ -3316,7 +3319,8 @@
   (and c (let ([n (char->integer (char-downcase c))]) (and (>= n 97) (<= n 122)))))
 
 (define (parse-ex line)
-  "Parses a command line into (name ex), ex being (range given? bang args)."
+  "Parses a command line into (name ex), ex being (range given? bang args
+   range-text), range-text being the range as typed."
   (let* ([r (parse-range line 0)]
          [range (car r)]
          [i (skip-spaces line (caddr r))]
@@ -3334,7 +3338,7 @@
          [args-start (skip-spaces line (if bang? (+ name-end 1) name-end))]
          [args (substring line args-start (string-length line))]
          [range (list (clamp (car range) 0 (last-line)) (clamp (cadr range) 0 (last-line)))])
-    (list name (list range (cadr r) bang? args))))
+    (list name (list range (cadr r) bang? args (trim (substring line 0 (caddr r)))))))
 
 (define (run-ex! line)
   "Parses and runs the command line `line`, as typed after :.
@@ -3352,7 +3356,20 @@
              (when (ex-range-given? ex)
                (record-jump!)
                (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))]
+            [(command-proc (string->symbol name))
+             (run-command-from-ex! name ex)]
             [else (set-status! (string-append "not an editor command: " line))])))))
+
+(define (run-command-from-ex! name ex)
+  "Runs command `name` (a string) for command line `ex`, when no ex
+   command has that name: a number before it is the count, and any other
+   range is refused (see lore:decision/0019)."
+  (let ([range (ex-range-text ex)])
+    (if (or (equal? range "") (string->number range))
+        (with-handler (lambda (e) (set-status! (error-message e)))
+                      (run-command (string->symbol name)
+                                   (let ([n (string->number range)]) (if (and n (> n 0)) n 1))))
+        (set-status! (string-append name " takes no range")))))
 
 (define (error-message e)
   "The message of a caught error, without the space Steel puts in front."
