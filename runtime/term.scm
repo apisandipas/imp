@@ -1,10 +1,13 @@
 ;;; term.scm -- terminal buffers: a shell (or any program) in a buffer.
 ;;;
-;;; :terminal [CMD] (:term, SPC o t) runs CMD, or your shell, in a new
+;;; :terminal [CMD] (:term, SPC o T) runs CMD, or your shell, in a new
 ;;; buffer, in the TERMINAL state: keys go to the program. C-\ C-n goes
 ;;; back to normal state, where the output can be searched and yanked like
 ;;; any text; i or a returns to the program. When it exits, the buffer
 ;;; stays, saying so. The terminal is sized to the windows showing it.
+;;;
+;;; SPC o t (or M-`) toggles the project's own shell in a window down the
+;;; right; define-toggled-terminal! makes a toggle like it for any program.
 
 (define *terminals* (hash))  ; terminal id -> buffer
 (define *term-redraw* #f)    ; a pending redraw timer
@@ -258,4 +261,118 @@
   (lambda (count)
     "Run your shell in a new terminal buffer."
     (terminal! "")))
-(define-leader! "ot" 'terminal "terminal")
+
+;;; Toggled terminals: one program per project, shown in a popup window
+;;; and hidden again from inside it, running all the while. The shell's is
+;;; toggle-terminal; claude.scm's is Claude's.
+;;;
+;;;   (define-toggled-terminal! 'lazygit "lazygit" "*lazygit")
+;;;   (define-popup-rule! "*lazygit" 'side 'right 'size 0.5)
+;;;   (define-leader! "gl" 'lazygit "lazygit")
+
+(define *toggled-terminals* (hash))  ; toggle name -> (hash project root -> buffer)
+(define *toggles* (hash))            ; toggle name -> (command buffer-name-prefix)
+
+(define (toggled-terminal-root)
+  "The project the current buffer belongs to; in a toggled terminal, its
+   own. Outside any project, imp's current directory."
+  (or (buffer-local 'toggled-root) (project-root) (current-dir)))
+
+(define (toggled-terminal-buffer name root)
+  "The buffer of toggle `name` for project `root`, or #f."
+  (let* ([table (hash-try-get *toggled-terminals* name)]
+         [buf (and table (hash-try-get table root))])
+    (and buf (memv buf (buffer-list)) buf)))
+
+(define (buffer-terminal buf)
+  "The terminal running in buffer `buf`, or #f once it has exited."
+  (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
+
+(define (toggled-terminal-start! name command prefix root)
+  "Starts toggle `name`'s program for project `root` in a new buffer and
+   shows it. Returns the buffer, or #f if it couldn't start."
+  (let ([buf (buffer-new! (string-append prefix ": " (file-name-of root) "*"))]
+        [command (if (symbol? command) (option command) command)])
+    (display-buffer! buf)
+    (set-buffer-local! 'toggled-name name)
+    (set-buffer-local! 'toggled-root root)
+    (set-buffer-local! 'mode-line-label (symbol->string name))
+    (and (start-terminal! buf command root)
+         (begin
+           (set! *toggled-terminals*
+                 (hash-insert *toggled-terminals* name
+                              (hash-insert (or (hash-try-get *toggled-terminals* name) (hash)) root buf)))
+           buf))))
+
+(define (toggled-terminal-show! name root)
+  "Shows toggle `name`'s program for project `root`, starting it if it
+   isn't running, and puts you in the terminal state there. Returns its
+   buffer, or #f if it couldn't start."
+  (let ([buf (toggled-terminal-buffer name root)] [spec (hash-ref *toggles* name)])
+    (cond
+      [(and buf (buffer-terminal buf))
+       (display-buffer! buf)
+       (set-mode! 'terminal)
+       (term-redraw! (term-id))
+       buf]
+      [else
+       ;; It exited: start again in a fresh buffer.
+       (when buf (kill-buffer! buf))
+       (toggled-terminal-start! name (car spec) (cadr spec) root)])))
+
+(define (toggled-terminal-hide!)
+  "Leaves the current window's toggled terminal, closing the window, but
+   not the program."
+  (set-mode! 'normal)
+  (let ([popup (popup-window-entry (current-window))])
+    (cond
+      [(> (length (window-list)) 1)
+       (close-window! (current-window))
+       (when (and popup (memv (cadr popup) (window-list))) (focus-window! (cadr popup)))
+       (after-window-change!)]
+      [(and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
+       (go-to-buffer! *alternate-buffer*)]
+      [else (message "no other buffer to show")]))
+  void)
+
+(define (toggled-terminal-toggle! name)
+  "Hides toggle `name`'s program when in its window; else shows this
+   project's."
+  (if (eq? (buffer-local 'toggled-name) name)
+      (toggled-terminal-hide!)
+      (toggled-terminal-show! name (toggled-terminal-root)))
+  void)
+
+(define (define-toggled-terminal! name command prefix)
+  "Makes command `name` toggle a program per project: it shows the
+   current project's in a window placed by the popup rule for `prefix`,
+   starting it the first time in the project root, and from inside hides
+   it while it keeps running. `command` is what runs: a string (\"\" for
+   your shell) or a symbol naming an option that holds one. Its buffers
+   are named `prefix`: PROJECT*."
+  (set! *toggles* (hash-insert *toggles* name (list command prefix)))
+  (define-command! name
+    (lambda (count)
+      "Show this project's program in its window (starting it), or hide it from inside."
+      (toggled-terminal-toggle! name)))
+  void)
+
+(add-hook! 'buffer-kill
+  (lambda (id)
+    (for-each (lambda (name)
+                (let ([table (hash-ref *toggled-terminals* name)])
+                  (for-each (lambda (root)
+                              (when (= (hash-ref table root) id)
+                                (set! *toggled-terminals*
+                                      (hash-insert *toggled-terminals* name (hash-remove table root)))))
+                            (hash-keys->list table))))
+              (hash-keys->list *toggled-terminals*))))
+
+;; The project's shell, down the right as Claude's window is.
+(define-toggled-terminal! 'toggle-terminal "" "*terminal")
+(define-popup-rule! "*terminal:" 'side 'right 'size 0.4)
+
+(define-leader! "ot" 'toggle-terminal "toggle terminal")
+(define-leader! "oT" 'terminal "terminal here")
+(for-each (lambda (state) (define-key! state "M-`" 'toggle-terminal)) '(normal visual insert emacs))
+(define-terminal-key! "M-`" (lambda () (toggled-terminal-toggle! 'toggle-terminal)))

@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/terminals]]"]
 issue: https://github.com/apisandipas/imp/issues/85
 frozen:
@@ -14,5 +14,5 @@ The toggle is Claude's (`runtime/claude.scm`), lifted into `runtime/term.scm`, w
 
 ## Tasks
 
-- [ ] `define-toggled-terminal!` in `runtime/term.scm`, and `toggle-terminal` on it: `SPC o t` and `` M-` `` (every state, TERMINAL included) show the project's shell down the right at 40% (popup rule `"*terminal:"`), started in the project root, or imp's current directory outside a project; the same key from inside hides it and the shell keeps running; after it exits, the toggle starts a new one; `*terminal: PROJECT*` names it. `SPC o T` is `terminal`. A command option symbol for `COMMAND`. Tests for each, and for a toggle of your own (`define-toggled-terminal!` with a stand-in program); the terminals reference page, the leader reference's `SPC o` keys, the README, and `runtime/CONTEXT.md`'s extension points.
+- [x] `define-toggled-terminal!` in `runtime/term.scm`, and `toggle-terminal` on it: `SPC o t` and `` M-` `` (every state, TERMINAL included) show the project's shell down the right at 40% (popup rule `"*terminal:"`), started in the project root, or imp's current directory outside a project; the same key from inside hides it and the shell keeps running; after it exits, the toggle starts a new one; `*terminal: PROJECT*` names it. `SPC o T` is `terminal`. A command option symbol for `COMMAND`. Tests for each, and for a toggle of your own (`define-toggled-terminal!` with a stand-in program); the terminals reference page, the leader reference's `SPC o` keys, the README, and `runtime/CONTEXT.md`'s extension points.
 - [ ] Claude on `define-toggled-terminal!`: `claude.scm` keeps sending and waiting for its prompt, and its show, hide and per-project table come from `term.scm`; `tests/claude.rs` passes unchanged. The Claude spec and reference page say it's a toggled terminal.
