@@ -17,6 +17,10 @@ struct Client {
     screen: Frame,
 }
 
+/// Numbers each settle's mark, across clients: the message line is
+/// shared, so another client's mark can still be showing.
+static SETTLED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 impl Client {
     fn connect(socket: &std::path::Path) -> Client {
         // The daemon may still be starting.
@@ -74,6 +78,22 @@ impl Client {
         }
     }
 
+    /// Waits until the daemon has handled everything this client sent.
+    /// Call it before another client types: the typing state is shared
+    /// (lore:decision/0015), and a frame `until` accepts can arrive before
+    /// this client's last keys are handled, which would then land in the
+    /// middle of the other client's.
+    fn settle(&mut self) {
+        let n = SETTLED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Built when it runs, so the command being typed doesn't match.
+        let mark = format!("settled-{n}");
+        ex(self, &format!("eval (string-append \"settled-\" \"{n}\")"));
+        assert!(
+            self.until(|f| f.text_rows().last().is_some_and(|r| r.contains(&mark))),
+            "never settled"
+        );
+    }
+
     fn row(&self, i: usize) -> String {
         self.screen.text_rows()[i].clone()
     }
@@ -112,12 +132,14 @@ fn clients_share_one_editor() {
     let mut a = Client::connect(&socket);
     a.keys(&["i", "h", "i", "<esc>"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi"));
+    a.settle();
     // A second client sees the same buffer.
     let mut b = Client::connect(&socket);
     b.keys(&["$"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "hi"));
     b.keys(&["A", "!", "<esc>"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "hi!"));
+    b.settle();
     // :q detaches b; a carries on, its cursor still on the i, not where
     // b's was.
     b.keys(&[":", "q", "!", "<ret>"]);
@@ -148,6 +170,7 @@ fn clients_open_files_and_get_their_own_size() {
     });
     b.keys(&["l"]);
     assert!(b.until(|f| f.rows.len() == 4 && f.text_rows()[0].trim_end() == "from disk"));
+    b.settle();
     assert_eq!(a.screen.rows.len(), 6);
     a.keys(&[
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
@@ -220,10 +243,12 @@ fn each_client_has_its_own_windows() {
         "i", "o", "n", "e", "<ret>", "t", "w", "o", "<ret>", "t", "h", "r", "e", "e", "<esc>",
     ]);
     assert!(a.until(|f| f.text_rows()[2].trim_end() == "three"));
+    a.settle();
     let mut b = Client::connect(&socket);
     // b starts on a's buffer, in one window of its own.
     b.keys(&["g", "g"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "one"));
+    b.settle();
     // a splits; b doesn't.
     a.keys(&["C-w", "v"]);
     assert!(a.until(split));
@@ -233,6 +258,7 @@ fn each_client_has_its_own_windows() {
     // after b adds a line above it.
     b.keys(&["O", "z", "e", "r", "o", "<esc>"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "zero"));
+    b.settle();
     a.keys(&["0", "x"]);
     assert!(a.until(|f| f.text_rows()[3].starts_with("hree")));
     // :q on a's split closes a window, and a stays.
@@ -256,6 +282,7 @@ fn a_buffer_deleted_elsewhere_is_replaced() {
     let mut a = Client::connect(&socket);
     a.keys(&["i", "k", "e", "p", "t", "<esc>"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "kept"));
+    a.settle();
     let mut b = Client::connect(&socket);
     b.send(ClientMsg::Open(vec![path.display().to_string()]));
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "doomed"));
@@ -266,6 +293,7 @@ fn a_buffer_deleted_elsewhere_is_replaced() {
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "kept"));
     b.keys(&["l"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end() != "doomed"));
+    b.settle();
     kill_server(&mut a);
 }
 
@@ -275,9 +303,11 @@ fn a_popup_stays_in_its_client() {
     let mut a = Client::connect(&socket);
     a.keys(&["i", "t", "e", "x", "t", "<esc>"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "text"));
+    a.settle();
     let mut b = Client::connect(&socket);
     b.keys(&["l"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end() == "text"));
+    b.settle();
     // a lists the faces in a popup down the right; b has none.
     a.send(ClientMsg::Resize {
         width: 80,
@@ -324,6 +354,7 @@ fn each_client_has_its_own_file_tree() {
     assert!(a
         .until(|f| f.text_rows()[0].starts_with("tree-one")
             && f.text_rows()[1].contains("tree-one.txt")));
+    a.settle();
     // Closing b's tree leaves a's.
     b.keys(&["q"]);
     assert!(b.until(|f| f.text_rows()[0].trim_end().is_empty()));
