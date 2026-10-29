@@ -10,23 +10,23 @@ frozen:
   docs/specs/daemon.md: 52dfa8b283fe
   docs/specs/dap.md: b1a36380474b
   docs/specs/dired.md: a02aeaac49d8
-  docs/specs/emacs-state.md: 335f67ba2c18
+  docs/specs/emacs-state.md: b74c1fe8672a
   docs/specs/files.md: b08542837535
   docs/specs/folding.md: 2596f3a5ab7f
-  docs/specs/git.md: 78d3f472e9c2
+  docs/specs/git.md: 784db8c1c823
   docs/specs/kdl-config.md: ed960468150c
-  docs/specs/live-scheme-and-help.md: 2bdca45a37b7
-  docs/specs/look.md: 5b06abff64ec
-  docs/specs/lsp.md: 681e20cfd499
-  docs/specs/mcp.md: e74de57e9621
-  docs/specs/mouse.md: 9395bb30b70d
-  docs/specs/org.md: 7120a0ea277d
-  docs/specs/packages.md: 13552394352f
+  docs/specs/live-scheme-and-help.md: 1857073a1b00
+  docs/specs/look.md: 79bbab33f2c1
+  docs/specs/lsp.md: 0515c939262d
+  docs/specs/mcp.md: eb9a936be6e7
+  docs/specs/mouse.md: 9ddcdd15e5ad
+  docs/specs/org.md: eacefd3dbd04
+  docs/specs/packages.md: e9a16175b04a
   docs/specs/projects.md: fac9a61f6afa
   docs/specs/shared-buffers.md: edc911376d67
-  docs/specs/start-screen.md: 3d569d3bf3ea
+  docs/specs/start-screen.md: fca5951c17a6
   docs/specs/terminals.md: 7b43584e6e0e
-  docs/specs/tree-sitter.md: 240b71980c1d
+  docs/specs/tree-sitter.md: 0f8ff7a1b057
   docs/specs/vim.md: 7a2641f5642e
   docs/specs/wasm-plugins.md: b62f9140ac75
 ---

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/emacs-state]]"
 frozen:
-  docs/specs/emacs-state.md: 335f67ba2c18
+  docs/specs/emacs-state.md: b74c1fe8672a
 ---
 # Emacs state
 
@@ -42,6 +42,10 @@ Press `C-SPC` to set the mark. The text between the mark and the cursor is the r
 | `C-d` / `M-d` | Delete a character, or kill a word |
 
 Kills also go to Vim's unnamed register, so `p` in Vim state pastes them.
+
+Typing a bracket or quote with the region active wraps the region in the pair, as `electric-pair-mode` does. Without a region, brackets and quotes pair as they do in insert mode. See [Auto pairs](ref-auto-pairs.md).
+
+Typing a bracket or quote with the region active wraps the region in the pair, as `electric-pair-mode` does. Without a region, brackets and quotes pair as they do in insert mode. See [Auto pairs](ref-auto-pairs.md).
 
 ## Searching, undo and commands
 

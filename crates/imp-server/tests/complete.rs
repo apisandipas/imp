@@ -86,7 +86,7 @@ fn scheme_buffers_complete_imps_names_with_their_docs() {
     type_keys(&mut s, "<C-y>");
     assert_eq!(
         s.text(),
-        "(define-leader-group! \"x\")\n(define-leader-group!\n"
+        "(define-leader-group! \"x\")\n(define-leader-group!)\n"
     );
 }
 
