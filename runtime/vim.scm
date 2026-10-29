@@ -2599,13 +2599,15 @@
 
 (define (pair-closer c)
   "The closer that typing opener `c` adds, or #f if it doesn't pair here.
-   A bracket pairs before a gap; a quote also not after a letter or digit."
+   A bracket pairs before a gap; a quote also not after a letter or digit,
+   nor inside a string or comment."
   (and (option 'auto-pairs) (not *pasting*)
        (let loop ([cs (string->list (option 'auto-pairs-chars))])
          (cond [(or (null? cs) (null? (cdr cs))) #f]
                [(equal? (car cs) c)
                 (and (gap-after-cursor?)
-                     (or (not (equal? c (cadr cs))) (not (word-before-cursor?)))
+                     (or (not (equal? c (cadr cs)))
+                         (not (or (word-before-cursor?) (in-string-or-comment?))))
                      (cadr cs))]
                [else (loop (cddr cs))]))))
 
@@ -2630,6 +2632,22 @@
   (and (> (cursor) (line-start (current-line)))
        (let ([c (buffer-char-at (- (cursor) 1))])
          (and (char-word? c) (not (equal? c #\_))))))
+
+(define (in-string-or-comment?)
+  "Whether the cursor is inside a string or comment, by the syntax tree.
+   Just past a string's closing quote is outside it; at the end of a
+   comment is still in it, as a line comment runs to the line's end."
+  (let ([p (cursor)])
+    (define (around? at test)
+      (let loop ([nodes (syntax-ancestors at)])
+        (and (pair? nodes)
+             (or (test (car (car nodes)) (caddr (car nodes)) (cadddr (car nodes)))
+                 (loop (cdr nodes))))))
+    (or (around? p (lambda (kind start end) (and (string-contains? kind "string") (< start p) (< p end))))
+        ;; The char before the cursor, as the tree has none at a line's end.
+        (and (> p 0)
+             (around? (- p 1)
+                      (lambda (kind start end) (and (string-contains? kind "comment") (< start p) (<= p end))))))))
 
 (define (insert-pair! opener closer)
   "Types `opener` and puts `closer` after the cursor, remembering the pair

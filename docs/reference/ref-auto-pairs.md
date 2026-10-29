@@ -12,7 +12,7 @@ In insert mode, typing an opening bracket or quote types its closing partner too
 
 Typing `(`, `[`, `{`, `"`, `'` or `` ` `` gives `(|)`, where `|` is the cursor. The closer is only added when there's room for it: before white space, at the end of the line, before a closing bracket, or before `,` `;` `:` `.`. Typing `(` just before `foo` types only `(`, since you're probably about to wrap it.
 
-A quote doesn't pair straight after a letter or digit, so `don't` and `it's` type as usual.
+A quote doesn't pair straight after a letter or digit, so `don't` and `it's` type as usual. Nor does it pair inside a string or a comment, where you're more likely typing an apostrophe or closing the string. That needs the buffer's language to have a syntax tree; without one, only the letter-or-digit rule applies. Brackets pair in strings and comments too.
 
 Pasted text, a register inserted with `C-r`, and text typed in replace mode (`R`) never pair.
 

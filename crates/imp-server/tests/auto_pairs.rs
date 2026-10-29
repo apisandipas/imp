@@ -142,3 +142,33 @@ fn return_inside_braces_opens_a_line() {
     type_keys(&mut s, "ifn {<ret>x<esc>");
     assert_eq!(s.text(), "fn {\n  x\n}\n");
 }
+
+/// The text after typing `keys` in a file named `name` holding `text`, so
+/// it has its mode and syntax tree.
+fn typed_in(name: &str, text: &str, keys: &str) -> String {
+    let path = temp_path(name);
+    std::fs::write(&path, text).unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    type_keys(&mut s, keys);
+    s.text()
+}
+
+#[test]
+fn a_quote_does_not_pair_in_a_string_or_comment() {
+    // Rust: in a string, in a line comment (at its end too) and a block one.
+    let rs = |keys| typed_in("pairs.rs", "let s = \"a b\";\n// see\n/* x */\n", keys);
+    assert_eq!(rs("fbi`"), "let s = \"a `b\";\n// see\n/* x */\n");
+    assert_eq!(rs("jA \""), "let s = \"a b\";\n// see \"\n/* x */\n");
+    assert_eq!(rs("jjf a`"), "let s = \"a b\";\n// see\n/* `x */\n");
+    // Past the string, it pairs again.
+    assert_eq!(rs("f;i `"), "let s = \"a b\" ``;\n// see\n/* x */\n");
+    // Scheme's strings and comments too.
+    let scm = |keys| typed_in("pairs.scm", "(f \"a  b\") ; c\n", keys);
+    assert_eq!(scm("2f a\""), "(f \"a \" b\") ; c\n");
+    assert_eq!(scm("A \""), "(f \"a  b\") ; c \"\n");
+    // Brackets still pair in both.
+    assert_eq!(rs("jA ("), "let s = \"a b\";\n// see ()\n/* x */\n");
+    // With no tree, only the letter-or-digit rule.
+    assert_eq!(typed("\"a  b\"\n", "f a\""), ("\"a \"\" b\"\n".into(), 4));
+}
