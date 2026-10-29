@@ -4,7 +4,7 @@ The editor, in Steel Scheme: every command, keymap and mode, the Vim engine incl
 
 ## Load order
 
-The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `foldmethod`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `org-agenda`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
+The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `core.scm` (evaluation, keymaps, commands, hooks, advice, options, faces) first, then `fold`, `vim`, `help`, `completion`, `leader`, `modes`, `map`, `special`, `emacs`, `packages`, `files`, `repl`, `syntax`, `grammars`, `foldmethod`, `complete`, `snippet`, `lsp`, `dap`, `mouse`, `mcp`, `git`, `calendar`, `org`, `org-agenda`, `dired`, `project`, `term`, `claude`, `start`, `wasm`, `collab`, `theme`, `config`. Then the user's `init.scm`, then `(imp-init)`. An error in `init.scm` goes to the status line and the editor still starts; runtime errors are caught and shown as `error: ...`.
 
 ## Rules
 
@@ -15,7 +15,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 
 ## Extension points
 
-- Keys and commands: `define-command!`, `define-key!` (takes a command name, looked up when pressed, and an optional which-key label, as `define-motion!`, `define-operator!` and `define-mode-key!` do), `run-command`, `define-leader!`, `define-leader-group!`, `define-mode-leader!` (under `SPC m`), `define-mode-leader-group!`, `document-command!`.
+- Keys and commands: `define-command!`, `define-key!` (takes a command name, looked up when pressed, and an optional which-key label, as `define-motion!`, `define-operator!` and `define-mode-key!` do), `run-command`, `define-leader!`, `define-leader-group!`, `define-mode-leader!` (under `SPC m`), `define-mode-leader-group!`, `document-command!`. A feature someone runs is a command, named in kebab-case so M-x finds it; `define-ex!` is only for Vim's own ex commands ([[0019-interactive-features-are-m-x-commands-ex-commands-are-vim-s]]).
 - Vim (`vim.scm`): `define-motion!` (type `'exclusive`, `'inclusive` or `'linewise`), `define-char-motion!`, `define-text-object!`, `define-operator!`, `define-char-command!`, `define-prefix!`, `define-ex!`, the `:map` family (`map.scm`, its keymaps `map:normal`, `map:visual`, `map:insert`), `define-ex-completion!`, `define-state!`. Call `(begin-change!)` before a change; `with-undo-group` makes several changes one undo step. Motions work with every operator, visual mode, counts and `.`.
 - Modes: `define-major-mode!`, `define-minor-mode!`, `define-mode-key!`, `define-file-name-mode!`, `set-local-option!`, `buffer-local`.
 - Changes: `(buffer-changes-since version)` lists a buffer's edits since a version (keep your own version; nothing is used up), and `(after-change-range)` is what the key changed, inside `after-change`.

@@ -65,6 +65,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("repl.scm", include_str!("../../../runtime/repl.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
     (
+        "grammars.scm",
+        include_str!("../../../runtime/grammars.scm"),
+    ),
+    (
         "foldmethod.scm",
         include_str!("../../../runtime/foldmethod.scm"),
     ),
@@ -229,6 +233,14 @@ impl Server {
             events,
             sender,
         };
+        // queries/ beside init.scm replaces languages' queries. Without a
+        // config (tests), nothing does.
+        crate::syntax::set_query_dir(
+            options
+                .user_config
+                .as_ref()
+                .map(|p| p.with_file_name("queries")),
+        );
         // Settings as data (config.kdl) load first, so init.scm can
         // change them.
         if let Some(kdl) = options
