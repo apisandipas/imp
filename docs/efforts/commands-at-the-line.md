@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/commands]]"]
 issue: https://github.com/apisandipas/imp/issues/93
 frozen:
