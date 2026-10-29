@@ -954,9 +954,11 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("face-spec", |name: String| {
         editor::with(|e| e.faces.get(&name).map(|s| s.spec()))
     });
+    // The faces at `at` in the text as it is: the tree is parsed now if
+    // a parse is still running in the background, as drawing allows.
     engine.register_fn("faces-at", |at: isize| {
         editor::with(|e| {
-            e.update_syntax(e.current);
+            e.update_syntax_now(e.current);
             crate::render::faces_at(e, clamp(at))
         })
     });

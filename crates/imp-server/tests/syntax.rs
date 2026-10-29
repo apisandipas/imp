@@ -626,3 +626,16 @@ fn syntax_at_is_the_innermost_language() {
     let mut s = server("plain\n");
     assert_eq!(s.eval("(syntax-at 1)").unwrap(), "()");
 }
+
+#[test]
+fn faces_are_read_from_the_text_as_it_is() {
+    // A Markdown file whose first parse can't finish in the drawing
+    // budget, so it goes to the background; asking for the faces at once
+    // still gets them. (On a slow machine any file can be like this.)
+    let mut s = server("");
+    let text = "Some *em* here.\n\n".repeat(20_000);
+    assert_eq!(
+        face_on(&mut s, "big.md", &text, "em*"),
+        "\"syntax.text.emphasis\""
+    );
+}
