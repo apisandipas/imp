@@ -1,7 +1,7 @@
 ---
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/16
-summary: "Programs on a pty in a buffer, in a TERMINAL state, and a shell per project toggled in a popup."
+summary: "Programs on a pty in a buffer, in a TERMINAL state, and a shell per project toggled in a popup, which text can be sent to."
 anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, crates/imp-server/tests/term.rs, crates/imp-gui/src/keys.rs]
 ---
 # Terminals
@@ -26,14 +26,25 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - **Your own.** `(define-toggled-terminal! NAME COMMAND PREFIX)` makes command `NAME` toggle a program the same way, one per project: `COMMAND` is what runs (`""` for your shell, or a symbol naming an option that holds it), and `PREFIX` starts its buffer's name, for its popup rule. `(define-toggled-terminal! 'lazygit "lazygit" "*lazygit")` gives `M-x lazygit`. Bind it with `define-leader!`, and with `define-terminal-key!` to hide it from inside.
 - **Claude is one.** Claude's panel ([[spec/claude]]) is built on `define-toggled-terminal!`, with what it adds (sending text, waiting for its prompt) on top, and keeps its keys, buffer names and popup rule.
 
+### Sending text to it
+
+- **To the project's terminal.** `SPC o s` sends the selection in visual mode, or the current line in normal state, to the project's terminal; `SPC o b` sends the whole buffer; `gz{motion}` sends what the motion or text object covers (`gzap` a paragraph, `gzz` the line, `gz` in visual mode the selection), and `.` repeats it. The terminal is started first if it isn't running.
+- **As a paste, then run.** The text goes as a bracketed paste when the program asked for that (shells do), and as typed otherwise, with a final line break dropped; then `<ret>` is sent so it runs, unless `terminal-send-enter` is off. Text sent to a shell that is just starting waits until it has printed something (its prompt), so it isn't lost.
+- **You stay where you were.** The terminal's window comes up if it was hidden, and the cursor stays in your buffer; sending the line from normal state moves the cursor to the next line, so `SPC o s` again sends the one after. Visual mode ends after sending.
+- **Claude's sends** (`SPC a s`, `SPC a b`, `SPC a f`) are built on the same sending, with `<ret>` never sent and you taken to Claude's window, as now.
+
 ## Keys and options
 
 - `SPC o t`, `M-\``: `toggle-terminal`. `SPC o T`: `terminal`.
+- `SPC o s`: `terminal-send-region`. `SPC o b`: `terminal-send-buffer`. `gz`: the send operator.
+- `terminal-send-enter` (on): whether sending presses `<ret>` after the text.
 - `define-toggled-terminal!`.
 
 ## Out of scope
 
 - More than one toggled terminal per project (a count, names, a picker), and asking before killing a running one: #90.
 - A toggled terminal that follows the current file's directory rather than the project's.
+- Sending to a terminal other than the project's (a picker, or the last one used), and sending to your own toggles (`lazygit`): #90 or later.
+- Language-aware sending (a whole function, a cell between `# %%` markers), and adapting text for a particular REPL (IPython's `%cpaste`).
 - Middle-click pasting the primary selection in the window client.
 - Mouse movement without a button held (any-motion reporting), which the clients don't send.
