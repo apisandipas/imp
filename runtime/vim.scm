@@ -2942,14 +2942,18 @@
       [(not i) #f]
       [(= name-end (string-length text))
        (let* ([typed (substring text i name-end)]
-              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))])
-         ;; Full names only, as Vim lists them: "noh" goes, "nohlsearch" stays.
-         (list i (sort (filter (lambda (n)
-                                 (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
-                                                                 (starts-with? m n)))
-                                                names)))
-                               names)
-                       string<?)))]
+              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))]
+              ;; Full names only, as Vim lists them: "noh" goes,
+              ;; "nohlsearch" stays.
+              [full (filter (lambda (n)
+                              (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
+                                                              (starts-with? m n)))
+                                             names)))
+                            names)]
+              ;; And the commands : runs by name (see lore:decision/0019).
+              [commands (filter (lambda (n) (and (starts-with? n typed) (not (member n full))))
+                                (map symbol->string (command-names)))])
+         (list i (sort (append full commands) string<?)))]
       [else
        (let* ([name (substring text i name-end)]
               [proc (hash-try-get *ex-completions* name)]
@@ -3225,6 +3229,9 @@
 (define (ex-args ex)
   "The argument text of parsed command `ex`, after its name."
   (cadddr ex))
+(define (ex-range-text ex)
+  "The range of parsed command `ex` as typed (\"3\", \"%\"), or \"\"."
+  (list-ref ex 4))
 
 (define (char-at s i)
   "The char at index `i` of `s`, or #f past its end."
@@ -3316,7 +3323,8 @@
   (and c (let ([n (char->integer (char-downcase c))]) (and (>= n 97) (<= n 122)))))
 
 (define (parse-ex line)
-  "Parses a command line into (name ex), ex being (range given? bang args)."
+  "Parses a command line into (name ex), ex being (range given? bang args
+   range-text), range-text being the range as typed."
   (let* ([r (parse-range line 0)]
          [range (car r)]
          [i (skip-spaces line (caddr r))]
@@ -3334,7 +3342,7 @@
          [args-start (skip-spaces line (if bang? (+ name-end 1) name-end))]
          [args (substring line args-start (string-length line))]
          [range (list (clamp (car range) 0 (last-line)) (clamp (cadr range) 0 (last-line)))])
-    (list name (list range (cadr r) bang? args))))
+    (list name (list range (cadr r) bang? args (trim (substring line 0 (caddr r)))))))
 
 (define (run-ex! line)
   "Parses and runs the command line `line`, as typed after :.
@@ -3352,7 +3360,46 @@
              (when (ex-range-given? ex)
                (record-jump!)
                (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))]
+            [(command-proc (string->symbol name))
+             (run-command-from-ex! name ex)]
             [else (set-status! (string-append "not an editor command: " line))])))))
+
+(define *command-text* #f)   ; text after :NAME while NAME runs, or #f
+(define *command-text-read* #f)
+
+(define (command-argument)
+  "The text typed after the command's name at the : line (:org-export html
+   gives \"html\"), or #f, as when it runs from M-x or a key. A command
+   whose question isn't a prompt, such as a menu of keys, reads its
+   answer here; one that asks with a prompt gets it there instead."
+  (set! *command-text-read* #t)
+  *command-text*)
+
+(define (run-command-from-ex! name ex)
+  "Runs command `name` (a string) for command line `ex`, when no ex
+   command has that name: a number before it is the count, and any other
+   range is refused. Text after the name answers the first question the
+   command asks, as if typed at its prompt and submitted; a command shows
+   it asks by leaving a prompt open, or by reading command-argument (see
+   lore:decision/0019)."
+  (let ([range (ex-range-text ex)] [text (trim-end (ex-args ex))])
+    (if (or (equal? range "") (string->number range))
+        (begin
+          (set! *command-text* (if (equal? text "") #f text))
+          (set! *command-text-read* #f)
+          (with-handler (lambda (e) (set-status! (error-message e)))
+                        (begin
+                          (run-command (string->symbol name)
+                                       (let ([n (string->number range)]) (if (and n (> n 0)) n 1)))
+                          (set! *command-text* #f)
+                          (unless (or (equal? text "") *command-text-read*)
+                            (if (eq? *mode* 'cmdline)
+                                (begin (cmdline-edit! text (string-length text))
+                                       (cmdline-key! "<ret>"))
+                                (set-status! (string-append name " takes no argument"))))))
+          (set! *command-text* #f)
+          void)
+        (set-status! (string-append name " takes no range")))))
 
 (define (error-message e)
   "The message of a caught error, without the space Steel puts in front."
@@ -3499,7 +3546,10 @@
   (lambda (ex)
     (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
 ;; In a daemon, stops it for every client (:q only detaches one).
-(define-ex! '("kill-server") (lambda (ex) (kill-server!)))
+(define-command! 'kill-server
+  (lambda (count)
+    "Stop the daemon, for every client attached to it. Without a daemon, quit."
+    (kill-server!)))
 
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
@@ -4247,7 +4297,6 @@
                          (imp-eval-string text))])
     (unless (eq? v void) (show-result! v))))
 
-(define-ex! '("eval" "ev") (lambda (ex) (eval-and-show! (ex-args ex))))
 
 (define-ex! '("so" "source")
   (lambda (ex)
@@ -4316,6 +4365,10 @@
 (define-command! 'eval-expression
   (lambda (count)
     "Prompt for an expression and evaluate it (M-:)."
+    (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
+(define-command! 'eval
+  (lambda (count)
+    "Evaluate a Scheme expression, asked for: :eval (+ 1 2) runs it at once."
     (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
 
 ;;; Entry points

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/modus-themes]]"
 frozen:
-  docs/specs/modus-themes.md: 1e594e46b053
+  docs/specs/modus-themes.md: 2f7f2ca55f07
 ---
 # Modus themes
 
@@ -17,7 +17,7 @@ The Modus themes are an opt-in package. Load it in `init.scm`, then load a theme
 (load-theme! 'modus-vivendi)
 ```
 
-Once the package is loaded, `modus-vivendi` and `modus-operandi` work like imp's other themes: switch with `:theme modus-operandi`, or press `SPC t T` and pick one. See [Look](ref-look.md).
+Once the package is loaded, `modus-vivendi` and `modus-operandi` work like imp's other themes: switch with `:colorscheme modus-operandi`, or press `SPC t T` and pick one. See [Look](ref-look.md).
 
 The colors are Modus's own, for code, the status line, popups, diagnostics, diffs and git, Org, dired and terminals. Docstrings and builtins, such as built-in functions and types, get their own colors.
 

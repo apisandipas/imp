@@ -40,11 +40,11 @@ The org-export package exports an Org buffer to other formats through pandoc, as
 - `org-export-pandoc-args` is a string added to every pandoc run, as `--toc` or `--css style.css`. It is empty by default.
 - When pandoc isn't installed, the message line says `org-export needs pandoc` and nothing runs.
 - When pandoc fails (a missing LaTeX engine, a bad template), the message line says `export failed: see *org-export*`. pandoc's error output is in the `*org-export*` buffer, and no file is opened.
-- `:OrgExport FORMAT` exports to a file without the menu, the format one of `html`, `pdf`, `markdown`, `docx`, `latex`, `odt` or `text`, with completion.
+- `:org-export FORMAT` exports to a file without the menu, the format one of `html`, `pdf`, `markdown`, `docx`, `latex`, `odt` or `text`, with completion.
 
 ## Keys and options
 
-`C-c C-e`, `SPC m e`, `:OrgExport`, the options `org-export-pdf-engine` and `org-export-pandoc-args`.
+`C-c C-e`, `SPC m e`, `org-export` (`:org-export FORMAT`), the options `org-export-pdf-engine` and `org-export-pandoc-args`.
 
 ## Out of scope
 

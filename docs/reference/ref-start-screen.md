@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/start-screen]]"
 frozen:
-  docs/specs/start-screen.md: 3d569d3bf3ea
+  docs/specs/start-screen.md: fca5951c17a6
 ---
 # Start screen
 
@@ -30,7 +30,7 @@ Press `i` to leave the start screen and type in the empty buffer. `I`, `A`, `o` 
 
 ## Getting it back
 
-`:start` shows the start screen again at any time.
+`M-x start-screen` shows the start screen again at any time.
 
 To begin in the empty buffer instead, turn the screen off in `init.scm`:
 

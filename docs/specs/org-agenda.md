@@ -99,7 +99,7 @@ The agenda gathers what's scheduled, due, timed and to do in the agenda files in
 
 ## Keys and options
 
-Opening: `SPC o A` (`M-x org-agenda`, `:OrgAgenda`) the dispatcher; `SPC o a a` (`M-x org-agenda-list`), `SPC o a t`, `SPC o a m`, `SPC o a s`.
+Opening: `SPC o A` (`M-x org-agenda`) the dispatcher; `SPC o a a` (`M-x org-agenda-list`), `SPC o a t`, `SPC o a m`, `SPC o a s`.
 
 In the agenda (normal state): `j` `k` `gj` `gk` `C-j` `C-k` `gH` `gM` `gL` `[[` `]]` `f` `b` `.` `gd` `<ret>` `<tab>` `F` `gr` `gR` `gD` `ZZ` `ZQ` `q`; `t` `H` `L` `+` `-` `ct` `ce` `da` `dA` `dd` `I` `O` `cc` `cg` `cr` `C` `u`; `sc` `st` `se` `sr` `s^` `S`; `m` `~` `*` `%` `M` `x`; under `SPC m`: `t`, `d s`, `d d`, `p`, `q`, `r`.
 

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/lsp]]"
 frozen:
-  docs/specs/lsp.md: 681e20cfd499
+  docs/specs/lsp.md: 0515c939262d
 ---
 # Language servers
 
@@ -34,7 +34,7 @@ The server's diagnostics are underlined in the text, with a sign in the gutter. 
 |---|---|
 | `]d` | Go to the next diagnostic |
 | `[d` | Go to the previous diagnostic |
-| `SPC c x` or `:diagnostics` | Pick a diagnostic from any file and go to it |
+| `SPC c x` or `M-x list-diagnostics` | Pick a diagnostic from any file and go to it |
 
 While you type, the diagnostics stay as they were. The new ones show when you leave insert mode, so half-typed words don't flash as errors. Until the server sends new ones, the old ones move with the text as you edit.
 
@@ -61,10 +61,10 @@ Snippets from the server expand when you accept them. See [Completion while typi
 
 | Command | What it does |
 |---|---|
-| `:lsp-info` | List the running servers |
-| `:lsp-log` | Show what the servers have logged |
-| `:lsp-restart` or `SPC c R` | Restart this buffer's server |
-| `:lsp-stop` | Stop this buffer's server |
+| `M-x lsp-info` | List the running servers |
+| `M-x lsp-log` | Show what the servers have logged |
+| `M-x lsp-restart` or `SPC c R` | Restart this buffer's server |
+| `M-x lsp-stop` | Stop this buffer's server |
 
 ## A server of your own
 

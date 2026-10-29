@@ -13,4 +13,4 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `file-tree`: the project's folders as a tree down the left, `SPC t e`.
 - `modus-themes`: the Modus Vivendi and Operandi themes, from Modus's own palettes.
 
-The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.
+The rules of `runtime/` apply here too: docstrings on every function, features as commands rather than ex commands, and core gets only the primitive a package can't do without.

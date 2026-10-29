@@ -80,11 +80,11 @@ fn tracked_files_get_a_change_column() {
     let mut s = visiting(&dir.join("a.txt"));
     assert!(on(&mut s));
     wait_for(&mut s, &[" one", " two", " three"]);
-    // :GitGutter takes it away and brings it back.
-    type_keys(&mut s, ":GitGutter<ret>");
+    // git-gutter-mode takes it away and brings it back.
+    type_keys(&mut s, ":git-gutter-mode<ret>");
     assert!(!on(&mut s));
     assert_eq!(rows(&mut s)[0], "one");
-    type_keys(&mut s, ":GitGutter<ret>");
+    type_keys(&mut s, ":git-gutter-mode<ret>");
     wait_for(&mut s, &[" one"]);
     // Not for an untracked file, or one outside a repository.
     std::fs::write(dir.join("new.txt"), "x\n").unwrap();

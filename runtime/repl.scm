@@ -159,5 +159,4 @@
       (set-cursor! (buffer-length))
       (set-mode! 'insert))))
 
-(define-ex! '("repl") (lambda (ex) (run-command 'repl)))
 (define-leader! "ei" 'repl "REPL")

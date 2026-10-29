@@ -2190,4 +2190,3 @@
     (org-capture!)))
 (define-leader-group! "o" "org")
 (define-leader! "oc" 'org-capture "capture")
-(define-ex! '("OrgCapture") (lambda (ex) (org-capture!)))

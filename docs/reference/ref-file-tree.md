@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: ca9762e7a370
+  docs/specs/file-tree.md: 93c6d2be9759
 ---
 # File tree
 
@@ -18,7 +18,7 @@ The file tree is an opt-in package. Load it near the top of your `init.scm`:
 
 ## Opening and closing it
 
-Press `SPC t e`, or type `:FileTree`, to open the tree. It opens down the left, 30 columns wide, and the cursor moves into it. Press `SPC t e` again, from the tree or from any other window, to close it. `q` in the tree closes it too. Either way the cursor goes back to the window you opened it from.
+Press `SPC t e`, or run `M-x file-tree`, to open the tree. It opens down the left, 30 columns wide, and the cursor moves into it. Press `SPC t e` again, from the tree or from any other window, to close it. `q` in the tree closes it too. Either way the cursor goes back to the window you opened it from.
 
 With the [daemon](ref-daemon.md), each client has its own tree, so two clients can each show a different project.
 

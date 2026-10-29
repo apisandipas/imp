@@ -171,14 +171,20 @@
     (for-each (lambda (arg) (set-one-option-with! set-local-option! arg))
               (split-whitespace (ex-args ex)))))
 
-;; :mode NAME switches major mode (without -mode is fine: :mode rust).
-(define-ex! '("mode")
-  (lambda (ex)
-    (let* ([arg (ex-args ex)]
-           [name (string->symbol (if (ends-with? arg "-mode") arg (string-append arg "-mode")))])
-      (cond [(equal? arg "") (message (symbol->string (major-mode)))]
-            [(or (hash-contains? *major-modes* name) (eq? name 'fundamental-mode)) (set-major-mode! name)]
-            [else (message (string-append "no major mode " arg))]))))
+(define-command! 'set-major-mode
+  (lambda (count)
+    "Switch the current buffer's major mode, chosen by name.
+     The current one is first, so choosing nothing shows it."
+    (let* ([now (symbol->string (major-mode))]
+           [others (filter (lambda (n) (not (equal? n now)))
+                           (map symbol->string (cons 'fundamental-mode (hash-keys->list *major-modes*))))])
+      (completing-read "Major mode: " (cons now (sort others string<?))
+                       (lambda (choice)
+                         (let ([name (string->symbol choice)])
+                           (cond [(equal? choice now) (message now)]
+                                 [(or (hash-contains? *major-modes* name) (eq? name 'fundamental-mode))
+                                  (set-major-mode! name)]
+                                 [else (message (string-append "no major mode " choice))])))))))
 
 ;;; Commenting: gc{motion}, gcc, visual gc
 ;;;

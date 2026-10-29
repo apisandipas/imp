@@ -181,7 +181,7 @@ Packages load from `~/.config/imp/packages`, or from git with
 (use-package! 'file-tree)                     ; the project's folders down the left (SPC t e)
 ```
 
-`:packages` lists what's loaded and what else comes with imp.
+`M-x list-packages` lists what's loaded and what else comes with imp.
 
 ## Daemon
 
