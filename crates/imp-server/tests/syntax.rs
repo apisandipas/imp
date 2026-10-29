@@ -589,3 +589,40 @@ fn syntax_tree_command() {
     let rows = s.frame().text_rows().join("\n");
     assert!(rows.contains("(function_item"), "{rows}");
 }
+
+/// What `syntax-at` gives at the first char of `word`: the language, and
+/// the kinds of the nodes around it, innermost first.
+fn syntax_at(s: &mut imp_server::Server, word: &str) -> (String, Vec<String>) {
+    let at = s.text().find(word).unwrap();
+    let lang = s.eval(&format!("(car (syntax-at {at}))")).unwrap();
+    let kinds = s
+        .eval(&format!("(map car (cdr (syntax-at {at})))"))
+        .unwrap()
+        .trim_matches(|c| c == '(' || c == ')')
+        .split_whitespace()
+        .map(|w| w.trim_matches('"').to_string())
+        .collect();
+    (lang.trim_matches('"').to_string(), kinds)
+}
+
+#[test]
+fn syntax_at_is_the_innermost_language() {
+    let mut s = server("");
+    open(
+        &mut s,
+        "at.md",
+        "# Page\n\nSome text.\n\n```html\n<div><b>x</b></div>\n<script>\nlet y = 1;\n</script>\n```\n",
+    );
+    // A fence of HTML is HTML, its elements' names in its own tree.
+    let (lang, kinds) = syntax_at(&mut s, "b>x");
+    assert_eq!(lang, "html");
+    assert_eq!(&kinds[..4], ["tag_name", "start_tag", "element", "element"]);
+    // A <script> inside it is JavaScript.
+    assert_eq!(syntax_at(&mut s, "let").0, "javascript");
+    // Markdown's text is its inline grammar, and the rest Markdown's own.
+    assert_eq!(syntax_at(&mut s, "Some").0, "markdown_inline");
+    assert_eq!(syntax_at(&mut s, "```").0, "markdown");
+    // With no tree, nothing.
+    let mut s = server("plain\n");
+    assert_eq!(s.eval("(syntax-at 1)").unwrap(), "()");
+}

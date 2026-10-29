@@ -1604,6 +1604,30 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
+    // The innermost language at char offset `at`, an embedded one inside
+    // a fence or <script>, and its named nodes around `at`: (language
+    // (kind field start end) ...), innermost first; '() with no tree.
+    engine.register_fn("syntax-at", |at: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax(id);
+            let rope = e.buffer.rope();
+            let Some((name, root)) = e
+                .syntax
+                .get(&id)
+                .and_then(|s| s.root_at(rope.char_to_byte(clamp(at).min(rope.len_chars()))))
+            else {
+                return Vec::new();
+            };
+            std::iter::once(SteelVal::StringV(name.into()))
+                .chain(
+                    crate::syntax::ancestors(root, rope, clamp(at))
+                        .into_iter()
+                        .map(|(k, f, s, t)| node_value(k, f, s, t, true)),
+                )
+                .collect::<Vec<_>>()
+        })
+    });
     // The children of the node spanning chars start..end, as (kind field
     // start end named?).
     engine.register_fn("syntax-children", |start: isize, end: isize| {

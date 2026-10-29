@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/auto-pairs]]"]
 issue: https://github.com/apisandipas/imp/issues/83
 frozen:
@@ -14,7 +14,7 @@ The second half of [[spec/auto-pairs]], after [[bracket-and-quote-pairs]]. Eleme
 
 ## Tasks
 
-- [ ] `syntax-at`: the innermost language at an offset and its named nodes around it, innermost first, as `syntax-ancestors` gives them: Markdown's inside a paragraph, HTML's inside a fence of HTML, JavaScript's in a `<script>`. Rust and Scheme tests, and the Languages line of `runtime/CONTEXT.md`.
+- [x] `syntax-at`: the innermost language at an offset and its named nodes around it, innermost first, as `syntax-ancestors` gives them: Markdown's inside a paragraph, HTML's inside a fence of HTML, JavaScript's in a `<script>`. Rust and Scheme tests, and the Languages line of `runtime/CONTEXT.md`.
 - [ ] `>` closes an HTML start tag: in `html-mode`, typing the `>` of `<div class="x">` inserts `</div>` after the cursor. Not for a self-closing tag (`<x/>`), HTML's void elements in `.html` files, or an element that already has its end tag; in `.xml` and `.svg` files every start tag closes. The `auto-close-tags` option (on). Works in insert mode and the Emacs state; `u` undoes it with the insert and `.` repeats it. Tests, and an end tags section in `docs/reference/ref-auto-pairs.md`.
 - [ ] `</` closes the innermost open element: typing `/` right after `<` completes `</div>` for the innermost element with no end tag; with none open, just `/`. Tests.
 - [ ] A Markdown fence of HTML closes tags as an HTML file does, through `syntax-at`; outside the fence, `<` and `>` are plain. Tests.

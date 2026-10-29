@@ -704,6 +704,20 @@ impl Syntax {
         self.tree.as_ref().map(|t| t.root_node())
     }
 
+    /// The innermost language at `byte` and its tree's root: an embedded
+    /// language's where a region of it covers `byte` (the deepest, if
+    /// they nest), otherwise the buffer's own.
+    pub fn root_at(&self, byte: usize) -> Option<(&'static str, Node<'_>)> {
+        let own = (self.lang.name, self.root()?);
+        Some(
+            self.layers
+                .iter()
+                .filter(|l| l.ranges.iter().any(|r| r.start <= byte && byte <= r.end))
+                .max_by_key(|l| l.depth)
+                .map_or(own, |l| (l.lang.name, l.tree.root_node())),
+        )
+    }
+
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,
     /// end char, faces to try), in the order they win where they overlap,
     /// as in tree-sitter's own highlighter: an embedded language's first,
