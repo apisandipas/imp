@@ -430,3 +430,61 @@ fn a_markdown_fence_of_html_closes_tags() {
         "```rust\nx <T>\n```\n"
     );
 }
+
+#[test]
+fn jsx_elements_close_too() {
+    // An element, with the cursor between, and a fragment.
+    assert_eq!(
+        tags("j.tsx", "const a = \n", "A", "<div className=\"x\">"),
+        ("const a = <div className=\"x\"></div>\n".into(), 29)
+    );
+    assert_eq!(
+        tags("j.tsx", "const a = \n", "A", "<>").0,
+        "const a = <></>\n"
+    );
+    assert_eq!(
+        tags("j.jsx", "const a = \n", "A", "<Foo.Bar>").0,
+        "const a = <Foo.Bar></Foo.Bar>\n"
+    );
+    // Inside another, whose end tag the parser gives the new one.
+    assert_eq!(
+        tags("j.jsx", "const a = (\n  <ul>\n  </ul>\n);\n", "jA", "<li>").0,
+        "const a = (\n  <ul><li></li>\n  </ul>\n);\n"
+    );
+    assert_eq!(
+        tags("j.tsx", "const a = <div></div>;\n", "f>a", "<div>").0,
+        "const a = <div><div></div></div>;\n"
+    );
+    // Self-closing, and one with its end tag already.
+    assert_eq!(
+        tags("j.tsx", "const a = \n", "A", "<br />").0,
+        "const a = <br />\n"
+    );
+    assert_eq!(
+        tags("j.tsx", "const a = <b></b>;\n", "f>xi", ">").0,
+        "const a = <b></b>;\n"
+    );
+    // </ closes the innermost open one, a fragment too.
+    assert_eq!(
+        tags("j.tsx", "const a = <div>\n", "A", "x</").0,
+        "const a = <div>x</div>\n"
+    );
+    assert_eq!(
+        tags("j.tsx", "const a = <>\n", "A", "x</").0,
+        "const a = <>x</>\n"
+    );
+}
+
+#[test]
+fn generics_and_comparisons_are_not_tags() {
+    assert_eq!(tags("g.tsx", "f\n", "A", "<T>").0, "f<T>\n");
+    assert_eq!(tags("g.ts", "f\n", "A", "<T>").0, "f<T>\n");
+    assert_eq!(
+        tags("g.tsx", "let x: Array\n", "A", "<string>").0,
+        "let x: Array<string>\n"
+    );
+    assert_eq!(
+        tags("g.js", "if (a \n", "A", "< b && c > d) {}").0,
+        "if (a < b && c > d) {}\n"
+    );
+}

@@ -41,6 +41,8 @@ Typing `</` finishes the end tag of the innermost element that's still open: in 
 
 Typing `<div>` inside an existing `<div></div>` still gets its own `</div>`. The parser would otherwise give the new element the existing end tag.
 
+JSX works the same way in JavaScript, JSX and TSX files: `<Button kind="x">` gets `</Button>`, and a fragment `<>` gets `</>`. A TypeScript generic like `f<T>(x)` or `Array<string>`, and a comparison like `a < b && c > d`, aren't elements, so nothing is added.
+
 The end tag is part of the insert, so `u` undoes it and `.` types it again. It works in the Emacs state too. Turn it off with `(set-option! 'auto-close-tags #f)`.
 
 ## In the Emacs state
@@ -69,7 +71,7 @@ A code block in Markdown or Org uses the file's own pairs, not the pairs of the 
 |---|---|---|
 | `auto-pairs` | on | Whether brackets and quotes pair at all |
 | `auto-pairs-chars` | the mode's | Each opener followed by its closer, as in `()[]{}""`; a quote is its own closer |
-| `auto-close-tags` | on | Whether a start tag's `>` adds its end tag |
+| `auto-close-tags` | on | Whether a start tag's `>` adds its end tag, in HTML, XML, SVG and JSX |
 
 Set them in `init.scm`, or for the current buffer only with `set-local-option!`. Setting `auto-pairs-chars` in `init.scm` gives every mode the same pairs:
 
