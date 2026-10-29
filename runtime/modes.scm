@@ -270,10 +270,19 @@
 
 ;;; The modes that come with imp
 
+(define (set-mode-pairs! chars)
+  "Sets the buffer's auto-pairs-chars to `chars`, for a major mode's
+   setup, unless the user set the option globally."
+  (unless (option-set? 'auto-pairs-chars) (set-local-option! 'auto-pairs-chars chars))
+  void)
+
 (define-major-mode! 'fundamental-mode #f '() #f)
+;; Prose pairs no ' (apostrophes) or ` .
 (define-major-mode! 'text-mode #f '("txt" "text")
-  (lambda () (set-local-option! 'commentstring "# %s")))
-(define-major-mode! 'prog-mode #f '() #f)
+  (lambda ()
+    (set-local-option! 'commentstring "# %s")
+    (set-mode-pairs! "()[]{}\"\"")))
+(define-major-mode! 'prog-mode #f '() (lambda () (set-mode-pairs! "()[]{}\"\"''``")))
 
 (define (indent-with spaces? width)
   "Sets the current buffer to indent by `width`, with spaces if
@@ -290,7 +299,12 @@
      (define-major-mode! (car spec) 'prog-mode (cadr spec)
        (lambda ()
          (set-local-option! 'commentstring comment)
-         (indent-with spaces? width)))))
+         (indent-with spaces? width)
+         ;; ' and ` are quote and quasiquote in Lisps; ' starts a lifetime in Rust.
+         (case (car spec)
+           [(scheme-mode lisp-mode) (set-mode-pairs! "()[]{}\"\"")]
+           [(rust-mode) (set-mode-pairs! "()[]{}\"\"``")]
+           [else void])))))
  (list (list 'scheme-mode '("scm" "ss" "sld" "rkt") ";; %s" #t 2)
        (list 'lisp-mode '("lisp" "cl" "el" "clj" "cljs" "fnl") ";; %s" #t 2)
        (list 'rust-mode '("rs") "// %s" #t 4)
@@ -314,7 +328,10 @@
        (list 'makefile-mode '("mk" "make") "# %s" #f 8)))
 
 (define-major-mode! 'markdown-mode 'text-mode '("md" "markdown")
-  (lambda () (set-local-option! 'commentstring "<!-- %s -->")))
+  (lambda ()
+    (set-local-option! 'commentstring "<!-- %s -->")
+    ;; ` for code spans.
+    (set-mode-pairs! "()[]{}\"\"``")))
 
 (define-file-name-mode! "Makefile" 'makefile-mode)
 (define-file-name-mode! "makefile" 'makefile-mode)

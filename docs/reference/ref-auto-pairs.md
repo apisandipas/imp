@@ -28,14 +28,26 @@ This only applies to closers that a pair added in the current insert. A `)` that
 
 The pair is part of the insert: `u` undoes it with the text you typed, and `.` types it again.
 
+## Pairs in each mode
+
+| Mode | Pairs |
+|---|---|
+| Programming languages | `()` `[]` `{}` `""` `''` and backticks |
+| Rust | the same, without `''`, which would get in the way of lifetimes (`&'a`) |
+| Scheme, Lisp and the REPL | `()` `[]` `{}` `""`; `'` and backtick are quote and quasiquote |
+| Org and plain text | `()` `[]` `{}` `""` |
+| Markdown | `()` `[]` `{}` `""` and backticks, for code spans |
+
+A code block in Markdown or Org uses the file's own pairs, not the pairs of the language inside it.
+
 ## Options
 
 | Option | Default | What it does |
 |---|---|---|
 | `auto-pairs` | on | Whether brackets and quotes pair at all |
-| `auto-pairs-chars` | all six pairs | Each opener followed by its closer, as in `()[]{}""`; a quote is its own closer |
+| `auto-pairs-chars` | the mode's | Each opener followed by its closer, as in `()[]{}""`; a quote is its own closer |
 
-Set them in `init.scm`, or for the current buffer only with `set-local-option!`:
+Set them in `init.scm`, or for the current buffer only with `set-local-option!`. Setting `auto-pairs-chars` in `init.scm` gives every mode the same pairs:
 
 ```scheme
 (set-option! 'auto-pairs #f)                    ; no pairing anywhere

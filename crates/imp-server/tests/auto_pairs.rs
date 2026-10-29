@@ -172,3 +172,53 @@ fn a_quote_does_not_pair_in_a_string_or_comment() {
     // With no tree, only the letter-or-digit rule.
     assert_eq!(typed("\"a  b\"\n", "f a\""), ("\"a \"\" b\"\n".into(), 4));
 }
+
+#[test]
+fn each_mode_has_its_pairs() {
+    let all = "()[]{}\"\"''``";
+    // What each of the six types at the start of an empty file.
+    let pairs = |name: &str| {
+        all.chars()
+            .step_by(2)
+            .filter(|c| typed_in(name, "\n", &format!("i{c}")).len() == 3)
+            .collect::<String>()
+    };
+    assert_eq!(pairs("p.py"), "([{\"'`");
+    assert_eq!(pairs("p.ts"), "([{\"'`");
+    assert_eq!(pairs("p.rs"), "([{\"`");
+    assert_eq!(pairs("p.scm"), "([{\"");
+    assert_eq!(pairs("p.lisp"), "([{\"");
+    assert_eq!(pairs("p.txt"), "([{\"");
+    assert_eq!(pairs("p.org"), "([{\"");
+    assert_eq!(pairs("p.md"), "([{\"`");
+    // In a Markdown code fence, Markdown's.
+    assert_eq!(
+        typed_in("fence.md", "```rust\nx\n```\n", "jA '`"),
+        "```rust\nx '``\n```\n"
+    );
+}
+
+#[test]
+fn the_repl_pairs_as_scheme_does() {
+    let mut s = server("");
+    type_keys(&mut s, ":repl<ret>'(");
+    assert!(s.text().ends_with("imp> '()"), "{:?}", s.text());
+}
+
+#[test]
+fn the_users_choice_wins_over_the_modes() {
+    // Set globally, no mode changes it.
+    let path = temp_path("chosen.rs");
+    std::fs::write(&path, "\n").unwrap();
+    let mut s = server("");
+    s.eval("(set-option! 'auto-pairs-chars \"()''\")").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>i'[", path.display()));
+    assert_eq!(s.text(), "'['\n");
+    // Or set for one buffer.
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    s.eval("(set-local-option! 'auto-pairs-chars \"[]\")")
+        .unwrap();
+    type_keys(&mut s, "i([");
+    assert_eq!(s.text(), "([]\n");
+}
