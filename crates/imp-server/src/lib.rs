@@ -65,6 +65,10 @@ const RUNTIME: &[(&str, &str)] = &[
     ("repl.scm", include_str!("../../../runtime/repl.scm")),
     ("syntax.scm", include_str!("../../../runtime/syntax.scm")),
     (
+        "grammars.scm",
+        include_str!("../../../runtime/grammars.scm"),
+    ),
+    (
         "foldmethod.scm",
         include_str!("../../../runtime/foldmethod.scm"),
     ),
@@ -103,6 +107,10 @@ const RUNTIME: &[(&str, &str)] = &[
 /// like the runtime; with `IMP_RUNTIME` set they're read from the
 /// `packages` directory beside it instead.
 pub(crate) const PACKAGES: &[(&str, &str)] = &[
+    (
+        "file-tree",
+        include_str!("../../../packages/file-tree/file-tree.scm"),
+    ),
     (
         "olivetti",
         include_str!("../../../packages/olivetti/olivetti.scm"),
@@ -225,6 +233,14 @@ impl Server {
             events,
             sender,
         };
+        // queries/ beside init.scm replaces languages' queries. Without a
+        // config (tests), nothing does.
+        crate::syntax::set_query_dir(
+            options
+                .user_config
+                .as_ref()
+                .map(|p| p.with_file_name("queries")),
+        );
         // Settings as data (config.kdl) load first, so init.scm can
         // change them.
         if let Some(kdl) = options
@@ -288,8 +304,8 @@ impl Server {
             // Daemon events are handled by its own loop (daemon.rs).
             Event::FromClient(_, msg) => self.handle(msg),
             Event::Connected(..) | Event::Disconnected(_) => {}
-            Event::Parsed(id, version, tree) => {
-                editor::with(|e| e.syntax_parsed(id, version, tree))
+            Event::Parsed(id, version, parse) => {
+                editor::with(|e| e.syntax_parsed(id, version, *parse))
             }
             Event::SocketOpened(listener, conn, stream) => {
                 editor::with(|e| e.background.connection_opened(conn, stream));

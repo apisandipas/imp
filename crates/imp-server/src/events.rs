@@ -44,7 +44,7 @@ pub enum Event {
     TermExit(u64, i32),
     /// A background parse finished: (buffer, buffer version it parsed,
     /// tree).
-    Parsed(usize, u64, tree_sitter::Tree),
+    Parsed(usize, u64, Box<crate::syntax::Parse>),
 }
 
 /// The handles background work needs, kept with the editor.

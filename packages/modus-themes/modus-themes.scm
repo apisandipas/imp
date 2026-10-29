@@ -419,6 +419,12 @@
    (list "dired.permissions" 'fg-dim #f "" #f)
    (list "dired.size" 'fg-dim #f "" #f)
    (list "dired.date" 'date-common #f "" #f)
+   ;; The file-tree package's git statuses: as Magit's and diff-hl's
+   (list "file-tree.modified" 'fg-changed #f "" #f)
+   (list "file-tree.added" 'fg-added #f "" #f)
+   (list "file-tree.untracked" 'fg-added #f "" #f)
+   (list "file-tree.conflict" 'err #f "bold" #f)
+   (list "file-tree.ignored" 'fg-dim #f "" #f)
    ;; The calendar: calendar-today (inverse), the completion selection,
    ;; calendar-weekend-header
    (list "calendar.selected" #f 'bg-completion "bold" #f)

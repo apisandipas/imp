@@ -82,6 +82,7 @@ A hook runs your code when something happens. Add a function to one with `add-ho
 | `major-mode` | When a buffer's mode is set, with the mode |
 | `before-save` / `after-save` | Around saving a file |
 | `insert-enter` / `insert-leave` | When you enter and leave insert state |
+| `mouse-click` | After a left click moves the cursor in a window, with the offset clicked |
 | `post-command` | After every command |
 
 `remove-hook!` takes a function off a hook again.

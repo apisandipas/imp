@@ -203,3 +203,23 @@ fn a_click_on_a_footer_does_nothing() {
     // A click below the text would go to the last line.
     assert_eq!(s.eval("(current-line)").unwrap(), "0");
 }
+
+#[test]
+fn each_window_shows_its_own_buffers_line_numbers() {
+    // A buffer with numbers turned off locally keeps them off in its
+    // window while another is focused, and the others keep theirs.
+    let mut s = sized("one\ntwo\n", 40, 9);
+    s.eval("(set-option! 'number #t)").unwrap();
+    type_keys(&mut s, ":new<ret>ilocal<esc>:setlocal nonumber<ret>");
+    let r = rows(&mut s);
+    assert_eq!(r[0], "local", "{r:?}");
+    assert!(r[4].starts_with("  1 one"), "{r:?}");
+    type_keys(&mut s, "<C-w>j");
+    let r = rows(&mut s);
+    assert_eq!(r[0], "local", "{r:?}");
+    assert!(r[4].starts_with("  1 one"), "{r:?}");
+    // A global change reaches every buffer without its own.
+    s.eval("(set-option! 'number #f)").unwrap();
+    let r = rows(&mut s);
+    assert_eq!(r[4], "one", "{r:?}");
+}

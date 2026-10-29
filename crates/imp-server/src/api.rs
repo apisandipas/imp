@@ -43,6 +43,17 @@ fn popup_line(value: &SteelVal) -> crate::editor::PopupLine {
     }
 }
 
+/// Line numbers from their name: "absolute", "relative", "hybrid", else off.
+fn line_numbers(mode: &str) -> crate::render::LineNumbers {
+    use crate::render::LineNumbers;
+    match mode {
+        "absolute" => LineNumbers::Absolute,
+        "relative" => LineNumbers::Relative,
+        "hybrid" => LineNumbers::Hybrid,
+        _ => LineNumbers::Off,
+    }
+}
+
 fn clamp(n: isize) -> usize {
     n.max(0) as usize
 }
@@ -364,6 +375,10 @@ pub fn register(engine: &mut Engine) {
             Err(err) => SteelVal::StringV(format!("{path}: {err}").into()),
         },
     );
+    // The names in a directory git ignores, for the file tree.
+    engine.register_fn("directory-ignored", |path: String| {
+        crate::files::ignored(&path)
+    });
     let outcome = |r: std::io::Result<()>, what: &str| match r {
         Ok(()) => SteelVal::BoolV(true),
         Err(err) => SteelVal::StringV(format!("{what}: {err}").into()),
@@ -779,16 +794,20 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
     });
 
-    // "off", "absolute", "relative" or "hybrid".
+    // "off", "absolute", "relative" or "hybrid": the line numbers of
+    // buffers that don't set their own.
     engine.register_fn("set-line-numbers!", |mode: String| {
-        use crate::render::LineNumbers;
+        editor::with(|e| e.line_numbers = line_numbers(&mode))
+    });
+    // The current buffer's own line numbers, as set-line-numbers! takes,
+    // or #f to use everyone's.
+    engine.register_fn("set-buffer-line-numbers!", |mode: Option<String>| {
         editor::with(|e| {
-            e.line_numbers = match mode.as_str() {
-                "absolute" => LineNumbers::Absolute,
-                "relative" => LineNumbers::Relative,
-                "hybrid" => LineNumbers::Hybrid,
-                _ => LineNumbers::Off,
-            }
+            let id = e.current;
+            match mode {
+                Some(mode) => e.buffer_line_numbers.insert(id, line_numbers(&mode)),
+                None => e.buffer_line_numbers.remove(&id),
+            };
         })
     });
     // When the current buffer shows its sign column: "yes", "no" or
@@ -1523,28 +1542,51 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let id = e.current;
             match crate::syntax::Syntax::new(&name) {
-                Some(syntax) => {
+                Ok(Some(syntax)) => {
                     e.buffer.track_edits(true);
                     e.syntax.insert(id, syntax);
-                    true
+                    SteelVal::BoolV(true)
                 }
-                None => {
+                other => {
                     e.buffer.track_edits(false);
                     e.syntax.remove(&id);
-                    false
+                    match other {
+                        Err(why) => SteelVal::StringV(why.into()),
+                        _ => SteelVal::BoolV(false),
+                    }
                 }
             }
         })
+    });
+    engine.register_fn(
+        "define-language-alias!",
+        |alias: String, language: String| {
+            crate::syntax::define_alias(&alias, &language);
+        },
+    );
+    // A grammar built at runtime (runtime/grammars.scm builds them).
+    engine.register_fn(
+        "register-grammar!",
+        |name: String, library: String, queries: String| {
+            crate::syntax::register_grammar(&name, library.into(), queries.into());
+        },
+    );
+    // Where queries/NAME/highlights.scm and injections.scm replace a
+    // language's own; "" for nowhere.
+    engine.register_fn("set-query-dir!", |dir: String| {
+        crate::syntax::set_query_dir((!dir.is_empty()).then(|| dir.into()));
     });
     engine.register_fn("buffer-language", || {
         editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
     });
     engine.register_fn("syntax-languages", || {
-        let mut names: Vec<String> = crate::syntax::languages()
-            .keys()
+        let mut names: Vec<String> = crate::syntax::bundled_names()
+            .into_iter()
             .map(|n| n.to_string())
+            .chain(crate::syntax::registered_names())
             .collect();
         names.sort();
+        names.dedup();
         names
     });
     // The named nodes around char offset `at`, innermost first, as

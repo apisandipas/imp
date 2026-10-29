@@ -24,7 +24,8 @@ These come with imp:
 | `posframe` | Draws `M-x`, find-file, switch-buffer and other pickers in a box in the middle of the screen |
 | `move-lines` | In visual line mode (`V`), `J` and `K` move the selected lines down and up |
 | `org-babel` | In Org, `C-c C-c` in a source block runs it and puts the output under the block |
-| `nerd-icons` | Nerd Font icons in the status line, the pickers, completion and the file browser |
+| `nerd-icons` | Nerd Font icons in the status line, the pickers, completion, the file browser and the file tree |
+| `file-tree` | The project's folders as a tree down the left. `SPC t e` opens or closes it. See [File tree](ref-file-tree.md) |
 | `git-blame` | Shows the last commit to touch the cursor's line, after the line. See [Git blame](ref-git-blame.md) |
 | `git-gutter` | A coloured bar beside each line that differs from git. See [Git gutter](ref-git-gutter.md) |
 | `org-export` | Exports Org files to HTML, PDF and other formats through pandoc. See [Org export](ref-org-export.md) |

@@ -3,7 +3,7 @@ type: Effort
 status: done
 specs: ["[[spec/buffers-and-windows]]", "[[spec/claude]]", "[[spec/completion-at-point]]", "[[spec/completion]]", "[[spec/daemon]]", "[[spec/dap]]", "[[spec/dired]]", "[[spec/emacs-state]]", "[[spec/files]]", "[[spec/folding]]", "[[spec/git]]", "[[spec/kdl-config]]", "[[spec/live-scheme-and-help]]", "[[spec/look]]", "[[spec/lsp]]", "[[spec/mcp]]", "[[spec/mouse]]", "[[spec/org]]", "[[spec/packages]]", "[[spec/projects]]", "[[spec/shared-buffers]]", "[[spec/start-screen]]", "[[spec/terminals]]", "[[spec/tree-sitter]]", "[[spec/vim]]", "[[spec/wasm-plugins]]"]
 frozen:
-  docs/specs/buffers-and-windows.md: 21bd8d3245c3
+  docs/specs/buffers-and-windows.md: b71f00fec527
   docs/specs/claude.md: 580fb164d4a1
   docs/specs/completion-at-point.md: 7a992144e52e
   docs/specs/completion.md: c12abe1827ac

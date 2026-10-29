@@ -16,7 +16,8 @@ Turn one on with `use-package!` in your `init.scm`:
 | `posframe` | `M-x`, find-file and other menus in a box in the middle of the screen |
 | `move-lines` | `J` and `K` move the lines selected with `V` |
 | `org-babel` | `C-c C-c` runs the code in Org source blocks |
-| `nerd-icons` | Icons in the status line and menus (needs a Nerd Font) |
+| `nerd-icons` | Icons in the status line, menus, the file browser and the file tree (needs a Nerd Font) |
+| `file-tree` | The project's folders as a tree down the left, `SPC t e`; see [File tree](ref-file-tree.md) |
 | `git-blame` | The current line's last commit, shown after the line |
 | `git-gutter` | A coloured bar beside each changed line; see [Git gutter](ref-git-gutter.md) |
 | `org-export` | Export Org files to HTML, PDF and more; see [Org export](ref-org-export.md) |

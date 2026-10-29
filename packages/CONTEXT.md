@@ -6,10 +6,11 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `posframe`: completion menus in a centred box with the prompt inside.
 - `org-babel`: `C-c C-c` runs an Org source block, results under `#+RESULTS:`.
 - `move-lines`: `J` and `K` move a visual line selection.
-- `nerd-icons`: Nerd Font icons in completion, menus and the status line.
+- `nerd-icons`: Nerd Font icons in completion, menus, the status line, the file browser and the file tree.
 - `git-blame`: the cursor's line's last commit, after the line.
 - `git-gutter`: a coloured bar beside each line that differs from git's index.
 - `org-export`: `C-c C-e` exports an Org buffer through pandoc.
+- `file-tree`: the project's folders as a tree down the left, `SPC t e`.
 - `modus-themes`: the Modus Vivendi and Operandi themes, from Modus's own palettes.
 
 The rules of `runtime/` apply here too: docstrings on every function, and core gets only the primitive a package can't do without.
