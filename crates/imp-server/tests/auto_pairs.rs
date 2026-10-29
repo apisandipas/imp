@@ -376,3 +376,29 @@ fn the_emacs_state_closes_tags_too() {
     type_text(&mut s, "<p>");
     assert_eq!(s.text(), "<p></p>\n");
 }
+
+#[test]
+fn a_slash_after_a_less_than_closes_the_open_element() {
+    // The cursor goes past the end tag.
+    assert_eq!(
+        tags("t.html", "<div>\n", "A", "x</"),
+        ("<div>x</div>\n".into(), 12)
+    );
+    // The innermost open one, not one that has its end tag.
+    assert_eq!(
+        tags("t.html", "<ul>\n<li>a\n</ul>\n", "jA", "</").0,
+        "<ul>\n<li>a</li>\n</ul>\n"
+    );
+    // Then the next one out.
+    assert_eq!(
+        tags("t.html", "<p><b>\n", "A", "x</</").0,
+        "<p><b>x</b></p>\n"
+    );
+    // With none open, or / not right after <, only the /.
+    assert_eq!(tags("t.html", "\n", "i", "</").0, "</\n");
+    assert_eq!(
+        tags("t.html", "<div></div>\n", "f>a", "</").0,
+        "<div></</div>\n"
+    );
+    assert_eq!(tags("t.html", "<div>\n", "A", "a/").0, "<div>a/\n");
+}

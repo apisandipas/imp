@@ -37,6 +37,8 @@ Some tags don't get one:
 - In HTML files, HTML's void elements: `<br>`, `<img>`, `<input>`, `<meta>`, `<link>` and the rest. In XML and SVG files there are none, so `<br>` closes like any other.
 - An element that already has its end tag, such as when you retype the `>` of `<b></b>`.
 
+Typing `</` finishes the end tag of the innermost element that's still open: in `<ul><li>one`, `</` gives `</li>`, and the cursor goes after it. With nothing open, it's just `</`.
+
 Typing `<div>` inside an existing `<div></div>` still gets its own `</div>`. The parser would otherwise give the new element the existing end tag.
 
 The end tag is part of the insert, so `u` undoes it and `.` types it again. It works in the Emacs state too. Turn it off with `(set-option! 'auto-close-tags #f)`.

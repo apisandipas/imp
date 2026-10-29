@@ -289,12 +289,56 @@
                           [else (loop (cdr outer))])))
               (string-append "</" name ">")))))
 
+(define (html-open-element-name nodes)
+  "The name of the innermost element among `nodes` with no end tag, or #f.
+   Start tags the parser left in an ERROR count as open elements."
+  (let loop ([ns nodes])
+    (cond
+      [(null? ns) #f]
+      [(and (equal? (node-kind (car ns)) "element") (not (child-of-kind (car ns) "end_tag")))
+       (or (element-name (car ns)) (loop (cdr ns)))]
+      [(equal? (node-kind (car ns)) "ERROR")
+       (or (error-open-tag (car ns)) (loop (cdr ns)))]
+      [else (loop (cdr ns))])))
+
+(define (error-open-tag error)
+  "The last start tag in ERROR node `error` not closed by an end tag in it
+   before the cursor, or #f. The parser lays out tags it can't match flat
+   in one: <p><b>x</ is an ERROR of p's start tag, b's and the text."
+  (let loop ([cs (syntax-children (node-start error) (node-end error))] [open '()])
+    (define (name-of tag kind)
+      (let ([n (child-of-kind tag kind)]) (and n (node-text n))))
+    (cond
+      [(or (null? cs) (>= (node-start (car cs)) (cursor))) (and (pair? open) (car open))]
+      [(equal? (node-kind (car cs)) "start_tag")
+       (let ([name (name-of (car cs) "tag_name")])
+         (loop (cdr cs)
+               (if (and name (or (xml-file?) (not (member (string-downcase name) html-void-elements))))
+                   (cons name open)
+                   open)))]
+      [(equal? (node-kind (car cs)) "end_tag")
+       (let ([name (name-of (car cs) "tag_name")])
+         (loop (cdr cs) (if (and (pair? open) (equal? (car open) name)) (cdr open) open)))]
+      [else (loop (cdr cs) open)])))
+
 (define (close-tag-for! c)
-  "After `c` is typed: a start tag's > adds its end tag after the cursor."
-  (when (and (equal? c #\>) (option 'auto-close-tags) (> (cursor) 0))
-    (let* ([at (syntax-at (- (cursor) 1))]
-           [end (and (pair? at) (equal? (car at) "html") (html-end-tag-wanted (cdr at)))])
-      (when end (buffer-insert! (cursor) end))))
+  "After `c` is typed: a start tag's > adds its end tag after the cursor,
+   and the / of </ completes the innermost open element's end tag."
+  (let ([p (cursor)])
+    (when (and (option 'auto-close-tags) (> p 1))
+      (cond
+        [(equal? c #\>)
+         (let* ([at (syntax-at (- p 1))]
+                [end (and (pair? at) (equal? (car at) "html") (html-end-tag-wanted (cdr at)))])
+           (when end (buffer-insert! p end)))]
+        [(and (equal? c #\/) (equal? (buffer-char-at (- p 2)) #\<))
+         ;; From the char before <, as an element that ends there is
+         ;; open: the parser ends <b> at a </ it can't match yet.
+         (let* ([at (syntax-at (max 0 (- p 3)))]
+                [name (and (pair? at) (equal? (car at) "html") (html-open-element-name (cdr at)))])
+           (when name
+             (insert-text! (string-append name ">"))))]
+        [else void])))
   void)
 
 (set! *typed-char-handler* (lambda (c) (close-tag-for! c)))
