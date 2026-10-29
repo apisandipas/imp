@@ -78,3 +78,70 @@ fn an_error_in_a_command_shows_on_the_status_line() {
     type_keys(&mut s, ":broken<ret>");
     assert!(said(&mut s).contains("it broke"), "{}", said(&mut s));
 }
+
+/// A server with `pick-fruit`, which asks for a fruit from a menu, and
+/// `greet`, which asks for a name in a free-text prompt that starts with
+/// one filled in. What they got is in `*got*`.
+fn with_questions() -> imp_server::Server {
+    let mut s = with_hello();
+    s.eval(
+        "(define *got* '())
+         (define-command! 'pick-fruit
+           (lambda (count)
+             \"Pick a fruit.\"
+             (completing-read \"Fruit: \" '(\"apple\" \"banana\" \"cherry\")
+                              (lambda (f) (set! *got* (cons f *got*))))))
+         (define-command! 'greet
+           (lambda (count)
+             \"Greet someone.\"
+             (open-cmdline! \"Name: \" \"Grace\"
+                            (lambda (n) (set! *got* (cons n *got*))) #f #f)))",
+    )
+    .unwrap();
+    s
+}
+
+#[test]
+fn text_after_the_name_answers_a_menu() {
+    let mut s = with_questions();
+    // Narrowed as if typed, then the first match taken.
+    type_keys(&mut s, ":pick-fruit ban<ret>");
+    type_keys(&mut s, ":pick-fruit cherry<ret>");
+    assert_eq!(s.eval("*got*").unwrap(), "(\"cherry\" \"banana\")");
+    assert_eq!(s.eval("(eq? *mode* 'normal)").unwrap(), "#true");
+    // A real one, narrowed from part of its name.
+    assert_ne!(s.eval("*theme*").unwrap(), "gruvbox-dark");
+    type_keys(&mut s, ":load-theme gruvbox<ret>");
+    assert_eq!(s.eval("*theme*").unwrap(), "gruvbox-dark");
+}
+
+#[test]
+fn text_after_the_name_answers_a_prompt() {
+    let mut s = with_questions();
+    // It replaces what the prompt started with.
+    type_keys(&mut s, ":greet Ada Lovelace<ret>");
+    assert_eq!(s.eval("*got*").unwrap(), "(\"Ada Lovelace\")");
+}
+
+#[test]
+fn without_text_the_command_asks() {
+    let mut s = with_questions();
+    type_keys(&mut s, ":pick-fruit<ret>");
+    assert_eq!(s.eval("(eq? *mode* 'cmdline)").unwrap(), "#true");
+    assert_eq!(s.eval("*got*").unwrap(), "()");
+    type_keys(&mut s, "app<ret>");
+    assert_eq!(s.eval("*got*").unwrap(), "(\"apple\")");
+}
+
+#[test]
+fn text_for_a_command_that_asks_nothing_is_reported() {
+    let mut s = with_questions();
+    type_keys(&mut s, ":hello-world there<ret>");
+    // It has run by then: only a prompt shows that a command asks.
+    assert_eq!(s.eval("*hellos*").unwrap(), "(1)");
+    assert!(
+        said(&mut s).contains("hello-world takes no argument"),
+        "{}",
+        said(&mut s)
+    );
+}

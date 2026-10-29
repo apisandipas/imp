@@ -3363,12 +3363,20 @@
 (define (run-command-from-ex! name ex)
   "Runs command `name` (a string) for command line `ex`, when no ex
    command has that name: a number before it is the count, and any other
-   range is refused (see lore:decision/0019)."
-  (let ([range (ex-range-text ex)])
+   range is refused. Text after the name answers the first question the
+   command asks, as if typed at its prompt and submitted; a command shows
+   it asks by leaving a prompt open (see lore:decision/0019)."
+  (let ([range (ex-range-text ex)] [text (trim-end (ex-args ex))])
     (if (or (equal? range "") (string->number range))
         (with-handler (lambda (e) (set-status! (error-message e)))
-                      (run-command (string->symbol name)
-                                   (let ([n (string->number range)]) (if (and n (> n 0)) n 1))))
+                      (begin
+                        (run-command (string->symbol name)
+                                     (let ([n (string->number range)]) (if (and n (> n 0)) n 1)))
+                        (unless (equal? text "")
+                          (if (eq? *mode* 'cmdline)
+                              (begin (cmdline-edit! text (string-length text))
+                                     (cmdline-key! "<ret>"))
+                              (set-status! (string-append name " takes no argument"))))))
         (set-status! (string-append name " takes no range")))))
 
 (define (error-message e)
