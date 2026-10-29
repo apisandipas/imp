@@ -188,7 +188,7 @@ fn agenda(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std::path:
     .unwrap();
     s.eval("(set-option! 'org-agenda-use-time-grid #f)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, ":org-agenda<ret>a");
     (s, dir)
 }
 
@@ -236,7 +236,7 @@ fn the_agenda_clocks_in_and_out() {
     type_keys(&mut s, "cg");
     assert_eq!(s.eval("(major-mode)").unwrap(), "org-mode");
     assert_eq!(s.eval("(current-line)").unwrap(), "5");
-    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, ":org-agenda<ret>a");
     type_keys(&mut s, "cc");
     assert!(!std::fs::read_to_string(dir.join("a.org"))
         .unwrap()

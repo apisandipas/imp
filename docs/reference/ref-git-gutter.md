@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/git-gutter]]"
 frozen:
-  docs/specs/git-gutter.md: 9ae046f51d02
+  docs/specs/git-gutter.md: 50690fac14f4
 ---
 # Git gutter
 
@@ -46,7 +46,7 @@ Each lands on the block's first line and takes a count: `3]h` jumps three blocks
 
 ## Turning it off
 
-Type `:GitGutter` to turn git gutter off in the current buffer. The column and its bars go. Type it again to turn it back on.
+Run `M-x git-gutter-mode` to turn git gutter off in the current buffer. The column and its bars go. Run it again to turn it back on.
 
 ## Changing the colours
 

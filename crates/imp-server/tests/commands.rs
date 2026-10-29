@@ -213,3 +213,25 @@ fn lsp_mcp_and_syntax_features_are_commands() {
         );
     }
 }
+
+#[test]
+fn a_command_can_read_its_text_itself() {
+    // As a command whose question is a menu of keys, not a prompt, does.
+    let mut s = server("one\n");
+    s.eval(
+        "(define *read* '())
+         (define-command! 'read-it
+           (lambda (count) \"Read it.\" (set! *read* (cons (command-argument) *read*))))",
+    )
+    .unwrap();
+    type_keys(&mut s, ":read-it some text<ret>");
+    assert!(
+        !said(&mut s).contains("takes no argument"),
+        "{}",
+        said(&mut s)
+    );
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "read-it<ret>");
+    type_keys(&mut s, ":read-it<ret>");
+    assert_eq!(s.eval("*read*").unwrap(), "(#false #false \"some text\")");
+}

@@ -491,7 +491,3 @@
             [(equal? (car names) (cadr names)) (loop (cdr names))]
             [else (cons (car names) (loop (cdr names)))]))))
 
-(define-ex! '("describe-key") (lambda (ex) (run-command 'describe-key)))
-(define-ex! '("describe-function") (lambda (ex) (describe-function (ex-args ex))))
-(define-ex! '("apropos") (lambda (ex) (let ([hits (apropos (ex-args ex))]) (show-popup! (if (null? hits) (list "no matches") hits)))))
-(define-ex! '("find-definition" "fd") (lambda (ex) (find-definition (ex-args ex))))

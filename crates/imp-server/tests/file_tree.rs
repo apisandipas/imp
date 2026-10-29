@@ -67,8 +67,8 @@ fn toggles_down_the_left() {
     assert_eq!(eval(&mut s, "(length (window-list))"), "1");
     assert_eq!(eval(&mut s, "(current-window)"), file_window);
     assert_eq!(s.text(), "");
-    // :FileTree opens it, and q closes it.
-    type_keys(&mut s, ":FileTree<ret>");
+    // :file-tree opens it, and q closes it.
+    type_keys(&mut s, ":file-tree<ret>");
     assert_eq!(eval(&mut s, "(major-mode)"), "file-tree-mode");
     type_keys(&mut s, "q");
     assert_eq!(eval(&mut s, "(length (window-list))"), "1");

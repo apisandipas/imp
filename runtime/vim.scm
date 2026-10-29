@@ -3364,23 +3364,41 @@
              (run-command-from-ex! name ex)]
             [else (set-status! (string-append "not an editor command: " line))])))))
 
+(define *command-text* #f)   ; text after :NAME while NAME runs, or #f
+(define *command-text-read* #f)
+
+(define (command-argument)
+  "The text typed after the command's name at the : line (:org-export html
+   gives \"html\"), or #f, as when it runs from M-x or a key. A command
+   whose question isn't a prompt, such as a menu of keys, reads its
+   answer here; one that asks with a prompt gets it there instead."
+  (set! *command-text-read* #t)
+  *command-text*)
+
 (define (run-command-from-ex! name ex)
   "Runs command `name` (a string) for command line `ex`, when no ex
    command has that name: a number before it is the count, and any other
    range is refused. Text after the name answers the first question the
    command asks, as if typed at its prompt and submitted; a command shows
-   it asks by leaving a prompt open (see lore:decision/0019)."
+   it asks by leaving a prompt open, or by reading command-argument (see
+   lore:decision/0019)."
   (let ([range (ex-range-text ex)] [text (trim-end (ex-args ex))])
     (if (or (equal? range "") (string->number range))
-        (with-handler (lambda (e) (set-status! (error-message e)))
-                      (begin
-                        (run-command (string->symbol name)
-                                     (let ([n (string->number range)]) (if (and n (> n 0)) n 1)))
-                        (unless (equal? text "")
-                          (if (eq? *mode* 'cmdline)
-                              (begin (cmdline-edit! text (string-length text))
-                                     (cmdline-key! "<ret>"))
-                              (set-status! (string-append name " takes no argument"))))))
+        (begin
+          (set! *command-text* (if (equal? text "") #f text))
+          (set! *command-text-read* #f)
+          (with-handler (lambda (e) (set-status! (error-message e)))
+                        (begin
+                          (run-command (string->symbol name)
+                                       (let ([n (string->number range)]) (if (and n (> n 0)) n 1)))
+                          (set! *command-text* #f)
+                          (unless (or (equal? text "") *command-text-read*)
+                            (if (eq? *mode* 'cmdline)
+                                (begin (cmdline-edit! text (string-length text))
+                                       (cmdline-key! "<ret>"))
+                                (set-status! (string-append name " takes no argument"))))))
+          (set! *command-text* #f)
+          void)
         (set-status! (string-append name " takes no range")))))
 
 (define (error-message e)

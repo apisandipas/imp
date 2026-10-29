@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/git-blame]]"
 frozen:
-  docs/specs/git-blame.md: 65555d0cc447
+  docs/specs/git-blame.md: d6706377c008
 ---
 # Git blame
 
@@ -32,7 +32,7 @@ The blame goes away when you move off the line, change the buffer, or enter inse
 
 ## Turning it off
 
-Press `SPC g b`, or type `:GitBlame`, to turn blame off in the current buffer. Do it again to turn it back on.
+Press `SPC g b`, or run `M-x git-blame-mode`, to turn blame off in the current buffer. Do it again to turn it back on.
 
 There's no blame of every line at once. For that, `:git blame` shows git's own output (see [Git](ref-git.md)).
 

@@ -407,11 +407,17 @@ fn the_menus_toggles_flip_and_show_in_its_title() {
 fn org_export_exports_without_the_menu() {
     let dir = setup("export-ex");
     let mut s = visiting(&dir);
-    type_keys(&mut s, ":OrgExport mark<tab><ret>");
+    // The format completes after the command's name.
+    type_keys(&mut s, ":org-export mark<tab><ret>");
     wait_for_message(&mut s, "exported notes.md");
-    feed(&mut s, ":OrgExport<ret>");
-    assert_eq!(
-        message(&mut s),
-        "OrgExport needs a format: html, pdf, markdown, docx, latex, odt or text"
+    // Without one, the menu opens, as from C-c C-e.
+    feed(&mut s, ":org-export<ret>");
+    assert!(
+        screen(&mut s).contains("OpenDocument"),
+        "{}",
+        screen(&mut s)
     );
+    feed(&mut s, "<esc>");
+    feed(&mut s, ":OrgExport html<ret>");
+    assert!(message(&mut s).contains("not an editor command: OrgExport"));
 }

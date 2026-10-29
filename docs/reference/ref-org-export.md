@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-export]]"
 frozen:
-  docs/specs/org-export.md: 30020f22a896
+  docs/specs/org-export.md: d011ff8473b5
 ---
 # Org export
 
@@ -70,10 +70,10 @@ If pandoc fails, for example because the LaTeX engine is missing, the message li
 
 ## Without the menu
 
-Type `:OrgExport` and a format to write the file straight away. The format is one of `html`, `pdf`, `markdown`, `docx`, `latex`, `odt` or `text`. Press `<tab>` to complete it.
+Type `:org-export` and a format to write the file straight away, without the menu. The format is one of `html`, `pdf`, `markdown`, `docx`, `latex`, `odt` or `text`. Press `<tab>` to complete it.
 
 ```
-:OrgExport html
+:org-export html
 ```
 
 ## Options

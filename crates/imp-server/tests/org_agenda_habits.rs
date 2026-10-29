@@ -33,7 +33,7 @@ fn agenda(name: &str, text: &str, width: u16, setup: &str) -> imp_server::Server
     if !setup.is_empty() {
         s.eval(setup).unwrap();
     }
-    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, ":org-agenda<ret>a");
     s
 }
 

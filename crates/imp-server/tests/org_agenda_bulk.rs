@@ -28,7 +28,7 @@ fn agenda_files(name: &str, files: &[(&str, &str)]) -> (imp_server::Server, std:
         .unwrap();
     s.eval("(set-option! 'org-agenda-use-time-grid #f)")
         .unwrap();
-    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, ":org-agenda<ret>a");
     (s, dir)
 }
 
@@ -118,7 +118,7 @@ fn a_section_left_empty_by_a_filter_goes() {
     // gD keeps the filter; a new view drops it.
     type_keys(&mut s, "gDd");
     assert!(shows(&s, "Filter:"), "{:#?}", lines(&s));
-    type_keys(&mut s, ":OrgAgenda<ret>a");
+    type_keys(&mut s, ":org-agenda<ret>a");
     assert!(!shows(&s, "Filter:") && shows(&s, "To do"));
 }
 

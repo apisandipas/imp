@@ -3,7 +3,7 @@
 ;;; Files you visit are remembered (newest first) in the state directory;
 ;;; SPC f r picks one. Started without a file, imp shows a start screen
 ;;; listing recent files and projects; a digit or letter opens one. i, I,
-;;; A, o and O go to the unnamed buffer to type in, n to an empty one. :start shows it again; set
+;;; A, o and O go to the unnamed buffer to type in, n to an empty one. M-x start-screen shows it again; set
 ;;; 'start-screen to #f to begin in the empty buffer instead.
 
 (define-option! 'start-screen #t '())
@@ -167,7 +167,6 @@
   (go-to-buffer! (special-buffer "*start*" 'start-mode))
   (start-draw!))
 
-(define-ex! '("start") (lambda (ex) (show-start-screen!)))
 (define-command! 'start-screen (lambda (count)
                                  "Show the start screen: recent files, projects and a few commands."
                                  (show-start-screen!)))

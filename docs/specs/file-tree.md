@@ -12,7 +12,7 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 
 ## Behaviour
 
-- `SPC t e` and `:FileTree` toggle the tree. It opens down the left of the frame, `file-tree-width` columns wide (30), and the cursor moves into it. Toggling it from anywhere, the tree included, closes it, and the cursor goes back to the window it came from. Each frame has at most one tree, so each client of the daemon has its own, in its own buffer.
+- `SPC t e` and `M-x file-tree` toggle the tree. It opens down the left of the frame, `file-tree-width` columns wide (30), and the cursor moves into it. Toggling it from anywhere, the tree included, closes it, and the cursor goes back to the window it came from. Each frame has at most one tree, so each client of the daemon has its own, in its own buffer.
 - The tree shows one or more roots. The first is the current buffer's project root ([[projects]]) when the tree opens, or the working directory outside a project. Each root's name is on a line of its own, and below it, its entries are indented two columns a level. Directories come first and end in `/`, then files, each group in alphabetical order.
 - `P` adds another root: a project picked from the remembered projects with completion, or a directory typed in. Added roots come after the first, in the order they were added, and are remembered between sessions in imp's state directory. `X` on an added root's line removes it from the tree (the directory stays). The first root can't be removed, and a root added twice is shown once.
 - When it opens, the tree expands down to the current buffer's file and puts the cursor on it.
@@ -31,7 +31,7 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 
 ## Keys and options
 
-`SPC t e`, `:FileTree`, and in the tree `<ret> <tab> a r D H I P X R q ?`; `file-tree-width`, `file-tree-show-hidden`, `file-tree-show-ignored`, `file-tree-open-at-start`, `file-tree-follow`; the faces `file-tree.modified`, `file-tree.added`, `file-tree.untracked`, `file-tree.conflict` and `file-tree.ignored`.
+`SPC t e`, `file-tree`, and in the tree `<ret> <tab> a r D H I P X R q ?`; `file-tree-width`, `file-tree-show-hidden`, `file-tree-show-ignored`, `file-tree-open-at-start`, `file-tree-follow`; the faces `file-tree.modified`, `file-tree.added`, `file-tree.untracked`, `file-tree.conflict` and `file-tree.ignored`.
 
 ## Out of scope
 

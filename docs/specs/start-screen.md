@@ -7,7 +7,7 @@ anchors: [runtime/start.scm, crates/imp-server/tests/start.rs]
 
 ## Behaviour
 
-- Started without a file, imp shows recent files (picked by digit), projects (by letter) and a few commands. `i` goes to the empty buffer; `:start` shows it again.
+- Started without a file, imp shows recent files (picked by digit), projects (by letter) and a few commands. `i` goes to the empty buffer; `M-x start-screen` shows it again.
 
 ## Keys and options
 

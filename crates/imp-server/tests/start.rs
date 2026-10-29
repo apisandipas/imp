@@ -54,9 +54,9 @@ fn typing_on_the_start_screen_goes_to_an_empty_buffer() {
     s.eval("(imp-start-screen)").unwrap();
     type_keys(&mut s, "ihello<esc>");
     assert_eq!(s.text(), "hello");
-    type_keys(&mut s, ":start<ret>A!<esc>");
+    type_keys(&mut s, ":start-screen<ret>A!<esc>");
     assert_eq!(s.text(), "hello!");
-    type_keys(&mut s, ":start<ret>n");
+    type_keys(&mut s, ":start-screen<ret>n");
     assert_eq!(s.text(), "");
     // Turned off, nothing shows.
     let mut s = server("");

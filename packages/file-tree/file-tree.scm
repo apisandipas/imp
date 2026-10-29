@@ -8,7 +8,7 @@
 ;;;
 ;;;   (use-package! 'file-tree)
 ;;;
-;;;   SPC t e, :FileTree   open or close the tree
+;;;   SPC t e, M-x file-tree   open or close the tree
 ;;;   <ret>, <tab>         open or shut a folder; <ret> opens a file
 ;;;   H, I                 show or hide dotfiles, files git ignores
 ;;;   a                    add a file, or a folder (a name ending in /)
@@ -677,7 +677,6 @@
     "Open or close the file tree: the project's folders down the left."
     (file-tree-toggle!)))
 
-(define-ex! "FileTree" (lambda (ex) (file-tree-toggle!)))
 (define-leader! "te" 'file-tree "file tree")
 
 (for-each (lambda (k) (define-mode-key! 'file-tree-mode 'normal (car k) (caddr k) (cadr k)))
