@@ -3546,7 +3546,10 @@
   (lambda (ex)
     (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
 ;; In a daemon, stops it for every client (:q only detaches one).
-(define-ex! '("kill-server") (lambda (ex) (kill-server!)))
+(define-command! 'kill-server
+  (lambda (count)
+    "Stop the daemon, for every client attached to it. Without a daemon, quit."
+    (kill-server!)))
 
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))

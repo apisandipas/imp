@@ -71,6 +71,18 @@ It's ordinary Scheme, like `init.scm`, and can define commands, keys, options an
     (message "hello")))
 ```
 
+A command runs from `M-x` and from `:` by its name (`:hello`). Make each thing your package does a command like this, not a `:` command of its own. A command that needs an answer asks for it, and `:NAME text` answers it:
+
+```scheme
+(define-command! 'greet
+  (lambda (count)
+    "Greet someone by name."
+    (completing-read "Greet: " '("Ada" "Grace")
+                     (lambda (name) (message (string-append "hello " name))))))
+```
+
+`M-x greet` asks, and `:greet Ada` says hello to Ada straight away.
+
 Load it with `(use-package! 'hello)`. A package in this directory takes the place of a bundled one with the same name, so you can copy one of imp's packages and change it.
 
 To share a package, put its directory in a git repository and have others load it with `'git`.
