@@ -37,6 +37,8 @@ Every feature someone runs is a command with one kebab-case name, the same in M-
   | `:mode [NAME]` | `set-major-mode`: asks which major mode, from those defined; empty shows the current one |
   | `:theme NAME` | `load-theme` (`:colorscheme` stays, as Vim's) |
   | `:describe-key`, `:describe-function`, `:apropos`, `:find-definition`, `:fd` | `describe-key`, `describe-function`, `apropos`, `find-definition` |
+  | `:eval EXPR`, `:ev` | `eval`: asks for a Scheme expression and evaluates it |
+  | `:kill-server` | `kill-server` |
 
   Each new command has a docstring, so M-x and help describe it.
 - **Writing a package.** `runtime/CONTEXT.md` and the packages guide say to define a command, not an ex command, and how its prompt gets `:NAME text`.

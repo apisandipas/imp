@@ -4297,7 +4297,6 @@
                          (imp-eval-string text))])
     (unless (eq? v void) (show-result! v))))
 
-(define-ex! '("eval" "ev") (lambda (ex) (eval-and-show! (ex-args ex))))
 
 (define-ex! '("so" "source")
   (lambda (ex)
@@ -4366,6 +4365,10 @@
 (define-command! 'eval-expression
   (lambda (count)
     "Prompt for an expression and evaluate it (M-:)."
+    (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
+(define-command! 'eval
+  (lambda (count)
+    "Evaluate a Scheme expression, asked for: :eval (+ 1 2) runs it at once."
     (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
 
 ;;; Entry points

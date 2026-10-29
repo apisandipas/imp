@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/commands]]"
 frozen:
-  docs/specs/commands.md: 76ae78884bbd
+  docs/specs/commands.md: 31bb6b804788
 ---
 # Commands
 
@@ -47,8 +47,9 @@ Some features used to have their own `:` names. They're commands now, and the ol
 | `:mode` | `set-major-mode` |
 | `:theme` | `load-theme` (`:colorscheme` still works) |
 | `:fd` | `find-definition` |
+| `:ev` | `eval` (`:eval EXPR` still works) |
 
-`lsp-info`, `lsp-log`, `lsp-restart`, `lsp-stop`, `mcp-log`, `syntax-tree`, `describe-key`, `describe-function` and `apropos` keep their names, and now run from `M-x` too.
+`eval`, `kill-server`, `lsp-info`, `lsp-log`, `lsp-restart`, `lsp-stop`, `mcp-log`, `syntax-tree`, `describe-key`, `describe-function` and `apropos` keep their names, and now run from `M-x` too.
 
 ## Commands of your own
 

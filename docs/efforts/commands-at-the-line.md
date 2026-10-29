@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/commands]]"]
 issue: https://github.com/apisandipas/imp/issues/93
 frozen:
-  docs/specs/commands.md: 76ae78884bbd
+  docs/specs/commands.md: 31bb6b804788
 ---
 # Commands at the : line
 
@@ -22,4 +22,4 @@ The renames follow, one area at a time, each converting the ex command into a co
 - [x] Git, LSP, MCP and syntax: `git` (asks for git's arguments; empty shows the status), `lsp-info`, `lsp-log`, `lsp-stop`, `mcp-log` and `syntax-tree` become commands with docstrings; `:Git`, `:G` and those ex commands, and the ex copies `:diagnostics` and `:lsp-restart`, are removed. Tests, the git, LSP, MCP and tree-sitter specs and reference pages updated.
 - [x] Packages, modes and themes: `list-packages`, `package-update` (asks which package loaded from git), `set-major-mode` (asks which mode; empty shows the current one) become commands; `:packages`, `:package-update`, `:mode` and `:theme` are removed. Tests, the packages, leader-and-modes, look and modus-themes specs and pages, and the packages guide updated.
 - [x] Org, git packages, file tree, start screen, REPL and help: the ex copies `:OrgAgenda`, `:OrgCapture`, `:OrgExport`, `:GitBlame`, `:GitGutter`, `:FileTree`, `:start`, `:repl`, `:describe-key`, `:describe-function`, `:apropos`, `:find-definition` and `:fd` are removed, leaving their commands; `:org-export html` exports. Tests, and the specs, reference pages and README that named them, updated.
-- [ ] Writing packages: `runtime/CONTEXT.md` and the packages guide say to define a command, not an ex command, and that `:NAME text` answers its prompt. No ex command outside Vim's own is left (`grep define-ex!` matches the spec's list), and no spec, page or guide names a removed one.
+- [x] Writing packages: `runtime/CONTEXT.md` and the packages guide say to define a command, not an ex command, and that `:NAME text` answers its prompt. No ex command outside Vim's own is left (`grep define-ex!` matches the spec's list), and no spec, page or guide names a removed one.

@@ -235,3 +235,19 @@ fn a_command_can_read_its_text_itself() {
     type_keys(&mut s, ":read-it<ret>");
     assert_eq!(s.eval("*read*").unwrap(), "(#false #false \"some text\")");
 }
+
+#[test]
+fn eval_is_a_command() {
+    let mut s = server("one\n");
+    type_keys(&mut s, ":eval (+ 1 2)<ret>");
+    assert!(said(&mut s).contains('3'), "{}", said(&mut s));
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "eval<ret>(* 6 7)<ret>");
+    assert!(said(&mut s).contains("42"), "{}", said(&mut s));
+    type_keys(&mut s, ":ev (+ 1 2)<ret>");
+    assert!(
+        said(&mut s).contains("not an editor command: ev"),
+        "{}",
+        said(&mut s)
+    );
+}
