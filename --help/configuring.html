@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuring init.scm · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1 id="configuring-initscm">Configuring init.scm</h1>
+<p>Your settings live in <code>~/.config/imp/init.scm</code> (or
+<code>$XDG_CONFIG_HOME/imp/init.scm</code>). It's ordinary Scheme, run
+after the rest of imp loads, so it can change anything. Press
+<code>c</code> on the start screen to open it.</p>
+<p>If <code>init.scm</code> has an error, imp still starts and shows the
+error on the status line.</p>
+<p>A commented starting point is in the repository: <a
+href="https://github.com/apisandipas/imp/blob/main/examples/init.scm">examples/init.scm</a>.</p>
+<h2 id="apply-changes-without-restarting">Apply changes without
+restarting</h2>
+<p>Edit <code>init.scm</code>, then press <code>SPC e b</code> to run
+the whole buffer, or type <code>:source %</code>. The change takes
+effect at once. This works for any Scheme file, not only
+<code>init.scm</code>.</p>
+<h2 id="options">Options</h2>
+<p>Set an option with <code>set-option!</code>. In the editor,
+<code>:set</code> does the same for the session.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;relativenumber <span class="dv">#t</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;tabstop <span class="dv">4</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;clipboard <span class="st">&quot;unnamedplus&quot;</span>)   <span class="co">; y and p use the system clipboard</span></span></code></pre></div>
+<p><code>SPC h o</code> looks up any option: what it does and its
+current value. <code>set-local-option!</code> sets one for the current
+buffer only.</p>
+<h2 id="keys">Keys</h2>
+<p><code>define-key!</code> binds a key in a state:
+<code>'normal</code>, <code>'insert</code>, <code>'visual</code> or
+<code>'emacs</code>.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>(define-key! &#39;normal <span class="st">&quot;C-s&quot;</span> &#39;save-buffer)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>(define-key! &#39;normal <span class="st">&quot;gb&quot;</span> &#39;switch-buffer <span class="st">&quot;switch buffer&quot;</span>)   <span class="co">; the label shows in the key menu</span></span></code></pre></div>
+<p><code>define-leader!</code> adds a key to the space menu. Write the
+keys after <code>SPC</code> run together:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>(define-leader! <span class="st">&quot;fs&quot;</span> &#39;save-buffer <span class="st">&quot;save file&quot;</span>)   <span class="co">; SPC f s</span></span></code></pre></div>
+<p>Vim's <code>:map</code> commands work too:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>(run-ex! <span class="st">&quot;inoremap jk &lt;Esc&gt;&quot;</span>)</span></code></pre></div>
+<p>To find what a key does now, press <code>SPC h k</code> and then the
+key.</p>
+<h2 id="commands-of-your-own">Commands of your own</h2>
+<p>A command is a function with a name. It shows in <code>M-x</code>,
+<code>:NAME</code> runs it too, and you can bind it to keys. Its first
+line, a string, is the description <code>M-x</code> and
+<code>SPC h f</code> show.</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>(define-command! &#39;insert-date</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">lambda</span> (count)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;Insert today&#39;s date at the cursor.&quot;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    (begin-change!)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    (buffer-insert! (cursor) (without-final-newline (<span class="kw">cadr</span> (run-shell <span class="st">&quot;date +%F&quot;</span> <span class="st">&quot;&quot;</span>))))))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>(define-leader! <span class="st">&quot;id&quot;</span> &#39;insert-date <span class="st">&quot;insert date&quot;</span>)</span></code></pre></div>
+<p>Redefining a command changes every key bound to it.</p>
+<h2 id="hooks">Hooks</h2>
+<p>A hook runs your code when something happens. Add a function to one
+with <code>add-hook!</code>:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">;; Two-space indents in TypeScript and JavaScript.</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>(add-hook! &#39;major-mode</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">lambda</span> (mode)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    (when (<span class="kw">member</span> mode &#39;(typescript-mode javascript-mode))</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      (set-local-option! &#39;tabstop <span class="dv">2</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      (set-local-option! &#39;shiftwidth <span class="dv">2</span>))))</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Hook</th>
+<th>Runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>startup</code></td>
+<td>Once imp has started</td>
+</tr>
+<tr>
+<td><code>buffer-open</code></td>
+<td>When a file is opened</td>
+</tr>
+<tr>
+<td><code>buffer-enter</code></td>
+<td>When you switch to a buffer</td>
+</tr>
+<tr>
+<td><code>major-mode</code></td>
+<td>When a buffer's mode is set, with the mode</td>
+</tr>
+<tr>
+<td><code>before-save</code> / <code>after-save</code></td>
+<td>Around saving a file</td>
+</tr>
+<tr>
+<td><code>insert-enter</code> / <code>insert-leave</code></td>
+<td>When you enter and leave insert state</td>
+</tr>
+<tr>
+<td><code>mouse-click</code></td>
+<td>After a left click moves the cursor in a window, with the offset
+clicked</td>
+</tr>
+<tr>
+<td><code>post-command</code></td>
+<td>After every command</td>
+</tr>
+</tbody>
+</table>
+<p><code>remove-hook!</code> takes a function off a hook again.</p>
+<h2 id="changing-how-imp-works">Changing how imp works</h2>
+<p>Every part of imp is a Scheme function you can redefine. If you'd
+rather adjust one than replace it, <code>advice-add!</code> runs your
+code before, after or around it:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>(advice-add! &#39;save-buffer &#39;after (<span class="kw">lambda</span> args (message <span class="st">&quot;saved&quot;</span>)))</span></code></pre></div>
+<p><code>SPC h f</code> shows any function's docs and where it's
+defined.</p>
+<h2 id="themes-and-faces">Themes and faces</h2>
+<p>imp comes with four themes: <code>one-dark</code> (the default),
+<code>gruvbox-dark</code>, <code>everforest-dark</code> and
+<code>one-light</code>.</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>(load-theme! &#39;gruvbox-dark)</span></code></pre></div>
+<p>Make your own from one of them, changing a few colors and faces:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>(define-theme! &#39;midnight &#39;one-dark</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  (hash &#39;bg <span class="st">&quot;#1a1b26&quot;</span> &#39;blue <span class="st">&quot;#7aa2f7&quot;</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">list</span> (<span class="kw">list</span> <span class="st">&quot;syntax.comment&quot;</span> <span class="st">&quot;fg=#565f89 italic&quot;</span>)))</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>(load-theme! &#39;midnight)</span></code></pre></div>
+<p>To change one face, put the cursor on some text, press
+<code>SPC h F</code> to see its faces, then set one with
+<code>set-face!</code>:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>(set-face! <span class="st">&quot;syntax.comment&quot;</span> <span class="st">&quot;fg=#7a8478 italic&quot;</span>)</span></code></pre></div>
+<p>See <a href="ref-look.html">Look</a> for fonts, padding and the
+window's background.</p>
+<h2 id="next">Next</h2>
+<p>Add features that don't come switched on: <a
+href="packages.html">Packages</a>.</p>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html" aria-current="page">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

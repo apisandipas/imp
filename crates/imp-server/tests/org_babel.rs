@@ -125,10 +125,17 @@ fn the_whole_buffer_runs_in_order_and_errors_are_shown() {
         "#+begin_src scheme\n(define base 40)\n#+end_src\n\n#+RESULTS:\n: base\n\n#+begin_src scheme\n(+ base 2)\n#+end_src\n\n#+RESULTS:\n: 42\n"
     );
     // An error is shown, and leaves no results.
-    type_keys(&mut s, "Go#+begin_src scheme\n(car '())\n#+end_src<esc>k");
+    type_keys(
+        &mut s,
+        "Go#+begin_src scheme\n(car (list))\n#+end_src<esc>k",
+    );
     s.keys(&["C-c", "C-c"]);
     assert!(s.status().starts_with("error"), "{}", s.status());
-    assert!(s.text().ends_with("(car '())\n#+end_src\n"), "{}", s.text());
+    assert!(
+        s.text().ends_with("(car (list))\n#+end_src\n"),
+        "{}",
+        s.text()
+    );
     // Outside a block, and an unknown language.
     type_keys(&mut s, "gg");
     s.eval("(run-command 'org-babel-execute)").unwrap();

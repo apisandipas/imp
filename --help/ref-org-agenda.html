@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Org agenda · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Org agenda</h1>
+<p class="lede">The agenda gathers what's scheduled, due and still to do in your Org
+files into one week, so you can see what's next without opening each
+file.</p>
+
+<h2>Opening the agenda</h2>
+<p><code>SPC o a a</code> (or <code>M-x org-agenda-list</code>) opens
+the agenda on this week, with the cursor on today.</p>
+<ul>
+<li><strong>Overdue</strong>, at the top, lists undone tasks scheduled
+or due before today. <code>Sched. 3x</code> means it was scheduled 3
+days ago; <code>2 d. ago</code> means its deadline was 2 days ago.</li>
+<li><strong>Each day</strong> lists what falls on it: scheduled tasks,
+deadlines and appointments. A repeating task shows on every day it falls
+on.</li>
+<li><strong>Later</strong> lists undone tasks dated after this week,
+each with its date.</li>
+<li><strong>To do</strong>, at the bottom, lists TODOs with no
+date.</li>
+</ul>
+<p>Done tasks are left out. A file you have open is read from its
+buffer, so changes you haven't saved yet show too.</p>
+
+<h2>Reading a line</h2>
+<p>Each task is one line, and its parts line up down the agenda:</p>
+<pre><code>    14:00   Sched.    TODO  [#A] Review the pull request    :work:  imp</code></pre>
+<p>From the left: a <code>▸</code> if it's marked (see <a
+href="#acting-on-several-tasks">Acting on several tasks</a>), its time,
+what the date is, its TODO keyword, its priority and title, its tags,
+and its category (see <a href="ref-org.html">Org</a>). A habit has its
+graph after its title (see <a href="#habits">Habits</a>). A long title
+is cut short with <code>…</code> so the rest stays in place. In a window
+under 60 columns wide, tags are left out.</p>
+<p>In the window client, the agenda's title and the day headers are
+drawn larger, at the sizes <code>org-heading-heights</code> gives Org's
+headings.</p>
+
+<h2>Moving around</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gj</code> / <code>gk</code></td>
+<td>Next or previous task (also <code>C-j</code> /
+<code>C-k</code>)</td>
+</tr>
+<tr>
+<td><code>gH</code> / <code>gM</code> / <code>gL</code></td>
+<td>Top, middle or bottom of the window</td>
+</tr>
+<tr>
+<td><code>f</code> / <code>b</code></td>
+<td>Next or previous week (also <code>]]</code> / <code>[[</code>)</td>
+</tr>
+<tr>
+<td><code>.</code></td>
+<td>Back to today</td>
+</tr>
+<tr>
+<td><code>gd</code></td>
+<td>Go to a date, picked from the calendar</td>
+</tr>
+<tr>
+<td><code>&lt;ret&gt;</code></td>
+<td>Go to the task</td>
+</tr>
+<tr>
+<td><code>&lt;tab&gt;</code></td>
+<td>Show the task in another window, staying in the agenda</td>
+</tr>
+<tr>
+<td><code>F</code></td>
+<td>Follow mode: show each task the cursor moves to</td>
+</tr>
+<tr>
+<td><code>gr</code></td>
+<td>Read the files again</td>
+</tr>
+<tr>
+<td><code>gR</code></td>
+<td>Read the files again, in every agenda buffer</td>
+</tr>
+<tr>
+<td><code>q</code> / <code>ZZ</code></td>
+<td>Leave the agenda</td>
+</tr>
+<tr>
+<td><code>ZQ</code></td>
+<td>Leave the agenda and close the files it opened (not ones with
+unsaved changes)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Changing tasks from the agenda</h2>
+<p>Change a task right from its line, without opening its file.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>t</code></td>
+<td>Cycle its TODO keyword, as <code>&lt;ret&gt;</code> does on its
+heading</td>
+</tr>
+<tr>
+<td><code>SPC m t</code></td>
+<td>Pick its TODO keyword, or none</td>
+</tr>
+<tr>
+<td><code>SPC m d s</code></td>
+<td>Schedule it, picking the date from the calendar</td>
+</tr>
+<tr>
+<td><code>SPC m d d</code></td>
+<td>Give it a deadline, from the calendar</td>
+</tr>
+<tr>
+<td><code>H</code> / <code>L</code></td>
+<td>Move the date on the line a day earlier or later; <code>3L</code> is
+three days</td>
+</tr>
+<tr>
+<td><code>+</code> / <code>-</code></td>
+<td>Raise or lower its priority; a task without one counts as
+<code>B</code></td>
+</tr>
+<tr>
+<td><code>SPC m p</code></td>
+<td>Set its priority: <code>a</code>, <code>b</code> or <code>c</code>,
+or space to remove it</td>
+</tr>
+<tr>
+<td><code>ct</code> or <code>SPC m q</code></td>
+<td>Add or remove tags, as <code>C-c C-q</code> does in its file</td>
+</tr>
+<tr>
+<td><code>ce</code></td>
+<td>Set its effort, such as <code>0:45</code></td>
+</tr>
+<tr>
+<td><code>SPC m r</code></td>
+<td>Refile it under another heading, as <code>C-c C-w</code> does</td>
+</tr>
+<tr>
+<td><code>da</code></td>
+<td>Archive it, after asking</td>
+</tr>
+<tr>
+<td><code>dA</code></td>
+<td>Archive it without asking</td>
+</tr>
+<tr>
+<td><code>dd</code></td>
+<td>Delete it and everything under it, after asking</td>
+</tr>
+<tr>
+<td><code>C</code></td>
+<td>Capture a new task for the day the cursor is on</td>
+</tr>
+<tr>
+<td><code>u</code></td>
+<td>Undo the last change made from the agenda</td>
+</tr>
+</tbody>
+</table>
+<p><code>H</code> and <code>L</code> move the date that line shows: its
+scheduled date, its deadline, or an appointment, keeping its time and
+repeater.</p>
+<p>The change is made in the task's file. If the file isn't open, it's
+opened out of sight and saved. If it's open with changes you haven't
+saved, the change joins them and nothing is saved. The agenda redraws to
+show it; a task that's now done leaves the agenda. <code>u</code> can't
+undo refiling or archiving into another file.</p>
+
+<h2>Filtering</h2>
+<p>Narrow the agenda to what you're working on. Filters add up, show at
+the right of the title as <code>Filter: +work -home</code>, and stay
+while you move, refresh and change the view.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Keeps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>st</code></td>
+<td>Tasks with a tag, picked from your tags; type <code>-tag</code> to
+leave a tag's tasks out</td>
+</tr>
+<tr>
+<td><code>sc</code></td>
+<td>Tasks in the category of the task under the cursor</td>
+</tr>
+<tr>
+<td><code>se</code></td>
+<td>Tasks whose effort fits, such as <code>&lt;1:00</code> or
+<code>&gt;=0:30</code></td>
+</tr>
+<tr>
+<td><code>sr</code></td>
+<td>Tasks whose title matches a regexp, ignoring case</td>
+</tr>
+<tr>
+<td><code>s^</code></td>
+<td>Tasks under the same top-level heading as the task under the
+cursor</td>
+</tr>
+<tr>
+<td><code>S</code></td>
+<td>Everything again: removes every filter</td>
+</tr>
+</tbody>
+</table>
+<p>A task with no effort is left out by <code>se</code>, except with
+<code>&lt;&gt;</code>. A section the filters leave empty is left out;
+the days always show. Opening another view starts without filters.</p>
+
+<h2>Acting on several tasks</h2>
+<p>Mark tasks, then act on all of them at once. A marked task has a
+<code>▸</code> at the left of its line, and its title is
+highlighted.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>m</code></td>
+<td>Mark the task under the cursor, or unmark it, and move down</td>
+</tr>
+<tr>
+<td><code>*</code></td>
+<td>Mark every task the agenda shows</td>
+</tr>
+<tr>
+<td><code>%</code></td>
+<td>Mark the tasks whose title matches a regexp</td>
+</tr>
+<tr>
+<td><code>~</code></td>
+<td>Flip the marks: marked tasks are unmarked, the rest marked</td>
+</tr>
+<tr>
+<td><code>M</code></td>
+<td>Unmark everything</td>
+</tr>
+</tbody>
+</table>
+<p>Marks stay while you move and refresh; opening another view clears
+them.</p>
+<p>Then press <code>x</code> and pick what to do to every marked
+task:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>t</code></td>
+<td>Set their TODO keyword, or none</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>Schedule them, on a date from the calendar</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>Give them a deadline</td>
+</tr>
+<tr>
+<td><code>+</code> / <code>-</code></td>
+<td>Add a tag, or remove one they have</td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>Refile them under another heading</td>
+</tr>
+<tr>
+<td><code>$</code></td>
+<td>Archive them</td>
+</tr>
+<tr>
+<td><code>S</code></td>
+<td>Move their dates by a number of days, such as <code>3</code> or
+<code>-1</code></td>
+</tr>
+<tr>
+<td><code>k</code></td>
+<td>Delete them and everything under them, after asking</td>
+</tr>
+</tbody>
+</table>
+<p>It asks once, acts on each task, then clears the marks.
+<code>S</code> moves a task's scheduled date and deadline, or its first
+appointment when it has neither. <code>u</code> undoes the whole action
+when it changed a single file, but not a refile or an archive.</p>
+
+<h2>Clocking from the agenda</h2>
+<p>Keep track of time on a task from its line, as <code>SPC m c</code>
+does in its file (see <a href="ref-org.html#clocking">Clocking</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>I</code></td>
+<td>Clock in on it, clocking out of any other task first</td>
+</tr>
+<tr>
+<td><code>O</code></td>
+<td>Clock out</td>
+</tr>
+<tr>
+<td><code>cc</code></td>
+<td>Cancel the clock</td>
+</tr>
+<tr>
+<td><code>cg</code></td>
+<td>Go to the task you're clocked in on</td>
+</tr>
+<tr>
+<td><code>cr</code></td>
+<td>Show or hide the clock report</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Days, weeks, months</h2>
+<p>Press <code>gD</code> to change how much the agenda shows:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>d</code></td>
+<td>The day the cursor is on</td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>Its week</td>
+</tr>
+<tr>
+<td><code>t</code></td>
+<td>Its fortnight</td>
+</tr>
+<tr>
+<td><code>m</code></td>
+<td>Its month, from the 1st</td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>Its year, from 1 January</td>
+</tr>
+<tr>
+<td><code>l</code></td>
+<td>Turn log mode on or off: what you did each day</td>
+</tr>
+<tr>
+<td><code>R</code></td>
+<td>Show or hide the clock report</td>
+</tr>
+<tr>
+<td><code>g</code></td>
+<td>Turn the time grid on or off</td>
+</tr>
+</tbody>
+</table>
+<p><code>f</code> and <code>b</code> then move by that much: a month at
+a time in a month's view. The agenda is back to a week the next time you
+open it.</p>
+
+<h2>Log mode</h2>
+<p>Press <code>gD l</code> to see what you did on each day, alongside
+what's planned. Each line is at its time:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Closed</code></td>
+<td>A task marked done, from its <code>CLOSED:</code> note</td>
+</tr>
+<tr>
+<td><code>State</code></td>
+<td>A repeating task done, as <code>DONE from TODO</code></td>
+</tr>
+<tr>
+<td><code>Clocked</code></td>
+<td>Time clocked on a task, with how long, as <code>(1:15)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Done tasks show too. Press <code>gD l</code> again to turn it off;
+it's off again the next time you open the agenda.</p>
+
+<h2>The clock report</h2>
+<p>Press <code>gD R</code> or <code>cr</code> to add a table below the
+agenda of the time you clocked in the days it shows. It gives each
+file's time, and each heading's under it, two levels deep. A heading's
+time includes the time of the headings under it.</p>
+<pre><code>Clock report
+────────────
+File      Heading    Time
+─────────────────────────
+work.org  File time  1:55
+          Project    1:55
+            Draft    1:25
+─────────────────────────
+Total                1:55</code></pre>
+<p>A clock counts on the day it started. It's off again the next time
+you open the agenda.</p>
+
+<h2>Times and appointments</h2>
+<p>A time in a task's date, such as
+<code>&lt;2026-10-25 Sun 14:00&gt;</code> or
+<code>&lt;2026-10-25 Sun 9:30-10:00&gt;</code>, puts it at that time of
+day. Timed tasks come first in their day, by time; the rest follow by
+priority.</p>
+<p>Any other active date in a heading or its text is an appointment,
+shown on its day:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode org"><code class="sourceCode orgmode"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">* Dentist &lt;2026-10-24 Sat 10:00&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">* Conference</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>&lt;2026-11-02 Mon&gt;--&lt;2026-11-04 Wed&gt;</span></code></pre></div>
+<p>A date range shows on each of its days, as <code>(2/3)</code> on the
+second.</p>
+
+<h2>Habits</h2>
+<p>A habit is a task you mean to do regularly. Give it a repeating
+scheduled date and a <code>STYLE</code> property of
+<code>habit</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode org"><code class="sourceCode orgmode"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">* </span><span class="al">TODO</span><span class="fu"> Exercise</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>SCHEDULED: &lt;2026-10-21 Wed .+2d&gt;</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="in">:PROPERTIES:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="in">:STYLE:    habit</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="in">:END:</span></span></code></pre></div>
+<p>A habit shows on today only, once it's due, never under Overdue or
+Later. After its title is a graph of the last three weeks and the week
+to come, a cell a day:</p>
+<pre><code>    Sched.   TODO  Exercise          *      * * !</code></pre>
+<p>A <code>*</code> is a day you did it, <code>!</code> is today. The
+colors say how you were doing on each day, as in Org: blue before it was
+due, green while it could be done, yellow on its last day, red once it
+was overdue. Days to come, and past days you didn't do it, are drawn
+lighter.</p>
+<p>A repeater can give the longest you may wait after a slash:
+<code>.+2d/4d</code> is due two days after you last did it, and overdue
+after four. The days you did it come from the state changes logged when
+you marked it done, and its <code>LAST_REPEAT</code> property (see <a
+href="ref-org.html">Org</a>).</p>
+
+<h2>Diary dates</h2>
+<p>A date can be one of Emacs's diary forms, for things that come round
+in a pattern a repeater can't give. The agenda reads five of them,
+written in a timestamp:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode org"><code class="sourceCode orgmode"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">* Ana is %d &lt;%%(diary-anniversary 10 22 1990)&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">* Thanksgiving &lt;%%(diary-float 11 4 4)&gt;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">* Book club &lt;%%(diary-float t 3 3) 19:00&gt;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">* Trip &lt;%%(diary-block 10 19 2026 10 23 2026)&gt;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">* Bins out &lt;%%(diary-cyclic 14 10 10 2026)&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">* Payday &lt;%%(diary-date t 25 t)&gt;</span></span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Falls on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>diary-anniversary 10 22 1990</code></td>
+<td>22 October every year after 1990; <code>%d</code> in the title
+becomes the number of years, <code>%s</code> its ending, as
+<code>36th</code> for <code>%d%s</code></td>
+</tr>
+<tr>
+<td><code>diary-float 11 4 4</code></td>
+<td>The 4th Thursday of November (days count from 0, Sunday);
+<code>t</code> for every month, and <code>-1</code> for the last</td>
+</tr>
+<tr>
+<td><code>diary-block 10 19 2026 10 23 2026</code></td>
+<td>Each day from the first date to the second</td>
+</tr>
+<tr>
+<td><code>diary-cyclic 14 10 10 2026</code></td>
+<td>Every 14 days from that date</td>
+</tr>
+<tr>
+<td><code>diary-date t 25 t</code></td>
+<td>Every day that matches, <code>t</code> matching any month, day or
+year</td>
+</tr>
+</tbody>
+</table>
+<p>A time after the form, as <code>19:00</code>, puts it at that time.
+Dates are month, day, year, as in Emacs; set
+<code>calendar-date-style</code> to <code>'european</code> for day,
+month, year, or <code>'iso</code> for year, month, day. The agenda
+doesn't run Lisp, so any other form is skipped, and the agenda's last
+line says how many were. <code>H</code> and <code>L</code> can't move a
+diary date.</p>
+
+<h2>The time grid</h2>
+<p>Today, and any other day with something timed, has a time grid: a dim
+line every two hours from 08:00 to 20:00, among the timed tasks. On
+today, a <code>now</code> line marks the time the agenda was drawn;
+<code>gr</code> moves it on.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;org-agenda-use-time-grid <span class="dv">#f</span>)          <span class="co">; no grid</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;org-agenda-time-grid &#39;(<span class="dv">900</span> <span class="dv">1200</span> <span class="dv">1700</span>)) <span class="co">; other times</span></span></code></pre></div>
+
+<h2>Deadlines coming up</h2>
+<p>Deadlines in the next 14 days also show on today, as
+<code>In 3 d.</code>. A deadline can give its own warning period in its
+timestamp:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode org"><code class="sourceCode orgmode"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>DEADLINE: &lt;2026-10-30 Fri -3d&gt;</span></code></pre></div>
+<p>That one shows on today only from three days before.</p>
+
+<h2>Tags</h2>
+<p>A task's tags are its own, those of the headings it's under, and the
+file's <code>#+FILETAGS:</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode org"><code class="sourceCode orgmode"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#+FILETAGS: :home:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">* Garden :outside:</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">** </span><span class="al">TODO</span><span class="fu"> Plant the bulbs :autumn:</span></span></code></pre></div>
+<p><code>Plant the bulbs</code> shows as
+<code>:autumn:outside:home:</code>.</p>
+
+<h2>Lists of TODOs</h2>
+<p><code>SPC o a t</code> (or <code>M-x org-todo-list</code>) lists
+every undone TODO in your agenda files, dated or not, by priority and
+then in the order they're written. The same keys work on it as in the
+agenda, so you can change a task from the list.</p>
+
+<h2>Matching tags and properties</h2>
+<p><code>SPC o a m</code> (or <code>M-x org-tags-view</code>) asks for a
+match and lists every heading it fits, done ones too:</p>
+<table>
+<thead>
+<tr>
+<th>Match</th>
+<th>Finds headings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>work</code></td>
+<td>tagged <code>work</code>, or under a heading or file that is</td>
+</tr>
+<tr>
+<td><code>+work-urgent</code></td>
+<td>tagged <code>work</code> but not <code>urgent</code></td>
+</tr>
+<tr>
+<td><code>work|home</code></td>
+<td>tagged either</td>
+</tr>
+<tr>
+<td><code>{^pro}</code></td>
+<td>with a tag matching a regexp</td>
+</tr>
+<tr>
+<td><code>TODO="NEXT"</code></td>
+<td>with the keyword <code>NEXT</code></td>
+</tr>
+<tr>
+<td><code>PRIORITY="A"</code></td>
+<td>with priority <code>A</code></td>
+</tr>
+<tr>
+<td><code>LEVEL&gt;1</code></td>
+<td>below the top level</td>
+</tr>
+<tr>
+<td><code>CATEGORY="work"</code></td>
+<td>in the category <code>work</code></td>
+</tr>
+<tr>
+<td><code>+work+Effort&lt;"1:00"</code></td>
+<td>tagged <code>work</code>, with an <code>Effort</code> property under
+<code>1:00</code></td>
+</tr>
+</tbody>
+</table>
+<p>Compare properties with <code>=</code>, <code>&lt;&gt;</code>,
+<code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code> or
+<code>&gt;=</code>, against a number, a <code>"string"</code> or a
+<code>{regexp}</code>. A heading without the property matches only
+<code>&lt;&gt;</code>.</p>
+
+<h2>Searching</h2>
+<p><code>SPC o a s</code> (or <code>M-x org-search-view</code>) asks for
+words and lists every entry whose heading or text holds them all,
+ignoring case:</p>
+<table>
+<thead>
+<tr>
+<th>Search</th>
+<th>Finds entries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bank loan</code></td>
+<td>with both words</td>
+</tr>
+<tr>
+<td><code>bank -holiday</code></td>
+<td>with <code>bank</code> but not <code>holiday</code></td>
+</tr>
+<tr>
+<td><code>"the bank later"</code></td>
+<td>with that phrase</td>
+</tr>
+<tr>
+<td><code>{bulbs?}</code></td>
+<td>matching a regexp</td>
+</tr>
+</tbody>
+</table>
+
+<h2>The dispatcher</h2>
+<p><code>SPC o A</code> (or <code>M-x org-agenda</code>) shows a menu of
+views, as Org's agenda dispatcher does:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>View</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a</code></td>
+<td>The agenda for the week</td>
+</tr>
+<tr>
+<td><code>t</code></td>
+<td>Every undone TODO</td>
+</tr>
+<tr>
+<td><code>T</code></td>
+<td>The TODOs with one keyword, asked for</td>
+</tr>
+<tr>
+<td><code>m</code></td>
+<td>Headings matching tags and properties</td>
+</tr>
+<tr>
+<td><code>M</code></td>
+<td>The same, undone TODOs only</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>A search</td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td>The week's agenda and every TODO, one after the other</td>
+</tr>
+<tr>
+<td><code>&lt;</code></td>
+<td>Limit the next view to the file you're in; press it again for the
+heading the cursor is under and everything below it</td>
+</tr>
+</tbody>
+</table>
+<p>A limited view says so in its title, and keeps the limit when you
+press <code>gr</code>.</p>
+
+<h2>Your own views</h2>
+<p>Add a view to the dispatcher in <code>init.scm</code> with
+<code>define-agenda-command!</code>: a key, a name, and the parts it
+shows, one after another.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-agenda-command! <span class="st">&quot;w&quot;</span> <span class="st">&quot;Work day&quot;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  &#39;((agenda (span <span class="dv">1</span>))</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    (tags-todo <span class="st">&quot;+work&quot;</span> (header <span class="st">&quot;Work to do&quot;</span>))</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    (search <span class="st">&quot;meeting&quot;</span>)))</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>(agenda)</code></td>
+<td>The agenda's days; <code>(span 1)</code> for one day</td>
+</tr>
+<tr>
+<td><code>(todo)</code> or <code>(todo "NEXT")</code></td>
+<td>Every undone TODO, or one keyword's</td>
+</tr>
+<tr>
+<td><code>(tags "+work")</code></td>
+<td>Headings matching a tags match</td>
+</tr>
+<tr>
+<td><code>(tags-todo "+work")</code></td>
+<td>The same, undone TODOs only</td>
+</tr>
+<tr>
+<td><code>(search "words")</code></td>
+<td>A search</td>
+</tr>
+</tbody>
+</table>
+<p>Each part can have a <code>(header "Name")</code>. With more than one
+part, each is shown under its name. <code>f</code> and <code>b</code>
+move the agenda part by its span.</p>
+
+<h2>Choosing the files</h2>
+<p>Set the files to read in <code>init.scm</code>. Relative names are
+looked up in <code>org-directory</code>. With none set, the agenda reads
+every <code>.org</code> file in <code>org-directory</code>.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;org-agenda-files &#39;(<span class="st">&quot;inbox.org&quot;</span> <span class="st">&quot;work.org&quot;</span>))</span></code></pre></div>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>org-agenda-files</code></td>
+<td><code>'()</code></td>
+<td>The files the agenda reads; empty means every <code>.org</code> file
+in <code>org-directory</code></td>
+</tr>
+<tr>
+<td><code>org-directory</code></td>
+<td><code>"~/org"</code></td>
+<td>Where your Org files live</td>
+</tr>
+<tr>
+<td><code>org-agenda-span</code></td>
+<td><code>7</code></td>
+<td>How many days the agenda shows</td>
+</tr>
+<tr>
+<td><code>org-agenda-start-on-weekday</code></td>
+<td><code>calendar-week-start</code></td>
+<td>The day a week starts on, 0 (Sunday) to 6; <code>#f</code> starts on
+today. Spans other than a week or fortnight start on today</td>
+</tr>
+<tr>
+<td><code>org-deadline-warning-days</code></td>
+<td><code>14</code></td>
+<td>How many days ahead deadlines show on today</td>
+</tr>
+<tr>
+<td><code>org-agenda-use-time-grid</code></td>
+<td><code>#t</code></td>
+<td>Draw the time grid</td>
+</tr>
+<tr>
+<td><code>org-agenda-time-grid</code></td>
+<td><code>'(800 1000 1200 1400 1600 1800 2000)</code></td>
+<td>The grid's times, <code>800</code> being 08:00</td>
+</tr>
+<tr>
+<td><code>calendar-week-start</code></td>
+<td><code>0</code></td>
+<td>The day weeks start on: 0 is Sunday</td>
+</tr>
+<tr>
+<td><code>org-habit-preceding-days</code></td>
+<td><code>21</code></td>
+<td>How many days before today a habit's graph shows</td>
+</tr>
+<tr>
+<td><code>org-habit-following-days</code></td>
+<td><code>7</code></td>
+<td>How many days from today on a habit's graph shows</td>
+</tr>
+<tr>
+<td><code>calendar-date-style</code></td>
+<td><code>'american</code></td>
+<td>The order of a diary form's dates: <code>'american</code> (month day
+year), <code>'european</code> (day month year) or <code>'iso</code></td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html" aria-current="page">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

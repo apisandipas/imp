@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Folding · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Folding</h1>
+<p class="lede">A fold hides a block of lines behind its first line, so you can see
+the shape of a file. imp folds code by its indent, and uses Vim's
+<code>z</code> keys to open and close folds.</p>
+
+<h2>Opening and closing folds</h2>
+<p>A closed fold shows as its first line, with a note of how many lines
+it hides:</p>
+<pre><code>fn main() {  ··· 4 lines</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>za</code></td>
+<td>Open or close the fold under the cursor</td>
+</tr>
+<tr>
+<td><code>zo</code> / <code>zc</code></td>
+<td>Open or close it</td>
+</tr>
+<tr>
+<td><code>zA</code> / <code>zO</code> / <code>zC</code></td>
+<td>The same for it and every fold inside it</td>
+</tr>
+<tr>
+<td><code>zR</code></td>
+<td>Open every fold in the buffer</td>
+</tr>
+<tr>
+<td><code>zM</code></td>
+<td>Close every fold</td>
+</tr>
+<tr>
+<td><code>zj</code> / <code>zk</code></td>
+<td>Go to the start of the next fold, or the end of the one before</td>
+</tr>
+</tbody>
+</table>
+<p><code>:foldopen</code> and <code>:foldclose</code> open or close the
+folds in the lines you give them: <code>:%foldclose</code> closes every
+fold in the file.</p>
+<p><code>j</code>, <code>k</code> and counts step over a closed fold as
+one line, and line-wise commands such as <code>dd</code> take it whole.
+A fold opens by itself when you move into it by searching, with a mark,
+<code>%</code>, <code>{</code> or <code>}</code>, by undoing, or with a
+sideways motion, as in Vim.</p>
+
+<h2>Which lines fold</h2>
+<p><code>foldmethod</code> says how imp finds folds. A file starts with
+<code>indent</code>, unless its mode chooses its own: Org folds its
+headings. Other buffers, and files over 10,000 lines, start with
+<code>manual</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>foldmethod</code></th>
+<th>Folds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>indent</code></td>
+<td>Each indented block, with the line above that opens it</td>
+</tr>
+<tr>
+<td><code>syntax</code></td>
+<td>Each function and class, as the language's parser sees them</td>
+</tr>
+<tr>
+<td><code>expr</code></td>
+<td>The levels a function you write gives each line</td>
+</tr>
+<tr>
+<td><code>manual</code></td>
+<td>Only the folds you make</td>
+</tr>
+</tbody>
+</table>
+<p>Set it for one buffer with
+<code>:setlocal foldmethod=syntax</code>.</p>
+<p>With <code>indent</code>, a line's level is its indent divided by
+<code>shiftwidth</code>. A blank line takes the lower level of the lines
+around it. The line that opens a block stays in view when it's closed,
+as in VSCode, rather than folding away as in Vim.</p>
+<p>For <code>syntax</code>, you can choose which parts of a language
+fold:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-syntax-folds! <span class="st">&quot;rust&quot;</span> &#39;(<span class="st">&quot;function_item&quot;</span> <span class="st">&quot;impl_item&quot;</span>))</span></code></pre></div>
+<p>For <code>expr</code>, give a function that takes a line's number and
+returns its fold level, a number:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>(set-local-option! &#39;foldexpr (<span class="kw">lambda</span> (line) level))</span></code></pre></div>
+<p>Folds are worked out again after each change, and when you leave
+insert state. A fold that's still there stays open or closed as it was.
+When you set <code>foldmethod</code>, folds deeper than
+<code>foldlevel</code> start closed. It's 99 by default, so folds start
+open.</p>
+
+<h2>Making folds by hand</h2>
+<p>With <code>foldmethod</code> set to <code>manual</code>, you make and
+remove folds yourself. Folds can sit inside other folds.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zf</code></td>
+<td>Fold the lines a motion covers: <code>zfj</code> folds this line and
+the next, <code>zfap</code> a paragraph</td>
+</tr>
+<tr>
+<td><code>zF</code></td>
+<td>Fold a count of lines from this one: <code>3zF</code> folds
+three</td>
+</tr>
+<tr>
+<td><code>zd</code></td>
+<td>Remove the fold under the cursor</td>
+</tr>
+<tr>
+<td><code>zD</code></td>
+<td>Remove it and every fold inside it</td>
+</tr>
+<tr>
+<td><code>zE</code></td>
+<td>Remove every fold in the buffer</td>
+</tr>
+</tbody>
+</table>
+<p><code>:fold</code> folds the lines you give it, such as
+<code>:10,20fold</code>. With another method, these keys say they can't.
+Setting <code>foldmethod</code> back to <code>manual</code> keeps the
+folds it made, as manual ones.</p>
+
+<h2>The fold column</h2>
+<p>While a buffer has folds, a column appears between the line numbers
+and the text. It shows <code>▾</code> on the first line of an open fold
+and <code>▸</code> on a closed one.</p>
+<p>Click a chevron to open or close its fold, as <code>za</code> would
+there. The cursor stays put, unless the fold closes over it. Clicking a
+blank part of the column does what clicking the line number does.</p>
+<p>Set <code>foldcolumn</code> to <code>yes</code> to always show the
+column, or <code>no</code> to never show it.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>foldmethod</code></td>
+<td><code>"manual"</code>; files start with <code>"indent"</code></td>
+<td>How folds are found: <code>manual</code>, <code>indent</code>,
+<code>syntax</code> or <code>expr</code></td>
+</tr>
+<tr>
+<td><code>foldlevel</code></td>
+<td><code>99</code></td>
+<td>Folds deeper than this start closed when <code>foldmethod</code> is
+set</td>
+</tr>
+<tr>
+<td><code>foldexpr</code></td>
+<td><code>#f</code></td>
+<td>The function that gives each line's level for <code>expr</code></td>
+</tr>
+<tr>
+<td><code>foldcolumn</code></td>
+<td><code>"auto"</code></td>
+<td>The fold column: <code>"auto"</code> while there are folds,
+<code>"yes"</code> or <code>"no"</code></td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html" aria-current="page">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

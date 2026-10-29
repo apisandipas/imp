@@ -56,8 +56,10 @@ fn history_matches_what_was_typed() {
     type_keys(&mut s, "(+ 1 1)<ret>(define y 1)<ret>(+ 3 3)<ret>");
     type_keys(&mut s, "(d<M-p>");
     assert_eq!(input(&s), "(define y 1)");
+    // Past the newest, the input comes back with the closer auto-pairs
+    // added; only what was before the cursor was matched.
     type_keys(&mut s, "<M-n>");
-    assert_eq!(input(&s), "(d");
+    assert_eq!(input(&s), "(d)");
 }
 
 #[test]

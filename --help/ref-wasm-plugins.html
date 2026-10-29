@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WASM plugins · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>WASM plugins</h1>
+<p class="lede">A WASM plugin is a WebAssembly module that turns text into other
+text. It runs sealed off from your system, so it suits heavy work or
+code you don't fully trust. Scheme is still the main way to extend imp;
+plugins are a prototype, only in an imp built with
+<code>--features wasm</code>.</p>
+
+<h2>What a plugin can do</h2>
+<p>A plugin's functions each take a string and give back a string. They
+can't touch files, the network or the clock. Their one way out is a log,
+which <code>:wasm-log</code> shows.</p>
+<p>Each call has a budget of work, and each plugin a memory limit. A
+plugin that runs away stops with an error instead of hanging the
+editor.</p>
+
+<h2>Using a plugin</h2>
+<p>Load it in <code>init.scm</code> under a name, then hang its
+functions on keys or commands:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(load-wasm-plugin! &#39;case <span class="st">&quot;~/.config/imp/plugins/case.wasm&quot;</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(define-operator! <span class="st">&quot;gs&quot;</span> (wasm-operator &#39;case <span class="st">&quot;snake&quot;</span>))</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>(define-wasm-filter! &#39;snake-buffer &#39;case <span class="st">&quot;snake&quot;</span>)</span></code></pre></div>
+<p><code>wasm-operator</code> makes a Vim operator. Here
+<code>gsiw</code> turns the word under the cursor into snake case, and
+<code>gs</code> does the same to a visual selection.</p>
+<p><code>define-wasm-filter!</code> makes a command that runs a function
+over the whole buffer, here <code>M-x snake-buffer</code>. The change is
+one undo step.</p>
+<p>In an imp built without the feature, these still exist, but fail with
+"imp was built without the wasm feature".</p>
+
+<h2>Commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:wasm</code></td>
+<td>List the loaded plugins and their functions</td>
+</tr>
+<tr>
+<td><code>:[range]wasm PLUGIN FUNCTION</code></td>
+<td>Run a function over the lines in the range, or the whole buffer</td>
+</tr>
+<tr>
+<td><code>:wasm-log</code></td>
+<td>Show what plugins have logged</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Writing a plugin</h2>
+<p>imp's source has an example in <code>examples/wasm-plugin</code>: a
+Rust plugin whose functions <code>snake</code>, <code>camel</code> and
+<code>kebab</code> change the case of identifiers. Build it with:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">cargo</span> build <span class="at">--release</span> <span class="at">--target</span> wasm32-unknown-unknown</span></code></pre></div>
+<p>A plugin is a plain WebAssembly module, not a component, and without
+WASI. It exports its <code>memory</code> and a function
+<code>imp_alloc(len)</code>, which imp calls to get room for the input.
+Each function takes the address and length of a UTF-8 string, and
+returns its result's address shifted left 32 bits, joined with its
+length. The one thing it can import is <code>imp.log</code>.</p>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html" aria-current="page">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

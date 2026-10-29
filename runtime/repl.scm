@@ -14,6 +14,7 @@
 (define *repl-history* #f)
 (define *repl-history-index* -1)   ; -1 while editing a fresh input
 (define *repl-history-prefix* "")  ; what M-p and M-n match against
+(define *repl-history-typed* "")   ; the input they replaced, brought back past the newest
 
 (define-major-mode! 'repl-mode 'scheme-mode '() #f)
 
@@ -105,16 +106,24 @@
 
 (define (repl-history-step! dir)
   "Steps `dir` entries through the REPL history (1 is older), visiting
-   only entries that start with what was typed before the first step.
-   Stepping past the newest brings that text back."
+   only entries that start with the input at the first step, less any
+   closers after the cursor (auto-pairs adds them as you type). Stepping
+   past the newest brings the input back."
   (when (= *repl-history-index* -1)
-    (set! *repl-history-prefix* (buffer-substring (repl-input-start) (buffer-length))))
+    (let* ([start (repl-input-start)] [input (buffer-substring start (buffer-length))]
+           [p (cursor)]
+           [closers (string->list (option 'auto-pairs-chars))]
+           [only-closers? (and (>= p start)
+                               (let loop ([cs (string->list (buffer-substring p (buffer-length)))])
+                                 (or (null? cs) (and (memv (car cs) closers) (loop (cdr cs))))))])
+      (set! *repl-history-typed* input)
+      (set! *repl-history-prefix* (if only-closers? (buffer-substring start p) input))))
   (let ([n (length (repl-history))])
     (let loop ([i (+ *repl-history-index* dir)])
       (cond
         [(< i 0)
          (set! *repl-history-index* -1)
-         (repl-set-input! *repl-history-prefix*)]
+         (repl-set-input! *repl-history-typed*)]
         [(>= i n) (message "no more REPL history")]
         [(starts-with? (list-ref (repl-history) i) *repl-history-prefix*)
          (set! *repl-history-index* i)

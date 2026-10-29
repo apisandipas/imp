@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Projects · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Projects</h1>
+<p class="lede">A project is the directory your file belongs to, such as a git
+repository. imp finds it for you, so you can open its files, switch
+between its buffers, and search all of it.</p>
+
+<h2>Which directory is the project</h2>
+<p>imp looks up from the file's directory for one holding a marker:
+<code>.git</code>, <code>.hg</code>, <code>.jj</code> or
+<code>.project</code>. The nearest directory with one is the project.
+The markers are tried in order, so a git repository wins over a
+<code>.project</code> inside it.</p>
+<p>To use other markers, set <code>project-markers</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;project-markers &#39;(<span class="st">&quot;.git&quot;</span> <span class="st">&quot;Cargo.toml&quot;</span>))</span></code></pre></div>
+<p>imp remembers the projects you open files in, between sessions.</p>
+
+<h2>Opening files and buffers</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SPC p f</code></td>
+<td>Find a file in the project</td>
+</tr>
+<tr>
+<td><code>SPC p p</code></td>
+<td>Switch to another project you've used, then find a file in it</td>
+</tr>
+<tr>
+<td><code>SPC p b</code></td>
+<td>Switch to one of the project's buffers</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Searching the project</h2>
+<p>Press <code>SPC s p</code> to search the whole project. It starts
+from the word under the cursor, so press <code>&lt;ret&gt;</code> to
+search for that, or type something else. The matches open in
+<code>*grep*</code> along the bottom of the screen.</p>
+<p><code>:grep PATTERN</code> searches too, and jumps to the first
+match. <code>:grep! PATTERN</code> doesn't jump. imp searches with
+<code>rg</code> if you have it, and with <code>grep</code> if you
+don't.</p>
+
+<h2>Going through the matches</h2>
+<p>The matches make a quickfix list, as in Vim. In <code>*grep*</code>,
+press <code>&lt;ret&gt;</code> on a match to go to it.</p>
+<table>
+<thead>
+<tr>
+<th>Key or command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:copen</code></td>
+<td>Show the list in <code>*grep*</code></td>
+</tr>
+<tr>
+<td><code>]q</code> or <code>:cn</code></td>
+<td>Next match</td>
+</tr>
+<tr>
+<td><code>[q</code> or <code>:cp</code></td>
+<td>Previous match</td>
+</tr>
+<tr>
+<td><code>:cfirst</code> / <code>:clast</code></td>
+<td>First or last match</td>
+</tr>
+<tr>
+<td><code>:cc N</code></td>
+<td>Match number N</td>
+</tr>
+</tbody>
+</table>
+<p>Past either end, imp says <code>E553: No more items</code>. With no
+list, it says <code>E42: No Errors</code>, as Vim does.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>project-markers</code></td>
+<td><code>'(".git" ".hg" ".jj" ".project")</code></td>
+<td>The files or directories that mark a project's top, tried in
+order</td>
+</tr>
+<tr>
+<td><code>grepprg</code></td>
+<td><code>""</code></td>
+<td>The command that searches; empty means <code>rg</code>, or
+<code>grep</code> without it</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html" aria-current="page">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

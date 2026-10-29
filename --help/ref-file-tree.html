@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File tree · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>File tree</h1>
+<p class="lede">The file tree shows your project's folders as a tree down the left of
+the screen, as most editors' sidebars do. It sits beside the <a
+href="ref-dired.html">file browser</a>, which stays the way to edit a
+directory as text.</p>
+
+<h2>Turning it on</h2>
+<p>The file tree is an opt-in package. Load it near the top of your
+<code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(use-package! &#39;file-tree)</span></code></pre></div>
+
+<h2>Opening and closing it</h2>
+<p>Press <code>SPC t e</code>, or run <code>M-x file-tree</code>, to
+open the tree. It opens down the left, 30 columns wide, and the cursor
+moves into it. Press <code>SPC t e</code> again, from the tree or from
+any other window, to close it. <code>q</code> in the tree closes it too.
+Either way the cursor goes back to the window you opened it from.</p>
+<p>With the <a href="ref-daemon.html">daemon</a>, each client has its
+own tree, so two clients can each show a different project.</p>
+<p>The tree shows the project the current file is in (see <a
+href="ref-projects.html">Projects</a>), or the folder you started imp
+in. The project's name is on the first line. Below it are its folders,
+ending in <code>/</code>, and then its files, each in alphabetical
+order.</p>
+<p>Dotfiles, and files git ignores, aren't shown at first:
+<code>H</code> shows or hides dotfiles, and <code>I</code> shows or
+hides ignored files.</p>
+<p>When the tree opens, it opens the folders down to the file you're in
+and puts the cursor on it. While it's open, it follows you: switch to
+another file in one of its projects, and the tree opens the folders down
+to that file and moves its cursor there. Your cursor stays where you
+are. Set <code>file-tree-follow</code> to <code>#f</code> to turn this
+off.</p>
+
+<h2>Moving around</h2>
+<p>Move with <code>j</code> and <code>k</code>, search with
+<code>/</code>, and use any other Vim motion, as in any buffer.</p>
+<ul>
+<li><code>&lt;ret&gt;</code> or <code>&lt;tab&gt;</code> on a folder
+opens it in place, its contents indented under it. Press it again to
+shut it.</li>
+<li><code>&lt;ret&gt;</code> on a file opens it in the window you opened
+the tree from, and moves the cursor there. The tree stays open.</li>
+<li>Clicking does the same: click a folder to open or shut it, or a file
+to open it.</li>
+</ul>
+<p>The tree reads the folders again each time it opens. If files change
+while it's open, press <code>R</code> to read them again.</p>
+<p>The tree remembers which folders you opened. Close it and open it
+again, and they're still open, until you quit imp.</p>
+<p>Press <code>?</code> in the tree to see its keys in a popup at the
+bottom of the screen. Press <code>?</code> again to hide it.</p>
+
+<h2>Icons</h2>
+<p>With the <a href="ref-packages.html">nerd-icons</a> package loaded,
+each entry has an icon before its name: the file's type, or a folder,
+open or shut. Your font needs Nerd Font icons.</p>
+
+<h2>Git status</h2>
+<p>In a git repository, the tree shows what's changed. A changed file's
+name is coloured, with a letter after it:</p>
+<table>
+<thead>
+<tr>
+<th>Letter</th>
+<th>Means</th>
+<th>Face</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>M</code></td>
+<td>Changed since the last commit, staged or not</td>
+<td><code>file-tree.modified</code></td>
+</tr>
+<tr>
+<td><code>A</code></td>
+<td>A new file, added to the index</td>
+<td><code>file-tree.added</code></td>
+</tr>
+<tr>
+<td><code>U</code></td>
+<td>A new file git doesn't track yet</td>
+<td><code>file-tree.untracked</code></td>
+</tr>
+<tr>
+<td><code>!</code></td>
+<td>A merge conflict</td>
+<td><code>file-tree.conflict</code></td>
+</tr>
+</tbody>
+</table>
+<p>A folder with changes inside it takes the colour of the most serious
+one: a conflict, then a change, then a new file. It has no letter. When
+you show ignored files with <code>I</code>, they're dimmed, in
+<code>file-tree.ignored</code>.</p>
+<p>The status updates when the tree opens, when you press
+<code>R</code>, after <code>a</code>, <code>r</code> or <code>D</code>,
+and when you save a file in one of the tree's projects. Git runs in the
+background, so the tree appears first and the colours follow a moment
+later. Outside a repository, nothing is coloured.</p>
+<p>Change the colours in <code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-face! <span class="st">&quot;file-tree.modified&quot;</span> <span class="st">&quot;fg=#e69875&quot;</span>)</span></code></pre></div>
+
+<h2>More than one project</h2>
+<p>Press <code>P</code> in the tree to add another project beside the
+first. Pick one of the projects you've opened before, or type the path
+of any folder. It shows below the first, with its own folders under its
+name. The tree remembers the projects you add, even after you quit
+imp.</p>
+<p>To take one out, put the cursor on its name and press <code>X</code>.
+The folder itself isn't touched. The first project, the one the tree
+opened on, always stays.</p>
+
+<h2>Adding, renaming and deleting</h2>
+<ul>
+<li><code>a</code> asks for a name to add in the folder at the cursor.
+On a file, it adds beside the file, and on a project's name, at the top
+of that project. A name ending in <code>/</code> makes a folder. A name
+with folders in it, such as <code>lib/mod.rs</code>, makes the folders
+too. The cursor then moves to what you added.</li>
+<li><code>r</code> asks for a new path for the entry at the cursor,
+starting from its current path. Change the name to rename it, or change
+the folders to move it. A file you have open follows it, so saving
+writes to the new path.</li>
+<li><code>D</code> deletes the entry at the cursor, once you answer
+<code>y</code>. A folder is deleted with everything in it.</li>
+</ul>
+<p>There's no copy and paste of files, and no drag and drop. For
+changing many names at once, the <a href="ref-dired.html">file
+browser</a> lets you edit a folder's listing as text.</p>
+
+<h2>Opening it when imp starts</h2>
+<p>To have the tree open whenever imp starts, set
+<code>file-tree-open-at-start</code> after loading the package:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(use-package! &#39;file-tree</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  &#39;config (<span class="kw">lambda</span> () (set-option! &#39;file-tree-open-at-start <span class="dv">#t</span>)))</span></code></pre></div>
+<p>The cursor stays in the file you opened, with the tree beside it.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file-tree-width</code></td>
+<td><code>30</code></td>
+<td>How many columns wide the tree opens</td>
+</tr>
+<tr>
+<td><code>file-tree-show-hidden</code></td>
+<td><code>#f</code></td>
+<td>Whether dotfiles are shown; <code>H</code> flips it</td>
+</tr>
+<tr>
+<td><code>file-tree-show-ignored</code></td>
+<td><code>#f</code></td>
+<td>Whether files git ignores are shown; <code>I</code> flips it</td>
+</tr>
+<tr>
+<td><code>file-tree-open-at-start</code></td>
+<td><code>#f</code></td>
+<td>Whether the tree opens when imp starts</td>
+</tr>
+<tr>
+<td><code>file-tree-follow</code></td>
+<td><code>#t</code></td>
+<td>Whether the tree moves to each file you switch to</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html" aria-current="page">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

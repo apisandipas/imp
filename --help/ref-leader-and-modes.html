@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leader and modes · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Leader and modes</h1>
+<p class="lede">Press space in normal or visual state to reach most of imp's
+commands, with a popup to show you the way. Each buffer also has a mode,
+picked from its file name, that sets how it's indented, commented and
+which keys it adds.</p>
+
+<h2>The leader key</h2>
+<p><code>SPC</code> starts a key sequence, much as in Doom Emacs. The
+keys are grouped by what they do:</p>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>Group</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SPC f</code></td>
+<td>Files</td>
+</tr>
+<tr>
+<td><code>SPC b</code></td>
+<td>Buffers</td>
+</tr>
+<tr>
+<td><code>SPC e</code></td>
+<td>Evaluating Scheme</td>
+</tr>
+<tr>
+<td><code>SPC h</code></td>
+<td>Help</td>
+</tr>
+<tr>
+<td><code>SPC s</code></td>
+<td>Search</td>
+</tr>
+<tr>
+<td><code>SPC t</code></td>
+<td>Toggles</td>
+</tr>
+<tr>
+<td><code>SPC w</code></td>
+<td>Windows</td>
+</tr>
+<tr>
+<td><code>SPC q</code></td>
+<td>Quit</td>
+</tr>
+<tr>
+<td><code>SPC m</code></td>
+<td>The current major mode's own keys</td>
+</tr>
+</tbody>
+</table>
+<p>For example, <code>SPC f f</code> finds a file and
+<code>SPC w v</code> splits the window to the right.</p>
+
+<h2>The which-key popup</h2>
+<p>Pause after <code>SPC</code> and a popup lists the keys that can come
+next and what each does. It updates as you type, so you can learn the
+tree by looking. <code>which-key-delay</code> sets how long it
+waits.</p>
+<p>Press <code>&lt;bs&gt;</code> to go back a level:
+<code>SPC g &lt;bs&gt;</code> shows the <code>SPC</code> popup again. At
+<code>SPC</code> alone, <code>&lt;bs&gt;</code> closes it, as
+<code>&lt;esc&gt;</code> does.</p>
+<p>Vim's prefix keys show the same popup: <code>g</code>,
+<code>z</code>, <code>Z</code>, <code>[</code>, <code>]</code> and
+<code>C-w</code>. Its title is what you've typed so far, count included,
+such as <code>3g</code>. It lists only keys that do something here,
+including the buffer's mode keys. Typing the next key closes it.</p>
+<p>There's no popup after <code>"</code>, after <code>f</code> and the
+other character motions, or after an operator such as
+<code>d</code>.</p>
+
+<h2>Major and minor modes</h2>
+<p>Each buffer has one major mode, picked by its file name when it
+opens. imp has major modes for about 20 languages. Each sets the
+indentation and how comments are written.</p>
+<p><code>M-x set-major-mode</code> switches the buffer to another major
+mode: pick one, or type part of its name
+(<code>:set-major-mode rust</code>). The current mode is first in the
+list, so pressing <code>&lt;ret&gt;</code> straight away says which one
+it's in.</p>
+<p>A buffer can also have any number of minor modes. Keys from minor
+modes win over the major mode's, and the major mode's win over the usual
+keys.</p>
+
+<h2>Commenting</h2>
+<p><code>gc</code> with a motion comments or uncomments lines, using the
+mode's comment style. <code>gcc</code> does the current line, and
+<code>gc</code> in visual state does the selected lines.</p>
+<p>To set the comment style yourself, set <code>commentstring</code>,
+with <code>%s</code> where the text goes:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-local-option! &#39;commentstring <span class="st">&quot;-- %s&quot;</span>)</span></code></pre></div>
+
+<h2>Adding your own keys</h2>
+<p>Add a leader key, and name a group so the popup shows it:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-leader-group! <span class="st">&quot;x&quot;</span> <span class="st">&quot;extras&quot;</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(define-leader! <span class="st">&quot;xr&quot;</span> &#39;recent-files <span class="st">&quot;recent files&quot;</span>)</span></code></pre></div>
+<p><code>define-mode-leader!</code> adds a key under <code>SPC m</code>
+for one major mode, and <code>define-mode-leader-group!</code> names a
+group of them, as
+<code>(define-mode-leader-group! 'org-mode "c" "clock")</code> shows
+<code>c → +clock</code>. <code>define-mode-key!</code> binds a key for
+one mode in one state:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>(define-mode-key! &#39;lua-mode &#39;normal <span class="st">&quot;K&quot;</span> &#39;describe-function <span class="st">&quot;describe&quot;</span>)</span></code></pre></div>
+<p>The last argument, the label, is what which-key shows.
+<code>define-key!</code>, <code>define-motion!</code> and
+<code>define-operator!</code> take one too.</p>
+<p>Mode keys that start with a control or meta key, such as
+<code>C-c C-c</code>, wait for the rest of the sequence. They work in
+normal, visual and insert state, without getting in the way of
+<code>g</code>, <code>z</code> or typing. A mode can also bind keys that
+start with a letter, such as the agenda's <code>ct</code>: there, in
+normal state, <code>c</code> waits for the next key instead of starting
+a Vim change.</p>
+
+<h2>Making your own modes</h2>
+<p>Define a major mode with the mode it builds on, its file extensions,
+and what to set in its buffers:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-major-mode! &#39;lua-mode &#39;prog-mode &#39;(<span class="st">&quot;lua&quot;</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">lambda</span> () (set-local-option! &#39;shiftwidth <span class="dv">2</span>)))</span></code></pre></div>
+<p><code>define-file-name-mode!</code> picks a mode by a whole file
+name, such as <code>Makefile</code>. <code>define-minor-mode!</code>
+defines a minor mode, and <code>minor-mode-on!</code> turns it on in the
+current buffer. <code>set-major-mode!</code> switches the current
+buffer's major mode.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>which-key-delay</code></td>
+<td><code>300</code></td>
+<td>Milliseconds before the which-key popup shows</td>
+</tr>
+<tr>
+<td><code>commentstring</code></td>
+<td><code>"# %s"</code></td>
+<td>How a comment is written; each major mode sets its own</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html" aria-current="page">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

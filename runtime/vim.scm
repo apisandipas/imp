@@ -56,6 +56,9 @@
 (define *autoindent-line* #f)  ; a line holding only indent we added
 (define *replaced* '())        ; (offset . old-char) pairs, for <bs> in R
 (define *insert-return* #f)    ; C-o: go back to insert after one command
+(define *pasting* #f)          ; replaying a paste for `.`: its brackets don't pair
+(define *pairs* '())           ; pairs auto-pairs added in this insert, innermost first
+(define *pair-added* #f)       ; the pair the key being handled added
 (define *cmdline* "")           ; text typed at the prompt
 (define *cmdline-prompt* ":")
 (define *cmdline-submit* #f)   ; (lambda (text) ...) on <ret>
@@ -994,7 +997,7 @@
   (set! *last-change-count* count)
   (let ([change (with-register change (next-register *register-prefix*))])
   (if (typing-mode?)
-      (begin (set! *insert-entry* change) (set! *insert-keys* '()))
+      (begin (set! *insert-entry* change) (set! *insert-keys* '()) (set! *pairs* '()))
       (set! *last-change* change)))
   void)
 
@@ -1037,7 +1040,12 @@
        (let* ([c (key-char (cadr ks))] [reg (and c (valid-register? c) (register-get c))])
          (when reg (insert-text! (car reg))))
        (loop (cddr ks))]
-      [else (insert-key! (car ks)) (loop (cdr ks))])))
+      [(member (car ks) '("<paste-start>" "<paste-end>"))
+       (set! *pasting* (equal? (car ks) "<paste-start>"))
+       (loop (cdr ks))]
+      [else (insert-key! (car ks)) (loop (cdr ks))]))
+  (set! *pasting* #f)
+  void)
 
 (define (finish-insert-record! keys)
   "Completes the `.` record for an insert that just ended.
@@ -2583,6 +2591,89 @@
       (shift-line! line -1)
       (set-cursor! (- (line-end line) from-end)))))
 
+;; auto-pairs: typing an opener also types its closer, before a gap
+;; (docs/specs/auto-pairs.md). auto-pairs-chars lists each opener and its
+;; closer, a quote being its own; modes set it locally.
+(define-option! 'auto-pairs #t '())
+(define-option! 'auto-pairs-chars "()[]{}\"\"''``" '())
+
+(define (pair-closer c)
+  "The closer that typing opener `c` adds, or #f if it doesn't pair here.
+   A bracket pairs before a gap; a quote also not after a letter or digit."
+  (and (option 'auto-pairs) (not *pasting*)
+       (let loop ([cs (string->list (option 'auto-pairs-chars))])
+         (cond [(or (null? cs) (null? (cdr cs))) #f]
+               [(equal? (car cs) c)
+                (and (gap-after-cursor?)
+                     (or (not (equal? c (cadr cs))) (not (word-before-cursor?)))
+                     (cadr cs))]
+               [else (loop (cddr cs))]))))
+
+(define (pair-brackets-closing)
+  "The closers of the pairs that aren't quotes, as chars."
+  (let loop ([cs (string->list (option 'auto-pairs-chars))] [out '()])
+    (cond [(or (null? cs) (null? (cdr cs))) out]
+          [(equal? (car cs) (cadr cs)) (loop (cddr cs) out)]
+          [else (loop (cddr cs) (cons (cadr cs) out))])))
+
+(define (gap-after-cursor?)
+  "Whether the char after the cursor leaves room for a pair: white space,
+   the end of the line, a closing bracket, or , ; : ."
+  (or (>= (cursor) (line-end (current-line)))
+      (let ([c (buffer-char-at (cursor))])
+        (or (char-whitespace? c)
+            (memv c (list #\, #\; #\: #\.))
+            (memv c (pair-brackets-closing))))))
+
+(define (word-before-cursor?)
+  "Whether the char before the cursor, on its line, is a letter or digit."
+  (and (> (cursor) (line-start (current-line)))
+       (let ([c (buffer-char-at (- (cursor) 1))])
+         (and (char-word? c) (not (equal? c #\_))))))
+
+(define (insert-pair! opener closer)
+  "Types `opener` and puts `closer` after the cursor, remembering the pair
+   so that typing the closer steps over it and <bs> deletes both."
+  (insert-text! opener)
+  (buffer-insert! (cursor) (string closer))
+  (set! *pair-added* (list (- (cursor) 1) (cursor) (string-ref opener 0) closer))
+  void)
+
+;; A pair is (open close opener closer): the offsets of its two chars.
+(define (pair-live? pair)
+  "Whether `pair` is still in the buffer with the cursor inside it."
+  (let ([open (car pair)] [close (cadr pair)])
+    (and (< open (cursor)) (<= (cursor) close) (< close (buffer-length))
+         (equal? (buffer-char-at open) (caddr pair))
+         (equal? (buffer-char-at close) (cadddr pair)))))
+
+(define (track-pairs! before len)
+  "Moves the remembered pairs past an edit at the cursor, which was at
+   `before` with the buffer `len` chars long, and forgets those the
+   cursor has left."
+  (let ([delta (- (buffer-length) len)])
+    (set! *pairs*
+          (filter pair-live?
+                  (map (lambda (pair)
+                         (let ([shift (lambda (p) (if (>= p before) (+ p delta) p))])
+                           (list (shift (car pair)) (shift (cadr pair)) (caddr pair) (cadddr pair))))
+                       *pairs*))))
+  void)
+
+(define (pair-closing-at-cursor c)
+  "The pair whose closer `c` is the char at the cursor, or #f."
+  (let loop ([ps *pairs*])
+    (cond [(null? ps) #f]
+          [(and (= (cadr (car ps)) (cursor)) (equal? (cadddr (car ps)) c)) (car ps)]
+          [else (loop (cdr ps))])))
+
+(define (empty-pair-around-cursor)
+  "The pair that is empty with the cursor between its chars, or #f."
+  (let loop ([ps *pairs*])
+    (cond [(null? ps) #f]
+          [(and (= (cadr (car ps)) (cursor)) (= (car (car ps)) (- (cursor) 1))) (car ps)]
+          [else (loop (cdr ps))])))
+
 (define (delete-word-before!)
   "C-w: the word (or white space run, or line break) before the cursor."
   (let* ([p (cursor)] [lo (line-start (current-line))])
@@ -2639,12 +2730,25 @@
    <bs>, C-w, C-u, C-t, C-d, arrows...), then plain chars, then the
    insert keymap."
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
+  (let ([before (cursor)] [len (buffer-length)])
+    (set! *pair-added* #f)
+    (insert-key-edit! key)
+    (track-pairs! before len)
+    ;; A pair this key added is where it belongs already; only older ones move.
+    (when *pair-added* (set! *pairs* (cons *pair-added* *pairs*))))
+  void)
+
+(define (insert-key-edit! key)
+  "What insert-key! does with `key`, past the pairs it keeps track of."
   (cond
     ;; A mode's own insert keys come first (the REPL's <ret>).
     [(local-key-binding 'insert key) => run-insert-binding!]
     [(member key '("<ret>" "C-j" "C-m")) (insert-newline!)]
     [(equal? key "<tab>") (insert-tab!)]
     [(and (member key '("<bs>" "C-h")) (eq? *mode* 'replace)) (replace-backspace!)]
+    [(and (member key '("<bs>" "C-h")) (empty-pair-around-cursor))
+     (buffer-delete! (- (cursor) 1) (+ (cursor) 1))
+     (set-cursor! (- (cursor) 1))]
     [(member key '("<bs>" "C-h"))
      (when (> (cursor) 0)
        (buffer-delete! (- (cursor) 1) (cursor))
@@ -2662,6 +2766,10 @@
      (let ([line (clamp (+ (current-line) (if (equal? key "<up>") -1 1)) 0 (last-line))])
        (set-cursor! (line-col->offset line (current-col))))]
     [(and (= (string-length key) 1) (eq? *mode* 'replace)) (replace-char! key)]
+    [(and (= (string-length key) 1) (pair-closing-at-cursor (string-ref key 0)))
+     (set-cursor! (+ (cursor) 1))]
+    [(and (= (string-length key) 1) (pair-closer (string-ref key 0)))
+     => (lambda (closer) (insert-pair! key closer))]
     [(and (= (string-length key) 1) (closes-indent? (string-ref key 0)))
      (maybe-dedent-for! (string-ref key 0))
      (insert-text! key)]
@@ -2684,6 +2792,7 @@
    The cursor steps back onto the last char typed. Sets the ^ mark and
    where gi resumes, and drops indent autoindent added to an empty line."
   (drop-unused-autoindent!)
+  (set! *pairs* '())
   (mark-set! "^" (cursor))
   (set! *last-insert-pos* (cursor))
   (set-mode! 'normal)
@@ -4443,7 +4552,10 @@
       [(member *mode* '(insert replace emacs))
        (insert-text! text)
        (when (typing-mode?)
-         (set! *insert-keys* (append (reverse (map (lambda (c) (if (equal? c "\n") "<ret>" c)) chars))
+         ;; Marked, so `.` types it again without pairing its brackets.
+         (set! *insert-keys* (append (list "<paste-end>")
+                                     (reverse (map (lambda (c) (if (equal? c "\n") "<ret>" c)) chars))
+                                     (list "<paste-start>")
                                      *insert-keys*)))]
       [(member *mode* '(normal visual))
        (when (eq? *mode* 'visual) (leave-visual!))

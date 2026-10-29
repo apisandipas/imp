@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tree-sitter · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Tree-sitter</h1>
+<p class="lede">imp reads the structure of your code with tree-sitter. That gives it
+syntax colors, text objects for functions, classes and arguments, and
+indentation after brackets. It keeps up as you type, even in large
+files.</p>
+
+<h2>Languages</h2>
+<p>imp comes with grammars for Rust, Scheme, TypeScript and TSX,
+JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML, TOML, Bash (for shell
+scripts), C, Go, Python and Lua. Each major mode names the grammar it
+uses. C++, Elixir and Ruby files have their modes
+(<code>cpp-mode</code>, <code>elixir-mode</code>,
+<code>ruby-mode</code>) and text objects, but no bundled grammar:
+install one (see below) to highlight them. HTML's grammar also reads XML
+and SVG files, and CSS's reads SCSS. To parse another mode with one of
+these, name it in <code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-mode-language! &#39;lisp-mode <span class="st">&quot;scheme&quot;</span>)</span></code></pre></div>
+
+<h2>Installing grammars</h2>
+<p>Grammars imp doesn't come with, such as Ruby's, can be installed from
+their git repositories. Declare each in <code>init.scm</code> with its
+name, repository and revision (a tag, branch or commit), and a
+subdirectory if the repository holds several grammars:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-grammar! <span class="st">&quot;ruby&quot;</span> <span class="st">&quot;https://github.com/tree-sitter/tree-sitter-ruby&quot;</span> <span class="st">&quot;v0.23.1&quot;</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(define-grammar! <span class="st">&quot;php&quot;</span> <span class="st">&quot;https://github.com/tree-sitter/tree-sitter-php&quot;</span> <span class="st">&quot;v0.23.11&quot;</span> <span class="st">&quot;php&quot;</span>)</span></code></pre></div>
+<p>Then run M-x <code>install-grammars</code>. It installs every
+declared grammar that isn't built at its declared revision, so after
+changing a revision it builds just that one. M-x
+<code>install-grammar</code> asks which one to install, showing whether
+each is built, so you can rebuild a single grammar. Installing runs in
+the background, and the message line says what it's doing and when each
+grammar is done or failed. Each grammar is:</p>
+<ol type="1">
+<li>fetched with <code>git</code> into
+<code>~/.local/share/imp/grammars/</code>
+(<code>$XDG_DATA_HOME/imp/grammars/</code>) at the declared
+revision;</li>
+<li>compiled from its <code>src/parser.c</code>, and
+<code>src/scanner.c</code> or <code>src/scanner.cc</code> if it has one,
+with <code>$CC</code> (else <code>cc</code>), and <code>$CXX</code>
+(else <code>c++</code>) for a C++ scanner;</li>
+<li>used from then on like a bundled grammar, including in place of a
+bundled grammar of the same name. Its colors come from the repository's
+<code>queries/highlights.scm</code>, and its embedded languages from
+<code>queries/injections.scm</code>. Files already open in its language
+are highlighted as soon as it's built, without reopening them.</li>
+</ol>
+<p>Only the declared revision is fetched, without the repository's
+history, since grammar repositories can be hundreds of megabytes.
+Opening a file whose grammar is declared but not built says to run M-x
+<code>install-grammars</code>, and nothing is downloaded or built until
+you do.</p>
+<p>A grammar needs <code>git</code> and a C compiler to install, and the
+message line says which is missing. A repository without a generated
+<code>src/parser.c</code> can't be built, since generating one needs the
+tree-sitter CLI. To remove a grammar, delete its files under
+<code>grammars/</code>.</p>
+<p>A grammar you built yourself, as a shared library, can be used the
+same way. Register it with the library's path and the directory of its
+<code>highlights.scm</code> (and <code>injections.scm</code>, if it has
+one). The library is loaded the first time a buffer or a code fence uses
+the language:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>(register-grammar! <span class="st">&quot;ruby&quot;</span> <span class="st">&quot;/path/to/ruby.so&quot;</span> <span class="st">&quot;/path/to/tree-sitter-ruby/queries&quot;</span>)</span></code></pre></div>
+<p>It works like a bundled grammar: modes, aliases, text objects and
+code fences all use it, and one with a bundled grammar's name takes its
+place. If the library won't load, because it has no
+<code>tree_sitter_ruby</code> function or was built for a tree-sitter
+imp can't read, the message line says so and the buffer is plain.</p>
+
+<h2>Syntax colors</h2>
+<p>Each kind of thing in the code, such as a keyword or a function name,
+is drawn in its own face. The faces are named <code>syntax.</code> and
+the kind: <code>syntax.keyword</code>, <code>syntax.function</code>,
+<code>syntax.function.method</code>. A face that isn't set falls back to
+the shorter name, so <code>syntax.function.method</code> looks like
+<code>syntax.function</code> unless you set it. A few grammars use older
+names, such as <code>conditional</code> and <code>method</code>; those
+fall back to the current names' faces, <code>syntax.keyword</code> and
+<code>syntax.function</code>.</p>
+<p>Change one with <code>set-face!</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-face! <span class="st">&quot;syntax.keyword&quot;</span> <span class="st">&quot;fg=#e67e80 bold&quot;</span>)</span></code></pre></div>
+<p>Diagnostics, search matches and the selection are drawn over the
+syntax colors. See <a href="ref-look.html">Look</a> for themes and
+faces.</p>
+
+<h2>Embedded languages</h2>
+<p>Code in another language inside a file is colored as that language:
+JavaScript in an HTML <code>&lt;script&gt;</code> and CSS in a
+<code>&lt;style&gt;</code>, over HTML's own colors. In Markdown, a
+fenced code block is colored in the language after its opening fence,
+YAML (<code>---</code>) or TOML (<code>+++</code>) front matter as YAML
+or TOML, and the inline syntax in paragraphs and headings (emphasis,
+strong, code spans, links) in the <code>syntax.text.*</code> faces.
+Other grammars embed languages too: a Rust macro's body is colored as
+Rust, a Nix build phase or <code>writeShellScript</code> string as Bash,
+a JavaScript tagged template (<code>css`…`</code>, <code>html`…`</code>)
+as its tag's language, and LuaJIT's <code>ffi.cdef</code> as C. Embedded
+languages nest, so an HTML block in a Markdown fence has its
+<code>&lt;script&gt;</code> colored as JavaScript, up to four levels
+deep. It keeps up as you type, like the rest of the file. Text objects
+and indentation follow the file's own language, not the embedded
+one.</p>
+<p>A fence's language is matched by grammar name, then by alias,
+ignoring case. The common aliases come built in: <code>js</code>,
+<code>ts</code>, <code>sh</code>, <code>shell</code>, <code>zsh</code>,
+<code>py</code>, <code>rs</code>, <code>yml</code>, <code>md</code>,
+<code>htm</code>, <code>xml</code>, <code>scm</code> and more. Add your
+own in <code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-language-alias! <span class="st">&quot;snek&quot;</span> <span class="st">&quot;python&quot;</span>)</span></code></pre></div>
+<p>A block in a language imp has no grammar for (Ruby's <code>rb</code>,
+say, since Ruby isn't bundled) is drawn as Markdown draws code, with no
+message.</p>
+
+<h2>Queries</h2>
+<p>A language's colors come from its highlights query, and the languages
+embedded in it from its injections query. A bundled grammar uses its
+crate's queries, and a grammar you registered uses the
+<code>highlights.scm</code> and <code>injections.scm</code> in its
+queries directory. To change them for any language, put your own in
+imp's config directory, as <code>queries/NAME/highlights.scm</code> or
+<code>queries/NAME/injections.scm</code>. Yours replaces the language's
+own, for files opened after imp starts.</p>
+<p>A query can build on others. If its first comment lines include
+<code>; inherits: javascript,jsx</code>, those languages' queries, found
+the same way, come before it. A language inherited twice is included
+once, and a language that inherits back is left out, so a cycle
+stops:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">; inherits: rust</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>((identifier) @variable.builtin (<span class="sc">#e</span>q? @variable.builtin <span class="st">&quot;self&quot;</span>))</span></code></pre></div>
+
+<h2>Text objects</h2>
+<p>These work with every operator, such as <code>d</code>,
+<code>c</code> and <code>y</code>, and in visual mode:</p>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>What they select</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>af</code> / <code>if</code></td>
+<td>The function around the cursor, or only its body</td>
+</tr>
+<tr>
+<td><code>ac</code> / <code>ic</code></td>
+<td>The class or type around the cursor, or only its body</td>
+</tr>
+<tr>
+<td><code>aa</code> / <code>ia</code></td>
+<td>The argument or parameter at the cursor, with or without its
+comma</td>
+</tr>
+</tbody>
+</table>
+<p>For example, <code>dif</code> empties the function's body, and
+<code>cia</code> changes one argument.</p>
+<p>Each language says which parts of its tree are functions, classes and
+argument lists. Set them for a language with
+<code>define-syntax-objects!</code>, giving the node kinds for
+functions, for classes, and for lists whose items are arguments:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-syntax-objects! <span class="st">&quot;nix&quot;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  &#39;(<span class="st">&quot;function_expression&quot;</span>)              <span class="co">; functions</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  &#39;(<span class="st">&quot;attrset_expression&quot;</span>)               <span class="co">; classes</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  &#39;(<span class="st">&quot;formals&quot;</span> <span class="st">&quot;list_expression&quot;</span>))       <span class="co">; argument lists</span></span></code></pre></div>
+<p><code>M-x syntax-tree</code> shows the current buffer's tree, to find
+the node kinds.</p>
+
+<h2>Indentation</h2>
+<p>With <code>smartindent</code> on, a new line after an opening bracket
+is indented one level. Typing a closing bracket at the start of a line
+takes the indent back. imp turns it on in code buffers, except Scheme
+and Lisp.</p>
+<p>Indentation doesn't use tree-sitter's indent rules. Folding by the
+syntax tree is part of <a href="ref-folding.html">Folding</a>.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>smartindent</code></td>
+<td><code>#f</code></td>
+<td>Indent after an opening bracket and dedent a closing one</td>
+</tr>
+<tr>
+<td><code>indent-open</code></td>
+<td><code>"{[("</code></td>
+<td>The brackets that indent the next line</td>
+</tr>
+<tr>
+<td><code>indent-close</code></td>
+<td><code>"}])"</code></td>
+<td>The brackets that dedent their line</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html" aria-current="page">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

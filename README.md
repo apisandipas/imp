@@ -94,6 +94,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   terminals, `h` help, `t` toggles. `M-x` runs any command by name.
 - **Emacs keys.** `C-z` switches to an Emacs state (`C-x C-f`, `C-x C-s` and
   friends) and back.
+- **Pairs.** In insert mode a bracket or quote types its closer too, and
+  typing the closer steps over it (`auto-pairs`).
 - **IDE features.** Tree-sitter highlighting and text objects for Rust,
   Scheme, TypeScript/TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML,
   TOML, Bash, C, Go, Python and Lua, including languages embedded in

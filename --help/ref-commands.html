@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commands · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Commands</h1>
+<p class="lede">Everything you can run in imp is a command with one name, such as
+<code>install-grammars</code> or <code>org-agenda</code>. Run it with
+<code>M-x</code>, or type it after <code>:</code> like a Vim
+command.</p>
+
+<h2>Running a command</h2>
+<p>Press <code>M-x</code> (or <code>SPC :</code>, or
+<code>SPC SPC</code>), type part of a name, and press
+<code>&lt;ret&gt;</code>. The menu shows each command's keys and what it
+does.</p>
+<p>The <code>:</code> line runs commands too. Type the whole name:
+<code>:org-agenda</code>. Vim's own commands, such as <code>:w</code>,
+<code>:s</code> and <code>:grep</code>, work as in Vim, and win when a
+command has the same name. Vim's short forms, like <code>:e</code> for
+<code>:edit</code>, work only for those. A name that is neither says
+<code>not an editor command</code>.</p>
+<p>As you type after <code>:</code>, the menu offers command names
+beside Vim's, each with what it does. <code>&lt;tab&gt;</code> completes
+them.</p>
+
+<h2>Giving a command its answer</h2>
+<p>Many commands ask a question, such as which grammar to install or
+which format to export to. From <code>M-x</code> they ask in the
+minibuffer. After <code>:</code>, you can give the answer straight after
+the name:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:install-grammar ruby</code></td>
+<td>Installs the Ruby grammar</td>
+</tr>
+<tr>
+<td><code>:org-export html</code></td>
+<td>Exports the Org file to HTML</td>
+</tr>
+<tr>
+<td><code>:git log --oneline</code></td>
+<td>Runs <code>git log --oneline</code></td>
+</tr>
+<tr>
+<td><code>:load-theme</code></td>
+<td>Asks which theme, as <code>M-x load-theme</code> does</td>
+</tr>
+</tbody>
+</table>
+<p>The text answers the command's first question only. If a command asks
+nothing, it runs and then says <code>NAME takes no argument</code>.</p>
+
+<h2>Counts</h2>
+<p>A number before the name is a count, as a count typed before a key
+is: <code>:3next-diagnostic</code> moves three diagnostics on, as
+<code>3]d</code> does. Any other range, such as <code>%</code> or a
+visual selection's <code>'&lt;,'&gt;</code>, says
+<code>NAME takes no range</code>, and the command doesn't run.</p>
+
+<h2>Old names</h2>
+<p>Some features used to have their own <code>:</code> names. They're
+commands now, and the old names are gone:</p>
+<table>
+<thead>
+<tr>
+<th>Was</th>
+<th>Now</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:Git</code>, <code>:G</code></td>
+<td><code>git</code> (empty shows the status)</td>
+</tr>
+<tr>
+<td><code>:OrgAgenda</code>, <code>:OrgCapture</code>,
+<code>:OrgExport</code></td>
+<td><code>org-agenda</code>, <code>org-capture</code>,
+<code>org-export</code></td>
+</tr>
+<tr>
+<td><code>:GitBlame</code>, <code>:GitGutter</code>,
+<code>:FileTree</code></td>
+<td><code>git-blame-mode</code>, <code>git-gutter-mode</code>,
+<code>file-tree</code></td>
+</tr>
+<tr>
+<td><code>:start</code>, <code>:repl</code>,
+<code>:diagnostics</code></td>
+<td><code>start-screen</code>, <code>repl</code>,
+<code>list-diagnostics</code></td>
+</tr>
+<tr>
+<td><code>:packages</code>, <code>:package-update</code></td>
+<td><code>list-packages</code>, <code>package-update</code></td>
+</tr>
+<tr>
+<td><code>:mode</code></td>
+<td><code>set-major-mode</code></td>
+</tr>
+<tr>
+<td><code>:theme</code></td>
+<td><code>load-theme</code> (<code>:colorscheme</code> still works)</td>
+</tr>
+<tr>
+<td><code>:fd</code></td>
+<td><code>find-definition</code></td>
+</tr>
+<tr>
+<td><code>:ev</code></td>
+<td><code>eval</code> (<code>:eval EXPR</code> still works)</td>
+</tr>
+</tbody>
+</table>
+<p><code>eval</code>, <code>kill-server</code>, <code>lsp-info</code>,
+<code>lsp-log</code>, <code>lsp-restart</code>, <code>lsp-stop</code>,
+<code>mcp-log</code>, <code>syntax-tree</code>,
+<code>describe-key</code>, <code>describe-function</code> and
+<code>apropos</code> keep their names, and now run from <code>M-x</code>
+too.</p>
+
+<h2>Commands of your own</h2>
+<p>Define one in <code>init.scm</code> with a name and a docstring,
+which <code>M-x</code> shows. See <a href="configuring.html">Configuring
+init.scm</a>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-command! &#39;hello</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">lambda</span> (count) <span class="st">&quot;Say hello.&quot;</span> (message <span class="st">&quot;hello&quot;</span>)))</span></code></pre></div>
+<p>It runs as <code>M-x hello</code> or <code>:hello</code>. If it asks
+a question, <code>:hello TEXT</code> answers it.</p>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html" aria-current="page">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

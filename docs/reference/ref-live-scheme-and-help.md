@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/live-scheme-and-help]]"
 frozen:
-  docs/specs/live-scheme-and-help.md: 1992265c817f
+  docs/specs/live-scheme-and-help.md: 1857073a1b00
 ---
 # Live Scheme and help
 
@@ -40,7 +40,7 @@ A `define` of a name that already exists replaces it everywhere, for every calle
 | `<up>` / `<down>` | The same, in insert state on the last prompt's line |
 | `<ret>` | Evaluate the input |
 
-As on the command line, history only steps through inputs that start with what you'd typed. Stepping past the newest brings your text back. Elsewhere in the buffer, `<up>` and `<down>` move between lines as usual.
+As on the command line, history only steps through inputs that start with what you'd typed. Closing brackets and quotes after the cursor don't count, so the `)` that [auto pairs](ref-auto-pairs.md) adds doesn't get in the way. Stepping past the newest brings your text back. Elsewhere in the buffer, `<up>` and `<down>` move between lines as usual.
 
 Each input is kept whole, even across several lines, and a repeated input replaces its earlier copy. The newest 200 are saved, so history lasts across sessions. There's no searching it (`M-r` in Emacs), and no history per project.
 

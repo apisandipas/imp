@@ -39,7 +39,7 @@ GUIDE_PAGES = [
 # The reference, grouped by area: every spec but the ones in SKIP is in
 # exactly one group, or the build fails, so a new spec can't go missing.
 GROUPS = [
-    ("Editing", ["vim", "emacs-state", "leader-and-modes", "commands", "mouse", "look", "modus-themes", "start-screen"]),
+    ("Editing", ["vim", "emacs-state", "auto-pairs", "leader-and-modes", "commands", "mouse", "look", "modus-themes", "start-screen"]),
     ("Files and windows", ["files", "buffers-and-windows", "projects", "dired", "file-tree", "folding", "terminals"]),
     ("Code", ["completion", "completion-at-point", "lsp", "tree-sitter", "dap"]),
     ("Git and Org", ["git", "git-blame", "git-gutter", "org", "org-agenda", "org-export"]),

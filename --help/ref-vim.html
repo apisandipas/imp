@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vim · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Vim</h1>
+<p class="lede">imp is Vim first: its keys behave as Vim's do. If something you know
+from Vim works differently, that's a bug. This page lists what's
+there.</p>
+
+<h2>Moving around</h2>
+<p>All of Vim's usual motions work, with counts. A motion that can't go
+anywhere, such as <code>l</code> at the end of a line, fails: it cancels
+an operator and stops a macro.</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Keys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Characters and lines</td>
+<td><code>h j k l</code>, arrows, <code>0 ^ $ |</code>,
+<code>+ - _ &lt;ret&gt;</code>,
+<code>&lt;home&gt; &lt;end&gt;</code></td>
+</tr>
+<tr>
+<td>Words</td>
+<td><code>w b e ge</code>, <code>W B E gE</code></td>
+</tr>
+<tr>
+<td>The file</td>
+<td><code>gg G</code>, <code>N%</code> (a count, then
+<code>%</code>)</td>
+</tr>
+<tr>
+<td>Paragraphs and brackets</td>
+<td><code>{ }</code>, <code>%</code></td>
+</tr>
+<tr>
+<td>The screen</td>
+<td><code>H M L</code>, and <code>gj gk</code> by screen rows on wrapped
+lines</td>
+</tr>
+<tr>
+<td>Within a line</td>
+<td><code>f F t T</code>, repeated with <code>; ,</code></td>
+</tr>
+<tr>
+<td>Searches</td>
+<td><code>n N * # g* g#</code></td>
+</tr>
+<tr>
+<td>Marks</td>
+<td><code>'x</code> and <code>`x</code></td>
+</tr>
+</tbody>
+</table>
+
+<h2>Operators and text objects</h2>
+<p>An operator acts on a motion or a text object: <code>dw</code>,
+<code>ci"</code>, <code>yap</code>. Doubled, it acts on the line
+(<code>dd</code>, <code>&gt;&gt;</code>). Counts multiply, so
+<code>2d3w</code> deletes six words.</p>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>d</code> / <code>c</code> / <code>y</code></td>
+<td>Delete, change, yank</td>
+</tr>
+<tr>
+<td><code>&gt;</code> / <code>&lt;</code></td>
+<td>Indent, unindent</td>
+</tr>
+<tr>
+<td><code>gu</code> / <code>gU</code> / <code>g~</code></td>
+<td>Lower case, upper case, swap case</td>
+</tr>
+<tr>
+<td><code>g?</code></td>
+<td>Rot13</td>
+</tr>
+<tr>
+<td><code>gc</code></td>
+<td>Comment or uncomment</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Text object</th>
+<th>Selects</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>iw aw</code>, <code>iW aW</code></td>
+<td>A word</td>
+</tr>
+<tr>
+<td><code>i" a"</code>, <code>i' a'</code>, <code>i` a`</code></td>
+<td>Inside or around quotes, on the cursor's line</td>
+</tr>
+<tr>
+<td><code>i( a(</code>, <code>i[ a[</code>, <code>i{ a{</code>,
+<code>i&lt; a&lt;</code></td>
+<td>Inside or around brackets</td>
+</tr>
+<tr>
+<td><code>it at</code></td>
+<td>Inside or around an HTML or XML tag</td>
+</tr>
+<tr>
+<td><code>ip ap</code></td>
+<td>A paragraph</td>
+</tr>
+<tr>
+<td><code>af if</code>, <code>ac ic</code>, <code>aa ia</code></td>
+<td>A function, class or argument, where <a
+href="ref-tree-sitter.html">Tree-sitter</a> knows the language</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Editing</h2>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>What they do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i a I A o O</code>, <code>gi gI</code></td>
+<td>Start inserting; counts repeat what you type</td>
+</tr>
+<tr>
+<td><code>x X D C s S Y</code></td>
+<td>Delete, change or yank a little</td>
+</tr>
+<tr>
+<td><code>p P gp gP</code></td>
+<td>Paste, with counts</td>
+</tr>
+<tr>
+<td><code>r R</code></td>
+<td>Replace a character, or type over text</td>
+</tr>
+<tr>
+<td><code>J gJ</code></td>
+<td>Join lines, with or without a space</td>
+</tr>
+<tr>
+<td><code>~</code></td>
+<td>Swap the case of a character</td>
+</tr>
+<tr>
+<td><code>C-a C-x</code></td>
+<td>Add to or subtract from the number under the cursor</td>
+</tr>
+<tr>
+<td><code>.</code></td>
+<td>Repeat the last change</td>
+</tr>
+<tr>
+<td><code>&amp;</code></td>
+<td>Repeat the last <code>:s</code></td>
+</tr>
+<tr>
+<td><code>ZZ ZQ</code></td>
+<td>Save and quit, or quit without saving</td>
+</tr>
+<tr>
+<td><code>C-g</code></td>
+<td>Show the file name and position</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Visual state</h2>
+<p><code>v</code> selects characters, <code>V</code> whole lines, and
+<code>C-v</code> a block. <code>o</code> and <code>O</code> move to the
+other end, and <code>gv</code> selects the last selection again.</p>
+<p>Operators and text objects work on the selection, as do
+<code>I A c r J p u U ~ &gt; &lt;</code>. In a block, <code>$</code>
+reaches to the end of each line. <code>.</code> repeats a visual change
+over a region of the same size.</p>
+<p>Press <code>:</code> from visual state to run a command on the
+selected lines; imp fills in <code>'&lt;,'&gt;</code> for you.</p>
+
+<h2>Insert state</h2>
+<p>New lines keep the indentation, and <code>&lt;tab&gt;</code> inserts
+spaces when <code>expandtab</code> is on.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-w</code> / <code>C-u</code></td>
+<td>Delete the word, or the line, before the cursor</td>
+</tr>
+<tr>
+<td><code>C-h</code></td>
+<td>Delete the character before the cursor</td>
+</tr>
+<tr>
+<td><code>C-t</code> / <code>C-d</code></td>
+<td>Indent or unindent the line</td>
+</tr>
+<tr>
+<td><code>C-r</code></td>
+<td>Insert a register</td>
+</tr>
+<tr>
+<td><code>C-o</code></td>
+<td>Run one normal-state command</td>
+</tr>
+</tbody>
+</table>
+<p>In Replace state (<code>R</code>), <code>&lt;bs&gt;</code> puts back
+the text you typed over.</p>
+
+<h2>Undo</h2>
+<p>Undo is a tree, as in Vim. If you undo and then make a change, the
+old changes are kept on another branch.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u</code></td>
+<td>Undo</td>
+</tr>
+<tr>
+<td><code>C-r</code></td>
+<td>Redo, along the branch you last took</td>
+</tr>
+<tr>
+<td><code>U</code></td>
+<td>Undo the changes on the last line</td>
+</tr>
+<tr>
+<td><code>g-</code> / <code>g+</code></td>
+<td>Step back or forward through every state in the order you made them,
+across branches</td>
+</tr>
+</tbody>
+</table>
+<p>All of them take a count. <code>:undolist</code> lists the end of
+each branch: its change number, how many changes deep it is, and how
+long ago you made it.</p>
+
+<h2>Searching</h2>
+<p><code>/</code> searches forward and <code>?</code> back, highlighting
+matches as you type. <code>:noh</code> clears the highlight. A search
+works as a motion too, so <code>d/foo</code> deletes up to the next
+<code>foo</code>.</p>
+<p>Searches ignore case unless you type a capital letter. Patterns use
+Vim's regular expression syntax.</p>
+
+<h2>Registers and the clipboard</h2>
+<table>
+<thead>
+<tr>
+<th>Register</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"a</code> to <code>"z</code></td>
+<td>Yours; <code>"A</code> to <code>"Z</code> add to them</td>
+</tr>
+<tr>
+<td><code>"0</code></td>
+<td>The last yank</td>
+</tr>
+<tr>
+<td><code>"1</code> to <code>"9</code></td>
+<td>The last deletes; <code>"1p</code> then <code>.</code> steps through
+them</td>
+</tr>
+<tr>
+<td><code>"-</code></td>
+<td>The last small delete</td>
+</tr>
+<tr>
+<td><code>"_</code></td>
+<td>Nothing: deletes into it are lost</td>
+</tr>
+<tr>
+<td><code>".</code> <code>":</code> <code>"/</code> <code>"%</code></td>
+<td>The last insert, command, search and the file name</td>
+</tr>
+<tr>
+<td><code>"+</code> <code>"*</code></td>
+<td>The system clipboard</td>
+</tr>
+</tbody>
+</table>
+<p>To make plain <code>y</code> and <code>p</code> use the system
+clipboard, <code>:set clipboard=unnamedplus</code>. imp reaches the
+clipboard through <code>wl-copy</code>, <code>xclip</code>,
+<code>xsel</code> or <code>pbcopy</code>, whichever you have.</p>
+
+<h2>Macros</h2>
+<p><code>qa</code> starts recording into register <code>a</code> and
+<code>q</code> stops. <code>@a</code> plays it, <code>@@</code> plays
+the last one again, and <code>@:</code> repeats the last command line. A
+key that fails stops the macro.</p>
+
+<h2>Marks and jumps</h2>
+<p><code>ma</code> sets mark <code>a</code>; <code>'a</code> goes to its
+line and <code>`a</code> to its exact place. Marks move with the text as
+you edit. Marks <code>A</code> to <code>Z</code> work as in Vim, and so
+do <code>' . ^ [ ] &lt; &gt;</code>.</p>
+<p><code>C-o</code> and <code>C-i</code> go back and forward through the
+places you've jumped to, across buffers.</p>
+
+<h2>Scrolling</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-d</code> / <code>C-u</code></td>
+<td>Half a screen down or up</td>
+</tr>
+<tr>
+<td><code>C-f</code> / <code>C-b</code></td>
+<td>A screen down or up</td>
+</tr>
+<tr>
+<td><code>C-e</code> / <code>C-y</code></td>
+<td>One line down or up</td>
+</tr>
+<tr>
+<td><code>zt</code> / <code>zz</code> / <code>zb</code></td>
+<td>Put the cursor's line at the top, middle or bottom</td>
+</tr>
+<tr>
+<td><code>z&lt;ret&gt;</code> / <code>z.</code> / <code>z-</code></td>
+<td>The same, with the cursor at the line's first character</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Ex commands</h2>
+<p>Commands take Vim's ranges: <code>.</code>, <code>$</code>, line
+numbers, marks, <code>/pattern/</code>, <code>?pattern?</code>,
+<code>%</code>, with <code>+</code> and <code>-</code> offsets. For
+example, <code>:.,+3d</code> deletes four lines.</p>
+<table>
+<thead>
+<tr>
+<th>Commands</th>
+<th>What they do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:w [file]</code> <code>:w!</code> <code>:sav</code>
+<code>:e</code></td>
+<td>Save and open files</td>
+</tr>
+<tr>
+<td><code>:q</code> <code>:wq</code> <code>:x</code>
+<code>:qa</code></td>
+<td>Quit</td>
+</tr>
+<tr>
+<td><code>:s/old/new/</code></td>
+<td>Substitute, with the <code>g</code>, <code>i</code> and
+<code>I</code> flags, groups, <code>&amp;</code> and
+<code>\r</code></td>
+</tr>
+<tr>
+<td><code>:g/pat/cmd</code> <code>:v/pat/cmd</code></td>
+<td>Run a command on lines that match, or don't</td>
+</tr>
+<tr>
+<td><code>:d</code> <code>:y</code> <code>:m</code> <code>:t</code>
+<code>:&gt;</code> <code>:&lt;</code> <code>:j</code>
+<code>:pu</code></td>
+<td>Edit lines</td>
+</tr>
+<tr>
+<td><code>:sort</code> <code>:normal</code> <code>:!</code>
+<code>:r</code></td>
+<td>Sort, run normal keys, run a shell command, read a file in</td>
+</tr>
+<tr>
+<td><code>:u</code> <code>:red</code> <code>:k</code> <code>:p</code>
+<code>:nu</code></td>
+<td>Undo, redo, set a mark, print lines</td>
+</tr>
+<tr>
+<td><code>:noh</code></td>
+<td>Clear the search highlight</td>
+</tr>
+<tr>
+<td><code>:set</code> <code>:setlocal</code></td>
+<td>Change options</td>
+</tr>
+<tr>
+<td><code>:marks</code> <code>:reg</code> <code>:jumps</code>
+<code>:delm</code></td>
+<td>List marks, registers and jumps; delete marks</td>
+</tr>
+</tbody>
+</table>
+<p>The command line keeps a history and has Vim's editing keys, and
+<code>C-r</code> inserts a register. <code>&lt;tab&gt;</code> completes
+command names and their arguments: files, buffers, options, themes and
+help topics.</p>
+
+<h2>Mappings</h2>
+<p><code>:nnoremap</code> binds keys to other keys, as in Vim:</p>
+<pre class="vim"><code>:nnoremap j gj
+:inoremap jk &lt;Esc&gt;</code></pre>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Works in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>:map</code> / <code>:noremap</code></td>
+<td>Normal and visual state</td>
+</tr>
+<tr>
+<td><code>:nmap</code> / <code>:nnoremap</code></td>
+<td>Normal state</td>
+</tr>
+<tr>
+<td><code>:vmap</code> / <code>:vnoremap</code></td>
+<td>Visual state</td>
+</tr>
+<tr>
+<td><code>:imap</code> / <code>:inoremap</code></td>
+<td>Insert state</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>noremap</code> forms run imp's own keys; the
+<code>map</code> forms also follow other mappings. Both sides take Vim's
+key notation, such as <code>&lt;CR&gt;</code>, <code>&lt;Esc&gt;</code>,
+<code>&lt;Tab&gt;</code>, <code>&lt;C-x&gt;</code>,
+<code>&lt;M-x&gt;</code>, <code>&lt;F1&gt;</code> and
+<code>&lt;Leader&gt;</code>, which is space. A count typed before a
+mapping applies to it.</p>
+<p>In normal and visual state, a two-key mapping must start with a
+prefix such as <code>g</code>, <code>z</code> or <code>C-w</code>, or
+with a key that isn't bound. A longer one must start with
+<code>&lt;Leader&gt;</code>, and joins the <a
+href="ref-leader-and-modes.html">leader</a> keys. If a mapping can't be
+made, <code>:map</code> says why.</p>
+<p>In insert state, after <code>:inoremap jk &lt;Esc&gt;</code>, typing
+<code>j</code> inserts it. If <code>k</code> follows within
+<code>timeoutlen</code>, the <code>j</code> is taken back out and
+<code>&lt;Esc&gt;</code> runs.</p>
+<p><code>:unmap</code>, <code>:nunmap</code>, <code>:vunmap</code> and
+<code>:iunmap</code> remove a mapping. With no arguments, the map
+commands list your mappings.</p>
+
+<h2>Not like Vim</h2>
+<ul>
+<li>No Vimscript. You configure imp in Scheme, in
+<code>init.scm</code>.</li>
+<li>No mappings for operator-pending, select, command-line or terminal
+state, and no <code>&lt;buffer&gt;</code>, <code>&lt;expr&gt;</code>,
+<code>&lt;script&gt;</code> or <code>&lt;unique&gt;</code>.</li>
+<li>A normal-state mapping can't start with a key that already does
+something, such as <code>,w</code>.</li>
+<li>No undo by time (<code>:earlier</code>, <code>:later</code>) and no
+undo history kept between sessions.</li>
+</ul>
+
+<h2>Options</h2>
+<p>Set options with <code>:set</code>, using <code>no</code>,
+<code>?</code>, <code>!</code> and <code>=</code> as in Vim:
+<code>:set nowrap</code>, <code>:set ts?</code>,
+<code>:set sw=2</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tabstop</code></td>
+<td><code>4</code></td>
+<td>How wide a tab is shown</td>
+</tr>
+<tr>
+<td><code>shiftwidth</code></td>
+<td><code>4</code></td>
+<td>Columns per indent</td>
+</tr>
+<tr>
+<td><code>expandtab</code></td>
+<td><code>#t</code></td>
+<td>Indent with spaces, not tabs</td>
+</tr>
+<tr>
+<td><code>autoindent</code></td>
+<td><code>#t</code></td>
+<td>New lines keep the indentation</td>
+</tr>
+<tr>
+<td><code>smartindent</code></td>
+<td><code>#f</code></td>
+<td>Indent more after an opening bracket</td>
+</tr>
+<tr>
+<td><code>wrapscan</code></td>
+<td><code>#t</code></td>
+<td>Searches wrap around the end of the file</td>
+</tr>
+<tr>
+<td><code>hlsearch</code></td>
+<td><code>#t</code></td>
+<td>Highlight search matches</td>
+</tr>
+<tr>
+<td><code>incsearch</code></td>
+<td><code>#t</code></td>
+<td>Search as you type</td>
+</tr>
+<tr>
+<td><code>clipboard</code></td>
+<td><code>""</code></td>
+<td><code>unnamedplus</code> makes <code>y</code> and <code>p</code> use
+the system clipboard</td>
+</tr>
+<tr>
+<td><code>number</code></td>
+<td><code>#f</code></td>
+<td>Show line numbers</td>
+</tr>
+<tr>
+<td><code>relativenumber</code></td>
+<td><code>#f</code></td>
+<td>Show line numbers relative to the cursor</td>
+</tr>
+<tr>
+<td><code>cursorline</code></td>
+<td><code>#f</code></td>
+<td>Highlight the cursor's line</td>
+</tr>
+<tr>
+<td><code>wrap</code></td>
+<td><code>#t</code></td>
+<td>Wrap long lines</td>
+</tr>
+<tr>
+<td><code>linebreak</code></td>
+<td><code>#f</code></td>
+<td>Wrap at word boundaries</td>
+</tr>
+<tr>
+<td><code>signcolumn</code></td>
+<td><code>"auto"</code></td>
+<td>When to show the sign column</td>
+</tr>
+<tr>
+<td><code>splitbelow</code></td>
+<td><code>#f</code></td>
+<td>New horizontal splits open below</td>
+</tr>
+<tr>
+<td><code>splitright</code></td>
+<td><code>#f</code></td>
+<td>New vertical splits open on the right</td>
+</tr>
+<tr>
+<td><code>timeoutlen</code></td>
+<td><code>1000</code></td>
+<td>Milliseconds to wait for the rest of an insert mapping</td>
+</tr>
+<tr>
+<td><code>cmdline-completion</code></td>
+<td><code>#t</code></td>
+<td>Show the completion menu on the command line; <code>#f</code> gives
+back Vim's wildmenu</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html" aria-current="page">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

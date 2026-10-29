@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emacs state · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Emacs state</h1>
+<p class="lede">If your hands know Emacs, imp has an Emacs state beside Vim's. In it,
+keys you type go into the text, and the usual Emacs keys move and
+edit.</p>
+
+<h2>Switching between Vim and Emacs</h2>
+<p>Press <code>C-z</code> to switch from Vim to Emacs state, and
+<code>C-z</code> again to switch back. It works from normal, insert and
+visual state.</p>
+<p>To start in Emacs state every time, set <code>editing-style</code> in
+<code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;editing-style <span class="st">&quot;emacs&quot;</span>)</span></code></pre></div>
+
+<h2>Moving</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-f</code> / <code>C-b</code></td>
+<td>Forward or back a character</td>
+</tr>
+<tr>
+<td><code>C-n</code> / <code>C-p</code></td>
+<td>Down or up a line</td>
+</tr>
+<tr>
+<td><code>C-a</code> / <code>C-e</code></td>
+<td>Start or end of the line</td>
+</tr>
+<tr>
+<td><code>M-f</code> / <code>M-b</code></td>
+<td>Forward or back a word</td>
+</tr>
+<tr>
+<td><code>M-&lt;</code> / <code>M-&gt;</code></td>
+<td>Start or end of the buffer</td>
+</tr>
+</tbody>
+</table>
+
+<h2>The mark, the region and the kill ring</h2>
+<p>Press <code>C-SPC</code> to set the mark. The text between the mark
+and the cursor is the region.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-k</code></td>
+<td>Kill to the end of the line</td>
+</tr>
+<tr>
+<td><code>C-w</code></td>
+<td>Kill the region</td>
+</tr>
+<tr>
+<td><code>M-w</code></td>
+<td>Copy the region</td>
+</tr>
+<tr>
+<td><code>C-y</code></td>
+<td>Yank the last kill</td>
+</tr>
+<tr>
+<td><code>M-y</code></td>
+<td>Right after <code>C-y</code>, swap in the kill before it</td>
+</tr>
+<tr>
+<td><code>C-d</code> / <code>M-d</code></td>
+<td>Delete a character, or kill a word</td>
+</tr>
+</tbody>
+</table>
+<p>Kills also go to Vim's unnamed register, so <code>p</code> in Vim
+state pastes them.</p>
+
+<h2>Searching, undo and commands</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-s</code> / <code>C-r</code></td>
+<td>Search forward or back as you type; press again for the next
+match</td>
+</tr>
+<tr>
+<td><code>C-/</code></td>
+<td>Undo</td>
+</tr>
+<tr>
+<td><code>C-g</code></td>
+<td>Quit what you're doing and drop the region</td>
+</tr>
+<tr>
+<td><code>M-x</code></td>
+<td>Run a command by name</td>
+</tr>
+<tr>
+<td><code>C-u</code></td>
+<td>Give the next command an argument, as in Emacs</td>
+</tr>
+</tbody>
+</table>
+
+<h2>The C-x keys</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>C-x C-s</code></td>
+<td>Save the buffer</td>
+</tr>
+<tr>
+<td><code>C-x C-f</code></td>
+<td>Find a file</td>
+</tr>
+<tr>
+<td><code>C-x b</code></td>
+<td>Switch buffer</td>
+</tr>
+<tr>
+<td><code>C-x k</code></td>
+<td>Kill a buffer</td>
+</tr>
+<tr>
+<td><code>C-x C-c</code></td>
+<td>Quit imp</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Adding your own keys</h2>
+<p>Bind more keys in <code>init.scm</code> with
+<code>define-key!</code>. Write the keys as Emacs does, with spaces
+between them:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-key! &#39;emacs <span class="st">&quot;C-x C-s&quot;</span> &#39;save-buffer)</span></code></pre></div>
+<p>imp doesn't run Elisp or Emacs's own packages.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>editing-style</code></td>
+<td><code>"vim"</code></td>
+<td>The state imp starts in: <code>"vim"</code> or
+<code>"emacs"</code></td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html" aria-current="page">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

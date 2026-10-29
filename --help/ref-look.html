@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Look · imp docs</title>
+  <meta name="theme-color" content="#1b2023">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="docs">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="../index.html" aria-label="imp home">imp<span class="brand-cursor" aria-hidden="true"></span></a>
+      <nav aria-label="Main">
+        <ul class="nav-links">
+          <li><a href="../index.html#tour">Tour</a></li>
+          <li><a href="../index.html#scheme">Make it yours</a></li>
+          <li><a href="../index.html#install">Install</a></li>
+          <li class="nav-docs"><a href="index.html" aria-current="true">Docs</a></li>
+          <li><a href="https://github.com/apisandipas/imp" class="nav-gh">GitHub</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn-small" href="../index.html#install">Get imp</a>
+    </div>
+  </header>
+  <div class="wrap docs-layout">
+    <main id="main" class="docs-main">
+      <a class="docs-jump" href="#pages">All pages</a>
+      <article class="prose">
+<h1>Look</h1>
+<p class="lede">How imp looks: its colors, the status line, popups, and the window's
+font and spacing. All of it can be changed from
+<code>init.scm</code>.</p>
+
+<h2>Themes</h2>
+<p>A theme sets every color in imp from a small palette. imp comes with
+four: <code>one-dark</code>, the default, <code>gruvbox-dark</code>,
+<code>everforest-dark</code> and the light <code>one-light</code>.</p>
+<p>Switch with <code>:colorscheme gruvbox-dark</code>, or press
+<code>SPC t T</code> and pick one. To choose one for good, load it in
+<code>init.scm</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(load-theme! &#39;gruvbox-dark)</span></code></pre></div>
+
+<h2>Making your own theme</h2>
+<p>A theme can start from another one and change only some colors. Give
+it a name, the theme it builds on, the palette colors to change, and any
+faces to set on top:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(define-theme! &#39;mine &#39;one-dark</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  (hash &#39;bg <span class="st">&quot;#1a1b26&quot;</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  (<span class="kw">list</span> (<span class="kw">list</span> <span class="st">&quot;syntax.comment&quot;</span> <span class="st">&quot;fg=#565f89&quot;</span>)))</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>(load-theme! &#39;mine)</span></code></pre></div>
+
+<h2>Faces</h2>
+<p>Every color imp draws comes from a face: one for comments, one for
+the status line, and so on. The <code>normal</code> face is the text
+color and background, under everything else.</p>
+<p>Press <code>SPC h F</code> to see the faces under the cursor.
+<code>M-x list-faces</code> lists every face with a sample.</p>
+<p>Change one face with <code>set-face!</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-face! <span class="st">&quot;syntax.comment&quot;</span> <span class="st">&quot;fg=#ff8800 bg=blue bold&quot;</span>)</span></code></pre></div>
+<p>In imp's terminals, the 16 ANSI colors come from the theme too.</p>
+
+<h2>The status line</h2>
+<p>Each window has a status line along its bottom. It shows a colored
+badge for the state you're in, the file, a dot when it's modified,
+counts of errors and warnings, the major mode, and where you are in the
+file.</p>
+<p>When a window is narrow, the values on the right go first. A long
+path is shortened from its start.</p>
+<p>Set your own with a Vim-style format string:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>%m</code></td>
+<td>The state: NORMAL, INSERT and so on</td>
+</tr>
+<tr>
+<td><code>%f</code></td>
+<td>The file</td>
+</tr>
+<tr>
+<td><code>%M</code></td>
+<td>A dot when the file is modified</td>
+</tr>
+<tr>
+<td><code>%l</code> / <code>%c</code></td>
+<td>The line and column</td>
+</tr>
+<tr>
+<td><code>%L</code></td>
+<td>How many lines the file has</td>
+</tr>
+<tr>
+<td><code>%p</code></td>
+<td>How far through the file you are</td>
+</tr>
+<tr>
+<td><code>%{name}</code></td>
+<td>A named value, such as <code>%{major}</code> for the major mode or
+<code>%{org-clock}</code> for Org's running clock</td>
+</tr>
+<tr>
+<td><code>%#face#</code></td>
+<td>Draw what follows in that face; <code>%*</code> goes back</td>
+</tr>
+<tr>
+<td><code>%=</code></td>
+<td>What follows goes on the right</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;statusline <span class="st">&quot; %m %f %M%=%l:%c &quot;</span>)</span></code></pre></div>
+<p>Windows without the focus use <code>statusline-inactive</code>.</p>
+
+<h2>Popups</h2>
+<p>The which-key popup and menus open under a rule with a title, and
+their keys are colored. Code completion and hover help open in a box
+with a border at the cursor.</p>
+
+<h2>The window</h2>
+<p>In the window client you can set the font, the space around the text,
+and how see-through the background is:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode scheme"><code class="sourceCode scheme"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;font <span class="st">&quot;VictorMono Nerd Font Mono&quot;</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;font-size <span class="dv">16</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;window-padding <span class="dv">40</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>(set-option! &#39;background-opacity <span class="fl">0.9</span>)</span></code></pre></div>
+<p><code>--font</code> and <code>--font-size</code> on the command line
+win over these options.</p>
+<p>In a terminal, set <code>terminal-background</code> to
+<code>#f</code> to leave the theme's background unpainted. The
+terminal's own background shows through instead.</p>
+
+<h2>Text heights</h2>
+<p>In the window client, a face can be drawn larger, such as
+<code>height=1.3</code>. A line is as tall as its tallest text. Org
+headings use this; see <a href="ref-org.html">Org</a>.</p>
+
+<h2>Options</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>statusline</code></td>
+<td>imp's own</td>
+<td>The status line's format</td>
+</tr>
+<tr>
+<td><code>statusline-inactive</code></td>
+<td><code>"  %f %M%=%{major}  %l:%c   "</code></td>
+<td>The format for windows without the focus</td>
+</tr>
+<tr>
+<td><code>font</code></td>
+<td><code>""</code></td>
+<td>The window's font family; empty uses the client's default</td>
+</tr>
+<tr>
+<td><code>font-size</code></td>
+<td><code>0</code></td>
+<td>The font size in pixels; 0 uses the client's default</td>
+</tr>
+<tr>
+<td><code>window-padding</code></td>
+<td><code>0</code></td>
+<td>Pixels of space around the text</td>
+</tr>
+<tr>
+<td><code>window-divider-width</code></td>
+<td><code>0</code></td>
+<td>Pixels between side-by-side windows</td>
+</tr>
+<tr>
+<td><code>background-opacity</code></td>
+<td><code>1</code></td>
+<td>How opaque the background is, from 0 to 1</td>
+</tr>
+<tr>
+<td><code>terminal-background</code></td>
+<td><code>#t</code></td>
+<td>In a terminal, paint the theme's background</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+    </main>
+<nav class="docs-nav" id="pages" aria-label="Docs">
+<p class="docs-nav-head">Guides</p><ul>
+<li><a href="index.html">Overview</a></li>
+<li><a href="first-steps.html">Install and first steps</a></li>
+<li><a href="configuring.html">Configuring init.scm</a></li>
+<li><a href="packages.html">Packages</a></li>
+<li><a href="coming-from.html">Coming from Emacs or Vim</a></li>
+</ul>
+<p class="docs-nav-head">Editing</p><ul>
+<li><a href="ref-vim.html">Vim</a></li>
+<li><a href="ref-emacs-state.html">Emacs state</a></li>
+<li><a href="ref-leader-and-modes.html">Leader and modes</a></li>
+<li><a href="ref-commands.html">Commands</a></li>
+<li><a href="ref-mouse.html">Mouse</a></li>
+<li><a href="ref-look.html" aria-current="page">Look</a></li>
+<li><a href="ref-modus-themes.html">Modus themes</a></li>
+<li><a href="ref-start-screen.html">Start screen</a></li>
+</ul>
+<p class="docs-nav-head">Files and windows</p><ul>
+<li><a href="ref-files.html">Files</a></li>
+<li><a href="ref-buffers-and-windows.html">Buffers and windows</a></li>
+<li><a href="ref-projects.html">Projects</a></li>
+<li><a href="ref-dired.html">File browser</a></li>
+<li><a href="ref-file-tree.html">File tree</a></li>
+<li><a href="ref-folding.html">Folding</a></li>
+<li><a href="ref-terminals.html">Terminals</a></li>
+</ul>
+<p class="docs-nav-head">Code</p><ul>
+<li><a href="ref-completion.html">Completion at the prompt</a></li>
+<li><a href="ref-completion-at-point.html">Completion while typing</a></li>
+<li><a href="ref-lsp.html">Language servers</a></li>
+<li><a href="ref-tree-sitter.html">Tree-sitter</a></li>
+<li><a href="ref-dap.html">Debugging</a></li>
+</ul>
+<p class="docs-nav-head">Git and Org</p><ul>
+<li><a href="ref-git.html">Git</a></li>
+<li><a href="ref-git-blame.html">Git blame</a></li>
+<li><a href="ref-git-gutter.html">Git gutter</a></li>
+<li><a href="ref-org.html">Org</a></li>
+<li><a href="ref-org-agenda.html">Org agenda</a></li>
+<li><a href="ref-org-export.html">Org export</a></li>
+</ul>
+<p class="docs-nav-head">Extending imp</p><ul>
+<li><a href="ref-live-scheme-and-help.html">Live Scheme and help</a></li>
+<li><a href="ref-packages.html">Packages</a></li>
+<li><a href="ref-kdl-config.html">KDL config</a></li>
+<li><a href="ref-wasm-plugins.html">WASM plugins</a></li>
+<li><a href="ref-daemon.html">Daemon</a></li>
+<li><a href="ref-shared-buffers.html">Shared buffers</a></li>
+<li><a href="ref-claude.html">Claude Code</a></li>
+<li><a href="ref-mcp.html">MCP</a></li>
+</ul>
+</nav>
+  </div>
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="brand brand-small">imp<span class="brand-cursor" aria-hidden="true"></span></span>
+      <p>Free software under the GPL-3.0-or-later.</p>
+      <ul>
+        <li><a href="https://github.com/apisandipas/imp">Source</a></li>
+        <li><a href="https://github.com/apisandipas/imp/releases">Releases</a></li>
+        <li><a href="https://github.com/apisandipas/imp/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>
