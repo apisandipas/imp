@@ -99,7 +99,7 @@ Each language says which parts of its tree are functions, classes and argument l
   '("formals" "list_expression"))       ; argument lists
 ```
 
-`:syntax-tree` shows the current buffer's tree, to find the node kinds.
+`M-x syntax-tree` shows the current buffer's tree, to find the node kinds.
 
 ## Indentation
 

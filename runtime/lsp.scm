@@ -17,7 +17,7 @@
 ;;; if the program is installed and the `lsp` option is on. The buffer then
 ;;; gets lsp-mode: K hover, gd definition, gr references, SPC c r rename,
 ;;; SPC c a code actions, SPC c f format. ]d and [d move between
-;;; diagnostics, :diagnostics lists them all. Diagnostics are pushed by
+;;; diagnostics, M-x list-diagnostics lists them all. Diagnostics are pushed by
 ;;; the server, or pulled after each change from one that only answers
 ;;; when asked (TypeScript 7's). The server is complete.scm's first
 ;;; completion source after file paths, so C-n, C-x C-o and completion as
@@ -80,7 +80,7 @@
           [else #f])))
 
 (define (lsp-log! text)
-  "Adds `text` to the :lsp-log, which keeps the newest 500 entries."
+  "Adds `text` to the lsp-log, which keeps the newest 500 entries."
   (set! *lsp-log* (cons text (if (> (length *lsp-log*) 499) (take *lsp-log* 499) *lsp-log*)))
   void)
 
@@ -274,7 +274,7 @@
 (define (lsp-output! key text stream)
   "Handles output from server `key`'s job on `stream`.
    stdout carries LSP messages, dispatched as each completes; anything
-   else (stderr) goes to the :lsp-log."
+   else (stderr) goes to the lsp-log."
   (if (not (equal? stream "stdout"))
       (lsp-log! text)
       ;; Rust collects the output into messages (lsp-read-messages).
@@ -799,7 +799,7 @@
 
 (define-command! 'list-diagnostics
   (lambda (count)
-    "Pick a diagnostic from any file's and jump to it (:diagnostics)."
+    "Pick a diagnostic from any file's and jump to it."
     (let ([entries
            (apply append
                   (map (lambda (uri)
@@ -818,7 +818,6 @@
                              (let ([hit (assoc choice entries)])
                                (when hit (lsp-jump! (cadr hit) (caddr hit) #f)))))))))
 
-(define-ex! '("diagnostics") (lambda (ex) (run-command 'list-diagnostics)))
 
 ;;; Going places
 
@@ -1060,7 +1059,7 @@
 ;;; Servers: information and control
 
 (define (lsp-server-lines)
-  "A line for each running server, for :lsp-info.
+  "A line for each running server, for lsp-info.
    Each says its command, root, whether it is still starting, and what
    its positions count in."
   (map (lambda (key)
@@ -1069,13 +1068,15 @@
                         "  positions: " (lsp-get key 'encoding)))
        (hash-keys->list *lsp-servers*)))
 
-(define-ex! '("lsp-info")
-  (lambda (ex)
+(define-command! 'lsp-info
+  (lambda (count)
+    "Show the language servers running: command, root and position encoding."
     (let ([lines (lsp-server-lines)])
       (if (null? lines) (message "no language servers running") (show-popup! lines)))))
 
-(define-ex! '("lsp-log")
-  (lambda (ex)
+(define-command! 'lsp-log
+  (lambda (count)
+    "Show the last 40 messages from language servers."
     (if (null? *lsp-log*)
         (message "the language server log is empty")
         (show-popup! (apply append (map split-lines (reverse (take *lsp-log* (min 40 (length *lsp-log*))))))))))
@@ -1093,7 +1094,7 @@
 
 (define-command! 'lsp-restart
   (lambda (count)
-    "Restart the current buffer's language server (:lsp-restart).
+    "Restart the current buffer's language server.
      It starts again for every buffer that used it."
     (let ([key (buffer-local 'lsp-server)])
       (if (not key)
@@ -1106,9 +1107,9 @@
                       ids)
             (message "restarted the language server"))))))
 
-(define-ex! '("lsp-restart") (lambda (ex) (run-command 'lsp-restart)))
-(define-ex! '("lsp-stop")
-  (lambda (ex)
+(define-command! 'lsp-stop
+  (lambda (count)
+    "Stop the current buffer's language server."
     (let ([key (lsp-key)])
       (if key (begin (lsp-stop! key) (message "stopping the language server")) (message "no language server for this buffer")))))
 

@@ -24,5 +24,5 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 
 ## Out of scope
 
-- Blame on every line at once, or a blame buffer (`:Git blame` shows git's own output).
+- Blame on every line at once, or a blame buffer (`:git blame` shows git's own output).
 - A format option, and a popup with the whole commit.

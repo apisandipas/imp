@@ -183,3 +183,33 @@ fn the_command_line_offers_commands() {
     type_keys(&mut s, "<esc>:nohl");
     assert_eq!(cmd_menu(&mut s), ["nohlsearch"]);
 }
+
+#[test]
+fn lsp_mcp_and_syntax_features_are_commands() {
+    let mut s = server("one\n");
+    s.set_size(120, 20);
+    for (command, says) in [
+        ("lsp-info", "no language servers running"),
+        ("lsp-log", "the language server log is empty"),
+        ("lsp-stop", "no language server for this buffer"),
+        ("lsp-restart", "no language server for this buffer"),
+        ("list-diagnostics", "no diagnostics"),
+    ] {
+        s.keys(&["M-x"]);
+        type_keys(&mut s, &format!("{command}<ret>"));
+        assert!(said(&mut s).contains(says), "{command}: {}", said(&mut s));
+    }
+    type_keys(&mut s, ":mcp-log<ret>");
+    assert!(s.frame().text_rows().join("\n").contains("nothing yet"));
+    type_keys(&mut s, "<esc>:syntax-tree<ret>");
+    assert!(s.frame().text_rows().join("\n").contains("no syntax tree"));
+    // Their old ex names are gone.
+    for old in ["diagnostics", "Git", "G"] {
+        type_keys(&mut s, &format!("<esc>:{old}<ret>"));
+        assert!(
+            said(&mut s).contains(&format!("not an editor command: {old}")),
+            "{old}: {}",
+            said(&mut s)
+        );
+    }
+}

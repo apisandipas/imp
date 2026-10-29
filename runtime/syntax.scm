@@ -42,9 +42,9 @@
              (when (memq 'prog-mode (mode-lineage mode))
                (set-local-option! 'smartindent (not (memq mode '(scheme-mode lisp-mode repl-mode)))))))
 
-;; :syntax-tree shows the current buffer's tree, for writing text objects.
-(define-ex! '("syntax-tree")
-  (lambda (ex)
+(define-command! 'syntax-tree
+  (lambda (count)
+    "Show the current buffer's tree-sitter syntax tree, for writing text objects."
     (let ([tree (syntax-tree)])
       (show-popup! (if tree (split-sexp tree) (list "no syntax tree (no language for this buffer)"))))))
 

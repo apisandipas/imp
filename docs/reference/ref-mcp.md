@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/mcp]]"
 frozen:
-  docs/specs/mcp.md: e74de57e9621
+  docs/specs/mcp.md: eb9a936be6e7
 ---
 # MCP
 
@@ -38,7 +38,7 @@ An agent can:
 
 ## Watching what it does
 
-Each change an agent makes shows on the status line, starting with `agent:`. `:mcp-log` lists them all. Each edit an agent makes is one undo step, so `u` takes it back.
+Each change an agent makes shows on the status line, starting with `agent:`. `M-x mcp-log` lists them all. Each edit an agent makes is one undo step, so `u` takes it back.
 
 ## Adding a tool
 
