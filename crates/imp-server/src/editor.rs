@@ -362,6 +362,17 @@ impl Editor {
         }
     }
 
+    /// Brings buffer `id`'s syntax trees up to date now, past the parse
+    /// budget if need be (`Syntax::update_now`).
+    pub fn update_syntax_now(&mut self, id: usize) {
+        if let Some(mut syntax) = self.syntax.remove(&id) {
+            if let Some(buffer) = self.buffer_by_id_mut(id) {
+                syntax.update_now(buffer);
+            }
+            self.syntax.insert(id, syntax);
+        }
+    }
+
     /// A background parse of buffer `id` finished.
     pub fn syntax_parsed(&mut self, id: usize, version: u64, parse: crate::syntax::Parse) {
         if let Some(mut syntax) = self.syntax.remove(&id) {

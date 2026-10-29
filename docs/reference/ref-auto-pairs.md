@@ -30,7 +30,7 @@ The pair is part of the insert: `u` undoes it with the text you typed, and `.` t
 
 ## End tags
 
-In an HTML, XML or SVG file, typing the `>` that ends a start tag adds its end tag after the cursor: type `<div class="x">` and you have `<div class="x">|</div>`.
+In an HTML, XML or SVG file, typing the `>` that ends a start tag adds its end tag after the cursor: type `<div class="x">` and you have `<div class="x">|</div>`. The same happens in a Markdown code block fenced as ` ```html `. Elsewhere in Markdown, HTML you type in the text is left as you type it.
 
 Some tags don't get one:
 - A self-closing tag, like `<x/>`.

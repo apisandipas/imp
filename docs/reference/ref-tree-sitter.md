@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: 000de585b368
+  docs/specs/tree-sitter.md: 8999c82bfadc
 ---
 # Tree-sitter
 

@@ -1606,11 +1606,13 @@ pub fn register(engine: &mut Engine) {
     });
     // The innermost language at char offset `at`, an embedded one inside
     // a fence or <script>, and its named nodes around `at`: (language
-    // (kind field start end) ...), innermost first; '() with no tree.
+    // (kind field start end) ...), innermost first; '() with no tree. The
+    // tree is the text's as it is, parsed now if need be, as closing a tag
+    // just typed needs it.
     engine.register_fn("syntax-at", |at: isize| {
         editor::with(|e| {
             let id = e.current;
-            e.update_syntax(id);
+            e.update_syntax_now(id);
             let rope = e.buffer.rope();
             let Some((name, root)) = e
                 .syntax
@@ -1625,6 +1627,26 @@ pub fn register(engine: &mut Engine) {
                         .into_iter()
                         .map(|(k, f, s, t)| node_value(k, f, s, t, true)),
                 )
+                .collect::<Vec<_>>()
+        })
+    });
+    // syntax-children in the innermost language's tree at `start`, the one
+    // syntax-at gives nodes of.
+    engine.register_fn("syntax-children-at", |start: isize, end: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax_now(id);
+            let rope = e.buffer.rope();
+            let Some((_, root)) = e
+                .syntax
+                .get(&id)
+                .and_then(|s| s.root_at(rope.char_to_byte(clamp(start).min(rope.len_chars()))))
+            else {
+                return Vec::new();
+            };
+            crate::syntax::children(root, rope, clamp(start), clamp(end))
+                .into_iter()
+                .map(|(k, f, s, t, named)| node_value(k, f, s, t, named))
                 .collect::<Vec<_>>()
         })
     });

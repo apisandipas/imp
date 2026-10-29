@@ -402,3 +402,31 @@ fn a_slash_after_a_less_than_closes_the_open_element() {
     );
     assert_eq!(tags("t.html", "<div>\n", "A", "a/").0, "<div>a/\n");
 }
+
+#[test]
+fn a_markdown_fence_of_html_closes_tags() {
+    let text = "Text\n\n```html\n<div>\n```\n";
+    // In the fence, as in an HTML file, void elements included.
+    assert_eq!(
+        tags("f.md", text, "jjjA", "<b>").0,
+        "Text\n\n```html\n<div><b></b>\n```\n"
+    );
+    assert_eq!(
+        tags("f.md", text, "jjjA", "x</").0,
+        "Text\n\n```html\n<div>x</div>\n```\n"
+    );
+    assert_eq!(
+        tags("f.md", text, "jjjA", "<br>").0,
+        "Text\n\n```html\n<div><br>\n```\n"
+    );
+    // Outside it, < and > are plain, even around a tag.
+    assert_eq!(
+        tags("f.md", text, "A", " <b>").0,
+        "Text <b>\n\n```html\n<div>\n```\n"
+    );
+    // And a fence of another language is that language's.
+    assert_eq!(
+        tags("f.md", "```rust\nx\n```\n", "jA", " <T>").0,
+        "```rust\nx <T>\n```\n"
+    );
+}

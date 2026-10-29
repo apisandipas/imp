@@ -247,7 +247,7 @@
 
 (define (child-of-kind n kind)
   "The first child of syntax node `n` of `kind`, or #f."
-  (let loop ([cs (syntax-children (node-start n) (node-end n))])
+  (let loop ([cs (syntax-children-at (node-start n) (node-end n))])
     (cond [(null? cs) #f]
           [(equal? (node-kind (car cs)) kind) (car cs)]
           [else (loop (cdr cs))])))
@@ -305,7 +305,7 @@
   "The last start tag in ERROR node `error` not closed by an end tag in it
    before the cursor, or #f. The parser lays out tags it can't match flat
    in one: <p><b>x</ is an ERROR of p's start tag, b's and the text."
-  (let loop ([cs (syntax-children (node-start error) (node-end error))] [open '()])
+  (let loop ([cs (syntax-children-at (node-start error) (node-end error))] [open '()])
     (define (name-of tag kind)
       (let ([n (child-of-kind tag kind)]) (and n (node-text n))))
     (cond
@@ -321,6 +321,16 @@
          (loop (cdr cs) (if (and (pair? open) (equal? (car open) name)) (cdr open) open)))]
       [else (loop (cdr cs) open)])))
 
+(define (html-at offset)
+  "HTML's nodes around `offset`, innermost first, or #f where it isn't
+   HTML that tags close in: an HTML file, or a fenced code block of HTML
+   in Markdown. Markdown's inline HTML, in its text, is left alone."
+  (let ([at (syntax-at offset)])
+    (and (pair? at) (equal? (car at) "html")
+         (or (not (equal? (buffer-language) "markdown"))
+             (enclosing-node offset '("fenced_code_block") 1))
+         (cdr at))))
+
 (define (close-tag-for! c)
   "After `c` is typed: a start tag's > adds its end tag after the cursor,
    and the / of </ completes the innermost open element's end tag."
@@ -328,14 +338,14 @@
     (when (and (option 'auto-close-tags) (> p 1))
       (cond
         [(equal? c #\>)
-         (let* ([at (syntax-at (- p 1))]
-                [end (and (pair? at) (equal? (car at) "html") (html-end-tag-wanted (cdr at)))])
+         (let* ([nodes (html-at (- p 1))]
+                [end (and nodes (html-end-tag-wanted nodes))])
            (when end (buffer-insert! p end)))]
         [(and (equal? c #\/) (equal? (buffer-char-at (- p 2)) #\<))
          ;; From the char before <, as an element that ends there is
          ;; open: the parser ends <b> at a </ it can't match yet.
-         (let* ([at (syntax-at (max 0 (- p 3)))]
-                [name (and (pair? at) (equal? (car at) "html") (html-open-element-name (cdr at)))])
+         (let* ([nodes (html-at (max 0 (- p 3)))]
+                [name (and nodes (html-open-element-name nodes))])
            (when name
              (insert-text! (string-append name ">"))))]
         [else void])))
