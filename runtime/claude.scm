@@ -15,13 +15,14 @@
 ;;; starting, it waits until Claude takes input.
 ;;;
 ;;; Claude runs claude-command in the project root (the current directory
-;;; outside a project). Its window's place is a popup rule, so
+;;; outside a project). It is a toggled terminal (term.scm), as the
+;;; project's shell is; this file adds sending. Its window's place is a
+;;; popup rule, so
 ;;;   (define-popup-rule! "*claude" 'side 'bottom 'size 0.3)
 ;;; moves it.
 
 (define-option! 'claude-command "claude" '())
 
-(define *claude-buffers* (hash))  ; project root -> its Claude buffer
 (define *claude-pending* (hash))  ; Claude buffer -> texts waiting for it to take input
 (define *claude-ready* '())       ; Claude buffers known to take input
 (define claude-ready-ms 200)      ; how often to look, while waiting
@@ -36,60 +37,18 @@
   "The project the current buffer belongs to; in a Claude buffer, its own."
   (or (buffer-local 'claude-root) (project-root) (current-dir)))
 
-(define (claude-buffer root)
-  "The Claude buffer of project `root`, or #f."
-  (let ([buf (hash-try-get *claude-buffers* root)])
-    (and buf (memv buf (buffer-list)) buf)))
-
-(define (claude-terminal buf)
-  "The terminal running in Claude buffer `buf`, or #f once it has exited."
-  (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
-
-(define (claude-start! root)
-  "Starts Claude Code for project `root` in a new buffer and shows it.
-   Returns the buffer, or #f if it couldn't start."
-  (let ([buf (buffer-new! (string-append "*claude: " (file-name-of root) "*"))])
-    (display-buffer! buf)
-    (set-buffer-local! 'claude-root root)
-    (set-buffer-local! 'mode-line-label "claude")
-    (and (start-terminal! buf (option 'claude-command) root)
-         (begin
-           (set! *claude-buffers* (hash-insert *claude-buffers* root buf))
-           buf))))
-
 (define (claude-show! root)
   "Shows project `root`'s Claude, starting it if it isn't running.
    Puts you in the terminal state there. Returns its buffer, or #f if it
    couldn't start."
-  (let ([buf (claude-buffer root)])
-    (cond
-      [(and buf (claude-terminal buf))
-       (display-buffer! buf)
-       (set-mode! 'terminal)
-       (term-redraw! (term-id))
-       buf]
-      [else
-       ;; It exited: start again in a fresh buffer.
-       (when buf (kill-buffer! buf))
-       (claude-start! root)])))
-
-(define (claude-hide!)
-  "Leaves the current window's Claude, closing the window, but not Claude."
-  (set-mode! 'normal)
-  (let ([popup (popup-window-entry (current-window))])
-    (cond
-      [(> (length (window-list)) 1)
-       (close-window! (current-window))
-       (when (and popup (memv (cadr popup) (window-list))) (focus-window! (cadr popup)))
-       (after-window-change!)]
-      [(and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
-       (go-to-buffer! *alternate-buffer*)]
-      [else (message "no other buffer to show")])))
+  (let ([buf (toggled-terminal-show! 'claude root)])
+    (when buf (set-buffer-local! 'claude-root root))
+    buf))
 
 (define (claude-toggle!)
   "Hides Claude when in its window; else shows this project's Claude."
   (if (buffer-local 'claude-root)
-      (claude-hide!)
+      (toggled-terminal-hide!)
       (claude-show! (claude-root))))
 
 ;;; Sending
@@ -105,7 +64,7 @@
   "Pastes what is waiting for `buf` once its Claude takes input.
    Until then, looks again every claude-ready-ms, `tries` more times,
    and gives up saying so."
-  (let ([id (claude-terminal buf)] [texts (hash-try-get *claude-pending* buf)])
+  (let ([id (buffer-terminal buf)] [texts (hash-try-get *claude-pending* buf)])
     (cond
       [(or (not id) (not texts)) (set! *claude-pending* (hash-remove *claude-pending* buf))]
       [(memv buf *claude-ready*)
@@ -184,21 +143,19 @@
 
 (define (claude-kill! count)
   "Stops the current project's Claude and kills its buffer."
-  (let ([buf (claude-buffer (claude-root))])
+  (let ([buf (toggled-terminal-buffer 'claude (claude-root))])
     (if buf
         (begin
-          (when (= buf (current-buffer)) (claude-hide!))
+          (when (= buf (current-buffer)) (toggled-terminal-hide!))
           (kill-buffer! buf)
           (message "Claude stopped"))
         (message "no Claude running for this project"))))
 
 (add-hook! 'buffer-kill
-  (lambda (id)
-    (set! *claude-ready* (filter (lambda (b) (not (= b id))) *claude-ready*))
-    (for-each (lambda (root) (when (= (hash-ref *claude-buffers* root) id)
-                               (set! *claude-buffers* (hash-remove *claude-buffers* root))))
-              (hash-keys->list *claude-buffers*))))
+  (lambda (id) (set! *claude-ready* (filter (lambda (b) (not (= b id))) *claude-ready*))))
 
+;; A toggled terminal (term.scm), with its own docstring for M-x.
+(define-toggled-terminal! 'claude 'claude-command "*claude")
 (define-command! 'claude
   (lambda (count)
     "Show this project's Claude (starting it), or hide it from inside."

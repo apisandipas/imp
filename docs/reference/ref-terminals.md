@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 7b43584e6e0e
+  docs/specs/terminals.md: 50e895cf4812
 ---
 # Terminals
 
@@ -10,7 +10,7 @@ A terminal runs your shell, or any program, in a buffer. You type to the program
 
 ## Opening a terminal
 
-Press `SPC o t`, or type `:terminal`, to run your shell in a new buffer. `:terminal CMD` runs a program instead:
+Press `SPC o T`, or type `:terminal`, to run your shell in a new buffer in the current window. `:terminal CMD` runs a program instead:
 
 ```
 :terminal htop
@@ -19,6 +19,30 @@ Press `SPC o t`, or type `:terminal`, to run your shell in a new buffer. `:termi
 The buffer keeps the program's output, up to 10,000 lines, in the program's colors. The first sixteen colors come from your theme.
 
 When the program exits, `[process exited N]` shows at the end and the buffer stays open.
+
+## The project's terminal
+
+Press `SPC o t`, or `` M-` `` from anywhere, to bring up your project's own shell in a window down the right. The first time, the shell starts in the project root. Press the same key inside it to hide it again. The shell keeps running while it's hidden, so it comes back as you left it, mid-command and all.
+
+Each project has its own. Buffers outside any project share one, in imp's current directory. If you `exit` the shell, the next toggle starts a new one. The buffer is named `*terminal: PROJECT*`, after the project's directory. Kill it and the shell stops.
+
+Popups on the same side share a window, so bringing up the terminal while [Claude](ref-claude.md) is showing puts it in Claude's window. Claude keeps running hidden. To put the terminal somewhere else, change its popup rule:
+
+```scheme
+(define-popup-rule! "*terminal:" 'side 'bottom 'size 0.3)
+```
+
+### A toggle of your own
+
+`define-toggled-terminal!` gives any program the same toggle. It takes the command's name, what to run (a string, or an option holding one), and the start of its buffer's name for its popup rule:
+
+```scheme
+(define-toggled-terminal! 'lazygit "lazygit" "*lazygit")
+(define-popup-rule! "*lazygit" 'side 'right 'size 0.5)
+(define-leader! "gl" 'lazygit "lazygit")
+```
+
+Now `SPC g l`, or `M-x lazygit`, shows the project's lazygit, and hides it again. To hide it from the TERMINAL state with one key, add `(define-terminal-key! "M-g" (lambda () (run-command 'lazygit)))`.
 
 ## Typing to the program
 

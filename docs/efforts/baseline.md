@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/buffers-and-windows]]", "[[spec/claude]]", "[[spec/completion-at-point]]", "[[spec/completion]]", "[[spec/daemon]]", "[[spec/dap]]", "[[spec/dired]]", "[[spec/emacs-state]]", "[[spec/files]]", "[[spec/folding]]", "[[spec/git]]", "[[spec/kdl-config]]", "[[spec/live-scheme-and-help]]", "[[spec/look]]", "[[spec/lsp]]", "[[spec/mcp]]", "[[spec/mouse]]", "[[spec/org]]", "[[spec/packages]]", "[[spec/projects]]", "[[spec/shared-buffers]]", "[[spec/start-screen]]", "[[spec/terminals]]", "[[spec/tree-sitter]]", "[[spec/vim]]", "[[spec/wasm-plugins]]"]
 frozen:
   docs/specs/buffers-and-windows.md: b71f00fec527
-  docs/specs/claude.md: 580fb164d4a1
+  docs/specs/claude.md: 449d64b1eec0
   docs/specs/completion-at-point.md: 7a992144e52e
   docs/specs/completion.md: c12abe1827ac
   docs/specs/daemon.md: 52dfa8b283fe
@@ -25,8 +25,8 @@ frozen:
   docs/specs/projects.md: fac9a61f6afa
   docs/specs/shared-buffers.md: edc911376d67
   docs/specs/start-screen.md: fca5951c17a6
-  docs/specs/terminals.md: 7b43584e6e0e
-  docs/specs/tree-sitter.md: 0f8ff7a1b057
+  docs/specs/terminals.md: 50e895cf4812
+  docs/specs/tree-sitter.md: 8999c82bfadc
   docs/specs/vim.md: 7a2641f5642e
   docs/specs/wasm-plugins.md: b62f9140ac75
 ---

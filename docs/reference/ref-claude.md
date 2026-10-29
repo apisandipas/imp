@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/claude]]"
 frozen:
-  docs/specs/claude.md: 580fb164d4a1
+  docs/specs/claude.md: 449d64b1eec0
 ---
 # Claude Code
 
@@ -10,7 +10,7 @@ imp runs Claude Code beside your code, in a terminal window down the right. Each
 
 ## Showing and hiding Claude
 
-Press `M-a` (or `SPC a a`) to show this project's Claude, starting it the first time. Press `M-a` inside it to hide it again. Hidden, it keeps running, so it's still there when you come back.
+Press `M-a` (or `SPC a a`) to show this project's Claude, starting it the first time. Press `M-a` inside it to hide it again. Hidden, it keeps running, so it's still there when you come back. It works like the [project's terminal](ref-terminals.md#the-projects-terminal) (`SPC o t`), which shares its window when both are on the right.
 
 Claude takes the right 40% of the screen. Its place is a popup rule, so you can move it in `init.scm`:
 
