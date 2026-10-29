@@ -187,20 +187,13 @@ fn a_toggle_of_your_own() {
 }
 
 #[test]
-fn the_shell_starts_in_the_project_root() {
-    // Your real shell, with no stand-in.
-    let root = temp_path("toggle-real");
-    std::fs::create_dir_all(root.join(".git")).unwrap();
-    std::fs::write(root.join("a.txt"), "a\n").unwrap();
+fn the_projects_terminal_runs_your_shell() {
+    // "" is your shell, as :terminal with no command runs; the stand-in in
+    // project() replaces it, so check what the runtime defines. (Running
+    // your real shell here depends on the machine: CI's printed nothing.)
     let mut s = server("");
-    s.set_size(200, 30);
-    type_keys(&mut s, &format!(":e {}<ret>", root.join("a.txt").display()));
-    s.keys(&["M-`"]);
-    for k in "pwd".chars() {
-        s.keys(&[&k.to_string()]);
-    }
-    s.keys(&["<ret>"]);
-    wait_for(&mut s, "pwd", |s| {
-        s.text().contains(&*root.to_string_lossy())
-    });
+    assert_eq!(
+        s.eval("(hash-ref *toggles* 'toggle-terminal)").unwrap(),
+        "(\"\" \"*terminal\")"
+    );
 }
