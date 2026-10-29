@@ -14,7 +14,7 @@ anchors: [runtime/leader.scm, runtime/modes.scm, "symbol:binding-label", "symbol
 - **Major modes**: one per buffer, picked by file name when it opens, for about 20 languages; each sets indentation and its comment string. **Minor modes**: any number per buffer.
 - Key lookup goes minor modes' keymaps, then the major mode's and its parents', then the state's. Insert mode checks mode keymaps first, so a mode can rebind `<ret>`.
 - Mode key sequences that start with a control or meta key (`C-c C-c`) wait for the rest in normal, visual and insert state, without touching Vim's `g` and `z` prefixes or insert typing. So do a mode's sequences that start with a letter other than Vim's prefixes, as the agenda's `ct` and `dd`, in normal and visual state: while the buffer's modes bind longer keys starting with it, that key waits for the rest instead of being Vim's.
-- `gc` comments with the mode's comment string. `:mode` sets the major mode.
+- `gc` comments with the mode's comment string. `set-major-mode` asks for a major mode and sets it; the current one is offered first.
 
 ## Keys and options
 

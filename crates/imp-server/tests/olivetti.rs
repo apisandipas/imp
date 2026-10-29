@@ -21,7 +21,7 @@ fn it_is_off_until_used() {
     assert_eq!(s.eval("(command-proc 'olivetti-mode)").unwrap(), "#false");
     s.eval("(use-package! 'olivetti)").unwrap();
     assert_ne!(s.eval("(command-proc 'olivetti-mode)").unwrap(), "#false");
-    type_keys(&mut s, ":packages<ret>");
+    type_keys(&mut s, ":list-packages<ret>");
     let rows = s.frame().text_rows().join("\n");
     assert!(
         rows.contains("olivetti") && rows.contains("built-in"),

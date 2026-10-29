@@ -35,7 +35,7 @@ fn loads_a_local_package_and_runs_its_config() {
         .unwrap();
     type_keys(&mut s, "Q");
     assert_eq!(s.text(), "hix\n");
-    type_keys(&mut s, ":packages<ret>");
+    type_keys(&mut s, ":list-packages<ret>");
     let rows = s.frame().text_rows().join("\n");
     assert!(rows.contains("shout") && rows.contains("loaded"), "{rows}");
     // Its source is known to describe-function.
@@ -54,7 +54,7 @@ fn missing_and_broken_packages_are_reported() {
     assert!(s.status().contains("not in"));
     s.eval("(use-package! 'bad)").unwrap();
     assert!(s.status().contains("package bad"));
-    type_keys(&mut s, ":packages<ret>");
+    type_keys(&mut s, ":list-packages<ret>");
     let rows = s.frame().text_rows().join("\n");
     assert!(rows.contains("missing") && rows.contains("error"), "{rows}");
 }
@@ -164,5 +164,48 @@ fn a_failed_clone_is_reported_and_leaves_nothing() {
     assert_eq!(
         s.eval("(package-status 'nowhere)").unwrap(),
         r#""clone failed""#
+    );
+}
+
+#[test]
+fn package_update_fetches_a_git_package_and_reloads_it() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("git not available; skipping");
+        return;
+    }
+    let mut s = server("");
+    // None from git yet.
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "package-update<ret>");
+    assert_eq!(s.status(), "no packages are loaded from git");
+
+    let repo = packages_dir("pkg-update-repo");
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["config", "user.name", "Ada Lovelace"]);
+    git(&repo, &["config", "user.email", "ada@example.com"]);
+    git(&repo, &["config", "commit.gpgsign", "false"]);
+    std::fs::write(repo.join("init.scm"), "(define (latest-version) 1)").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "one"]);
+    let dir = packages_dir("pkgs-update");
+    use_dir(&mut s, &dir);
+    s.eval(&format!(
+        "(use-package! 'latest 'git \"{}\")",
+        repo.display()
+    ))
+    .unwrap();
+    wait_until_loaded(&mut s, "latest");
+    assert_eq!(s.eval("(latest-version)").unwrap(), "1");
+    std::fs::write(repo.join("init.scm"), "(define (latest-version) 2)").unwrap();
+    git(&repo, &["commit", "--quiet", "-am", "two"]);
+    type_keys(&mut s, ":package-update lat<ret>");
+    assert_eq!(s.status(), "updated latest");
+    assert_eq!(s.eval("(latest-version)").unwrap(), "2");
+    // The old name is gone.
+    type_keys(&mut s, ":package-update<ret><esc>:packages<ret>");
+    assert!(
+        s.status().contains("not an editor command: packages"),
+        "{}",
+        s.status()
     );
 }

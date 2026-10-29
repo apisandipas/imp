@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 90d6bc3e4f74
+  docs/specs/look.md: 79bbab33f2c1
 ---
 # Look
 
@@ -12,7 +12,7 @@ How imp looks: its colors, the status line, popups, and the window's font and sp
 
 A theme sets every color in imp from a small palette. imp comes with four: `one-dark`, the default, `gruvbox-dark`, `everforest-dark` and the light `one-light`.
 
-Switch with `:theme gruvbox-dark`, or press `SPC t T` and pick one. To choose one for good, load it in `init.scm`:
+Switch with `:colorscheme gruvbox-dark`, or press `SPC t T` and pick one. To choose one for good, load it in `init.scm`:
 
 ```scheme
 (load-theme! 'gruvbox-dark)

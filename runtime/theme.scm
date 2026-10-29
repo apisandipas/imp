@@ -2,7 +2,7 @@
 ;;;
 ;;; Every color is a face (core.scm). A theme here is a palette of a few
 ;;; named colors, from which theme-faces makes every face, so switching
-;;; themes leaves nothing behind. :theme NAME (or M-x load-theme) switches;
+;;; themes leaves nothing behind. :colorscheme NAME (or M-x load-theme) switches;
 ;;; in init.scm:
 ;;;
 ;;;   (load-theme! 'gruvbox-dark)
@@ -382,14 +382,14 @@
     (set! *completion-category* 'theme)
     (completing-read "Theme: " (theme-names) (lambda (name) (load-theme! (string->symbol name))))))
 
-(define-ex! '("theme" "colo" "colorscheme")
+(define-ex! '("colo" "colorscheme")
   (lambda (ex)
     (let ([arg (ex-args ex)])
       (cond [(equal? arg "") (message (if *theme* (symbol->string *theme*) "no theme"))]
             [(hash-contains? *themes* (string->symbol arg)) (load-theme! (string->symbol arg))]
             [else (message (string-append "no theme " arg "; there are " (string-join (theme-names) ", ")))]))))
 
-(define-ex-completion! '("theme" "colo" "colorscheme")
+(define-ex-completion! '("colo" "colorscheme")
   (lambda (typed) (filter (lambda (n) (starts-with? n typed)) (theme-names))))
 
 (define-leader! "tT" 'load-theme "theme")

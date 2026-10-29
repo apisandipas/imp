@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: e3fcce9e04c2
+  docs/specs/leader-and-modes.md: 2c481ae337d8
 ---
 # Leader and modes
 
@@ -40,7 +40,7 @@ There's no popup after `"`, after `f` and the other character motions, or after 
 
 Each buffer has one major mode, picked by its file name when it opens. imp has major modes for about 20 languages. Each sets the indentation and how comments are written.
 
-`:mode rust` switches the buffer to another major mode, and `:mode` alone says which one it's in.
+`M-x set-major-mode` switches the buffer to another major mode: pick one, or type part of its name (`:set-major-mode rust`). The current mode is first in the list, so pressing `<ret>` straight away says which one it's in.
 
 A buffer can also have any number of minor modes. Keys from minor modes win over the major mode's, and the major mode's win over the usual keys.
 

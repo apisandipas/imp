@@ -11,7 +11,7 @@ The modus-themes package brings Emacs's Modus themes to imp: Modus Vivendi (whit
 
 ## Behaviour
 
-- `(use-package! 'modus-themes)` defines two themes, `modus-vivendi` and `modus-operandi`, loaded like any other: `(load-theme! 'modus-vivendi)`, `:theme`, or `SPC t T`. Switching away from one leaves nothing of it behind.
+- `(use-package! 'modus-themes)` defines two themes, `modus-vivendi` and `modus-operandi`, loaded like any other: `(load-theme! 'modus-vivendi)`, `load-theme` (`SPC t T`), or `:colorscheme`. Switching away from one leaves nothing of it behind.
 - **Colors come from Modus itself** (modus-themes 5.3.0): each theme's palette of named colors (`bg-main`, `fg-main`, `fg-dim`, `red`, `red-warmer`, `blue-cooler`, …) and Modus's mapping from what a color is for to the color (`keyword` → `magenta-cooler`, `string` → `blue-warmer`, `comment` → `fg-dim`, `type` → `cyan-cooler`, `constant` → `blue-cooler`, `builtin` → `magenta-warmer`, `docstring` → `green-faint` in Operandi and `cyan-faint` in Vivendi, `fnname` → `magenta`, `property` → `cyan`; numbers, operators and punctuation in the text color). Every imp face takes the color Modus gives the matching thing in Emacs:
   - code: the `syntax.*` faces;
   - the text and frame: `normal`, the cursor line, the region (`visual`), search matches, line numbers, the fold and sign columns, window separators;

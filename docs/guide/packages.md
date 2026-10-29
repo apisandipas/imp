@@ -23,7 +23,7 @@ Turn one on with `use-package!` in your `init.scm`:
 | `org-export` | Export Org files to HTML, PDF and more; see [Org export](ref-org-export.md) |
 | `modus-themes` | The Modus Vivendi and Modus Operandi themes from Emacs; see [Modus themes](ref-modus-themes.md) |
 
-`:packages` lists what's loaded and what else comes with imp.
+`M-x list-packages` lists what's loaded and what else comes with imp.
 
 ## Settings that need the package
 
@@ -46,9 +46,9 @@ Give a git address to load a package from a repository. `'rev` pins it to a comm
   'rev "4f1c2e9")
 ```
 
-The first time, imp clones it in the background, so startup doesn't wait. The status line says `cloning surround...`, then `installed surround` once it's loaded. If the clone fails, the status line and `:packages` say why, and imp tries again next time.
+The first time, imp clones it in the background, so startup doesn't wait. The status line says `cloning surround...`, then `installed surround` once it's loaded. If the clone fails, the status line and `M-x list-packages` say why, and imp tries again next time.
 
-`:package-update NAME` fetches the package again and reloads it.
+`M-x package-update` fetches a package again and reloads it.
 
 ## Writing your own
 

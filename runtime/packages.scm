@@ -12,7 +12,7 @@
 ;;;     'config (lambda () (set-option! 'surround-pairs "()[]{}")))
 ;;;
 ;;; A package with 'git that isn't there yet is cloned (pinned to 'rev if
-;;; given) in the background, and loaded when the clone finishes. :packages lists them; :package-update NAME
+;;; given) in the background, and loaded when the clone finishes. M-x list-packages lists them; package-update
 ;;; fetches and checks out its 'rev again (or pulls), then reloads it.
 ;;;
 ;;; Some packages come with imp (packages/ in its source): what isn't
@@ -93,11 +93,11 @@
     void))
 
 (define (package-status name)
-  "What :packages shows for package `name`, or #f if it isn't declared."
+  "What list-packages shows for package `name`, or #f if it isn't declared."
   (let ([p (assq name *packages*)]) (and p (cadr p))))
 
 (define (set-package-status! name status)
-  "Sets what :packages shows for package `name` to `status`."
+  "Sets what list-packages shows for package `name` to `status`."
   (set! *packages*
         (map (lambda (p) (if (eq? (car p) name) (list (car p) status (caddr p) (cadddr p)) p)) *packages*))
   void)
@@ -154,8 +154,10 @@
   (let ([r (run-shell (string-append "git -C " (shell-quote dir) " rev-parse --short HEAD") "")])
     (if (= (car r) 0) (trim-right (cadr r)) "-")))
 
-(define-ex! '("packages")
-  (lambda (ex)
+(define-command! 'list-packages
+  (lambda (count)
+    "List the packages declared, with their revisions, and those that come
+     with imp but are off."
     (show-popup!
      (append
       (if (null? *packages*)
@@ -170,12 +172,13 @@
             '()
             (list "" (string-append "Built in, off until (use-package! 'NAME): " (string-join unused " ")))))))))
 
-(define-ex! '("package-update")
-  (lambda (ex)
-    (let* ([name (string->symbol (ex-args ex))] [p (assq name *packages*)])
+(define (package-update! text)
+  "Updates package `text` (its name, a string) from git and loads it again:
+   to its declared revision if it has one, else the latest."
+  (let* ([name (string->symbol text)] [p (assq name *packages*)])
       (cond
-        [(not p) (message (string-append "no package " (ex-args ex)))]
-        [(not (file-exists? (caddr p))) (message (string-append (ex-args ex) " comes with imp, and updates with it"))]
+        [(not p) (message (string-append "no package " text))]
+        [(not (file-exists? (caddr p))) (message (string-append text " comes with imp, and updates with it"))]
         [else
          (let* ([dir (caddr p)] [rev (package-option (cadddr p) 'rev)]
                  [ok (if rev
@@ -184,4 +187,13 @@
                          (run-or-report! (string-append "git -C " (shell-quote dir) " pull --quiet")))])
             (when ok
               (load-package! name)
-              (message (string-append "updated " (ex-args ex)))))]))))
+              (message (string-append "updated " text))))])))
+
+(define-command! 'package-update
+  (lambda (count)
+    "Update a package loaded from git, chosen by name, and load it again."
+    (let ([names (map (lambda (p) (symbol->string (car p)))
+                      (filter (lambda (p) (file-exists? (caddr p))) *packages*))])
+      (if (null? names)
+          (message "no packages are loaded from git")
+          (completing-read "Update package: " (sort names string<?) package-update!)))))

@@ -119,10 +119,10 @@ fn tab_completes_options_buffers_and_themes() {
     assert_eq!(last_row(&mut s), ":set tabstop");
     type_keys(&mut s, "<esc>:set nowra<tab>");
     assert_eq!(last_row(&mut s), ":set nowrap");
-    type_keys(&mut s, "<esc>:theme grub<tab>");
-    assert_eq!(last_row(&mut s), ":theme grub");
-    type_keys(&mut s, "<esc>:theme gru<tab>");
-    assert_eq!(last_row(&mut s), ":theme gruvbox-dark");
+    type_keys(&mut s, "<esc>:colorscheme grub<tab>");
+    assert_eq!(last_row(&mut s), ":colorscheme grub");
+    type_keys(&mut s, "<esc>:colorscheme gru<tab>");
+    assert_eq!(last_row(&mut s), ":colorscheme gruvbox-dark");
     type_keys(&mut s, "<esc>:b No<tab>");
     assert_eq!(last_row(&mut s), ":b [No Name]");
     type_keys(&mut s, "<esc>:noh<tab>");
