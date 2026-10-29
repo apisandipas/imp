@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/terminals]]"]
 issue: https://github.com/apisandipas/imp/issues/85
 frozen:
