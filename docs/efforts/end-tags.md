@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/auto-pairs]]"]
 issue: https://github.com/apisandipas/imp/issues/83
 frozen:
