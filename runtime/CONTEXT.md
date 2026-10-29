@@ -9,7 +9,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 ## Rules
 
 - Every function and command has an Emacs-style docstring: a string first in its body (or in the command's lambda), its first line a sentence of its own. Help and M-x show it. Variables and options get a comment above. `tools/docstrings.py missing` lists gaps.
-- A file can't call a function first defined in a later file, and a `define` there won't replace an earlier file's function for its callers. To extend across files, use hooks, tables (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`, `*local-keymaps*`, `*cmdline-key-handler*`).
+- A file can't call a function first defined in a later file, and a `define` there won't replace an earlier file's function for its callers. To extend across files, use hooks, tables (`*extra-states*`) or variables set with `set!` (`*key-interceptor*`, `*local-keymaps*`, `*cmdline-key-handler*`, `*typed-char-handler*`, which `syntax.scm` sets to close end tags).
 - Show a package's buffers with `display-buffer!`, not `go-to-buffer!`, so popup rules apply.
 - A buffer's mode keys come before Vim's operators, motions, prefixes and the `/` and `?` search prompts, so special buffers can bind `c`, `d`, `q`, `g`, `?`. A mode's key sequences may start with a letter too (the agenda's `ct`, `dd`): in normal and visual state, while a mode binds longer keys starting with it, that letter waits for the rest instead of being Vim's, unless it is a Vim prefix (`g`, `z`, `Z`), whose sequences go through Vim.
 
@@ -23,7 +23,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 - Options: `define-option!`, `define-computed-option!`, `option`, `set-option!`, `watch-option!`, `option-set?` (whether it was set globally, so a per-buffer default can give way to the user's choice).
 - Background: `run-after!`, `run-every!`, `start-job!`.
 - Completion: `completing-read`, `define-completion-source!`, `set-completion-sources!`, `define-snippet!`.
-- Languages: `define-mode-language!`, `define-syntax-objects!`, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.
+- Languages: `define-mode-language!`, `define-syntax-objects!`, `syntax-ancestors` (the buffer's own tree) and `syntax-at` (the innermost language at an offset, a fence's or a `<script>`'s, and its nodes) with `syntax-children-at` for that tree's children, `define-syntax-folds!` (node kinds for foldmethod syntax), `define-language-server!`, `define-debug-adapter!`.
 - Special buffers (`special.scm`): `special-mode`, `menu!` (entries may be short key sequences, `gr`), `confirm!`, `draw-line!`, `define-popup-rule!`, `set-footer!` for lines pinned at the bottom of a buffer's windows, and `set-line-end-text!` for text after a line's end.
 - Themes: `define-theme!`, `load-theme!`; MCP: `define-mcp-tool!`; sockets: `listen-socket!`.
 

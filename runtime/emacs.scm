@@ -140,6 +140,7 @@
             (wrap-region! (car r) (cadr r) key closer))]
       [(and c (= n 1) (pair-closing-at-cursor c)) (set-cursor! (+ (cursor) 1))]
       [(and c (= n 1) (pair-closer c)) => (lambda (closer) (insert-pair! key closer))]
+      [(and c (= n 1)) (insert-typed-char! key)]
       [else (insert-text! (string-repeat (if (equal? key "<tab>") "\t" key) n))]))
   void)
 

@@ -230,3 +230,168 @@
 (define-text-object! "ic" (syntax-object 1 #t))
 (define-text-object! "aa" (argument-object #t))
 (define-text-object! "ia" (argument-object #f))
+
+;;; End tags: typing a start tag's > closes it (docs/specs/auto-pairs.md).
+;;; insert mode and the Emacs state call close-tag-for! through
+;;; *typed-char-handler*, as vim.scm loads first. HTML and JSX are the
+;;; same but for their node kinds, so each is a markup: (start-tag-kind
+;;; end-tag-kind element-kind tag-name void?).
+
+;; Whether typing a start tag's > adds its end tag.
+(define-option! 'auto-close-tags #t '())
+
+(define html-void-elements
+  '("area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "param" "source" "track" "wbr"))
+
+(define (node-text n)
+  "The buffer's text that syntax node `n` spans."
+  (buffer-substring (node-start n) (node-end n)))
+
+(define (child-where n test)
+  "The first child of syntax node `n` that `test` holds for, or #f."
+  (let loop ([cs (syntax-children-at (node-start n) (node-end n))])
+    (cond [(null? cs) #f]
+          [(test (car cs)) (car cs)]
+          [else (loop (cdr cs))])))
+
+(define (child-of-kind n kind)
+  "The first child of syntax node `n` of `kind`, or #f."
+  (child-where n (lambda (c) (equal? (node-kind c) kind))))
+
+(define (xml-file?)
+  "Whether the buffer is an XML or SVG file, where no element is void."
+  (let ([path (or (buffer-path) "")])
+    (or (ends-with? path ".xml") (ends-with? path ".svg"))))
+
+(define html-markup
+  (list "start_tag" "end_tag" "element"
+        (lambda (tag) (let ([n (child-of-kind tag "tag_name")]) (and n (node-text n))))
+        (lambda (name) (and (not (xml-file?)) (member (string-downcase name) html-void-elements)))))
+
+;; A fragment's <> has no name, so its end tag is </>.
+(define jsx-markup
+  (list "jsx_opening_element" "jsx_closing_element" "jsx_element"
+        (lambda (tag) (let ([n (child-where tag (lambda (c) (equal? (node-field c) "name")))])
+                        (if n (node-text n) "")))
+        (lambda (name) #f)))
+
+(define (markup-start m)
+  "The node kind of a start tag in markup `m`."
+  (list-ref m 0))
+(define (markup-end m)
+  "The node kind of an end tag in markup `m`."
+  (list-ref m 1))
+(define (markup-element m)
+  "The node kind of an element in markup `m`."
+  (list-ref m 2))
+(define (tag-name m tag)
+  "The name start or end tag `tag` gives, in markup `m`."
+  ((list-ref m 3) tag))
+(define (void-name? m name)
+  "Whether element `name` takes no end tag in markup `m`."
+  ((list-ref m 4) name))
+
+(define (element-name m element)
+  "The name of `element`, from its start tag, or #f."
+  (let ([tag (child-of-kind element (markup-start m))])
+    (and tag (tag-name m tag))))
+
+(define (element-closed? m element)
+  "Whether `element` ends with its own end tag. The parser can give an
+   open <li> the </ul> after it, so the names must match."
+  (let ([end (child-of-kind element (markup-end m))])
+    (and end (equal? (tag-name m end) (element-name m element)))))
+
+(define (error-open-tags m error before)
+  "The start tags in ERROR node `error`, before offset `before`, that no
+   end tag in it closes, innermost first. The parser lays out tags it
+   can't match flat in one: <p><b>x</ is an ERROR of p's start tag, b's
+   and the text."
+  (let loop ([cs (syntax-children-at (node-start error) (node-end error))] [open '()])
+    (cond
+      [(or (null? cs) (>= (node-start (car cs)) before)) open]
+      [(equal? (node-kind (car cs)) (markup-start m))
+       (let ([name (tag-name m (car cs))])
+         (loop (cdr cs) (if (and name (not (void-name? m name))) (cons name open) open)))]
+      [(equal? (node-kind (car cs)) (markup-end m))
+       (let ([name (tag-name m (car cs))])
+         (loop (cdr cs) (if (and (pair? open) (equal? (car open) name)) (cdr open) open)))]
+      [else (loop (cdr cs) open)])))
+
+(define (end-tag-wanted m nodes)
+  "The end tag to add after the start tag the cursor just closed, or #f.
+   `nodes` are the markup's nodes around its >, innermost first. An
+   element with its end tag gets none, unless it took that end tag from
+   an enclosing open one of the same name, as the parser does when <div>
+   is typed inside <div></div>. A start tag the parser couldn't place in
+   an element (a lone <b> is an ERROR) has none."
+  (and (pair? nodes) (pair? (cdr nodes))
+       (equal? (node-kind (car nodes)) (markup-start m))
+       (= (node-end (car nodes)) (cursor))
+       (let* ([name (tag-name m (car nodes))]
+              [element (and (equal? (node-kind (cadr nodes)) (markup-element m)) (cadr nodes))])
+         (and name
+              (not (void-name? m name))
+              (or (not element)
+                  (not (element-closed? m element))
+                  (let loop ([outer (cddr nodes)])
+                    (cond [(null? outer) #f]
+                          [(and (equal? (node-kind (car outer)) (markup-element m))
+                                (equal? (element-name m (car outer)) name)
+                                (not (element-closed? m (car outer))))
+                           #t]
+                          [(and (equal? (node-kind (car outer)) "ERROR")
+                                (member name (error-open-tags m (car outer) (node-start element))))
+                           #t]
+                          [else (loop (cdr outer))])))
+              (string-append "</" name ">")))))
+
+(define (open-element-name m nodes)
+  "The name of the innermost element among `nodes` with no end tag of
+   its own, or #f. Start tags the parser left in an ERROR count too."
+  (let loop ([ns nodes])
+    (cond
+      [(null? ns) #f]
+      [(and (equal? (node-kind (car ns)) (markup-element m)) (not (element-closed? m (car ns))))
+       (or (element-name m (car ns)) (loop (cdr ns)))]
+      [(equal? (node-kind (car ns)) "ERROR")
+       (let ([open (error-open-tags m (car ns) (cursor))])
+         (if (pair? open) (car open) (loop (cdr ns))))]
+      [else (loop (cdr ns))])))
+
+(define (markup-at offset)
+  "The markup at `offset` and its nodes there, innermost first, as
+   (markup node ...), or #f where tags don't close: HTML in an HTML file
+   or a Markdown fence of HTML (not Markdown's inline HTML, in its
+   text), and JSX in JavaScript and TSX."
+  (let ([at (syntax-at offset)])
+    (cond
+      [(not (pair? at)) #f]
+      [(equal? (car at) "html")
+       (and (or (not (equal? (buffer-language) "markdown"))
+                (enclosing-node offset '("fenced_code_block") 1))
+            (cons html-markup (cdr at)))]
+      [(member (car at) '("javascript" "tsx")) (cons jsx-markup (cdr at))]
+      [else #f])))
+
+(define (close-tag-for! c)
+  "After `c` is typed: a start tag's > adds its end tag after the cursor,
+   and the / of </ completes the innermost open element's end tag."
+  (let ([p (cursor)])
+    (when (and (option 'auto-close-tags) (> p 1))
+      (cond
+        [(equal? c #\>)
+         (let* ([at (markup-at (- p 1))]
+                [end (and at (end-tag-wanted (car at) (cdr at)))])
+           (when end (buffer-insert! p end)))]
+        [(and (equal? c #\/) (equal? (buffer-char-at (- p 2)) #\<))
+         ;; From the char before <, as an element that ends there is
+         ;; open: the parser ends <b> at a </ it can't match yet.
+         (let* ([at (markup-at (max 0 (- p 3)))]
+                [name (and at (open-element-name (car at) (cdr at)))])
+           (when name
+             (insert-text! (string-append name ">"))))]
+        [else void])))
+  void)
+
+(set! *typed-char-handler* (lambda (c) (close-tag-for! c)))

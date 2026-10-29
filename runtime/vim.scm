@@ -59,6 +59,7 @@
 (define *pasting* #f)          ; replaying a paste for `.`: its brackets don't pair
 (define *pairs* '())           ; pairs auto-pairs added in this insert, innermost first
 (define *pair-added* #f)       ; the pair the key being handled added
+(define *typed-char-handler* #f) ; called with each plain char typed (end tags, syntax.scm)
 (define *cmdline* "")           ; text typed at the prompt
 (define *cmdline-prompt* ":")
 (define *cmdline-submit* #f)   ; (lambda (text) ...) on <ret>
@@ -2817,9 +2818,16 @@
     [(and (= (string-length key) 1) (closes-indent? (string-ref key 0)))
      (maybe-dedent-for! (string-ref key 0))
      (insert-text! key)]
-    [(= (string-length key) 1) (insert-text! key)]
+    [(= (string-length key) 1) (insert-typed-char! key)]
     [(key-binding 'insert key) => run-insert-binding!]
     [else #t]))
+
+(define (insert-typed-char! key)
+  "Types one plain char `key`, then lets *typed-char-handler* act on it,
+   as closing an end tag after a start tag's > does."
+  (insert-text! key)
+  (when *typed-char-handler* (*typed-char-handler* (string-ref key 0)))
+  void)
 
 (define (run-insert-binding! binding)
   "Runs an insert-state binding: a command name as a command (count 1),
