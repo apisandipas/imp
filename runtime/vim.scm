@@ -2597,19 +2597,25 @@
 (define-option! 'auto-pairs #t '())
 (define-option! 'auto-pairs-chars "()[]{}\"\"''``" '())
 
+(define (pair-partner c)
+  "The closer of opener `c` in the buffer's pairs, or #f, wherever the
+   cursor is; #f too with auto-pairs off."
+  (and (option 'auto-pairs) (not *pasting*)
+       (let loop ([cs (string->list (option 'auto-pairs-chars))])
+         (cond [(or (null? cs) (null? (cdr cs))) #f]
+               [(equal? (car cs) c) (cadr cs)]
+               [else (loop (cddr cs))]))))
+
 (define (pair-closer c)
   "The closer that typing opener `c` adds, or #f if it doesn't pair here.
    A bracket pairs before a gap; a quote also not after a letter or digit,
    nor inside a string or comment."
-  (and (option 'auto-pairs) (not *pasting*)
-       (let loop ([cs (string->list (option 'auto-pairs-chars))])
-         (cond [(or (null? cs) (null? (cdr cs))) #f]
-               [(equal? (car cs) c)
-                (and (gap-after-cursor?)
-                     (or (not (equal? c (cadr cs)))
-                         (not (or (word-before-cursor?) (in-string-or-comment?))))
-                     (cadr cs))]
-               [else (loop (cddr cs))]))))
+  (let ([closer (pair-partner c)])
+    (and closer
+         (gap-after-cursor?)
+         (or (not (equal? c closer))
+             (not (or (word-before-cursor?) (in-string-or-comment?))))
+         closer)))
 
 (define (pair-brackets-closing)
   "The closers of the pairs that aren't quotes, as chars."
@@ -2685,6 +2691,20 @@
           [(and (= (cadr (car ps)) (cursor)) (equal? (cadddr (car ps)) c)) (car ps)]
           [else (loop (cdr ps))])))
 
+(define (delete-empty-pair!)
+  "Deletes the empty pair around the cursor, both its chars."
+  (buffer-delete! (- (cursor) 1) (+ (cursor) 1))
+  (set-cursor! (- (cursor) 1))
+  void)
+
+(define (wrap-region! start end opener closer)
+  "Puts `opener` before start..end and `closer` after it, the cursor
+   just past the closer."
+  (buffer-insert! end (string closer))
+  (buffer-insert! start opener)
+  (set-cursor! (+ end 2))
+  void)
+
 (define (empty-pair-around-cursor)
   "The pair that is empty with the cursor between its chars, or #f."
   (let loop ([ps *pairs*])
@@ -2748,12 +2768,20 @@
    <bs>, C-w, C-u, C-t, C-d, arrows...), then plain chars, then the
    insert keymap."
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
+  (with-pairs-tracked (lambda () (insert-key-edit! key))))
+
+(define (with-pairs-tracked thunk)
+  "Calls `thunk`, an edit at the cursor, keeping the pairs auto-pairs
+   added in step with it. Insert mode and the Emacs state run each key
+   through it."
   (let ([before (cursor)] [len (buffer-length)])
     (set! *pair-added* #f)
-    (insert-key-edit! key)
+    (thunk)
     (track-pairs! before len)
-    ;; A pair this key added is where it belongs already; only older ones move.
-    (when *pair-added* (set! *pairs* (cons *pair-added* *pairs*))))
+    ;; A pair this edit added is where it belongs already; only older ones move.
+    (when *pair-added*
+      (set! *pairs* (cons *pair-added* *pairs*))
+      (set! *pair-added* #f)))
   void)
 
 (define (insert-key-edit! key)
@@ -2764,9 +2792,7 @@
     [(member key '("<ret>" "C-j" "C-m")) (insert-newline!)]
     [(equal? key "<tab>") (insert-tab!)]
     [(and (member key '("<bs>" "C-h")) (eq? *mode* 'replace)) (replace-backspace!)]
-    [(and (member key '("<bs>" "C-h")) (empty-pair-around-cursor))
-     (buffer-delete! (- (cursor) 1) (+ (cursor) 1))
-     (set-cursor! (- (cursor) 1))]
+    [(and (member key '("<bs>" "C-h")) (empty-pair-around-cursor)) (delete-empty-pair!)]
     [(member key '("<bs>" "C-h"))
      (when (> (cursor) 0)
        (buffer-delete! (- (cursor) 1) (cursor))

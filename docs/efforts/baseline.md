@@ -10,7 +10,7 @@ frozen:
   docs/specs/daemon.md: 52dfa8b283fe
   docs/specs/dap.md: b1a36380474b
   docs/specs/dired.md: a02aeaac49d8
-  docs/specs/emacs-state.md: 335f67ba2c18
+  docs/specs/emacs-state.md: b74c1fe8672a
   docs/specs/files.md: b08542837535
   docs/specs/folding.md: 2596f3a5ab7f
   docs/specs/git.md: 784db8c1c823

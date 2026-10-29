@@ -222,3 +222,56 @@ fn the_users_choice_wins_over_the_modes() {
     type_keys(&mut s, "i([");
     assert_eq!(s.text(), "([]\n");
 }
+
+/// A server in the Emacs state.
+fn emacs(text: &str) -> imp_server::Server {
+    let mut s = server(text);
+    s.keys(&["C-z"]);
+    s
+}
+
+#[test]
+fn the_emacs_state_pairs_too() {
+    let mut s = emacs("\n");
+    // Keys go one at a time, as type_keys would read C-... as a chord.
+    for k in ["f", "(", "x", ")", ";"] {
+        s.keys(&[k]);
+    }
+    assert_eq!(s.text(), "f(x);\n");
+    // <bs> in an empty pair it added deletes both.
+    let mut s = emacs("\n");
+    s.keys(&["a", "[", "<bs>"]);
+    assert_eq!(s.text(), "a\n");
+    // A closer already there is typed.
+    let mut s = emacs(")\n");
+    s.keys(&[")"]);
+    assert_eq!(s.text(), "))\n");
+    // The pair undoes with the typing around it.
+    let mut s = emacs("\n");
+    s.keys(&["f", "(", "x", ")", "C-/"]);
+    assert_eq!(s.text(), "\n");
+}
+
+#[test]
+fn the_emacs_state_wraps_the_region() {
+    // A quote wraps too, even after a letter.
+    for k in ["\"", "("] {
+        let mut s = emacs("one two\n");
+        s.keys(&["C- ", "M-f", k]);
+        let closer = if k == "(" { ")" } else { "\"" };
+        assert_eq!(s.text(), format!("{k}one{closer} two\n"));
+        // The cursor is after the closer, and the region is gone.
+        assert_eq!(s.cursor(), 5);
+        assert_eq!(s.eval("(region)").unwrap(), "#false");
+    }
+    // In one undo step, apart from typing before it.
+    let mut s = emacs("one two\n");
+    s.keys(&["x", "C- ", "M-f", "[", "C-/"]);
+    assert_eq!(s.text(), "xone two\n");
+    // With auto-pairs off, the region is dropped and ( typed at the
+    // cursor, as before.
+    let mut s = emacs("one two\n");
+    s.eval("(set-option! 'auto-pairs #f)").unwrap();
+    s.keys(&["C- ", "M-f", "("]);
+    assert_eq!(s.text(), "one( two\n");
+}
