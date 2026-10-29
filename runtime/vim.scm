@@ -2942,14 +2942,18 @@
       [(not i) #f]
       [(= name-end (string-length text))
        (let* ([typed (substring text i name-end)]
-              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))])
-         ;; Full names only, as Vim lists them: "noh" goes, "nohlsearch" stays.
-         (list i (sort (filter (lambda (n)
-                                 (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
-                                                                 (starts-with? m n)))
-                                                names)))
-                               names)
-                       string<?)))]
+              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))]
+              ;; Full names only, as Vim lists them: "noh" goes,
+              ;; "nohlsearch" stays.
+              [full (filter (lambda (n)
+                              (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
+                                                              (starts-with? m n)))
+                                             names)))
+                            names)]
+              ;; And the commands : runs by name (see lore:decision/0019).
+              [commands (filter (lambda (n) (and (starts-with? n typed) (not (member n full))))
+                                (map symbol->string (command-names)))])
+         (list i (sort (append full commands) string<?)))]
       [else
        (let* ([name (substring text i name-end)]
               [proc (hash-try-get *ex-completions* name)]

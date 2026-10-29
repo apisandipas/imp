@@ -145,3 +145,41 @@ fn text_for_a_command_that_asks_nothing_is_reported() {
         said(&mut s)
     );
 }
+
+/// The `:` line menu's candidates, best first.
+fn cmd_menu(s: &mut imp_server::Server) -> Vec<String> {
+    s.eval("(map (lambda (k) (vector-ref *cmd-labels* k)) *cmd-hits*)")
+        .unwrap()
+        .trim_matches(|c| c == '(' || c == ')')
+        .split_whitespace()
+        .map(|w| w.trim_matches('"').to_string())
+        .collect()
+}
+
+#[test]
+fn the_command_line_offers_commands() {
+    let mut s = with_hello();
+    s.set_size(120, 20);
+    // As you type, with what each does: its docstring's first line, read
+    // from its source as M-x does.
+    type_keys(&mut s, ":hello-w");
+    assert_eq!(cmd_menu(&mut s), ["hello-world"]);
+    type_keys(&mut s, "<esc>:install-gram");
+    assert_eq!(cmd_menu(&mut s), ["install-grammar", "install-grammars"]);
+    let rows = s.frame().text_rows().join("\n");
+    assert!(
+        rows.contains("install-grammars  Install every declared tree-sitter grammar"),
+        "{rows}"
+    );
+    // <tab> completes one, and <ret> runs it.
+    type_keys(&mut s, "<esc>:hello-w<tab>");
+    assert_eq!(s.eval("*cmdline*").unwrap(), "\"hello-world\"");
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.eval("*hellos*").unwrap(), "(1)");
+    // A name that is both an ex command and a command shows once, and
+    // Vim's names are still full ones only.
+    type_keys(&mut s, ":termina");
+    assert_eq!(cmd_menu(&mut s), ["terminal"]);
+    type_keys(&mut s, "<esc>:nohl");
+    assert_eq!(cmd_menu(&mut s), ["nohlsearch"]);
+}
