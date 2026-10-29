@@ -28,6 +28,19 @@ This only applies to closers that a pair added in the current insert. A `)` that
 
 The pair is part of the insert: `u` undoes it with the text you typed, and `.` types it again.
 
+## End tags
+
+In an HTML, XML or SVG file, typing the `>` that ends a start tag adds its end tag after the cursor: type `<div class="x">` and you have `<div class="x">|</div>`.
+
+Some tags don't get one:
+- A self-closing tag, like `<x/>`.
+- In HTML files, HTML's void elements: `<br>`, `<img>`, `<input>`, `<meta>`, `<link>` and the rest. In XML and SVG files there are none, so `<br>` closes like any other.
+- An element that already has its end tag, such as when you retype the `>` of `<b></b>`.
+
+Typing `<div>` inside an existing `<div></div>` still gets its own `</div>`. The parser would otherwise give the new element the existing end tag.
+
+The end tag is part of the insert, so `u` undoes it and `.` types it again. It works in the Emacs state too. Turn it off with `(set-option! 'auto-close-tags #f)`.
+
 ## In the Emacs state
 
 Pairs work the same way in the Emacs state (`C-z`). With the region active, typing an opener or a quote wraps the region instead: `C-SPC M-f (` turns `one two` into `(one) two`. The cursor ends after the closer, and `C-/` undoes the wrap in one step. A quote wraps even where it wouldn't pair.
@@ -54,6 +67,7 @@ A code block in Markdown or Org uses the file's own pairs, not the pairs of the 
 |---|---|---|
 | `auto-pairs` | on | Whether brackets and quotes pair at all |
 | `auto-pairs-chars` | the mode's | Each opener followed by its closer, as in `()[]{}""`; a quote is its own closer |
+| `auto-close-tags` | on | Whether a start tag's `>` adds its end tag |
 
 Set them in `init.scm`, or for the current buffer only with `set-local-option!`. Setting `auto-pairs-chars` in `init.scm` gives every mode the same pairs:
 

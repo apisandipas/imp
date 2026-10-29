@@ -230,3 +230,71 @@
 (define-text-object! "ic" (syntax-object 1 #t))
 (define-text-object! "aa" (argument-object #t))
 (define-text-object! "ia" (argument-object #f))
+
+;;; End tags: typing a start tag's > closes it (docs/specs/auto-pairs.md).
+;;; insert mode and the Emacs state call close-tag-for! through
+;;; *typed-char-handler*, as vim.scm loads first.
+
+;; Whether typing a start tag's > adds its end tag.
+(define-option! 'auto-close-tags #t '())
+
+(define html-void-elements
+  '("area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "param" "source" "track" "wbr"))
+
+(define (node-text n)
+  "The buffer's text that syntax node `n` spans."
+  (buffer-substring (node-start n) (node-end n)))
+
+(define (child-of-kind n kind)
+  "The first child of syntax node `n` of `kind`, or #f."
+  (let loop ([cs (syntax-children (node-start n) (node-end n))])
+    (cond [(null? cs) #f]
+          [(equal? (node-kind (car cs)) kind) (car cs)]
+          [else (loop (cdr cs))])))
+
+(define (element-name element)
+  "The tag name of HTML `element`, from its start tag, or #f."
+  (let* ([tag (child-of-kind element "start_tag")]
+         [name (and tag (child-of-kind tag "tag_name"))])
+    (and name (node-text name))))
+
+(define (xml-file?)
+  "Whether the buffer is an XML or SVG file, where no element is void."
+  (let ([path (or (buffer-path) "")])
+    (or (ends-with? path ".xml") (ends-with? path ".svg"))))
+
+(define (html-end-tag-wanted nodes)
+  "The end tag to add after the start tag the cursor just closed, or #f.
+   `nodes` are HTML's nodes around its >, innermost first. An element
+   with its end tag gets none, unless it took that end tag from an
+   enclosing one of the same name, as the parser does when <div> is
+   typed inside <div></div>. A start tag the parser couldn't place in an
+   element (a lone <b> is an ERROR) has none."
+  (and (pair? nodes) (pair? (cdr nodes))
+       (equal? (node-kind (car nodes)) "start_tag")
+       (= (node-end (car nodes)) (cursor))
+       (let* ([tag-name (child-of-kind (car nodes) "tag_name")]
+              [name (and tag-name (node-text tag-name))]
+              [element (and (equal? (node-kind (cadr nodes)) "element") (cadr nodes))])
+         (and name
+              (or (xml-file?) (not (member (string-downcase name) html-void-elements)))
+              (or (not element)
+                  (not (child-of-kind element "end_tag"))
+                  (let loop ([outer (cddr nodes)])
+                    (cond [(null? outer) #f]
+                          [(and (equal? (node-kind (car outer)) "element")
+                                (equal? (element-name (car outer)) name)
+                                (not (child-of-kind (car outer) "end_tag")))
+                           #t]
+                          [else (loop (cdr outer))])))
+              (string-append "</" name ">")))))
+
+(define (close-tag-for! c)
+  "After `c` is typed: a start tag's > adds its end tag after the cursor."
+  (when (and (equal? c #\>) (option 'auto-close-tags) (> (cursor) 0))
+    (let* ([at (syntax-at (- (cursor) 1))]
+           [end (and (pair? at) (equal? (car at) "html") (html-end-tag-wanted (cdr at)))])
+      (when end (buffer-insert! (cursor) end))))
+  void)
+
+(set! *typed-char-handler* (lambda (c) (close-tag-for! c)))

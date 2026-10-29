@@ -275,3 +275,104 @@ fn the_emacs_state_wraps_the_region() {
     s.keys(&["C- ", "M-f", "("]);
     assert_eq!(s.text(), "one( two\n");
 }
+
+/// Types `text` a char at a time, so `<div>` isn't read as a key name.
+fn type_text(s: &mut imp_server::Server, text: &str) {
+    for c in text.chars() {
+        s.keys(&[&c.to_string()]);
+    }
+}
+
+/// The text after opening `name` holding `text`, typing `keys`, then
+/// typing `text_typed` a char at a time; and the cursor.
+fn tags(name: &str, text: &str, keys: &str, typed: &str) -> (String, usize) {
+    // A file of its own: tests run in parallel.
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = temp_path(&format!("{n}-{name}"));
+    std::fs::write(&path, text).unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    type_keys(&mut s, keys);
+    type_text(&mut s, typed);
+    (s.text(), s.cursor())
+}
+
+#[test]
+fn a_start_tags_angle_closes_it() {
+    // The cursor stays between them.
+    assert_eq!(
+        tags("t.html", "\n", "i", "<div class=\"x\">"),
+        ("<div class=\"x\"></div>\n".into(), 15)
+    );
+    // Inside another element, and on a line of its own.
+    assert_eq!(
+        tags("t.html", "<p>a</p>\n", "fai", "<b>").0,
+        "<p><b></b>a</p>\n"
+    );
+    assert_eq!(
+        tags("t.html", "<ul>\n</ul>\n", "o", "<li>").0,
+        "<ul>\n<li></li>\n</ul>\n"
+    );
+    // Typed inside one of the same name, whose end tag the parser gives
+    // the new one.
+    assert_eq!(
+        tags("t.html", "<div></div>\n", "f>a", "<div>").0,
+        "<div><div></div></div>\n"
+    );
+}
+
+#[test]
+fn some_tags_are_not_closed() {
+    // Self-closing, and HTML's void elements, whatever their case.
+    assert_eq!(tags("t.html", "\n", "i", "<x/>").0, "<x/>\n");
+    for void in ["<br>", "<img src=\"a.png\">", "<input>", "<BR>"] {
+        assert_eq!(tags("t.html", "\n", "i", void).0, format!("{void}\n"));
+    }
+    // One that has its end tag: > typed again after deleting it.
+    assert_eq!(tags("t.html", "<b></b>\n", "f>xi", ">").0, "<b></b>\n");
+    // Not a tag at all.
+    assert_eq!(tags("t.html", "\n", "i", "a -> b").0, "a -> b\n");
+    // In XML and SVG, a void element's name is closed like any other.
+    assert_eq!(tags("t.xml", "\n", "i", "<br>").0, "<br></br>\n");
+    assert_eq!(tags("t.svg", "\n", "i", "<g>").0, "<g></g>\n");
+    // Nor in a file of another language.
+    assert_eq!(tags("t.txt", "\n", "i", "<b>").0, "<b>\n");
+}
+
+#[test]
+fn the_option_turns_end_tags_off() {
+    let path = temp_path("off.html");
+    std::fs::write(&path, "\n").unwrap();
+    let mut s = server("");
+    s.eval("(set-option! 'auto-close-tags #f)").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>i", path.display()));
+    type_text(&mut s, "<b>");
+    assert_eq!(s.text(), "<b>\n");
+}
+
+#[test]
+fn an_end_tag_undoes_and_repeats_with_the_insert() {
+    let path = temp_path("undo.html");
+    std::fs::write(&path, "\n").unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>A", path.display()));
+    type_text(&mut s, "<b>x");
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.text(), "<b>x</b>\n");
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "\n");
+    type_keys(&mut s, "<C-r>.");
+    assert_eq!(s.text(), "<b>x</b><b>x</b>\n");
+}
+
+#[test]
+fn the_emacs_state_closes_tags_too() {
+    let path = temp_path("emacs.html");
+    std::fs::write(&path, "\n").unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    s.keys(&["C-z"]);
+    type_text(&mut s, "<p>");
+    assert_eq!(s.text(), "<p></p>\n");
+}
