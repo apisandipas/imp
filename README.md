@@ -94,8 +94,12 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   terminals, `h` help, `t` toggles. `M-x` runs any command by name.
 - **Emacs keys.** `C-z` switches to an Emacs state (`C-x C-f`, `C-x C-s` and
   friends) and back.
-- **IDE features.** Tree-sitter highlighting and text objects (Rust, Scheme,
-  TypeScript/JavaScript, Nix, Markdown); language servers (diagnostics,
+- **IDE features.** Tree-sitter highlighting and text objects for Rust,
+  Scheme, TypeScript/TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML,
+  TOML, Bash, C, Go, Python and Lua, including languages embedded in
+  others (code fences, `<script>` and `<style>`). Other grammars install
+  from git: `(define-grammar! "ruby" URL REV)`, then
+  `M-x install-grammars`. Language servers (diagnostics,
   `K`, `gd`, `gr`, rename, code actions, formatting, completion), set up for
   rust-analyzer, TypeScript 7's tsgo (or typescript-language-server), nil,
   marksman and pyright when they're on your `PATH`, and more with `define-language-server!`; debugging
