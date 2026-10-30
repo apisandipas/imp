@@ -197,3 +197,39 @@ fn the_projects_terminal_runs_your_shell() {
         "(\"\" \"*terminal\")"
     );
 }
+
+#[test]
+fn a_count_picks_which_of_the_projects_terminals() {
+    let (mut s, root) = project("toggle-count");
+    let name = root.file_name().unwrap().to_str().unwrap().to_string();
+    let buffer = |s: &mut imp_server::Server| s.eval("(buffer-name-of (current-buffer))").unwrap();
+    type_keys(&mut s, " ot");
+    let first = s.eval("(current-buffer)").unwrap();
+    s.keys(&["M-`"]);
+    // 2 SPC o t: the second, started.
+    type_keys(&mut s, "2 ot");
+    assert_eq!(buffer(&mut s), format!("\"*terminal: {name}<2>*\""));
+    assert_eq!(terminals(&mut s), 2);
+    // Without a count, the one last shown: the second, for M-` too.
+    s.keys(&["M-`"]);
+    s.keys(&["M-`"]);
+    assert_eq!(buffer(&mut s), format!("\"*terminal: {name}<2>*\""));
+    s.keys(&["M-`"]);
+    // And sending goes to it.
+    type_keys(&mut s, " os");
+    wait_for(&mut s, "the line", |s| {
+        let here = s.eval("(current-buffer)").unwrap();
+        let second = s
+            .eval("(toggled-terminal-buffer 'toggle-terminal (toggled-terminal-root) 2)")
+            .unwrap();
+        s.eval(&format!("(switch-to-buffer! {second})")).unwrap();
+        let got = s.text().contains("one\none");
+        s.eval(&format!("(switch-to-buffer! {here})")).unwrap();
+        got
+    });
+    // 1 SPC o t: back to the first.
+    s.keys(&["<esc>"]);
+    type_keys(&mut s, "1 ot");
+    assert_eq!(s.eval("(current-buffer)").unwrap(), first);
+    assert_eq!(terminals(&mut s), 2);
+}

@@ -226,6 +226,32 @@
 
 (define *term-count* 0)
 
+;; Killing a buffer with a running program, or quitting, asks first.
+(define-option! 'terminal-confirm-kill #t '())
+
+(define (terminal-confirm-kill? buf)
+  "terminal-confirm-kill for buffer `buf`: its own, set with
+   set-local-option!, else the global one."
+  (let ([locals (or (hash-try-get *buffer-locals* buf) (hash))] [key (list 'option 'terminal-confirm-kill)])
+    (if (hash-contains? locals key) (hash-ref locals key) (hash-ref *options* 'terminal-confirm-kill))))
+
+(set! *running-buffers*
+      (lambda ()
+        (filter (lambda (buf) (and (memv buf (buffer-list)) (terminal-confirm-kill? buf)))
+                (map (lambda (id) (hash-ref *terminals* id)) (hash-keys->list *terminals*)))))
+
+;; In a daemon, stops it for every client (:q only detaches one), asking
+;; first when that stops running programs.
+(define-command! 'kill-server
+  (lambda (count)
+    "Stop the daemon, for every client attached to it. Without a daemon, quit."
+    (let ([running (*running-buffers*)])
+      (if (null? running)
+          (kill-server!)
+          (confirm! (string-append "stop the programs running in " (number->string (length running))
+                                   (if (= (length running) 1) " terminal?" " terminals?"))
+                    kill-server!)))))
+
 (define (start-terminal! buf command cwd)
   "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`.
    `buf` must be the current buffer; the terminal is sized to its window.
@@ -237,6 +263,7 @@
         (begin (message id) (buffer-kill! buf) #f)
         (begin
           (set-buffer-local! 'term-id id)
+          (set-buffer-local! 'term-command command)
           (set-buffer-local! 'term-dir (absolute cwd))
           (set! *terminals* (hash-insert *terminals* id buf))
           (set-mode! 'terminal)
@@ -247,13 +274,50 @@
    It starts in the current buffer's directory: a terminal's, a file
    browser's or the file's, else the current directory. Returns the
    terminal's id, or #f."
-  (set! *term-count* (+ *term-count* 1))
-  (let* ([cwd (buffer-directory)]
-         [name (string-append "*terminal " (number->string *term-count*)
-                              (if (equal? command "") "" (string-append ": " command)) "*")]
+  (terminal-named! command #f (buffer-directory)))
+
+(define (unused-buffer-name name)
+  "`name`, or with <2>, <3> ... after it if a buffer has it already."
+  (let ([taken (map buffer-name-of (buffer-list))])
+    (let loop ([n 1])
+      (let ([candidate (if (= n 1) name (string-append name "<" (number->string n) ">"))])
+        (if (member candidate taken) (loop (+ n 1)) candidate)))))
+
+(define (terminal-named! command name cwd)
+  "Runs `command` (your shell if \"\") in `cwd`, in a new terminal buffer
+   named `name`, or *terminal N* if it is #f. Returns the terminal's id,
+   or #f."
+  (let* ([name (or (and name (unused-buffer-name name))
+                   (begin
+                     (set! *term-count* (+ *term-count* 1))
+                     (string-append "*terminal " (number->string *term-count*)
+                                    (if (equal? command "") "" (string-append ": " command)) "*")))]
          [buf (buffer-new! name)])
     (go-to-buffer! buf)
     (start-terminal! buf command cwd)))
+
+(define (terminal-ex! args)
+  ":terminal [++name=NAME] [++cwd=DIR] [CMD]: the ++ options, in either
+   order, before the command, as Vim's ++ options are. DIR is taken from
+   the current buffer's directory when relative."
+  (let loop ([args (trim args)] [name #f] [cwd #f])
+    (let* ([space (let find ([i 0]) (cond [(>= i (string-length args)) i]
+                                           [(char-whitespace? (string-ref args i)) i]
+                                           [else (find (+ i 1))]))]
+           [word (substring args 0 space)]
+           [rest (trim (substring args space (string-length args)))]
+           [value (lambda (prefix) (substring word (string-length prefix) (string-length word)))])
+      (cond
+        [(starts-with? word "++name=") (loop rest (value "++name=") cwd)]
+        [(starts-with? word "++cwd=") (loop rest name (value "++cwd="))]
+        [(starts-with? word "++") (message (string-append "unknown option " word))]
+        [else
+         (let ([dir (cond [(not cwd) (buffer-directory)]
+                          [(starts-with? (expand-path cwd) "/") (expand-path cwd)]
+                          [else (string-append (buffer-directory) "/" cwd)])])
+           (if (file-directory? dir)
+               (terminal-named! args name dir)
+               (message (string-append dir ": no such directory"))))]))))
 
 (define-major-mode! 'term-mode #f '()
   (lambda ()
@@ -280,7 +344,7 @@
 ;; Coming back to a terminal buffer: show its latest output.
 (add-hook! 'buffer-enter (lambda () (when (term-id) (term-redraw! (term-id)))))
 
-(define-ex! '("ter" "terminal") (lambda (ex) (terminal! (trim (ex-args ex)))))
+(define-ex! '("ter" "terminal") (lambda (ex) (terminal-ex! (ex-args ex))))
 (define-command! 'terminal
   (lambda (count)
     "Run your shell in a new terminal buffer."
@@ -294,28 +358,38 @@
 ;;;   (define-popup-rule! "*lazygit" 'side 'right 'size 0.5)
 ;;;   (define-leader! "gl" 'lazygit "lazygit")
 
-(define *toggled-terminals* (hash))  ; toggle name -> (hash project root -> buffer)
+(define *toggled-terminals* (hash))  ; toggle name -> (hash (project-root n) -> buffer)
+(define *toggled-last* (hash))       ; toggle name -> (hash project root -> n last shown)
 (define *toggles* (hash))            ; toggle name -> (command buffer-name-prefix)
+
+(define (toggled-terminal-last name root)
+  "Which of project `root`'s toggle `name` programs was last shown: 1 to
+   begin with."
+  (let ([table (hash-try-get *toggled-last* name)])
+    (or (and table (hash-try-get table root)) 1)))
 
 (define (toggled-terminal-root)
   "The project the current buffer belongs to; in a toggled terminal, its
    own. Outside any project, imp's current directory."
   (or (buffer-local 'toggled-root) (project-root) (current-dir)))
 
-(define (toggled-terminal-buffer name root)
-  "The buffer of toggle `name` for project `root`, or #f."
-  (let* ([table (hash-try-get *toggled-terminals* name)]
-         [buf (and table (hash-try-get table root))])
+(define (toggled-terminal-buffer name root . n)
+  "The buffer of toggle `name` for project `root`, or #f: its `n`th, or
+   the one last shown."
+  (let* ([n (if (pair? n) (car n) (toggled-terminal-last name root))]
+         [table (hash-try-get *toggled-terminals* name)]
+         [buf (and table (hash-try-get table (list root n)))])
     (and buf (memv buf (buffer-list)) buf)))
 
 (define (buffer-terminal buf)
   "The terminal running in buffer `buf`, or #f once it has exited."
   (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
 
-(define (toggled-terminal-start! name command prefix root)
-  "Starts toggle `name`'s program for project `root` in a new buffer and
-   shows it. Returns the buffer, or #f if it couldn't start."
-  (let ([buf (buffer-new! (string-append prefix ": " (file-name-of root) "*"))]
+(define (toggled-terminal-start! name command prefix root n)
+  "Starts toggle `name`'s `n`th program for project `root` in a new
+   buffer and shows it. Returns the buffer, or #f if it couldn't start."
+  (let ([buf (buffer-new! (string-append prefix ": " (file-name-of root)
+                                         (if (= n 1) "" (string-append "<" (number->string n) ">")) "*"))]
         [command (if (symbol? command) (option command) command)])
     (display-buffer! buf)
     (set-buffer-local! 'toggled-name name)
@@ -325,14 +399,19 @@
          (begin
            (set! *toggled-terminals*
                  (hash-insert *toggled-terminals* name
-                              (hash-insert (or (hash-try-get *toggled-terminals* name) (hash)) root buf)))
+                              (hash-insert (or (hash-try-get *toggled-terminals* name) (hash)) (list root n) buf)))
            buf))))
 
-(define (toggled-terminal-show! name root)
-  "Shows toggle `name`'s program for project `root`, starting it if it
-   isn't running, and puts you in the terminal state there. Returns its
-   buffer, or #f if it couldn't start."
-  (let ([buf (toggled-terminal-buffer name root)] [spec (hash-ref *toggles* name)])
+(define (toggled-terminal-show! name root . n)
+  "Shows toggle `name`'s program for project `root`, its `n`th or the one
+   last shown, starting it if it isn't running, and puts you in the
+   terminal state there. Returns its buffer, or #f if it couldn't start."
+  (let* ([n (if (pair? n) (car n) (toggled-terminal-last name root))]
+         [buf (toggled-terminal-buffer name root n)]
+         [spec (hash-ref *toggles* name)])
+    (set! *toggled-last*
+          (hash-insert *toggled-last* name
+                       (hash-insert (or (hash-try-get *toggled-last* name) (hash)) root n)))
     (cond
       [(and buf (buffer-terminal buf))
        (display-buffer! buf)
@@ -342,7 +421,7 @@
       [else
        ;; It exited: start again in a fresh buffer.
        (when buf (kill-buffer! buf))
-       (toggled-terminal-start! name (car spec) (cadr spec) root)])))
+       (toggled-terminal-start! name (car spec) (cadr spec) root n)])))
 
 (define (toggled-terminal-hide!)
   "Leaves the current window's toggled terminal, closing the window, but
@@ -359,12 +438,13 @@
       [else (message "no other buffer to show")]))
   void)
 
-(define (toggled-terminal-toggle! name)
-  "Hides toggle `name`'s program when in its window; else shows this
-   project's."
-  (if (eq? (buffer-local 'toggled-name) name)
-      (toggled-terminal-hide!)
-      (toggled-terminal-show! name (toggled-terminal-root)))
+(define (toggled-terminal-toggle! name . count)
+  "Hides toggle `name`'s program when in one of its windows; else shows
+   this project's: its `count`th, or without a count the one last shown."
+  (cond
+    [(eq? (buffer-local 'toggled-name) name) (toggled-terminal-hide!)]
+    [(and (pair? count) (car count)) (toggled-terminal-show! name (toggled-terminal-root) (car count))]
+    [else (toggled-terminal-show! name (toggled-terminal-root))])
   void)
 
 (define (define-toggled-terminal! name command prefix)
@@ -377,18 +457,19 @@
   (set! *toggles* (hash-insert *toggles* name (list command prefix)))
   (define-command! name
     (lambda (count)
-      "Show this project's program in its window (starting it), or hide it from inside."
-      (toggled-terminal-toggle! name)))
+      "Show this project's program in its window (starting it), or hide it from inside.
+       A count picks which of the project's: 2 for its second."
+      (toggled-terminal-toggle! name (and *count-given* count))))
   void)
 
 (add-hook! 'buffer-kill
   (lambda (id)
     (for-each (lambda (name)
                 (let ([table (hash-ref *toggled-terminals* name)])
-                  (for-each (lambda (root)
-                              (when (= (hash-ref table root) id)
+                  (for-each (lambda (key)
+                              (when (= (hash-ref table key) id)
                                 (set! *toggled-terminals*
-                                      (hash-insert *toggled-terminals* name (hash-remove table root)))))
+                                      (hash-insert *toggled-terminals* name (hash-remove table key)))))
                             (hash-keys->list table))))
               (hash-keys->list *toggled-terminals*))))
 
@@ -479,6 +560,44 @@
     (when (terminal-source?) (terminal-send! (buffer-substring start end))))
   "send to terminal")
 (define-key! 'visual "gz" (lambda (count) (visual-operator! "gz" #f)) "send to terminal")
+
+;;; Picking a terminal (SPC o l)
+
+(define (terminal-buffers)
+  "The terminal buffers, running or exited, in buffer-list order."
+  (filter (lambda (buf) (buffer-local-of buf 'term-command)) (buffer-list)))
+
+(define (terminal-annotation buf)
+  "What switch-terminal shows beside terminal buffer `buf`: its command
+   (or shell), its directory, and whether its program has exited."
+  (let ([command (buffer-local-of buf 'term-command)] [dir (buffer-local-of buf 'term-dir)])
+    (string-append (pad-right (if (equal? command "") "shell" command) 20) "  "
+                   (if dir (abbreviate-path dir) "")
+                   (if (buffer-terminal buf) "" "  exited"))))
+
+(define (show-terminal! buf)
+  "Shows terminal buffer `buf`: a toggled one in its popup window, else in
+   the current window. If its program is running, in the TERMINAL state."
+  (if (buffer-local-of buf 'toggled-name) (display-buffer! buf) (go-to-buffer! buf))
+  (when (buffer-terminal buf)
+    (set-mode! 'terminal)
+    (term-redraw! (buffer-terminal buf))))
+
+(define-command! 'switch-terminal
+  (lambda (count)
+    "Switch to a terminal, picked from a list of them."
+    (let* ([bufs (terminal-buffers)]
+           [named (map (lambda (buf) (cons (buffer-name-of buf) buf)) bufs)])
+      (if (null? bufs)
+          (message "no terminals")
+          (completing-read "Switch to terminal: " (map car named)
+                           (lambda (name)
+                             (let ([hit (assoc name named)])
+                               (when hit (show-terminal! (cdr hit)))))
+                           (lambda (name)
+                             (let ([hit (assoc name named)])
+                               (and hit (terminal-annotation (cdr hit))))))))))
+(define-leader! "ol" 'switch-terminal "switch to terminal")
 
 (define-command! 'terminal-send-region terminal-send-region!)
 (define-command! 'terminal-send-buffer terminal-send-buffer!)

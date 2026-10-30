@@ -3683,15 +3683,29 @@
         (set-status! "saveas needs a file name")
         (begin (set-buffer-path! (expand-path (ex-args ex))) (write-buffer! (list (ex-range ex) #f #f ""))))))
 
+;; The buffers with a program still running in them, which killing or
+;; quitting asks about first, as it does about unsaved changes; term.scm
+;; sets it.
+(define *running-buffers* (lambda () '()))
+
+(define (buffer-running? id)
+  "Whether a program is running in buffer `id` that killing it would stop."
+  (and (memv id (*running-buffers*)) #t))
+
 (define (quit-if-saved! ex)
-  "Quits unless some buffer has unsaved changes (or ! was given)."
-  (let ([dirty (modified-buffers)])
-    (if (and (pair? dirty) (not (ex-bang? ex)))
-        (begin
-          (set-status! (string-append "unsaved changes in " (car (buffer-info (car dirty)))
-                                      " (add ! to override)"))
-          (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty))))
-        (quit!))))
+  "Quits unless some buffer has unsaved changes or a running program (or
+   ! was given). In a daemon quitting only detaches, so programs keep
+   running and don't count."
+  (let ([dirty (modified-buffers)]
+        [running (if (daemon?) '() (*running-buffers*))]
+        [stop (lambda (id what)
+                (set-status! (string-append what (car (buffer-info id)) " (add ! to override)"))
+                (unless (= id (current-buffer)) (go-to-buffer! id)))])
+    (cond
+      [(ex-bang? ex) (quit!)]
+      [(pair? dirty) (stop (car dirty) "unsaved changes in ")]
+      [(pair? running) (stop (car running) "a program is running in ")]
+      [else (quit!)])))
 
 ;; :q closes the window when there are several, as in Vim; :qa quits.
 (define-ex! '("q" "quit")
@@ -3713,12 +3727,6 @@
 (define-ex! '("x" "xit" "exit")
   (lambda (ex)
     (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
-;; In a daemon, stops it for every client (:q only detaches one).
-(define-command! 'kill-server
-  (lambda (count)
-    "Stop the daemon, for every client attached to it. Without a daemon, quit."
-    (kill-server!)))
-
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
 
@@ -4005,6 +4013,8 @@
         [(not id) #f]
         [(and (buffer-modified-by-id? id) (not (ex-bang? ex)))
          (set-status! "unsaved changes (add ! to discard them)")]
+        [(and (buffer-running? id) (not (ex-bang? ex)))
+         (set-status! "a program is running in it (add ! to kill it)")]
         [else (kill-buffer! id)]))))
 
 (define (kill-buffer! id)

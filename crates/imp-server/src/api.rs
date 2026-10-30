@@ -866,6 +866,9 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
+    // Whether imp is a daemon, where :q detaches a client and everything
+    // keeps running.
+    engine.register_fn("daemon?", || editor::with(|e| e.daemon));
     // Stops a daemon (for every client). Standalone, the same as quit!.
     engine.register_fn("kill-server!", || {
         editor::with(|e| {

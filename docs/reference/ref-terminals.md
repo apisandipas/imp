@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 0b9cd7405fb2
+  docs/specs/terminals.md: 3f2bd7f48634
 ---
 # Terminals
 
@@ -16,15 +16,45 @@ Press `SPC o T`, or type `:terminal`, to run your shell in a new buffer in the c
 :terminal htop
 ```
 
+Give it a name, or another directory to start in, with `++` options before the command:
+
+```
+:terminal ++name=build ++cwd=~/src/imp cargo watch
+```
+
+A relative `++cwd=` is taken from the current buffer's directory. If a buffer has the name already, the new one gets `<2>` after it. Without a command, it runs your shell.
+
 The buffer keeps the program's output, up to 10,000 lines, in the program's colors. The first sixteen colors come from your theme.
 
 When the program exits, `[process exited N]` shows at the end and the buffer stays open.
+
+## Finding a terminal
+
+Press `SPC o l`, or run `M-x switch-terminal`, to pick from your terminals. Beside each name are its command (`shell` for your shell), its directory, and `exited` once its program has. The terminal you pick comes up in the TERMINAL state if its program is running. A toggled terminal, like the project's, comes up in its own window.
+
+## Closing a terminal
+
+Killing a terminal stops its program, so imp asks first while one is running, as it does for unsaved changes:
+
+- `:bd` refuses, and `:bd!` kills it.
+- `SPC b k` (or `SPC b d`, or `C-x k`) asks "kill the program running in NAME? (y or n)".
+- `:q`, `:qa`, `:wq`, `:x` and `C-x C-c` refuse, take you to the terminal and say so. Add `!` to quit anyway.
+
+Once the program has exited, the buffer goes without asking. `SPC a k` stops Claude without asking.
+
+In a daemon, `:q` only detaches your client and the terminals keep running, for the next client. `M-x kill-server` stops them, so it asks.
+
+To stop asking, turn the option off everywhere, or run `set-local-option!` in one terminal's buffer:
+
+```scheme
+(set-option! 'terminal-confirm-kill #f)
+```
 
 ## The project's terminal
 
 Press `SPC o t`, or `` M-` `` from anywhere, to bring up your project's own shell in a window down the right. The first time, the shell starts in the project root. Press the same key inside it to hide it again. The shell keeps running while it's hidden, so it comes back as you left it, mid-command and all.
 
-Each project has its own. Buffers outside any project share one, in imp's current directory. If you `exit` the shell, the next toggle starts a new one. The buffer is named `*terminal: PROJECT*`, after the project's directory. Kill it and the shell stops.
+Each project has its own. Buffers outside any project share one, in imp's current directory. A project can have more than one: `2 SPC o t` brings up its second, `*terminal: PROJECT<2>*`, starting it the first time. Without a count you get the one you showed last, and `` M-` `` and `SPC o s` use that one too. `1 SPC o t` goes back to the first. If you `exit` the shell, the next toggle starts a new one. The buffer is named `*terminal: PROJECT*`, after the project's directory. Kill it and the shell stops.
 
 Popups on the same side share a window, so bringing up the terminal while [Claude](ref-claude.md) is showing puts it in Claude's window. Claude keeps running hidden. To put the terminal somewhere else, change its popup rule:
 
