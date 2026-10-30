@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/lsp]]"
 frozen:
-  docs/specs/lsp.md: 0515c939262d
+  docs/specs/lsp.md: 521f968e45ec
 ---
 # Language servers
 
@@ -53,7 +53,7 @@ There's no signature help and no inlay hints.
 
 ## Completion
 
-In insert mode, the server's names show in the completion menu at the cursor. The menu opens by itself when you type a letter, or a character the server asks for, often `.` after a name. You can also open it with `C-n`, `C-p` or `C-x C-o`.
+In insert mode, the server's names show in the completion menu at the cursor. The menu opens by itself when you type a letter, or a character the server asks for, often `.` after a name. imp tells the server which character it was, so where it means nothing (TypeScript asks for a space, which matters after `import` or `new`) the server can say so and no menu opens. You can also open it with `C-n`, `C-p` or `C-x C-o`, which asks for everything.
 
 Snippets from the server expand when you accept them. See [Completion while typing](ref-completion-at-point.md) for the keys in the menu.
 
