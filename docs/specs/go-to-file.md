@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/115
+anchors: [runtime/gofile.scm, crates/imp-server/tests/go_to_file.rs]
 summary: "gf, gF and C-w f open the file named under the cursor: found from the buffer's directory, the project or the working directory, with the mode's endings and, in TypeScript and JavaScript, tsconfig's path aliases."
 ---
 # Go to file

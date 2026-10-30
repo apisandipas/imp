@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/go-to-file]]"]
 issue: https://github.com/apisandipas/imp/issues/115
 frozen:
