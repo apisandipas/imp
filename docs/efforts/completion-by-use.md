@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/completion-by-use]]"]
 issue: https://github.com/apisandipas/imp/issues/70
 frozen:
