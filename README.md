@@ -77,7 +77,8 @@ whatever you have installed.
 display it runs in the terminal instead, and `imp --tui` always does (for
 `$EDITOR`, say: `export EDITOR="imp --tui"`).
 
-With no file it shows a start screen of recent files and projects; `imp
+With no file it shows a start screen (recent files, find a file, switch
+project and more, each on a key, which `init.scm` can change); `imp
 FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 `C--` zoom, `C-0` resets, and `--font FAMILY`, `--font-size PX` and
 `--scale F` (or `$IMP_GUI_SCALE`, for HiDPI screens) set the text. In

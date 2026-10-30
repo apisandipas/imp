@@ -412,6 +412,11 @@
   (set! *timers* (hash-remove *timers* id))
   void)
 
+(define (imp-resized)
+  "Called by the server when the client's screen changes size: runs the
+   resize hook, for screens drawn to fit (the start screen)."
+  (run-hooks 'resize))
+
 (define (imp-timer-fired id)
   "Called by the server when timer `id` fires."
   (let ([t (hash-try-get *timers* id)])

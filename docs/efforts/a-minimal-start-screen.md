@@ -14,5 +14,5 @@ frozen:
 
 ## Tasks
 
-- [ ] The look: the banner (or the one-line title when it doesn't fit), the actions with keys in a column and a blank line between, the footer with the version and packages, `recent-files` and `projects` as sections, the cursor on the first entry, a redraw on resize through a new `resize` hook, and the faces in two colours. Tests, the reference page, and an everforest-dark screenshot.
-- [ ] From init.scm: `start-banner`, `start-sections`, `define-start-section!` and `start-entry`, `define-start-action!` and `remove-start-action!`, `start-recent-files` and `start-projects`, a key used twice running the first. Tests and the page.
+- [x] The look: the banner (or the one-line title when it doesn't fit), the actions with keys in a column and a blank line between, the footer with the version and packages, `recent-files` and `projects` as sections, the cursor on the first entry, a redraw on resize through a new `resize` hook, and the faces in two colours. Tests, the reference page, and an everforest-dark screenshot.
+- [x] From init.scm: `start-banner`, `start-sections`, `define-start-section!` and `start-entry`, `define-start-action!` and `remove-start-action!`, `start-recent-files` and `start-projects`, a key used twice running the first. Tests and the page.
