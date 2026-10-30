@@ -1,10 +1,10 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/terminals]]"]
 issue: https://github.com/apisandipas/imp/issues/87
 frozen:
-  docs/specs/terminals.md: f76ff705d85f
+  docs/specs/terminals.md: 0b9cd7405fb2
 ---
 # Following the shell's directory and title
 
@@ -14,5 +14,5 @@ vt100 already parses the sequences: OSC 0 and 2 reach `Callbacks::set_window_tit
 
 ## Tasks
 
-- [ ] The directory: `term-directory` from OSC 7 (local hosts only, percent-decoded), kept in the buffer as `term-dir` from the start directory on and after exit; `buffer-directory`; `find-file`, `:e NAME` and its completion, `-`, `:terminal`/`SPC o T` and the project use it from a terminal, a toggled terminal staying its own project's. Tests with a stand-in that prints OSC 7, and the reference page with the bash and zsh lines.
+- [x] The directory: `term-directory` from OSC 7 (local hosts only, percent-decoded), kept in the buffer as `term-dir` from the start directory on and after exit; `buffer-directory`; `find-file`, `:e NAME` and its completion, `:Ex`, `:terminal`/`SPC o T` and the project use it from a terminal, a toggled terminal staying its own project's. Tests with a stand-in that prints OSC 7, and the reference page with the bash and zsh lines.
 - [ ] The title: `term-title` from OSC 0 and 2, kept in the buffer and shown dimmed after its name in the status line (`%{title}`) and beside it in `switch-buffer`; an empty title clears it; it stays after exit. Tests, and the page.

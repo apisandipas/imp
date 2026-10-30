@@ -253,8 +253,11 @@
 (define-command! 'find-file
   (lambda (count)
     "Open a file under the current directory, skipping what .gitignore does."
-    (set! *completion-category* 'file)
-    (completing-read "Find file: " (list-files (current-dir) 50000) open-file!)))
+    ;; From a terminal, under its directory.
+    (let ([dir (or (buffer-local 'term-dir) (current-dir))])
+      (set! *completion-category* 'file)
+      (completing-read "Find file: " (list-files dir 50000)
+                       (lambda (f) (open-file! (from-terminal-directory f)))))))
 
 (define-command! 'switch-buffer
   (lambda (count)

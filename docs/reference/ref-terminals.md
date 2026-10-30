@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 01ca620df0d2
+  docs/specs/terminals.md: 0b9cd7405fb2
 ---
 # Terminals
 
@@ -65,6 +65,33 @@ The text arrives as one paste, as your terminal's own paste does, with a final l
 ```
 
 A shell that's still starting gets the text once it has printed its prompt. Claude has its own sending keys, on [its page](ref-claude.md).
+
+## The shell's directory
+
+A terminal knows its directory: where it started, and then wherever you `cd`, if your shell reports it. From a terminal buffer:
+
+- `find-file` lists the files under that directory.
+- `:e NAME` opens a relative `NAME` from there, and `<tab>` completes there.
+- `:Ex` opens the file browser there.
+- `:terminal` and `SPC o T` start the new terminal there.
+- The project is that directory's. The project's own terminal stays its project's, so `SPC o t` still hides it.
+
+The directory stays after the program exits.
+
+Shells report their directory with an escape sequence, OSC 7. fish sends it already. bash and zsh don't, so add this to your `~/.bashrc`:
+
+```bash
+PROMPT_COMMAND='printf "\e]7;file://%s%s\e\\" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+```
+
+or to your `~/.zshrc`:
+
+```zsh
+_osc7() { printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD" }
+precmd_functions+=(_osc7)
+```
+
+A report from another machine, from a shell you `ssh`'d into, is ignored, so the directory stays the last one on this machine.
 
 ## Typing to the program
 

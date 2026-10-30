@@ -31,9 +31,11 @@
   (let ([p (expand-path path)]) (if (starts-with? p "/") p (string-append (current-dir) "/" p))))
 
 (define (project-root)
-  "The current buffer's project root (a browser buffer's directory counts),
-   or #f."
-  (project-root-of (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
+  "The current buffer's project root (a browser buffer's or a terminal's
+   directory counts; a toggled terminal is its own project's), or #f."
+  (project-root-of (cond [(buffer-local 'toggled-root) (buffer-local 'toggled-root)]
+                         [(buffer-local 'term-dir) (buffer-local 'term-dir)]
+                         [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
                          [(buffer-local 'git-root) (buffer-local 'git-root)]
                          [(buffer-path) (directory-of (absolute (buffer-path)))]
                          [else (current-dir)])))

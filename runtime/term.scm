@@ -165,12 +165,20 @@
 ;; (term-resize! does nothing when the size is the same).
 (add-hook! 'post-command (lambda () (for-each term-fit! (hash-keys->list *terminals*))))
 
+(define (term-follow! id buf)
+  "Keeps what terminal `id`'s program reported in its buffer `buf`, so it
+   outlives the program: the shell's directory (OSC 7)."
+  (let ([dir (term-directory id)])
+    (when (and dir (not (equal? dir (buffer-local-of buf 'term-dir))))
+      (set-buffer-local-of! buf 'term-dir dir))))
+
 (define (term-redraw! id)
   "Redraws terminal `id` into its buffer, sized to its windows.
    In the terminal state the cursor follows the program's."
   (let ([buf (hash-try-get *terminals* id)])
     (when (and buf (memv buf (buffer-list)))
       (term-fit! id)
+      (term-follow! id buf)
       (let ([at (term-render! id buf)])
         (when (and at (= buf (current-buffer)) (eq? *mode* 'terminal))
           (set-cursor! at))))))
@@ -222,18 +230,18 @@
         (begin (message id) (buffer-kill! buf) #f)
         (begin
           (set-buffer-local! 'term-id id)
+          (set-buffer-local! 'term-dir (absolute cwd))
           (set! *terminals* (hash-insert *terminals* id buf))
           (set-mode! 'terminal)
           id))))
 
 (define (terminal! command)
   "Runs `command` (your shell if \"\") in a new terminal buffer.
-   It starts in the directory of the current file or file browser, else
-   the current directory. Returns the terminal's id, or #f."
+   It starts in the current buffer's directory: a terminal's, a file
+   browser's or the file's, else the current directory. Returns the
+   terminal's id, or #f."
   (set! *term-count* (+ *term-count* 1))
-  (let* ([cwd (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
-                    [(buffer-path) (directory-of (absolute (buffer-path)))]
-                    [else (current-dir)])]
+  (let* ([cwd (buffer-directory)]
          [name (string-append "*terminal " (number->string *term-count*)
                               (if (equal? command "") "" (string-append ": " command)) "*")]
          [buf (buffer-new! name)])

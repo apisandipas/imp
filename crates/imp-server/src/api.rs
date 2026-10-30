@@ -1314,6 +1314,14 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("term-bracketed-paste?", |id: isize| {
         crate::term::bracketed_paste(clamp(id) as u64)
     });
+    // The title the program last set (OSC 0 or 2), or #f.
+    engine.register_fn("term-title", |id: isize| {
+        crate::term::title(clamp(id) as u64)
+    });
+    // The directory the shell last reported on this machine (OSC 7), or #f.
+    engine.register_fn("term-directory", |id: isize| {
+        crate::term::directory(clamp(id) as u64)
+    });
     // Draws terminal `id` into buffer `buf`; returns its cursor's offset.
     engine.register_fn("term-render!", |id: isize, buf: isize| {
         editor::with(|e| {
