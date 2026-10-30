@@ -52,6 +52,8 @@
           (message "no recent files yet")
           (begin
             (set! *completion-category* 'file)
+            ;; Already in order of use.
+            (set! *completion-ranked* #f)
             (completing-read "Recent file: " (map abbreviate-path files) open-file!))))))
 
 (define-leader! "fr" 'recent-files "recent files")

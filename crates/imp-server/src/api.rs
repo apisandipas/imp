@@ -1518,6 +1518,19 @@ pub fn register(engine: &mut Engine) {
     });
 
     // Completion: orderless fuzzy matching (fuzzy.rs) and project files.
+    // As fuzzy-filter, with each candidate's use score (completion by use).
+    engine.register_fn(
+        "fuzzy-filter-ranked",
+        |query: String, candidates: Vec<String>, uses: Vec<f64>, limit: isize| {
+            fuzzy::filter_ranked(&query, &candidates, &uses, clamp(limit))
+        },
+    );
+    // Seconds since 1970, for what needs to know how long ago.
+    engine.register_fn("unix-time", || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as isize)
+    });
     engine.register_fn(
         "fuzzy-filter",
         |query: String, candidates: Vec<String>, limit: isize| {
