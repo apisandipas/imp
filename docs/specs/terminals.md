@@ -48,6 +48,13 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - **Signs.** Each prompt line has a sign in the sign column: `›`, or `✗` in the error face after a command that finished with a status other than 0.
 - **Shells that don't mark.** Without OSC 133 nothing changes. imp doesn't change your shell's setup; the reference page gives the lines for bash and zsh.
 
+### The clipboard (OSC 52)
+
+- **Copying.** When a program in a terminal (`nvim`, `tmux`, a shell over `ssh`) copies text with OSC 52, imp puts it in the `"+` register as `"+y` does: on the system clipboard, through the same tools, and in the unnamed register, so `p` pastes it. The message line says "copied N characters from NAME". The primary selection (`p` in the sequence) goes to `"*` instead; anything else (`c`, `s`, digits, or none) is the clipboard.
+- **Whose clipboard.** The `"+` register's: the machine imp runs on, so with `--via` the server's, as for a yank.
+- **Reading is refused.** A request to read the clipboard (`?` in place of the text) gets no answer, so a program in a terminal can't see what you copied elsewhere.
+- **Turning it off.** `(set-option! 'terminal-clipboard #f)` ignores OSC 52 from every terminal.
+
 ### Managing terminals
 
 - **Killing a running one asks.** A terminal whose program is still running is treated as a buffer with unsaved changes. `:bd` refuses it ("a program is running in it (add ! to kill it)"), and `:bd!` kills it. `kill-buffer` (`SPC b d`, `SPC b k`, `C-x k`) asks "kill the program running in NAME? (y or n)" first. A terminal whose program has exited is killed without asking. `SPC a k` stops Claude without asking, as it's a command to stop it.
@@ -65,6 +72,7 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - `terminal-send-enter` (on): whether sending presses `<ret>` after the text.
 - `SPC o l`: `switch-terminal`.
 - `]]`, `[[`: next and previous prompt. `io`, `ao`: a command's output, and with its prompt.
+- `terminal-clipboard` (on): whether programs in terminals can copy to the clipboard.
 - `terminal-confirm-kill` (on): whether killing or quitting with a running terminal asks.
 - `define-toggled-terminal!`.
 
@@ -79,4 +87,5 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - Finding the directory without OSC 7 (reading the shell's from `/proc`), or setting it up in your shell for you.
 - Opening files on the other host of an `ssh` session, and the icon name (OSC 1).
 - Re-running a marked command, folding outputs, and showing a command's duration.
+- Programs reading the clipboard through OSC 52, and copying to the client's machine rather than the server's with `--via`.
 - Setting the outer terminal's or the window client's title from a terminal's.
