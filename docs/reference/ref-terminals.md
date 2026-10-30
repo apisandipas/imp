@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 0b9cd7405fb2
+  docs/specs/terminals.md: 3f2bd7f48634
 ---
 # Terminals
 
@@ -19,6 +19,24 @@ Press `SPC o T`, or type `:terminal`, to run your shell in a new buffer in the c
 The buffer keeps the program's output, up to 10,000 lines, in the program's colors. The first sixteen colors come from your theme.
 
 When the program exits, `[process exited N]` shows at the end and the buffer stays open.
+
+## Closing a terminal
+
+Killing a terminal stops its program, so imp asks first while one is running, as it does for unsaved changes:
+
+- `:bd` refuses, and `:bd!` kills it.
+- `SPC b k` (or `SPC b d`, or `C-x k`) asks "kill the program running in NAME? (y or n)".
+- `:q`, `:qa`, `:wq`, `:x` and `C-x C-c` refuse, take you to the terminal and say so. Add `!` to quit anyway.
+
+Once the program has exited, the buffer goes without asking. `SPC a k` stops Claude without asking.
+
+In a daemon, `:q` only detaches your client and the terminals keep running, for the next client. `M-x kill-server` stops them, so it asks.
+
+To stop asking, turn the option off everywhere, or run `set-local-option!` in one terminal's buffer:
+
+```scheme
+(set-option! 'terminal-confirm-kill #f)
+```
 
 ## The project's terminal
 

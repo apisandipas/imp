@@ -87,6 +87,7 @@ impl Clients {
 pub fn run(socket: &Path, options: Options) -> Result<(), String> {
     let listener = bind(socket, "a daemon is already running")?;
     let mut server = Server::new(Buffer::default(), options)?;
+    crate::editor::with(|e| e.daemon = true);
     let events = server.sender.clone();
 
     // Accept connections on another thread; each client gets a reader that

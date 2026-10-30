@@ -1,10 +1,10 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/terminals]]"]
 issue: https://github.com/apisandipas/imp/issues/90
 frozen:
-  docs/specs/terminals.md: aeb2ccca3bda
+  docs/specs/terminals.md: 3f2bd7f48634
 ---
 # Managing terminals
 
@@ -14,7 +14,7 @@ A running terminal is treated like a modified buffer: `running-terminals` lists 
 
 ## Tasks
 
-- [ ] Asking before a kill: `:bd` refuses a running terminal and `:bd!` kills it; `kill-buffer` asks y or n; `:q`, `:qa`, `:wq`, `:x` (and `C-x C-c`) refuse, go to it and say so, `!` forms quitting anyway; in a daemon `:q` doesn't ask and `kill-server` does; `terminal-confirm-kill`, global or buffer-local, turns it off; an exited terminal and `SPC a k` don't ask. Tests, and the reference page.
+- [x] Asking before a kill: `:bd` refuses a running terminal and `:bd!` kills it; `kill-buffer` asks y or n; `:q`, `:qa`, `:wq`, `:x` (and `C-x C-c`) refuse, go to it and say so, `!` forms quitting anyway; in a daemon `:q` doesn't ask and `kill-server` does; `terminal-confirm-kill`, global or buffer-local, turns it off; an exited terminal and `SPC a k` don't ask. Tests, and the reference page.
 - [ ] `switch-terminal` (`SPC o l`): the terminals with command, directory and `exited` beside each; picking one shows it (a toggled one in its popup window) in the TERMINAL state if it's running. Tests, and the page.
 - [ ] `:terminal ++name=NAME ++cwd=DIR CMD`, in either order, a taken name getting `<2>`; `~` and relative directories from the current buffer's. Tests, and the page.
 - [ ] A count for toggled terminals: `2 SPC o t` shows the project's second (`*terminal: PROJECT<2>*`), no count the last shown, which `M-\`` and `SPC o s` use too; your own toggles the same. Tests, and the page.

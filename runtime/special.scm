@@ -270,6 +270,15 @@
           (when (equal? key "y") (thunk))))
   void)
 
+;; Here rather than with the other buffer commands in leader.scm, as it
+;; asks with confirm!.
+(define-command! 'kill-buffer
+  (lambda (count)
+    "Close the current buffer (:bd), asking first if a program runs in it."
+    (if (buffer-running? (current-buffer))
+        (confirm! (string-append "kill the program running in " (buffer-name-of (current-buffer)) "?")
+                  (lambda () (run-ex! "bd!")))
+        (run-ex! "bd"))))
 (define (text-lines text)
   "The lines of `text`, without the empty one after a final line break."
   (let ([lines (split-many text "\n")])

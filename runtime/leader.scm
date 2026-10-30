@@ -286,10 +286,6 @@
   (lambda (count)
     "Save every modified buffer (:wa)."
     (run-ex! "wa")))
-(define-command! 'kill-buffer
-  (lambda (count)
-    "Close the current buffer (:bd)."
-    (run-ex! "bd")))
 (define-command! 'next-buffer
   (lambda (count)
     "Go to the next buffer in the list (:bn)."

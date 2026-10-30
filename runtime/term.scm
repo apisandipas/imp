@@ -226,6 +226,32 @@
 
 (define *term-count* 0)
 
+;; Killing a buffer with a running program, or quitting, asks first.
+(define-option! 'terminal-confirm-kill #t '())
+
+(define (terminal-confirm-kill? buf)
+  "terminal-confirm-kill for buffer `buf`: its own, set with
+   set-local-option!, else the global one."
+  (let ([locals (or (hash-try-get *buffer-locals* buf) (hash))] [key (list 'option 'terminal-confirm-kill)])
+    (if (hash-contains? locals key) (hash-ref locals key) (hash-ref *options* 'terminal-confirm-kill))))
+
+(set! *running-buffers*
+      (lambda ()
+        (filter (lambda (buf) (and (memv buf (buffer-list)) (terminal-confirm-kill? buf)))
+                (map (lambda (id) (hash-ref *terminals* id)) (hash-keys->list *terminals*)))))
+
+;; In a daemon, stops it for every client (:q only detaches one), asking
+;; first when that stops running programs.
+(define-command! 'kill-server
+  (lambda (count)
+    "Stop the daemon, for every client attached to it. Without a daemon, quit."
+    (let ([running (*running-buffers*)])
+      (if (null? running)
+          (kill-server!)
+          (confirm! (string-append "stop the programs running in " (number->string (length running))
+                                   (if (= (length running) 1) " terminal?" " terminals?"))
+                    kill-server!)))))
+
 (define (start-terminal! buf command cwd)
   "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`.
    `buf` must be the current buffer; the terminal is sized to its window.
