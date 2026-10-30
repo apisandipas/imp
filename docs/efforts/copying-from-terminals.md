@@ -14,4 +14,4 @@ vt100 hands OSC 52 to `Callbacks::copy_to_clipboard` with the selection and the 
 
 ## Tasks
 
-- [ ] OSC 52 copies: decoded and queued in `term.rs` (`term-take-copies!`), put in `"+` (or `"*` for `p`) and the unnamed register with a message; reads unanswered; `terminal-clipboard` off ignores them. A Rust test of the decoding and selector, tests with a stand-in that sends OSC 52, and the reference page.
+- [x] OSC 52 copies: decoded and queued in `term.rs` (`term-take-copies!`), put in `"+` (or `"*` for `p`) and the unnamed register with a message; reads unanswered; `terminal-clipboard` off ignores them. A Rust test of the decoding and selector, tests with a stand-in that sends OSC 52, and the reference page.

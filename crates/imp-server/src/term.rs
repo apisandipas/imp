@@ -34,6 +34,8 @@ struct Reports {
     directory: Option<String>,
     /// Each command the shell marked (OSC 133), oldest first.
     marks: Vec<Mark>,
+    /// Text the program copied (OSC 52), not yet taken: (text, primary?).
+    copies: Vec<(String, bool)>,
     /// Lines dropped from the front of the history so far, and the
     /// history's length, as of the last render: with them a line's
     /// absolute number (counted from the first line the program printed)
@@ -107,6 +109,19 @@ impl Reports {
 }
 
 impl vt100::Callbacks for Reports {
+    fn copy_to_clipboard(&mut self, _: &mut vt100::Screen, ty: &[u8], data: &[u8]) {
+        if let Some(text) = base64_decode(data) {
+            self.copies.push((
+                String::from_utf8_lossy(&text).into_owned(),
+                ty.contains(&b'p'),
+            ));
+        }
+    }
+
+    // A program asking to read the clipboard (OSC 52 with ?) gets no
+    // answer: what you copied elsewhere isn't its to see.
+    fn paste_from_clipboard(&mut self, _: &mut vt100::Screen, _: &[u8]) {}
+
     fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
         self.title = Some(String::from_utf8_lossy(title).into_owned());
     }
@@ -162,6 +177,30 @@ fn local_directory(url: &str) -> Option<String> {
     } else {
         path
     })
+}
+
+/// Standard base64 (padding optional), or `None` if it isn't.
+fn base64_decode(data: &[u8]) -> Option<Vec<u8>> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(data.len() * 3 / 4);
+    let (mut bits, mut n) = (0u32, 0);
+    for &c in data.iter().take_while(|&&c| c != b'=') {
+        bits = bits << 6 | u32::from(value(c)?);
+        n += 6;
+        if n >= 8 {
+            n -= 8;
+            out.push((bits >> n) as u8);
+            bits &= (1 << n) - 1;
+        }
+    }
+    Some(out)
 }
 
 /// This machine's host name, as OSC 7 names it.
@@ -388,6 +427,12 @@ pub fn prompts(id: u64) -> Vec<(usize, Option<usize>, Option<i32>)> {
     .unwrap_or_default()
 }
 
+/// Takes the text the program has copied (OSC 52) since last asked, as
+/// (text, primary?), oldest first.
+pub fn take_copies(id: u64) -> Vec<(String, bool)> {
+    with(id, |t| std::mem::take(&mut t.parser.callbacks_mut().copies)).unwrap_or_default()
+}
+
 /// The title the program last set, or `None` if it hasn't (or the
 /// terminal is gone). Empty once it has cleared it.
 pub fn title(id: u64) -> Option<String> {
@@ -603,6 +648,24 @@ mod tests {
             .iter()
             .map(|m| (m.prompt, m.output, m.status))
             .collect()
+    }
+
+    #[test]
+    fn osc_52_copies_are_decoded_and_reads_unanswered() {
+        assert_eq!(base64_decode(b"aGk=").unwrap(), b"hi");
+        assert_eq!(base64_decode(b"aGVsbG8gd29ybGQ").unwrap(), b"hello world");
+        assert_eq!(base64_decode(b"").unwrap(), b"");
+        assert!(base64_decode(b"a$b").is_none());
+        let mut p = vt100::Parser::new_with_callbacks(4, 20, 100, Reports::default());
+        p.process(b"\x1b]52;c;aGk=\x07\x1b]52;p;dGhlcmU=\x07\x1b]52;c;?\x07\x1b]52;;eA==\x1b\\");
+        assert_eq!(
+            p.callbacks().copies,
+            [
+                ("hi".into(), false),
+                ("there".into(), true),
+                ("x".into(), false)
+            ]
+        );
     }
 
     #[test]

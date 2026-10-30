@@ -169,8 +169,15 @@
   "Keeps what terminal `id`'s program reported in its buffer `buf`, so it
    outlives the program: the shell's directory (OSC 7), its title (OSC 0
    or 2), shown as the status line's %{title}, and its prompts (OSC 133),
-   signed in the sign column."
+   signed in the sign column. Text it copied (OSC 52) goes to \"+ (or
+   \"*), as a yank there does, unless terminal-clipboard is off."
   (let ([dir (term-directory id)] [title (term-title id)] [prompts (term-prompts id)])
+    (for-each (lambda (copy)
+                (when (option 'terminal-clipboard)
+                  (register-set! (if (cadr copy) #\* #\+) (car copy) #f 'yank)
+                  (message (string-append "copied " (number->string (string-length (car copy)))
+                                          " characters from " (buffer-name-of buf)))))
+              (term-take-copies! id))
     (unless (equal? prompts (or (buffer-local-of buf 'term-prompts) '()))
       (set-buffer-local-of! buf 'term-prompts prompts)
       (with-buffer buf
@@ -236,6 +243,9 @@
         (when (= here buf) (set-cursor! (line-start (last-line))))))))
 
 (define *term-count* 0)
+
+;; Programs in terminals can copy to the clipboard (OSC 52).
+(define-option! 'terminal-clipboard #t '())
 
 ;; Killing a buffer with a running program, or quitting, asks first.
 (define-option! 'terminal-confirm-kill #t '())

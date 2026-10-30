@@ -1344,6 +1344,14 @@ pub fn register(engine: &mut Engine) {
             })
             .collect::<Vec<_>>()
     });
+    // Takes what the program copied (OSC 52) since last asked, as
+    // (text primary?) lists.
+    engine.register_fn("term-take-copies!", |id: isize| {
+        crate::term::take_copies(clamp(id) as u64)
+            .into_iter()
+            .map(|(text, primary)| vec![SteelVal::StringV(text.into()), SteelVal::BoolV(primary)])
+            .collect::<Vec<_>>()
+    });
     // The title the program last set (OSC 0 or 2), or #f.
     engine.register_fn("term-title", |id: isize| {
         crate::term::title(clamp(id) as u64)
