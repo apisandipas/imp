@@ -8,8 +8,23 @@ use imp_server::{Options, Server};
 /// A server for `text`. The theme's background is left off, so rows hold
 /// only what was drawn (tests/theme.rs checks the theme).
 pub fn server(text: &str) -> Server {
-    let mut s =
-        Server::new(Buffer::from_text(text), Options { user_config: None }).expect("runtime loads");
+    // Steel's number interner is shared by every thread, and a number one
+    // thread is still interning can be looked up half-added by another
+    // (steel-parser 0.8.3 inserts the key before the value; #98). The
+    // runtime's numbers are interned by the first load, so that one loads
+    // alone; after it, those numbers are all there.
+    static FIRST: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+    let new = || Server::new(Buffer::from_text(text), Options { user_config: None });
+    let mut loaded = FIRST.lock().unwrap_or_else(|e| e.into_inner());
+    let mut s = if *loaded {
+        drop(loaded);
+        new()
+    } else {
+        let s = new();
+        *loaded = true;
+        s
+    }
+    .expect("runtime loads");
     s.eval(r#"(set-face! "normal" "")"#).unwrap();
     // State (autosaves, remembered projects) stays out of the real one.
     s.eval(&format!(
