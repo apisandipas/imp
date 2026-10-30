@@ -16,7 +16,8 @@
 ;;;
 ;;; Claude runs claude-command in the project root (the current directory
 ;;; outside a project). It is a toggled terminal (term.scm), as the
-;;; project's shell is; this file adds sending. Its window's place is a
+;;; project's shell is, and sends with terminal-paste! as SPC o s does;
+;;; this file adds waiting for Claude to take input. Its window's place is a
 ;;; popup rule, so
 ;;;   (define-popup-rule! "*claude" 'side 'bottom 'size 0.3)
 ;;; moves it.
@@ -62,7 +63,9 @@
       [(or (not id) (not texts)) (set! *claude-pending* (hash-remove *claude-pending* buf))]
       [(memv buf *claude-ready*)
        (set! *claude-pending* (hash-remove *claude-pending* buf))
-       (for-each (lambda (text) (term-send! id (bracketed text))) texts)]
+       ;; As the project's terminal's sends, but never <ret>: you say what
+       ;; to do with it.
+       (for-each (lambda (text) (terminal-paste! id text #f)) texts)]
       [(term-bracketed-paste? id)
        (run-after! claude-settle-ms
                    (lambda ()
