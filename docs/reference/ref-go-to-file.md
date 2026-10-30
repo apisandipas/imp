@@ -37,11 +37,20 @@ For another language, set the endings in its mode's setup:
   (lambda () (set-local-option! 'suffixesadd ".lua")))
 ```
 
+## Lines and splits
+
+`gF` also goes to the line written after the name, as compilers, test runners and stack traces write it: `src/main.rs:42`, `src/main.rs:42:7` (line 42, column 7), `main.c(42)` or `main.c line 42`. With a count, `12gF` goes to line 12 instead. With no line after the name, `gF` does what `gf` does.
+
+`C-w f` opens the file in a new split, and `C-w F` does the same as `gF`. If the file can't be found, the window isn't split.
+
 ## Keys
 
 | Key | What it does |
 |---|---|
 | `gf` | Open the file under the cursor (in visual mode, the selected name) |
+| `gF` | Open it and go to the line after the name, or to the count's line |
+| `C-w f`, `C-w C-f` | Open it in a new split |
+| `C-w F` | `gF` in a new split |
 
 ## Options
 

@@ -15,5 +15,5 @@ A new `runtime/gofile.scm`, loaded after `project.scm` and `term.scm`, as it nee
 ## Tasks
 
 - [x] `gf` in normal and visual mode: the name under or after the cursor, looked for from the buffer's directory, the project root and the working directory (`./` and `../` only from the first), with `suffixesadd` and `index`, `~/` and `$NAME`, directories to the file browser, and "Can't find file" when nothing is there; `suffixesadd` set by TypeScript and JavaScript modes; with tests and the reference page.
-- [ ] `gF` (`file:42`, `file:42:7`, `file(42)`, `file line 42`, a count) and `C-w f`, `C-w C-f`, `C-w F` in a split that isn't made when nothing is found, with tests.
+- [x] `gF` (`file:42`, `file:42:7`, `file(42)`, `file line 42`, a count) and `C-w f`, `C-w C-f`, `C-w F` in a split that isn't made when nothing is found, with tests.
 - [ ] `includeexpr`, and TypeScript and JavaScript's tsconfig and jsconfig `paths` through it: nearest config, `baseUrl`, exact and `*` patterns with the longest prefix winning, comments and trailing commas, a relative `extends`, tried between the buffer's directory and the project root; with tests.

@@ -164,3 +164,56 @@ fn only_script_modes_add_endings() {
     type_keys(&mut s, ":setlocal sua=.ts<ret>gf");
     assert!(current_path(&mut s).ends_with("b.ts"));
 }
+
+#[test]
+fn gf_capital_goes_to_the_line_after_the_name() {
+    let root = tree(
+        "gf-line",
+        &[
+            ("log.txt", "at code.rs:3 here\nat code.rs:2:5\ncode.rs(4)\ncode.rs line 2\ncode.rs\ncode.rs:99\n"),
+            ("code.rs", "one\n  two\nthree\nfour\n"),
+        ],
+    );
+    let mut s = open(&root.join("log.txt"));
+    let line_col = |s: &mut imp_server::Server| {
+        s.eval("(list (+ (current-line) 1) (+ (current-col) 1))")
+            .unwrap()
+    };
+    type_keys(&mut s, "wgF");
+    assert!(current_path(&mut s).ends_with("code.rs"));
+    assert_eq!(line_col(&mut s), "(3 1)");
+    // :line:col; (line); " line N"; the first non-blank without a column.
+    type_keys(&mut s, "<C-o>jwgF");
+    assert_eq!(line_col(&mut s), "(2 5)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(4 1)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(2 3)");
+    // No line: as gf. A count wins over none; past the end is the last line.
+    type_keys(&mut s, "<C-o>j03gF");
+    assert_eq!(line_col(&mut s), "(3 1)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(4 1)");
+    // gf doesn't go to the line: the buffer is where it was left.
+    type_keys(&mut s, "<C-o>ggwgf");
+    assert_eq!(line_col(&mut s), "(4 1)");
+}
+
+#[test]
+fn ctrl_w_f_opens_it_in_a_split() {
+    let root = tree(
+        "gf-split",
+        &[("a.txt", "b.txt:2\nnone.txt\n"), ("b.txt", "1\n2\n")],
+    );
+    let mut s = open(&root.join("a.txt"));
+    type_keys(&mut s, "<C-w>f");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
+    assert!(current_path(&mut s).ends_with("b.txt"));
+    type_keys(&mut s, "<C-w>o<C-o><C-w>F");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
+    assert_eq!(s.eval("(+ (current-line) 1)").unwrap(), "2");
+    // Nothing found: no split.
+    type_keys(&mut s, "<C-w>o<C-o>j<C-w>f");
+    assert_eq!(s.status(), "Can't find file \"none.txt\" in path");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "1");
+}

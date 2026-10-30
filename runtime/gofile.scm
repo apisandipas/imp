@@ -105,23 +105,77 @@
             [(found-at (car bases)) => (lambda (p) p)]
             [else (loop (cdr bases))]))))
 
-(define (go-to-file-named! name)
-  "Opens the file `name` names, saying so when there is none. Returns
-   whether it opened something."
+(define (digits-at text i)
+  "The number of the digits in `text` from `i`, and where they end, as
+   (n . end); #f if there are none there."
+  (let loop ([j i])
+    (if (and (< j (string-length text)) (char-digit? (string-ref text j)))
+        (loop (+ j 1))
+        (and (> j i) (cons (string->number (substring text i j)) j)))))
+
+(define (line-after-name text)
+  "The line and column `text`, what follows a name, gives as (line col)
+   from 1, col #f without one: :42, :42:7, (42) or \" line 42\"; #f for
+   none."
+  (define (after prefix)
+    (and (starts-with? text prefix) (digits-at text (string-length prefix))))
+  (cond
+    [(after ":")
+     => (lambda (l)
+          (let ([c (and (< (cdr l) (string-length text)) (equal? (string-ref text (cdr l)) #\:)
+                        (digits-at text (+ (cdr l) 1)))])
+            (list (car l) (and c (car c)))))]
+    [(after "(") => (lambda (l) (and (< (cdr l) (string-length text)) (equal? (string-ref text (cdr l)) #\))
+                                     (list (car l) #f)))]
+    [(after " line ") => (lambda (l) (list (car l) #f))]
+    [else #f]))
+
+(define (go-to-line-col! line col)
+  "Puts the cursor on `line` (from 1, kept in the buffer) at column
+   `col` (from 1), or its first non-blank without one."
+  (let ([l (clamp (- line 1) 0 (last-line))])
+    (set-cursor! (if col (line-col->offset l (- col 1)) (line-first-nonblank l)))
+    (normal-clamp!)
+    (set! *goal-col* (current-col))
+    void))
+
+(define (go-to-file-named! name split? at)
+  "Opens the file `name` names, after splitting the window if `split?`,
+   then goes to `at`, (line col) or #f; says so when there is no file,
+   leaving the window as it was. Returns whether it opened something."
   (let ([path (find-file-named name)])
     (if path
-        (and (open-file! path) #t)
+        (begin
+          (when split? (split! #f))
+          (let ([opened (open-file! path)])
+            (when (and opened at) (go-to-line-col! (car at) (cadr at)))
+            (and opened #t)))
         (begin (message (string-append "Can't find file \"" name "\" in path")) #f))))
 
-(define (go-to-file-under-cursor!)
-  "gf: opens the file named under the cursor, or in visual mode the
-   selection."
-  (let ([name (if (eq? *mode* 'visual)
-                  (let ([n (selected-file-name)]) (leave-visual!) (and (not (equal? n "")) n))
-                  (let ([at (file-name-under-cursor)]) (and at (car at))))])
+(define (go-to-file-under-cursor! split? line? count)
+  "gf, or with `line?` gF: opens the file named under the cursor, or in
+   visual mode the selection, in a new split if `split?`. gF goes to the
+   line after the name, or to `count` when one was given."
+  (let* ([visual? (eq? *mode* 'visual)]
+         [at (and (not visual?) (file-name-under-cursor))]
+         [name (if visual?
+                   (let ([n (selected-file-name)]) (leave-visual!) (and (not (equal? n "")) n))
+                   (and at (car at)))]
+         [line (and line?
+                    (if *count-given*
+                        (list count #f)
+                        (and at (line-after-name (buffer-substring (cdr at) (line-end (current-line)))))))])
     (if name
-        (go-to-file-named! name)
+        (go-to-file-named! name split? line)
         (begin (message "No file name under cursor") #f))))
 
-(define-key! 'normal "gf" (lambda (count) (go-to-file-under-cursor!)) "go to file")
-(define-key! 'visual "gf" (lambda (count) (go-to-file-under-cursor!)) "go to file")
+(define-key! 'normal "gf" (lambda (count) (go-to-file-under-cursor! #f #f count)) "go to file")
+(define-key! 'visual "gf" (lambda (count) (go-to-file-under-cursor! #f #f count)) "go to file")
+(define-key! 'normal "gF" (lambda (count) (go-to-file-under-cursor! #f #t count)) "go to file and line")
+(window-command! '("f" "C-f") (lambda (count) (go-to-file-under-cursor! #t #f count)))
+(window-command! '("F") (lambda (count) (go-to-file-under-cursor! #t #t count)))
+(for-each (lambda (state)
+            (set-binding-label! state "C-wf" "file under cursor in a split")
+            (set-binding-label! state "C-wC-f" "file under cursor in a split")
+            (set-binding-label! state "C-wF" "file and line in a split"))
+          '(normal visual))
