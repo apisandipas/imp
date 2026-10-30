@@ -16,6 +16,14 @@ Press `SPC o T`, or type `:terminal`, to run your shell in a new buffer in the c
 :terminal htop
 ```
 
+Give it a name, or another directory to start in, with `++` options before the command:
+
+```
+:terminal ++name=build ++cwd=~/src/imp cargo watch
+```
+
+A relative `++cwd=` is taken from the current buffer's directory. If a buffer has the name already, the new one gets `<2>` after it. Without a command, it runs your shell.
+
 The buffer keeps the program's output, up to 10,000 lines, in the program's colors. The first sixteen colors come from your theme.
 
 When the program exits, `[process exited N]` shows at the end and the buffer stays open.

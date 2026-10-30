@@ -193,3 +193,38 @@ fn a_toggled_terminal_is_picked_into_its_window() {
     assert_eq!(s.eval("(current-buffer)").unwrap(), toggled);
     assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
 }
+
+#[test]
+fn terminal_takes_a_name_and_a_directory() {
+    let mut s = server("");
+    let root = temp_path("named-terminal");
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(root.join("a.txt"), "a\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", root.join("a.txt").display()));
+    // Relative to the file's directory, in either order.
+    type_keys(&mut s, ":terminal ++cwd=sub ++name=build pwd; cat<ret>");
+    assert_eq!(
+        s.eval("(buffer-name-of (current-buffer))").unwrap(),
+        "\"build\""
+    );
+    wait_for(&mut s, "pwd", |s| {
+        s.text().contains(&*root.join("sub").to_string_lossy())
+    });
+    assert_eq!(
+        s.eval("(buffer-local 'term-command)").unwrap(),
+        "\"pwd; cat\""
+    );
+    s.keys(&["C-\\", "C-n"]);
+    // A taken name gets <2>; with no command, your shell.
+    type_keys(&mut s, ":terminal ++name=build<ret>");
+    assert_eq!(
+        s.eval("(buffer-name-of (current-buffer))").unwrap(),
+        "\"build<2>\""
+    );
+    assert_eq!(s.eval("(buffer-local 'term-command)").unwrap(), "\"\"");
+    s.keys(&["C-\\", "C-n"]);
+    type_keys(&mut s, ":terminal ++cwd=/no/such/dir<ret>");
+    assert_eq!(s.status(), "/no/such/dir: no such directory");
+    type_keys(&mut s, ":terminal ++size=3<ret>");
+    assert_eq!(s.status(), "unknown option ++size=3");
+}

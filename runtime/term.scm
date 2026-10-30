@@ -274,13 +274,50 @@
    It starts in the current buffer's directory: a terminal's, a file
    browser's or the file's, else the current directory. Returns the
    terminal's id, or #f."
-  (set! *term-count* (+ *term-count* 1))
-  (let* ([cwd (buffer-directory)]
-         [name (string-append "*terminal " (number->string *term-count*)
-                              (if (equal? command "") "" (string-append ": " command)) "*")]
+  (terminal-named! command #f (buffer-directory)))
+
+(define (unused-buffer-name name)
+  "`name`, or with <2>, <3> ... after it if a buffer has it already."
+  (let ([taken (map buffer-name-of (buffer-list))])
+    (let loop ([n 1])
+      (let ([candidate (if (= n 1) name (string-append name "<" (number->string n) ">"))])
+        (if (member candidate taken) (loop (+ n 1)) candidate)))))
+
+(define (terminal-named! command name cwd)
+  "Runs `command` (your shell if \"\") in `cwd`, in a new terminal buffer
+   named `name`, or *terminal N* if it is #f. Returns the terminal's id,
+   or #f."
+  (let* ([name (or (and name (unused-buffer-name name))
+                   (begin
+                     (set! *term-count* (+ *term-count* 1))
+                     (string-append "*terminal " (number->string *term-count*)
+                                    (if (equal? command "") "" (string-append ": " command)) "*")))]
          [buf (buffer-new! name)])
     (go-to-buffer! buf)
     (start-terminal! buf command cwd)))
+
+(define (terminal-ex! args)
+  ":terminal [++name=NAME] [++cwd=DIR] [CMD]: the ++ options, in either
+   order, before the command, as Vim's ++ options are. DIR is taken from
+   the current buffer's directory when relative."
+  (let loop ([args (trim args)] [name #f] [cwd #f])
+    (let* ([space (let find ([i 0]) (cond [(>= i (string-length args)) i]
+                                           [(char-whitespace? (string-ref args i)) i]
+                                           [else (find (+ i 1))]))]
+           [word (substring args 0 space)]
+           [rest (trim (substring args space (string-length args)))]
+           [value (lambda (prefix) (substring word (string-length prefix) (string-length word)))])
+      (cond
+        [(starts-with? word "++name=") (loop rest (value "++name=") cwd)]
+        [(starts-with? word "++cwd=") (loop rest name (value "++cwd="))]
+        [(starts-with? word "++") (message (string-append "unknown option " word))]
+        [else
+         (let ([dir (cond [(not cwd) (buffer-directory)]
+                          [(starts-with? (expand-path cwd) "/") (expand-path cwd)]
+                          [else (string-append (buffer-directory) "/" cwd)])])
+           (if (file-directory? dir)
+               (terminal-named! args name dir)
+               (message (string-append dir ": no such directory"))))]))))
 
 (define-major-mode! 'term-mode #f '()
   (lambda ()
@@ -307,7 +344,7 @@
 ;; Coming back to a terminal buffer: show its latest output.
 (add-hook! 'buffer-enter (lambda () (when (term-id) (term-redraw! (term-id)))))
 
-(define-ex! '("ter" "terminal") (lambda (ex) (terminal! (trim (ex-args ex)))))
+(define-ex! '("ter" "terminal") (lambda (ex) (terminal-ex! (ex-args ex))))
 (define-command! 'terminal
   (lambda (count)
     "Run your shell in a new terminal buffer."
