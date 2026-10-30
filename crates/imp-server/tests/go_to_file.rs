@@ -217,3 +217,82 @@ fn ctrl_w_f_opens_it_in_a_split() {
     assert_eq!(s.status(), "Can't find file \"none.txt\" in path");
     assert_eq!(s.eval("(length (window-list))").unwrap(), "1");
 }
+
+#[test]
+fn tsconfig_path_aliases() {
+    let root = tree(
+        "gf-alias",
+        &[
+            (".git/", ""),
+            (
+                "tsconfig.json",
+                // Comments and trailing commas, as tsconfig allows.
+                "{\n  // aliases\n  \"compilerOptions\": {\n    /* src */ \"paths\": { \"@/*\": [\"./src/*\"], \"@/ui/*\": [\"./design/*\",], \"lib\": [\"./src/lib/form.ts\"], },\n  },\n}\n",
+            ),
+            (
+                "src/lib/form.ts",
+                "import \"@/components/form/fields\";\nimport \"@/ui/button\";\nimport \"lib\";\nimport \"@/missing\";\n",
+            ),
+            ("src/components/form/fields.tsx", "\n"),
+            ("src/ui/button.ts", "\n"),
+            ("design/button.ts", "\n"),
+        ],
+    );
+    let mut s = open(&root.join("src/lib/form.ts"));
+    type_keys(&mut s, "f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("src/components/form/fields.tsx")
+            .display()
+            .to_string()
+    );
+    // The longest prefix wins: @/ui/* over @/*.
+    type_keys(&mut s, "<C-o>j0f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("design/button.ts").display().to_string()
+    );
+    // An exact pattern.
+    type_keys(&mut s, "<C-o>j0f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("src/lib/form.ts").display().to_string()
+    );
+    type_keys(&mut s, "j0f\"lgf");
+    assert_eq!(s.status(), "Can't find file \"@/missing\" in path");
+}
+
+#[test]
+fn aliases_from_an_extended_config_and_base_url() {
+    let root = tree(
+        "gf-extends",
+        &[
+            ("tsconfig.json", "{ \"extends\": \"./config/base\" }\n"),
+            (
+                "config/base.json",
+                "{ \"compilerOptions\": { \"baseUrl\": \"../app\", \"paths\": { \"~lib/*\": [\"lib/*\"] } } }\n",
+            ),
+            ("app/main.js", "require(\"~lib/util\")\n"),
+            ("app/lib/util.js", "\n"),
+        ],
+    );
+    let mut s = open(&root.join("app/main.js"));
+    type_keys(&mut s, "f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("app/lib/util.js").display().to_string()
+    );
+}
+
+#[test]
+fn includeexpr_is_any_procedure() {
+    let root = tree("gf-expr", &[("a.txt", "pkg.mod\n"), ("pkg/mod.txt", "\n")]);
+    let mut s = open(&root.join("a.txt"));
+    s.eval(
+        r#"(set-local-option! 'includeexpr
+             (lambda (name) (list (string-append (string-join (split-many name ".") "/") ".txt"))))"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "gf");
+    assert!(current_path(&mut s).ends_with("pkg/mod.txt"));
+}

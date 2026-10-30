@@ -81,21 +81,33 @@
     (or (list-find (lambda (p) (and (file-exists? p) (not (file-directory? p)))) files)
         (and (file-directory? base) base))))
 
+(define (included-names name)
+  "The names the buffer's includeexpr gives for `name`, or '()."
+  (let ([expr (option 'includeexpr)])
+    (if (procedure? expr)
+        (let ([names (expr name)]) (if (list? names) (filter string? names) '()))
+        '())))
+
 (define (file-bases name)
   "The paths to look for `name` at, in order: as it is when absolute;
    only from the buffer's directory for ./ and ../; else from the
-   buffer's directory, the project root and the working directory."
+   buffer's directory, then the names includeexpr gives, then the
+   project root and the working directory."
   (let ([dir (buffer-directory)])
     (cond
       [(starts-with? name "/") (list (clean-path name))]
       [(or (starts-with? name "./") (starts-with? name "../") (equal? name ".") (equal? name ".."))
        (list (join-path dir name))]
       [else
-       (let loop ([dirs (list dir (project-root) (current-dir))] [out '()])
-         (cond [(null? dirs) (reverse out)]
-               [(not (car dirs)) (loop (cdr dirs) out)]
-               [else (let ([p (join-path (car dirs) name)])
-                       (loop (cdr dirs) (if (member p out) out (cons p out))))]))])))
+       (let loop ([paths (append (list (join-path dir name))
+                                 (map (lambda (n) (if (starts-with? n "/") (clean-path n) (join-path dir n)))
+                                      (included-names name))
+                                 (map (lambda (d) (join-path d name))
+                                      (filter (lambda (d) d) (list (project-root) (current-dir)))))]
+                  [out '()])
+         (cond [(null? paths) (reverse out)]
+               [(member (car paths) out) (loop (cdr paths) out)]
+               [else (loop (cdr paths) (cons (car paths) out))]))])))
 
 (define (find-file-named name)
   "The path gf opens for `name` (with ~/ and $NAME expanded), or #f."
@@ -138,6 +150,135 @@
     (normal-clamp!)
     (set! *goal-col* (current-col))
     void))
+
+;;; TypeScript and JavaScript: compilerOptions.paths from the nearest
+;;; tsconfig.json or jsconfig.json, as includeexpr.
+
+(define (without-json-comments text)
+  "`text` without // and /* */ comments outside strings, as tsconfig
+   allows."
+  (let ([n (string-length text)])
+    (let loop ([i 0] [out '()] [in-string? #f])
+      (if (>= i n)
+          (list->string (reverse out))
+          (let ([c (string-ref text i)] [next (and (< (+ i 1) n) (string-ref text (+ i 1)))])
+            (cond
+              [in-string?
+               (cond [(and (equal? c #\\) next) (loop (+ i 2) (cons next (cons c out)) #t)]
+                     [(equal? c #\") (loop (+ i 1) (cons c out) #f)]
+                     [else (loop (+ i 1) (cons c out) #t)])]
+              [(equal? c #\") (loop (+ i 1) (cons c out) #t)]
+              [(and (equal? c #\/) (equal? next #\/))
+               (let skip ([j i]) (if (or (>= j n) (equal? (string-ref text j) #\newline)) (loop j out #f) (skip (+ j 1))))]
+              [(and (equal? c #\/) (equal? next #\*))
+               (let skip ([j (+ i 2)])
+                 (cond [(>= (+ j 1) n) (loop n out #f)]
+                       [(and (equal? (string-ref text j) #\*) (equal? (string-ref text (+ j 1)) #\/)) (loop (+ j 2) out #f)]
+                       [else (skip (+ j 1))]))]
+              [else (loop (+ i 1) (cons c out) #f)]))))))
+
+(define (without-trailing-commas text)
+  "`text` without the commas before a } or ], outside strings."
+  (let ([n (string-length text)])
+    (define (closes-next? j)
+      (cond [(>= j n) #f]
+            [(char-whitespace? (string-ref text j)) (closes-next? (+ j 1))]
+            [else (memv (string-ref text j) '(#\} #\]))]))
+    (let loop ([i 0] [out '()] [in-string? #f])
+      (if (>= i n)
+          (list->string (reverse out))
+          (let ([c (string-ref text i)])
+            (cond
+              [in-string?
+               (cond [(and (equal? c #\\) (< (+ i 1) n)) (loop (+ i 2) (cons (string-ref text (+ i 1)) (cons c out)) #t)]
+                     [(equal? c #\") (loop (+ i 1) (cons c out) #f)]
+                     [else (loop (+ i 1) (cons c out) #t)])]
+              [(equal? c #\") (loop (+ i 1) (cons c out) #t)]
+              [(and (equal? c #\,) (closes-next? (+ i 1))) (loop (+ i 1) out #f)]
+              [else (loop (+ i 1) (cons c out) #f)]))))))
+
+(define (read-json-config path)
+  "The JSON in config file `path`, comments and trailing commas allowed,
+   or #f if it can't be read."
+  (with-handler (lambda (e) #f)
+                (json-decode (without-trailing-commas (without-json-comments (read-file path))))))
+
+(define (nearest-script-config dir)
+  "The nearest tsconfig.json, or jsconfig.json, in `dir` or above it, or #f."
+  (let up ([d dir])
+    (cond [(file-exists? (join-path d "tsconfig.json")) (join-path d "tsconfig.json")]
+          [(file-exists? (join-path d "jsconfig.json")) (join-path d "jsconfig.json")]
+          [(or (equal? d "/") (equal? d "")) #f]
+          [else (up (directory-of d))])))
+
+(define (config-paths path depth)
+  "The path aliases config `path` sets, or those of the configs it
+   extends (relative ones only), as (paths . base): `paths` the hash of
+   compilerOptions.paths, `base` the directory they're relative to (its
+   baseUrl, else the config's own directory). #f with none."
+  (let ([json (and (< depth 5) (file-exists? path) (read-json-config path))])
+    (and (hash? json)
+         (let ([dir (directory-of path)] [paths (jget json "compilerOptions" "paths")])
+           (if (hash? paths)
+               (cons paths (let ([base (jget json "compilerOptions" "baseUrl")])
+                             (if (string? base) (join-path dir base) dir)))
+               (let* ([ext (jget json "extends")]
+                      [exts (cond [(string? ext) (list ext)] [(list? ext) (reverse ext)] [else '()])])
+                 ;; The last of several extends wins, as in TypeScript.
+                 (let loop ([exts exts])
+                   (cond [(null? exts) #f]
+                         [(and (string? (car exts))
+                               (or (starts-with? (car exts) "./") (starts-with? (car exts) "../")))
+                          (let* ([p (join-path dir (car exts))]
+                                 [p (if (ends-with? p ".json") p (string-append p ".json"))])
+                            (or (config-paths p (+ depth 1)) (loop (cdr exts))))]
+                         [else (loop (cdr exts))]))))))))
+
+(define (alias-match pattern name)
+  "What `name` gives in alias `pattern`, as (prefix-length . star): star
+   the part matching its *, \"\" for an exact pattern; #f if no match."
+  (let ([star (let find ([i 0]) (cond [(>= i (string-length pattern)) #f]
+                                      [(equal? (string-ref pattern i) #\*) i]
+                                      [else (find (+ i 1))]))])
+    (if star
+        (let ([prefix (substring pattern 0 star)]
+              [suffix (substring pattern (+ star 1) (string-length pattern))])
+          (and (starts-with? name prefix) (ends-with? name suffix)
+               (>= (string-length name) (+ (string-length prefix) (string-length suffix)))
+               (cons (string-length prefix)
+                     (substring name (string-length prefix) (- (string-length name) (string-length suffix))))))
+        (and (equal? pattern name) (cons (+ (string-length name) 1) "")))))
+
+(define (script-aliases name)
+  "includeexpr for TypeScript and JavaScript: the paths `name` gives
+   through the nearest config's compilerOptions.paths, from the pattern
+   with the longest prefix (an exact one first)."
+  (let ([found (let ([config (nearest-script-config (buffer-directory))])
+                 (and config (config-paths config 0)))])
+    (if (not found)
+        '()
+        (let* ([paths (car found)] [base (cdr found)]
+               [best (let loop ([patterns (hash-keys->list paths)] [best #f])
+                       (if (null? patterns)
+                           best
+                           (let ([m (alias-match (car patterns) name)])
+                             (loop (cdr patterns)
+                                   (if (and m (or (not best) (> (car m) (car (cadr best)))))
+                                       (list (car patterns) m)
+                                       best)))))])
+          (if (not best)
+              '()
+              (let ([targets (hash-ref paths (car best))] [star (cdr (cadr best))])
+                (map (lambda (t)
+                       (let ([i (let find ([i 0]) (cond [(>= i (string-length t)) #f]
+                                                        [(equal? (string-ref t i) #\*) i]
+                                                        [else (find (+ i 1))]))])
+                         (join-path base (if i
+                                             (string-append (substring t 0 i) star (substring t (+ i 1) (string-length t)))
+                                             t))))
+                     (if (list? targets) (filter string? targets) '()))))))))
+
+(set! *script-includeexpr* script-aliases)
 
 (define (go-to-file-named! name split? at)
   "Opens the file `name` names, after splitting the window if `split?`,
