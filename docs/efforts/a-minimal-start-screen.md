@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/start-screen]]"]
 issue: https://github.com/apisandipas/imp/issues/75
 frozen:
