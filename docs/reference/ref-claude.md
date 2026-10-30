@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/claude]]"
 frozen:
-  docs/specs/claude.md: 449d64b1eec0
+  docs/specs/claude.md: ea885bd760a5
 ---
 # Claude Code
 
@@ -26,7 +26,7 @@ Claude takes the right 40% of the screen. Its place is a popup rule, so you can 
 | `SPC a b` | Send the whole buffer |
 | `SPC a f` | Send a reference to the file, as `@path`, for Claude to read |
 
-What you send is pasted into Claude's prompt, labelled with its file and lines as `path:lines`. Nothing is submitted: add what you want done, and press `<ret>`.
+What you send is pasted into Claude's prompt, labelled with its file and lines as `path:lines`. Nothing is submitted: add what you want done, and press `<ret>`. To send code to your project's shell to run instead, use `SPC o s` ([terminals](ref-terminals.md#sending-text-to-the-terminal)).
 
 Claude Code drops anything typed while it starts up. A new Claude only gets your text a moment after it's ready, `claude-settle-ms` (1000 ms) later. If text sent to a new Claude goes missing, raise it in `init.scm`:
 

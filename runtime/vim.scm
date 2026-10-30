@@ -2324,8 +2324,12 @@
 (define (prefix-key? key)
   "Whether `key` waits for another key in normal mode.
    True for declared prefixes and char motions, and for char commands
-   when no operator is pending."
-  (or (hash-contains? *prefix-keys* key)
+   when no operator is pending. A prefix repeating an operator's last key
+   isn't one, so gzz is the linewise gz though z is a prefix (zffx is
+   still zf to the x: f is a char motion)."
+  (or (and (hash-contains? *prefix-keys* key)
+           (not (and *operator* (= (string-length *operator*) 2)
+                     (equal? key (substring *operator* 1 2)))))
       (hash-contains? *char-motions* key)
       (and (not *operator*) (hash-contains? *char-commands* key))))
 

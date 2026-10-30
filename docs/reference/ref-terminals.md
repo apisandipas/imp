@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 50e895cf4812
+  docs/specs/terminals.md: 01ca620df0d2
 ---
 # Terminals
 
@@ -43,6 +43,28 @@ Popups on the same side share a window, so bringing up the terminal while [Claud
 ```
 
 Now `SPC g l`, or `M-x lazygit`, shows the project's lazygit, and hides it again. To hide it from the TERMINAL state with one key, add `(define-terminal-key! "M-g" (lambda () (run-command 'lazygit)))`.
+
+## Sending text to the terminal
+
+Send code from a file to run in your project's terminal:
+
+| Key | What it sends |
+|---|---|
+| `SPC o s` | The selection in visual mode, or the current line in normal state |
+| `SPC o b` | The whole buffer |
+| `gz{motion}` | What the motion or text object covers: `gzap` a paragraph, `gzip` without its blank line |
+| `gzz` | The current line |
+| `gz` | In visual mode, the selection |
+
+The terminal starts if it isn't running and comes up if it's hidden. The cursor stays in your buffer. Sending the line moves the cursor to the next line, so `SPC o s` again sends that one. Visual mode ends after sending. `gz` is an operator like `d` or `y`, so `.` sends the same again from where the cursor is now.
+
+The text arrives as one paste, as your terminal's own paste does, with a final line break dropped. Then imp presses `<ret>` to run it. To have it wait for your `<ret>` instead, turn that off:
+
+```scheme
+(set-option! 'terminal-send-enter #f)
+```
+
+A shell that's still starting gets the text once it has printed its prompt. Claude has its own sending keys, on [its page](ref-claude.md).
 
 ## Typing to the program
 
