@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 65e6217721c1
+  docs/specs/terminals.md: 127f6a0b5b15
 ---
 # Terminals
 
@@ -100,7 +100,7 @@ A shell that's still starting gets the text once it has printed its prompt. Clau
 
 A terminal knows its directory: where it started, and then wherever you `cd`, if your shell reports it. From a terminal buffer:
 
-- `find-file` lists the files under that directory.
+- `find-file` lists the files of that directory's project, or under the directory outside one.
 - `:e NAME` opens a relative `NAME` from there, and `<tab>` completes there.
 - `:Ex` opens the file browser there.
 - `:terminal` and `SPC o T` start the new terminal there.

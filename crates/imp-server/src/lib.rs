@@ -391,10 +391,17 @@ impl Server {
                     ],
                 )
             }
-            ClientMsg::Resize { width, height } => editor::with(|e| {
-                e.width = width;
-                e.height = height;
-            }),
+            ClientMsg::Resize { width, height } => {
+                let changed = editor::with(|e| {
+                    let changed = (e.width, e.height) != (width, height);
+                    e.width = width;
+                    e.height = height;
+                    changed
+                });
+                if changed {
+                    self.call("imp-resized", vec![]);
+                }
+            }
             ClientMsg::Hello { heights } => self.set_heights(heights),
             ClientMsg::Cell { width } => self.set_cell_width(width),
         }
