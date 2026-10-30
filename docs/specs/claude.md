@@ -8,7 +8,7 @@ anchors: [runtime/claude.scm, crates/imp-server/tests/claude.rs]
 ## Behaviour
 
 - One `claude-command` terminal per project root, shown down the right (40%) by a popup rule. `M-a` shows it, or hides it from inside; the program keeps running. It is a toggled terminal, as the project's shell is ([[spec/terminals]]), with sending on top.
-- `SPC a s`, `SPC a b` and `SPC a f` paste the selection or line, the buffer, or `@path` into its prompt as a bracketed paste, labelled `path:lines`.
+- `SPC a s`, `SPC a b` and `SPC a f` paste the selection or line, the buffer, or `@path` into its prompt as a bracketed paste, labelled `path:lines`. They send as the project's terminal's sending does ([[spec/terminals]]), but never with `<ret>`, and they take you to Claude's window.
 - A new instance only gets text `claude-settle-ms` after it turns bracketed paste on, because Claude Code drops input sent before then.
 
 ## Keys and options

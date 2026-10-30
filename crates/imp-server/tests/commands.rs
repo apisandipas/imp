@@ -179,7 +179,10 @@ fn the_command_line_offers_commands() {
     // A name that is both an ex command and a command shows once, and
     // Vim's names are still full ones only.
     type_keys(&mut s, ":termina");
-    assert_eq!(cmd_menu(&mut s), ["terminal"]);
+    assert_eq!(
+        cmd_menu(&mut s),
+        ["terminal", "terminal-send-buffer", "terminal-send-region"]
+    );
     type_keys(&mut s, "<esc>:nohl");
     assert_eq!(cmd_menu(&mut s), ["nohlsearch"]);
 }

@@ -8,10 +8,12 @@
 ;;;
 ;;; SPC o t (or M-`) toggles the project's own shell in a window down the
 ;;; right; define-toggled-terminal! makes a toggle like it for any program.
+;;; SPC o s and SPC o b send it the line or selection, or the buffer, to run.
 
 (define *terminals* (hash))  ; terminal id -> buffer
 (define *term-redraw* #f)    ; a pending redraw timer
 (define *term-prefix* #f)    ; after C-\ in the terminal state
+(define *terminals-heard* '()) ; terminals that have printed something
 (define term-redraw-ms 15)
 
 (define (term-id)
@@ -134,13 +136,18 @@
   (let ([id (and (eq? *mode* 'terminal) (term-id))]
         [text (list->string (map (lambda (c) (if (equal? c #\newline) (integer->char 13) c)) (string->list text)))])
     (and id
-         (let ([esc (string (integer->char 27))])
-           (term-send! id (if (term-bracketed-paste? id)
-                              (string-append esc "[200~" text esc "[201~")
-                              text))
+         (begin
+           (term-send! id (if (term-bracketed-paste? id) (bracketed text) text))
            #t))))
 
 (set! *paste-handler* term-paste!)
+
+(define (bracketed text)
+  "`text` wrapped in bracketed-paste escapes.
+   Programs that asked for bracketed paste take it as one paste rather
+   than as typing, so its line breaks don't submit anything."
+  (let ([esc (string (integer->char 27))])
+    (string-append esc "[200~" text esc "[201~")))
 
 (define (term-fit! id)
   "Sizes terminal `id` to the windows showing it: the smallest rows and
@@ -172,6 +179,7 @@
   "Called when terminal `id` has output: redraws terminals shortly.
    Output arrives in chunks, so the redraw waits term-redraw-ms for them
    to pause."
+  (unless (memv id *terminals-heard*) (set! *terminals-heard* (cons id *terminals-heard*)))
   (unless *term-redraw*
     (set! *term-redraw*
           (run-after! term-redraw-ms
@@ -187,6 +195,7 @@
   (term-redraw! id)
   (let ([buf (hash-try-get *terminals* id)])
     (set! *terminals* (hash-remove *terminals* id))
+    (set! *terminals-heard* (filter (lambda (t) (not (= t id))) *terminals-heard*))
     (term-kill! id)
     (when (and buf (memv buf (buffer-list)))
       (let ([here (current-buffer)])
@@ -376,3 +385,87 @@
 (define-leader! "oT" 'terminal "terminal here")
 (for-each (lambda (state) (define-key! state "M-`" 'toggle-terminal)) '(normal visual insert emacs))
 (define-terminal-key! "M-`" (lambda () (toggled-terminal-toggle! 'toggle-terminal)))
+
+;;; Sending text to the project's terminal
+;;;
+;;;   SPC o s   send the selection (in visual), or the current line
+;;;   SPC o b   send the whole buffer
+;;;   gz        an operator: gzap a paragraph, gzz the line, gz in visual
+;;;             the selection; . sends the same again
+;;;
+;;; It goes as a paste and then runs: <ret> follows it unless
+;;; terminal-send-enter is off. You stay in your buffer.
+
+(define-option! 'terminal-send-enter #t '())
+(define terminal-ready-ms 100)   ; how often to look for a new shell's prompt
+(define terminal-ready-tries 50) ; and how many times, before giving up
+
+(define (terminal-paste! id text enter?)
+  "Sends `text` to terminal `id` as a paste: bracketed if its program
+   asked for that, else typed, line breaks as returns. Then a return if
+   `enter?`."
+  (let ([ret (string (integer->char 13))])
+    (term-send! id (if (term-bracketed-paste? id)
+                       (bracketed text)
+                       (list->string (map (lambda (c) (if (equal? c #\newline) (integer->char 13) c))
+                                          (string->list text)))))
+    (when enter? (term-send! id ret))))
+
+(define (terminal-paste-when-heard! buf text enter? tries)
+  "Pastes `text` to the terminal in `buf` once it has printed something
+   (a new shell's prompt), so the text isn't lost while it starts. Looks
+   every terminal-ready-ms, `tries` more times, then gives up saying so."
+  (let ([id (buffer-terminal buf)])
+    (cond
+      [(not id) (message "the terminal exited, so nothing was sent")]
+      [(memv id *terminals-heard*) (terminal-paste! id text enter?)]
+      [(> tries 0)
+       (run-after! terminal-ready-ms (lambda () (terminal-paste-when-heard! buf text enter? (- tries 1))))]
+      [else (message "the terminal printed nothing, so nothing was sent")]))
+  void)
+
+(define (terminal-send! text)
+  "Sends `text` to the current project's terminal to run, a final line
+   break dropped. Shows the terminal, starting it if need be, and leaves
+   you in the window you were in, in normal state."
+  (let* ([origin (current-window)]
+         [buf (toggled-terminal-show! 'toggle-terminal (toggled-terminal-root))]
+         [text (if (ends-with? text "\n") (substring text 0 (- (string-length text) 1)) text)])
+    (when (memv origin (window-list)) (go-to-window! origin))
+    (set-mode! 'normal)
+    (when buf (terminal-paste-when-heard! buf text (option 'terminal-send-enter) terminal-ready-tries))))
+
+(define (terminal-source?)
+  "Whether the current buffer is something to send from.
+   The project's terminal isn't; says so and returns #f."
+  (if (eq? (buffer-local 'toggled-name) 'toggle-terminal)
+      (begin (message "this is the terminal's own window") #f)
+      #t))
+
+(define (terminal-send-region! count)
+  "Sends the selection, or the current line, to the project's terminal.
+   Sending the line moves the cursor to the next, to send that one next."
+  (when (terminal-source?)
+    (let* ([visual? (eq? *mode* 'visual)]
+           [r (if visual? (visual-range) (lines-range (current-line) (current-line)))]
+           [text (buffer-substring (car r) (cadr r))])
+      (if visual?
+          (leave-visual!)
+          (let ([down (vertical (cursor) 1)]) (when down (set-cursor! down))))
+      (terminal-send! text))))
+
+(define (terminal-send-buffer! count)
+  "Sends the whole buffer to the project's terminal."
+  (when (terminal-source?)
+    (terminal-send! (buffer-substring 0 (buffer-length)))))
+
+(define-operator! "gz"
+  (lambda (start end linewise?)
+    (when (terminal-source?) (terminal-send! (buffer-substring start end))))
+  "send to terminal")
+(define-key! 'visual "gz" (lambda (count) (visual-operator! "gz" #f)) "send to terminal")
+
+(define-command! 'terminal-send-region terminal-send-region!)
+(define-command! 'terminal-send-buffer terminal-send-buffer!)
+(define-leader! "os" 'terminal-send-region "send selection or line to terminal")
+(define-leader! "ob" 'terminal-send-buffer "send buffer to terminal")
