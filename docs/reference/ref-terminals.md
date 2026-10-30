@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 2777f2c01ee9
+  docs/specs/terminals.md: 65e6217721c1
 ---
 # Terminals
 
@@ -160,6 +160,16 @@ Marks go with their lines when the history, 10,000 lines, scrolls them away.
 When the program sets a title, as `vim`, `htop` and many shells do, it shows dimmed after the buffer's name in the status line, and beside the name in `switch-buffer`. The buffer keeps its name, so popup rules still find it. An empty title clears it, and the last one stays after the program exits.
 
 In your own `statusline`, `%{title}` puts it where you like.
+
+## Copying from a program
+
+Programs that copy with OSC 52, such as `nvim`, `tmux` or a shell over `ssh`, copy to your clipboard as `"+y` does: on the clipboard, and in the unnamed register, so `p` pastes it. The message line says how much was copied, and from which terminal. A copy to the primary selection goes to `"*`.
+
+It's the clipboard of the machine imp runs on, so with `--via` it's the server's. Programs can't read the clipboard this way. To stop them copying:
+
+```scheme
+(set-option! 'terminal-clipboard #f)
+```
 
 ## Typing to the program
 

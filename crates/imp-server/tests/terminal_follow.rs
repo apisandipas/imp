@@ -292,3 +292,56 @@ fn prompts_are_marked_and_moved_between() {
     type_keys(&mut s, "<C-^>gg]]");
     assert_eq!(line(&mut s), "0");
 }
+
+/// Keeps clipboard writes in `*copied*` rather than on your clipboard,
+/// and reads off it.
+fn stub_clipboard(s: &mut imp_server::Server) {
+    s.eval(
+        "(define *copied* '())
+         (set! clipboard-set! (lambda (text primary) (set! *copied* (cons (list text primary) *copied*)) #t))
+         (set! clipboard-get (lambda (primary) #f))",
+    )
+    .unwrap();
+}
+
+#[test]
+fn programs_copy_to_the_clipboard() {
+    let (mut s, root, _) = project("osc52", "");
+    stub_clipboard(&mut s);
+    let script = root.join("copy.sh");
+    // "hello there", then "sel" to the primary selection, then a read.
+    std::fs::write(
+        &script,
+        "printf '\\033]52;c;aGVsbG8gdGhlcmU=\\007'; printf '\\033]52;p;c2Vs\\007'; printf '\\033]52;c;?\\007'; echo ready; exec cat\n",
+    )
+    .unwrap();
+    run(&mut s, &script);
+    assert_eq!(
+        s.eval("*copied*").unwrap(),
+        "((\"sel\" #true) (\"hello there\" #false))"
+    );
+    // As "+y does, the unnamed register too: the last copy.
+    assert_eq!(s.eval("(car (register-get #\\\"))").unwrap(), "\"sel\"");
+    let said = s.eval("*messages*").unwrap();
+    assert!(
+        said.contains("copied 11 characters from *terminal 1"),
+        "{said}"
+    );
+    // Nothing answered the read.
+    assert!(!s.text().contains("52;"), "{}", s.text());
+}
+
+#[test]
+fn terminal_clipboard_off_ignores_copies() {
+    let (mut s, root, _) = project("osc52-off", "");
+    stub_clipboard(&mut s);
+    s.eval("(set-option! 'terminal-clipboard #f)").unwrap();
+    let script = root.join("copy.sh");
+    std::fs::write(
+        &script,
+        "printf '\\033]52;c;aGk=\\007'; echo ready; exec cat\n",
+    )
+    .unwrap();
+    run(&mut s, &script);
+    assert_eq!(s.eval("*copied*").unwrap(), "()");
+}
