@@ -1,7 +1,7 @@
 ---
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/16
-summary: "Programs on a pty in a buffer, in a TERMINAL state, following the shell's directory and the program's title, and a shell per project toggled in a popup, which text can be sent to."
+summary: "Programs on a pty in a buffer, in a TERMINAL state, following the shell's directory and the program's title and kept from being killed by accident, and shells per project toggled in a popup, which text can be sent to."
 anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, crates/imp-server/tests/term.rs, crates/imp-gui/src/keys.rs]
 ---
 # Terminals
@@ -40,18 +40,30 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - **Shells that don't send it.** Without OSC 7 the directory stays where the terminal started. imp doesn't change your shell's setup; its reference page gives the lines for bash and zsh, which don't send it by default.
 - **Its title (OSC 0 and 2).** When the program sets a title, it shows after the buffer's name in the status line, dimmed, and beside the name in `switch-buffer`'s list. The buffer's name doesn't change, so popup rules and toggles keep finding it, and two terminals with the same title are told apart by their names. An empty title clears it; after the program exits, its last title stays.
 
+### Managing terminals
+
+- **Killing a running one asks.** A terminal whose program is still running is treated as a buffer with unsaved changes. `:bd` refuses it ("a program is running in it (add ! to kill it)"), and `:bd!` kills it. `kill-buffer` (`SPC b d`, `SPC b k`, `C-x k`) asks "kill the program running in NAME? (y or n)" first. A terminal whose program has exited is killed without asking. `SPC a k` stops Claude without asking, as it's a command to stop it.
+- **Quitting asks too.** `:q` (in the last window), `:qa`, `:wq`, `:x`, and `C-x C-c` refuse while a terminal is running, go to it, and say "a program is running in NAME (add ! to quit anyway)". `!` forms quit anyway. In a daemon, `:q` detaches the client and its terminals keep running, so it doesn't ask; `kill-server`, which stops them, asks y or n.
+- **Turning it off.** `(set-option! 'terminal-confirm-kill #f)` kills and quits without asking. A terminal's buffer can set it for itself with `set-buffer-local!`.
+- **A picker.** `switch-terminal` (`SPC o l`) lists the terminals: the buffer's name, then dimmed its command (or `shell`), its directory, and `exited` once its program has. Picking one shows it, in its popup window for a toggled terminal, else in the current window, and starts the TERMINAL state if it's running.
+- **`:terminal ++name=NAME ++cwd=DIR CMD`.** `++name=` names the buffer `NAME` instead of `*terminal N*`; `++cwd=DIR` starts it in `DIR` (`~` and relative paths taken from the current buffer's directory) instead. Both can come before the command, in either order; without a command it runs your shell. A name that's taken gets `<2>`, `<3>` after it.
+- **More than one per project.** A count picks which of a project's terminals `SPC o t` shows: `2 SPC o t` the second, started if need be, named `*terminal: PROJECT<2>*`. Without a count it shows the one last shown in that project (the first, to begin with), so `` M-` `` and `SPC o s` go to the one you were using. From inside any of them, `SPC o t` hides it. Toggles of your own (`define-toggled-terminal!`) take a count the same way.
+- **Daemons.** A daemon's terminals belong to the server: they keep running when the last client detaches, and are there for the next client.
+
 ## Keys and options
 
 - `SPC o t`, `M-\``: `toggle-terminal`. `SPC o T`: `terminal`.
 - `SPC o s`: `terminal-send-region`. `SPC o b`: `terminal-send-buffer`. `gz`: the send operator.
 - `terminal-send-enter` (on): whether sending presses `<ret>` after the text.
+- `SPC o l`: `switch-terminal`.
+- `terminal-confirm-kill` (on): whether killing or quitting with a running terminal asks.
 - `define-toggled-terminal!`.
 
 ## Out of scope
 
-- More than one toggled terminal per project (a count, names, a picker), and asking before killing a running one: #90.
 - A toggled terminal that follows the current file's directory rather than the project's.
-- Sending to a terminal other than the project's (a picker, or the last one used), and sending to your own toggles (`lazygit`): #90 or later.
+- Sending to a terminal other than the project's last-shown one (choosing one to send to), and sending to your own toggles (`lazygit`).
+- Naming a toggled terminal, renaming a terminal buffer, and saving terminals across restarts.
 - Language-aware sending (a whole function, a cell between `# %%` markers), and adapting text for a particular REPL (IPython's `%cpaste`).
 - Middle-click pasting the primary selection in the window client.
 - Mouse movement without a button held (any-motion reporting), which the clients don't send.
