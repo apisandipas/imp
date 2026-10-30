@@ -918,6 +918,19 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("set-mode-face!", |face: String| {
         editor::with(|e| e.mode_face = face)
     });
+    // A %{name} value for buffer `buf` (a terminal's title, set as its
+    // output arrives).
+    engine.register_fn(
+        "set-buffer-status-value!",
+        |buf: isize, name: String, value: String| {
+            editor::with(|e| {
+                e.status_values
+                    .entry(clamp(buf))
+                    .or_default()
+                    .insert(name, value);
+            })
+        },
+    );
     // A %{name} value for the current buffer, or every buffer if
     // `global?`.
     engine.register_fn(

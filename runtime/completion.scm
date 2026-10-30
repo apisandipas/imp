@@ -274,7 +274,11 @@
                          (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])
                            (if (null? hit)
                                (message (string-append "no buffer " name))
-                               (go-to-buffer! (car hit)))))))))
+                               (go-to-buffer! (car hit)))))
+                       ;; A terminal's title beside its name.
+                       (lambda (name)
+                         (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])
+                           (and (pair? hit) (buffer-local-of (car hit) 'term-title))))))))
 
 (define *all-definitions* '())
 (define *all-definitions-key* #f)  ; the sources they were read from

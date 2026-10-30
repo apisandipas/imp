@@ -167,10 +167,17 @@
 
 (define (term-follow! id buf)
   "Keeps what terminal `id`'s program reported in its buffer `buf`, so it
-   outlives the program: the shell's directory (OSC 7)."
-  (let ([dir (term-directory id)])
+   outlives the program: the shell's directory (OSC 7), and its title
+   (OSC 0 or 2), shown as the status line's %{title}."
+  (let ([dir (term-directory id)] [title (term-title id)])
     (when (and dir (not (equal? dir (buffer-local-of buf 'term-dir))))
-      (set-buffer-local-of! buf 'term-dir dir))))
+      (set-buffer-local-of! buf 'term-dir dir))
+    (when (and title (not (equal? title (or (buffer-local-of buf 'term-title) ""))))
+      (set-buffer-local-of! buf 'term-title (if (equal? title "") #f title))
+      (set-buffer-status-value! buf "title"
+                                (if (equal? title "")
+                                    ""
+                                    (string-append "%#status.dim#  " (apply string-append (map (lambda (c) (if (equal? c #\%) "%%" (string c))) (string->list title))) "%*"))))))
 
 (define (term-redraw! id)
   "Redraws terminal `id` into its buffer, sized to its windows.

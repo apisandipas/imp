@@ -162,3 +162,84 @@ fn a_toggled_terminal_stays_its_projects() {
     s.keys(&["M-`"]);
     assert_eq!(s.eval("(length (window-list))").unwrap(), "1");
 }
+
+/// Sets the title to `title` (OSC 2, or OSC 0 if `zero`), then says
+/// `said` and waits for a line.
+fn titling(title: &str, zero: bool, said: &str) -> String {
+    let n = if zero { 0 } else { 2 };
+    format!("printf '\\033]{n};{title}\\007'; echo {said}; read line; ")
+}
+
+fn rows(s: &mut imp_server::Server) -> Vec<String> {
+    s.frame()
+        .text_rows()
+        .into_iter()
+        .map(|r| r.trim().to_string())
+        .collect()
+}
+
+#[test]
+fn the_title_shows_after_the_name() {
+    let (mut s, root, _) = project("follow-title", "");
+    let script = root.join("title.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "{}{}{}exec cat\n",
+            titling("vim 50%% done; ok", false, "ready"),
+            titling("htop", true, "second"),
+            titling("", false, "cleared")
+        ),
+    )
+    .unwrap();
+    run(&mut s, &script);
+    // In the status line, and the buffer's name is the same.
+    let status = status_row(&mut s);
+    assert!(status.contains("*terminal 1: sh "), "{status}");
+    assert!(status.contains("  vim 50% done; ok"), "{status}");
+    // OSC 0 too.
+    s.keys(&["<ret>"]);
+    wait_for(&mut s, "second", |s| s.text().contains("second"));
+    assert!(status_row(&mut s).contains("  htop"));
+    // Beside the name in switch-buffer.
+    s.keys(&["C-\\", "C-n"]);
+    s.eval("(run-command 'switch-buffer)").unwrap();
+    type_keys(&mut s, "a.txt");
+    type_keys(&mut s, "<ret>");
+    s.eval("(run-command 'switch-buffer)").unwrap();
+    let menu = rows(&mut s);
+    assert!(
+        menu.iter()
+            .any(|r| r.contains("*terminal 1") && r.contains("htop")),
+        "{menu:?}"
+    );
+    type_keys(&mut s, "terminal<ret>");
+    // An empty title clears it.
+    s.keys(&["i", "<ret>"]);
+    wait_for(&mut s, "cleared", |s| s.text().contains("cleared"));
+    assert!(
+        !status_row(&mut s).contains("htop"),
+        "{}",
+        status_row(&mut s)
+    );
+}
+
+#[test]
+fn the_last_title_stays_after_the_program_exits() {
+    let (mut s, root, _) = project("follow-title-exit", "");
+    let script = root.join("title.sh");
+    std::fs::write(
+        &script,
+        "printf '\\033]2;building\\007'; echo ready; exit 3\n",
+    )
+    .unwrap();
+    run(&mut s, &script);
+    wait_for(&mut s, "the exit", |s| {
+        s.text().contains("[process exited 3]")
+    });
+    assert!(
+        status_row(&mut s).contains("  building"),
+        "{}",
+        status_row(&mut s)
+    );
+}

@@ -93,6 +93,12 @@ precmd_functions+=(_osc7)
 
 A report from another machine, from a shell you `ssh`'d into, is ignored, so the directory stays the last one on this machine.
 
+## The program's title
+
+When the program sets a title, as `vim`, `htop` and many shells do, it shows dimmed after the buffer's name in the status line, and beside the name in `switch-buffer`. The buffer keeps its name, so popup rules still find it. An empty title clears it, and the last one stays after the program exits.
+
+In your own `statusline`, `%{title}` puts it where you like.
+
 ## Typing to the program
 
 A new terminal starts in the TERMINAL state. Every key goes to the program, even `<esc>` and `:`.
