@@ -32,6 +32,8 @@ fn menu_narrows_as_you_type() {
 #[test]
 fn moving_the_selection() {
     let mut s = server("");
+    // The menu's own order, not what was picked (tests/completion_history.rs).
+    s.eval("(set-option! 'completion-history #f)").unwrap();
     s.eval(r#"(completing-read "Pick: " (list "a1" "a2" "a3") (lambda (x) (message x)))"#)
         .unwrap();
     s.keys(&["C-n", "C-n"]);

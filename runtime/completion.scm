@@ -22,6 +22,19 @@
 ;; 'file, 'buffer, 'symbol, 'option, 'project, or #f. A caller sets it
 ;; just before completing-read; closing the menu clears it.
 (define *completion-category* #f)
+;; Ranking by use (history.scm keeps the history): whether this menu is
+;; ranked (a caller whose order is already by use sets #f, as it sets
+;; *completion-category*), what a candidate is remembered as (find-file
+;; gives full paths), and the open menu's name and its candidates' scores.
+(define *completion-ranked* #t)
+(define *completion-key* (lambda (candidate) candidate))
+(define *completion-menu* #f)
+(define *completion-uses* '())
+;; history.scm sets these: (menu keys) -> a score per key, and (menu key)
+;; to record a pick.
+(define *completion-scores* (lambda (menu keys) '()))
+(define *completion-picked* (lambda (menu key) void))
+
 ;; (lambda (category candidate)) -> a short string (an icon) drawn before
 ;; the candidate, or #f. The nerd-icons package sets it.
 (define *completion-icon* (lambda (category candidate) #f))
@@ -40,7 +53,7 @@
   (set! *completion-matches*
         (if (and (eq? *completion-category* 'file) (outside-path? text))
             (directory-matches text)
-            (fuzzy-filter text *completion-candidates* *completion-limit*)))
+            (fuzzy-filter-ranked text *completion-candidates* *completion-uses* *completion-limit*)))
   (set! *completion-index* 0)
   (show-completions!))
 
@@ -164,6 +177,8 @@
 (define (close-completions!)
   "Closes the completion menu."
   (set! *completion-category* #f)
+  (set! *completion-ranked* #t)
+  (set! *completion-key* (lambda (candidate) candidate))
   (set-popup! '())
   (set-popup-selected! -1))
 
@@ -177,13 +192,23 @@
      (completing-read \"Open: \" '(\"notes.org\" \"todo.org\") open-file!)"
   (set! *completion-candidates* candidates)
   (set! *completion-annotate* (if (null? annotate) #f (car annotate)))
+  ;; Each kind of menu has its own history: its category's, or its prompt's.
+  (set! *completion-menu*
+        (and *completion-ranked*
+             (if *completion-category* (symbol->string *completion-category*) (trim prompt))))
+  (set! *completion-uses*
+        (if *completion-menu*
+            (map exact->inexact (*completion-scores* *completion-menu* (map *completion-key* candidates)))
+            '()))
   (open-cmdline!
    prompt ""
    (lambda (text)
-     (close-completions!)
-     (let ([choice (if (null? *completion-matches*)
-                       text
-                       (list-ref *completion-matches* *completion-index*))])
+     (let* ([picked? (pair? *completion-matches*)]
+            [choice (if picked? (list-ref *completion-matches* *completion-index*) text)]
+            [menu *completion-menu*]
+            [key *completion-key*])
+       (close-completions!)
+       (when (and picked? menu) (*completion-picked* menu (key choice)))
        (unless (equal? choice "") (on-select choice))))
    refilter!
    close-completions!)
@@ -260,6 +285,8 @@
            [ids (filter (lambda (id) (memv id (buffer-list))) ids)]
            [names (map (lambda (id) (car (buffer-info id))) ids)])
       (set! *completion-category* 'buffer)
+      ;; Already in order of use: the alternate buffer first.
+      (set! *completion-ranked* #f)
       (completing-read "Switch to buffer: " names
                        (lambda (name)
                          (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])

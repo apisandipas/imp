@@ -67,6 +67,8 @@
 (define (project-find-file-in root)
   "Asks for a file anywhere under `root`, then opens it."
   (set! *completion-category* 'file)
+  ;; Remembered by full path, so it ranks wherever you search from.
+  (set! *completion-key* (lambda (file) (if (outside-path? file) (absolute file) (string-append root "/" file))))
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
                    (lambda (file)
