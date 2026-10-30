@@ -1215,6 +1215,17 @@
   "Whether `c` is one of server `key`'s completion trigger characters."
   (member (string c) (or (jget (lsp-get key 'capabilities) "completionProvider" "triggerCharacters") '())))
 
+(define (completion-context key manual?)
+  "The context of a completion request to server `key`: typed with one
+   of its trigger characters just before the cursor, the request says so
+   (triggerKind 2), and a server can answer nothing where that char
+   means nothing, as TypeScript does for a space; otherwise it was
+   invoked (1), as by a key or after a word character."
+  (let ([c (and (not manual?) (> (cursor) 0) (buffer-char-at (- (cursor) 1)))])
+    (if (and c (not (char-word? c)) (trigger-char? key c))
+        (hash "triggerKind" 2 "triggerCharacter" (string c))
+        (hash "triggerKind" 1))))
+
 
 (define (lsp-completion-source manual? done)
   "The completion source for buffers with a language server: asks it
@@ -1231,7 +1242,7 @@
              (lsp-notify! key "$/cancelRequest" (hash "id" old)))
            (let ([id #f])
              (set! id (lsp-request! key "textDocument/completion"
-                         (hash-insert (lsp-here) "context" (hash "triggerKind" 1))
+                         (hash-insert (lsp-here) "context" (completion-context key manual?))
                          (lambda (result)
                            (when (equal? (lsp-get key 'completion-request) id)
                              (lsp-put! key 'completion-request #f))

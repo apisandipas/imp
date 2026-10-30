@@ -310,6 +310,45 @@ fn completion_opens_by_itself_while_typing() {
 }
 
 #[test]
+fn a_trigger_character_is_named_in_the_request() {
+    if !have_python() {
+        return;
+    }
+    let (mut s, _, log) = attached("trigger.rs", "\n");
+    let contexts = |log: &PathBuf| -> Vec<String> {
+        std::fs::read_to_string(log)
+            .unwrap()
+            .lines()
+            .filter(|l| l.contains("textDocument/completion"))
+            .map(|l| {
+                let at = l.find("\"context\"").unwrap();
+                l[at..l[at..].find('}').unwrap() + at + 1].to_string()
+            })
+            .collect()
+    };
+    // Typed: the fake server's trigger character is ".", so a server
+    // like TypeScript's can answer nothing where it means nothing.
+    type_keys(&mut s, "ix.");
+    settle(&mut s);
+    let last = contexts(&log).pop().unwrap();
+    assert!(last.contains(r#""triggerKind": 2"#), "{last}");
+    assert!(last.contains(r#""triggerCharacter": ".""#), "{last}");
+    // After a word character, or asked by a key, it was invoked.
+    type_keys(&mut s, "<esc>obe");
+    settle(&mut s);
+    assert_eq!(
+        contexts(&log).last().unwrap(),
+        r#""context": {"triggerKind": 1}"#
+    );
+    type_keys(&mut s, "<esc>o.<C-x><C-o>");
+    settle(&mut s);
+    assert_eq!(
+        contexts(&log).last().unwrap(),
+        r#""context": {"triggerKind": 1}"#
+    );
+}
+
+#[test]
 fn buffer_words_complete_without_a_server() {
     let mut s = server("hello help\nhe\n");
     type_keys(&mut s, "jA<C-n>");
