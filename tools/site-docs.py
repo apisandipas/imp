@@ -44,7 +44,7 @@ GROUPS = [
     ("Code", ["completion", "completion-by-use", "completion-at-point", "lsp", "tree-sitter", "dap"]),
     ("Git and Org", ["git", "git-blame", "git-gutter", "org", "org-agenda", "org-export"]),
     ("Extending imp", ["live-scheme-and-help", "packages", "kdl-config", "wasm-plugins",
-                       "daemon", "shared-buffers", "claude", "mcp"]),
+                       "daemon", "shared-buffers", "claude", "mcp", "showkeys"]),
 ]
 # Specs that aren't about using imp.
 SKIP = {"user-docs"}
