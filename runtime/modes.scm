@@ -270,6 +270,11 @@
 
 ;;; The modes that come with imp
 
+;; What gf tries after a name (docs/specs/go-to-file.md): endings,
+;; comma-separated, as Vim's suffixesadd.
+(define-option! 'suffixesadd "" '(sua))
+(define script-endings ".ts,.tsx,.d.ts,.js,.jsx,.mts,.mjs,.cts,.cjs")
+
 (define (set-mode-pairs! chars)
   "Sets the buffer's auto-pairs-chars to `chars`, for a major mode's
    setup, unless the user set the option globally."
@@ -304,6 +309,8 @@
          (case (car spec)
            [(scheme-mode lisp-mode) (set-mode-pairs! "()[]{}\"\"")]
            [(rust-mode) (set-mode-pairs! "()[]{}\"\"``")]
+           [(typescript-mode javascript-mode)
+            (unless (option-set? 'suffixesadd) (set-local-option! 'suffixesadd script-endings))]
            [else void])))))
  (list (list 'scheme-mode '("scm" "ss" "sld" "rkt") ";; %s" #t 2)
        (list 'lisp-mode '("lisp" "cl" "el" "clj" "cljs" "fnl") ";; %s" #t 2)
