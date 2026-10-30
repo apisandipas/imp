@@ -12,5 +12,6 @@ Opt-in packages that ship with imp ([[0011-non-essential-features-are-opt-in-pac
 - `org-export`: `C-c C-e` exports an Org buffer through pandoc.
 - `file-tree`: the project's folders as a tree down the left, `SPC t e`.
 - `modus-themes`: the Modus Vivendi and Operandi themes, from Modus's own palettes.
+- `showkeys`: the last keys pressed, in a floating box in a corner, for screencasts.
 
 The rules of `runtime/` apply here too: docstrings on every function, features as commands rather than ex commands, and core gets only the primitive a package can't do without.

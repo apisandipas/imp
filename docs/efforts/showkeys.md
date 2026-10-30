@@ -15,4 +15,4 @@ The floating box first, in the core, as the one primitive the package can't do w
 ## Tasks
 
 - [x] The floating box: `float-show!` and `float-hide!`, the six positions one cell in from the sides and clear of the bottom status lines, the `float.border` face, replaced by name, stacked away from the edge, cut to the screen, under popups and the command line; with tests on the frame's rows.
-- [ ] The showkeys package: `showkeys-mode`, the last `showkeys-max` keys, hidden after `showkeys-timeout`, key names and symbols with `showkeys-format`, `showkeys-count`, `showkeys-excluded-states`, `showkeys-position`, the `showkeys` faces, only keys pressed; with tests, the reference page, `packages/CONTEXT.md` and the README.
+- [x] The showkeys package: `showkeys-mode`, the last `showkeys-max` keys, hidden after `showkeys-timeout`, key names and symbols with `showkeys-format`, `showkeys-count`, `showkeys-excluded-states`, `showkeys-position`, the `showkeys` faces, only keys pressed; with tests, the reference page, `packages/CONTEXT.md` and the README.
