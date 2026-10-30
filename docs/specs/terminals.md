@@ -40,6 +40,14 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - **Shells that don't send it.** Without OSC 7 the directory stays where the terminal started. imp doesn't change your shell's setup; its reference page gives the lines for bash and zsh, which don't send it by default.
 - **Its title (OSC 0 and 2).** When the program sets a title, it shows after the buffer's name in the status line, dimmed, and beside the name in `switch-buffer`'s list. The buffer's name doesn't change, so popup rules and toggles keep finding it, and two terminals with the same title are told apart by their names. An empty title clears it; after the program exits, its last title stays.
 
+### Prompts
+
+- **Marks (OSC 133).** When the shell marks its prompts with OSC 133 (`A` where a prompt starts, `B` where the command you type starts, `C` where its output starts, `D;N` when it finishes with status `N`), the terminal remembers each command's prompt line and output lines. A mark goes when its line scrolls out of the history.
+- **Moving.** `]]` and `[[` go to the next and previous prompt, with a count and after operators; they move nowhere in other buffers, or in a terminal without marks.
+- **One command's output.** `io` is the output of the command the cursor is in (its prompt, command or output lines), as whole lines: `yio` yanks it, `gzio` sends it on. `ao` is the prompt and command with it. Output still being printed counts up to the last line.
+- **Signs.** Each prompt line has a sign in the sign column: `›`, or `✗` in the error face after a command that finished with a status other than 0.
+- **Shells that don't mark.** Without OSC 133 nothing changes. imp doesn't change your shell's setup; the reference page gives the lines for bash and zsh.
+
 ### Managing terminals
 
 - **Killing a running one asks.** A terminal whose program is still running is treated as a buffer with unsaved changes. `:bd` refuses it ("a program is running in it (add ! to kill it)"), and `:bd!` kills it. `kill-buffer` (`SPC b d`, `SPC b k`, `C-x k`) asks "kill the program running in NAME? (y or n)" first. A terminal whose program has exited is killed without asking. `SPC a k` stops Claude without asking, as it's a command to stop it.
@@ -56,6 +64,7 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - `SPC o s`: `terminal-send-region`. `SPC o b`: `terminal-send-buffer`. `gz`: the send operator.
 - `terminal-send-enter` (on): whether sending presses `<ret>` after the text.
 - `SPC o l`: `switch-terminal`.
+- `]]`, `[[`: next and previous prompt. `io`, `ao`: a command's output, and with its prompt.
 - `terminal-confirm-kill` (on): whether killing or quitting with a running terminal asks.
 - `define-toggled-terminal!`.
 
@@ -69,4 +78,5 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - Mouse movement without a button held (any-motion reporting), which the clients don't send.
 - Finding the directory without OSC 7 (reading the shell's from `/proc`), or setting it up in your shell for you.
 - Opening files on the other host of an `ssh` session, and the icon name (OSC 1).
+- Re-running a marked command, folding outputs, and showing a command's duration.
 - Setting the outer terminal's or the window client's title from a terminal's.
