@@ -430,12 +430,9 @@
 
 (define (dired-explore! arg)
   "Lists directory `arg`, or for \"\" the current buffer's directory.
-   That is the listed one in a browser, else the file's directory or
-   the working directory. The cursor starts on the current file."
-  (let ([dir (cond [(not (equal? arg "")) (expand-path arg)]
-                   [(dired-dir) (dired-dir)]
-                   [(buffer-path) (directory-of (expand-path (buffer-path)))]
-                   [else (current-dir)])])
+   That is the listed one in a browser, a terminal's, else the file's
+   directory or the working directory. The cursor starts on the current file."
+  (let ([dir (if (equal? arg "") (buffer-directory) (expand-path arg))])
     (if (file-directory? dir)
         (dired-open! dir (if (buffer-path) (file-name-of (buffer-path)) ""))
         (message (string-append dir " is not a directory")))))

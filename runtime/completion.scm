@@ -253,8 +253,11 @@
 (define-command! 'find-file
   (lambda (count)
     "Open a file under the current directory, skipping what .gitignore does."
-    (set! *completion-category* 'file)
-    (completing-read "Find file: " (list-files (current-dir) 50000) open-file!)))
+    ;; From a terminal, under its directory.
+    (let ([dir (or (buffer-local 'term-dir) (current-dir))])
+      (set! *completion-category* 'file)
+      (completing-read "Find file: " (list-files dir 50000)
+                       (lambda (f) (open-file! (from-terminal-directory f)))))))
 
 (define-command! 'switch-buffer
   (lambda (count)
@@ -271,7 +274,11 @@
                          (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])
                            (if (null? hit)
                                (message (string-append "no buffer " name))
-                               (go-to-buffer! (car hit)))))))))
+                               (go-to-buffer! (car hit)))))
+                       ;; A terminal's title beside its name.
+                       (lambda (name)
+                         (let ([hit (filter (lambda (id) (equal? (car (buffer-info id)) name)) ids)])
+                           (and (pair? hit) (buffer-local-of (car hit) 'term-title))))))))
 
 (define *all-definitions* '())
 (define *all-definitions-key* #f)  ; the sources they were read from

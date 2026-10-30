@@ -539,6 +539,17 @@
         (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value)))
   void)
 
+(define (buffer-local-of buf name)
+  "Buffer `buf`'s value for `name`, or #f if it has none."
+  (hash-try-get (or (hash-try-get *buffer-locals* buf) (hash)) name))
+
+(define (set-buffer-local-of! buf name value)
+  "Sets buffer `buf`'s own value for `name` to `value`."
+  (set! *buffer-locals*
+        (hash-insert *buffer-locals* buf
+                     (hash-insert (or (hash-try-get *buffer-locals* buf) (hash)) name value)))
+  void)
+
 (define (kill-buffer-locals! id)
   "Forgets every buffer-local value of buffer `id`, when it goes."
   (set! *buffer-locals* (hash-remove *buffer-locals* id))

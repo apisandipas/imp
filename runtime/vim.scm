@@ -3133,7 +3133,10 @@
                   (cond [(< j 0) #f] [(equal? (string-ref typed j) #\/) j] [else (loop (- j 1))]))]
          [dir (if slash (substring typed 0 (+ slash 1)) "")]
          [prefix (substring typed (string-length dir) (string-length typed))]
-         [listing (directory-entries (if (equal? dir "") (current-dir) (expand-path dir)))])
+         ;; From a terminal, relative to its directory.
+         [listing (directory-entries (if (equal? dir "")
+                                         (or (buffer-local 'term-dir) (current-dir))
+                                         (expand-path (from-terminal-directory dir))))])
     (if (string? listing)
         '()
         (map (lambda (e) (string-append dir (car e) (if (cadr e) "/" "")))
@@ -3889,6 +3892,14 @@
     [(starts-with? path "~/") (string-append (home-dir) (substring path 1 (string-length path)))]
     [else path]))
 
+(define (from-terminal-directory path)
+  "`path` as typed in a terminal buffer: a relative one is taken from the
+   terminal's directory. Elsewhere, and absolute or ~ paths, unchanged."
+  (let ([dir (buffer-local 'term-dir)] [p (expand-path path)])
+    (if (and dir (not (equal? p "")) (not (starts-with? p "/")))
+        (string-append dir "/" p)
+        path)))
+
 (define (abbreviate-path path)
   "`path` with the home directory shown as ~, for display."
   (let ([home (home-dir)])
@@ -3921,7 +3932,7 @@
          (if (and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
              (go-to-buffer! *alternate-buffer*)
              (set-status! "no alternate file"))]
-        [(not (equal? arg "")) (open-file! arg)]
+        [(not (equal? arg "")) (open-file! (from-terminal-directory arg))]
         ;; A buffer that isn't a file says how to re-read it (the file
         ;; browser lists its directory again).
         [(buffer-local 'revert-handler)

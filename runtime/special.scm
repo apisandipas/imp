@@ -18,6 +18,15 @@
           [(equal? (string-ref path i) #\/) (if (= i 0) "/" (substring path 0 i))]
           [else (loop (- i 1))])))
 
+(define (buffer-directory)
+  "The directory the current buffer is in: a terminal's (the shell's,
+   once it reports it), the one a file browser lists, the file's, else
+   imp's current directory."
+  (cond [(buffer-local 'term-dir) (buffer-local 'term-dir)]
+        [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
+        [(buffer-path) (directory-of (absolute-path (buffer-path)))]
+        [else (current-dir)]))
+
 (define (list-find pred items)
   "The first item of `items` that `pred` accepts, or #f."
   (cond [(null? items) #f]

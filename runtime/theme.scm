@@ -400,13 +400,14 @@
 ;;;
 ;;; Formats as in Vim's 'statusline' (see render.rs status_line): %m mode,
 ;;; %f file, %M modified, %l %c position, %p percent, %{name} a value set
-;;; with set-status-value! (major: the major mode, diagnostics: counts),
+;;; with set-status-value! (major: the major mode, diagnostics: counts,
+;;; title: a terminal's title),
 ;;; %#face# a face (%#mode# the mode's), %* the status face, %= right side.
 
 (define-option! 'statusline
-  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
+  "%#mode# %m %* %#status.file#%f%*%{title} %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
   '(stl))
-(define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
+(define-option! 'statusline-inactive "  %f%{title} %M%=%{major}  %l:%c   " '())
 
 (define (update-statusline! _value)
   "Hands the statusline options to the renderer. The watcher of both
