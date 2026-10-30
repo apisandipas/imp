@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/terminals]]"
 frozen:
-  docs/specs/terminals.md: 3f2bd7f48634
+  docs/specs/terminals.md: 2777f2c01ee9
 ---
 # Terminals
 
@@ -122,6 +122,38 @@ precmd_functions+=(_osc7)
 ```
 
 A report from another machine, from a shell you `ssh`'d into, is ignored, so the directory stays the last one on this machine.
+
+## Prompts
+
+If your shell marks its prompts, in normal state you can move by command and pick out one command's output:
+
+| Key | What it does |
+|---|---|
+| `]]` / `[[` | Go to the next or previous prompt |
+| `io` | The output of the command the cursor is in, as whole lines: `yio` yanks it, `gzio` sends it to the project's terminal |
+| `ao` | The same with its prompt and command |
+
+Each prompt gets a `›` in the sign column, or a `✗` after a command that failed.
+
+Shells mark prompts with an escape sequence, OSC 133. bash and zsh don't send it by default, so add these lines. In `~/.bashrc`, after setting `PS1` and after the directory line above, so `$?` is still the command's status:
+
+```bash
+PS0='\e]133;C\a'
+PROMPT_COMMAND='printf "\e]133;D;%s\a\e]133;A\a" "$?"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+PS1=$PS1'\[\e]133;B\a\]'
+```
+
+In `~/.zshrc`, after setting `PS1`:
+
+```zsh
+_osc133_precmd() { print -n "\e]133;D;$?\a\e]133;A\a" }
+_osc133_preexec() { print -n "\e]133;C\a" }
+precmd_functions=(_osc133_precmd $precmd_functions)
+preexec_functions+=(_osc133_preexec)
+PS1=$PS1$'%{\e]133;B\a%}'
+```
+
+Marks go with their lines when the history, 10,000 lines, scrolls them away.
 
 ## The program's title
 
