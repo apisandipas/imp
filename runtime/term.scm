@@ -358,28 +358,38 @@
 ;;;   (define-popup-rule! "*lazygit" 'side 'right 'size 0.5)
 ;;;   (define-leader! "gl" 'lazygit "lazygit")
 
-(define *toggled-terminals* (hash))  ; toggle name -> (hash project root -> buffer)
+(define *toggled-terminals* (hash))  ; toggle name -> (hash (project-root n) -> buffer)
+(define *toggled-last* (hash))       ; toggle name -> (hash project root -> n last shown)
 (define *toggles* (hash))            ; toggle name -> (command buffer-name-prefix)
+
+(define (toggled-terminal-last name root)
+  "Which of project `root`'s toggle `name` programs was last shown: 1 to
+   begin with."
+  (let ([table (hash-try-get *toggled-last* name)])
+    (or (and table (hash-try-get table root)) 1)))
 
 (define (toggled-terminal-root)
   "The project the current buffer belongs to; in a toggled terminal, its
    own. Outside any project, imp's current directory."
   (or (buffer-local 'toggled-root) (project-root) (current-dir)))
 
-(define (toggled-terminal-buffer name root)
-  "The buffer of toggle `name` for project `root`, or #f."
-  (let* ([table (hash-try-get *toggled-terminals* name)]
-         [buf (and table (hash-try-get table root))])
+(define (toggled-terminal-buffer name root . n)
+  "The buffer of toggle `name` for project `root`, or #f: its `n`th, or
+   the one last shown."
+  (let* ([n (if (pair? n) (car n) (toggled-terminal-last name root))]
+         [table (hash-try-get *toggled-terminals* name)]
+         [buf (and table (hash-try-get table (list root n)))])
     (and buf (memv buf (buffer-list)) buf)))
 
 (define (buffer-terminal buf)
   "The terminal running in buffer `buf`, or #f once it has exited."
   (list-find (lambda (id) (= (hash-ref *terminals* id) buf)) (hash-keys->list *terminals*)))
 
-(define (toggled-terminal-start! name command prefix root)
-  "Starts toggle `name`'s program for project `root` in a new buffer and
-   shows it. Returns the buffer, or #f if it couldn't start."
-  (let ([buf (buffer-new! (string-append prefix ": " (file-name-of root) "*"))]
+(define (toggled-terminal-start! name command prefix root n)
+  "Starts toggle `name`'s `n`th program for project `root` in a new
+   buffer and shows it. Returns the buffer, or #f if it couldn't start."
+  (let ([buf (buffer-new! (string-append prefix ": " (file-name-of root)
+                                         (if (= n 1) "" (string-append "<" (number->string n) ">")) "*"))]
         [command (if (symbol? command) (option command) command)])
     (display-buffer! buf)
     (set-buffer-local! 'toggled-name name)
@@ -389,14 +399,19 @@
          (begin
            (set! *toggled-terminals*
                  (hash-insert *toggled-terminals* name
-                              (hash-insert (or (hash-try-get *toggled-terminals* name) (hash)) root buf)))
+                              (hash-insert (or (hash-try-get *toggled-terminals* name) (hash)) (list root n) buf)))
            buf))))
 
-(define (toggled-terminal-show! name root)
-  "Shows toggle `name`'s program for project `root`, starting it if it
-   isn't running, and puts you in the terminal state there. Returns its
-   buffer, or #f if it couldn't start."
-  (let ([buf (toggled-terminal-buffer name root)] [spec (hash-ref *toggles* name)])
+(define (toggled-terminal-show! name root . n)
+  "Shows toggle `name`'s program for project `root`, its `n`th or the one
+   last shown, starting it if it isn't running, and puts you in the
+   terminal state there. Returns its buffer, or #f if it couldn't start."
+  (let* ([n (if (pair? n) (car n) (toggled-terminal-last name root))]
+         [buf (toggled-terminal-buffer name root n)]
+         [spec (hash-ref *toggles* name)])
+    (set! *toggled-last*
+          (hash-insert *toggled-last* name
+                       (hash-insert (or (hash-try-get *toggled-last* name) (hash)) root n)))
     (cond
       [(and buf (buffer-terminal buf))
        (display-buffer! buf)
@@ -406,7 +421,7 @@
       [else
        ;; It exited: start again in a fresh buffer.
        (when buf (kill-buffer! buf))
-       (toggled-terminal-start! name (car spec) (cadr spec) root)])))
+       (toggled-terminal-start! name (car spec) (cadr spec) root n)])))
 
 (define (toggled-terminal-hide!)
   "Leaves the current window's toggled terminal, closing the window, but
@@ -423,12 +438,13 @@
       [else (message "no other buffer to show")]))
   void)
 
-(define (toggled-terminal-toggle! name)
-  "Hides toggle `name`'s program when in its window; else shows this
-   project's."
-  (if (eq? (buffer-local 'toggled-name) name)
-      (toggled-terminal-hide!)
-      (toggled-terminal-show! name (toggled-terminal-root)))
+(define (toggled-terminal-toggle! name . count)
+  "Hides toggle `name`'s program when in one of its windows; else shows
+   this project's: its `count`th, or without a count the one last shown."
+  (cond
+    [(eq? (buffer-local 'toggled-name) name) (toggled-terminal-hide!)]
+    [(and (pair? count) (car count)) (toggled-terminal-show! name (toggled-terminal-root) (car count))]
+    [else (toggled-terminal-show! name (toggled-terminal-root))])
   void)
 
 (define (define-toggled-terminal! name command prefix)
@@ -441,18 +457,19 @@
   (set! *toggles* (hash-insert *toggles* name (list command prefix)))
   (define-command! name
     (lambda (count)
-      "Show this project's program in its window (starting it), or hide it from inside."
-      (toggled-terminal-toggle! name)))
+      "Show this project's program in its window (starting it), or hide it from inside.
+       A count picks which of the project's: 2 for its second."
+      (toggled-terminal-toggle! name (and *count-given* count))))
   void)
 
 (add-hook! 'buffer-kill
   (lambda (id)
     (for-each (lambda (name)
                 (let ([table (hash-ref *toggled-terminals* name)])
-                  (for-each (lambda (root)
-                              (when (= (hash-ref table root) id)
+                  (for-each (lambda (key)
+                              (when (= (hash-ref table key) id)
                                 (set! *toggled-terminals*
-                                      (hash-insert *toggled-terminals* name (hash-remove table root)))))
+                                      (hash-insert *toggled-terminals* name (hash-remove table key)))))
                             (hash-keys->list table))))
               (hash-keys->list *toggled-terminals*))))
 

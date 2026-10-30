@@ -54,7 +54,7 @@ To stop asking, turn the option off everywhere, or run `set-local-option!` in on
 
 Press `SPC o t`, or `` M-` `` from anywhere, to bring up your project's own shell in a window down the right. The first time, the shell starts in the project root. Press the same key inside it to hide it again. The shell keeps running while it's hidden, so it comes back as you left it, mid-command and all.
 
-Each project has its own. Buffers outside any project share one, in imp's current directory. If you `exit` the shell, the next toggle starts a new one. The buffer is named `*terminal: PROJECT*`, after the project's directory. Kill it and the shell stops.
+Each project has its own. Buffers outside any project share one, in imp's current directory. A project can have more than one: `2 SPC o t` brings up its second, `*terminal: PROJECT<2>*`, starting it the first time. Without a count you get the one you showed last, and `` M-` `` and `SPC o s` use that one too. `1 SPC o t` goes back to the first. If you `exit` the shell, the next toggle starts a new one. The buffer is named `*terminal: PROJECT*`, after the project's directory. Kill it and the shell stops.
 
 Popups on the same side share a window, so bringing up the terminal while [Claude](ref-claude.md) is showing puts it in Claude's window. Claude keeps running hidden. To put the terminal somewhere else, change its popup rule:
 

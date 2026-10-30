@@ -199,8 +199,11 @@
           [binding
            (leader-done!)
            (message "")
-           (let ([command (car binding)])
-             (if (symbol? command) (run-command command) (command 1)))]
+           ;; A count typed before SPC is the command's: 2 SPC o t.
+           (let ([command (car binding)] [n *leader-count*])
+             (set! *leader-count* #f)
+             (set! *count-given* (and n #t))
+             (if (symbol? command) (run-command command (or n 1)) (command (or n 1))))]
           [(pair? (leader-continuations keys))
            (set! *leader-keys* keys)
            (show-which-key!)]
@@ -256,9 +259,12 @@
                                     (when (equal? *prefix* prefix) (show!))))))))
         void))
 
+(define *leader-count* #f)  ; the count typed before SPC, if any
+
 (define-command! 'leader
   (lambda (count)
     "Start a leader sequence."
+    (set! *leader-count* (and *count-given* count))
     (set! *leader-keys* "")
     (set! *key-interceptor* leader-input!)
     (show-which-key!)))
