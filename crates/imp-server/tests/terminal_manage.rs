@@ -139,3 +139,57 @@ fn in_a_daemon_q_detaches_and_kill_server_asks() {
     type_keys(&mut s, "y");
     assert!(s.should_quit() && s.kill_requested());
 }
+
+fn rows(s: &mut imp_server::Server) -> Vec<String> {
+    s.frame()
+        .text_rows()
+        .into_iter()
+        .map(|r| r.trim().to_string())
+        .collect()
+}
+
+#[test]
+fn space_o_l_picks_a_terminal() {
+    let (mut s, file, first) = with_terminal("cat");
+    s.eval("(terminal! \"true\")").unwrap();
+    wait_for(&mut s, "the exit", |s| {
+        s.text().contains("[process exited 0]")
+    });
+    let dir = s
+        .eval("(abbreviate-path (buffer-local 'term-dir))")
+        .unwrap();
+    let dir = dir.trim_matches('"').to_string();
+    s.eval(&format!("(go-to-buffer! {file})")).unwrap();
+    s.keys(&["<esc>"]);
+    type_keys(&mut s, " ol");
+    let menu = rows(&mut s);
+    // Each with its command and directory; the one that exited says so.
+    let cat = menu.iter().find(|r| r.starts_with("*terminal 1: cat*"));
+    assert!(
+        cat.is_some_and(|r| r.contains("cat") && r.contains(&dir) && !r.contains("exited")),
+        "{menu:?}"
+    );
+    let done = menu.iter().find(|r| r.starts_with("*terminal 2: true*"));
+    assert!(done.is_some_and(|r| r.ends_with("exited")), "{menu:?}");
+    // The file isn't listed.
+    assert!(!menu.iter().any(|r| r.contains("manage.txt")), "{menu:?}");
+    type_keys(&mut s, "cat<ret>");
+    assert_eq!(s.eval("(current-buffer)").unwrap(), first);
+    assert!(status_row(&mut s).contains("TERMINAL"));
+}
+
+#[test]
+fn a_toggled_terminal_is_picked_into_its_window() {
+    let (mut s, file, _) = with_terminal("cat");
+    s.eval(r#"(define-toggled-terminal! 'toggle-terminal "cat" "*terminal")"#)
+        .unwrap();
+    s.eval(&format!("(go-to-buffer! {file})")).unwrap();
+    s.keys(&["M-`"]);
+    let toggled = s.eval("(current-buffer)").unwrap();
+    s.keys(&["M-`"]);
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "1");
+    type_keys(&mut s, " ol");
+    type_keys(&mut s, "*terminal:<ret>");
+    assert_eq!(s.eval("(current-buffer)").unwrap(), toggled);
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
+}

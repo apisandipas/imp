@@ -20,6 +20,10 @@ The buffer keeps the program's output, up to 10,000 lines, in the program's colo
 
 When the program exits, `[process exited N]` shows at the end and the buffer stays open.
 
+## Finding a terminal
+
+Press `SPC o l`, or run `M-x switch-terminal`, to pick from your terminals. Beside each name are its command (`shell` for your shell), its directory, and `exited` once its program has. The terminal you pick comes up in the TERMINAL state if its program is running. A toggled terminal, like the project's, comes up in its own window.
+
 ## Closing a terminal
 
 Killing a terminal stops its program, so imp asks first while one is running, as it does for unsaved changes:

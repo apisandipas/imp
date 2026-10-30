@@ -263,6 +263,7 @@
         (begin (message id) (buffer-kill! buf) #f)
         (begin
           (set-buffer-local! 'term-id id)
+          (set-buffer-local! 'term-command command)
           (set-buffer-local! 'term-dir (absolute cwd))
           (set! *terminals* (hash-insert *terminals* id buf))
           (set-mode! 'terminal)
@@ -505,6 +506,44 @@
     (when (terminal-source?) (terminal-send! (buffer-substring start end))))
   "send to terminal")
 (define-key! 'visual "gz" (lambda (count) (visual-operator! "gz" #f)) "send to terminal")
+
+;;; Picking a terminal (SPC o l)
+
+(define (terminal-buffers)
+  "The terminal buffers, running or exited, in buffer-list order."
+  (filter (lambda (buf) (buffer-local-of buf 'term-command)) (buffer-list)))
+
+(define (terminal-annotation buf)
+  "What switch-terminal shows beside terminal buffer `buf`: its command
+   (or shell), its directory, and whether its program has exited."
+  (let ([command (buffer-local-of buf 'term-command)] [dir (buffer-local-of buf 'term-dir)])
+    (string-append (pad-right (if (equal? command "") "shell" command) 20) "  "
+                   (if dir (abbreviate-path dir) "")
+                   (if (buffer-terminal buf) "" "  exited"))))
+
+(define (show-terminal! buf)
+  "Shows terminal buffer `buf`: a toggled one in its popup window, else in
+   the current window. If its program is running, in the TERMINAL state."
+  (if (buffer-local-of buf 'toggled-name) (display-buffer! buf) (go-to-buffer! buf))
+  (when (buffer-terminal buf)
+    (set-mode! 'terminal)
+    (term-redraw! (buffer-terminal buf))))
+
+(define-command! 'switch-terminal
+  (lambda (count)
+    "Switch to a terminal, picked from a list of them."
+    (let* ([bufs (terminal-buffers)]
+           [named (map (lambda (buf) (cons (buffer-name-of buf) buf)) bufs)])
+      (if (null? bufs)
+          (message "no terminals")
+          (completing-read "Switch to terminal: " (map car named)
+                           (lambda (name)
+                             (let ([hit (assoc name named)])
+                               (when hit (show-terminal! (cdr hit)))))
+                           (lambda (name)
+                             (let ([hit (assoc name named)])
+                               (and hit (terminal-annotation (cdr hit))))))))))
+(define-leader! "ol" 'switch-terminal "switch to terminal")
 
 (define-command! 'terminal-send-region terminal-send-region!)
 (define-command! 'terminal-send-buffer terminal-send-buffer!)
