@@ -167,9 +167,20 @@
 
 (define (term-follow! id buf)
   "Keeps what terminal `id`'s program reported in its buffer `buf`, so it
-   outlives the program: the shell's directory (OSC 7), and its title
-   (OSC 0 or 2), shown as the status line's %{title}."
-  (let ([dir (term-directory id)] [title (term-title id)])
+   outlives the program: the shell's directory (OSC 7), its title (OSC 0
+   or 2), shown as the status line's %{title}, and its prompts (OSC 133),
+   signed in the sign column."
+  (let ([dir (term-directory id)] [title (term-title id)] [prompts (term-prompts id)])
+    (unless (equal? prompts (or (buffer-local-of buf 'term-prompts) '()))
+      (set-buffer-local-of! buf 'term-prompts prompts)
+      (with-buffer buf
+        (lambda ()
+          (set-sign-source! 'prompts 5
+                            (map (lambda (p)
+                                   (if (and (caddr p) (not (= (caddr p) 0)))
+                                       (list (car p) "✗" "sign.error")
+                                       (list (car p) "›" "sign.hint")))
+                                 prompts)))))
     (when (and dir (not (equal? dir (buffer-local-of buf 'term-dir))))
       (set-buffer-local-of! buf 'term-dir dir))
     (when (and title (not (equal? title (or (buffer-local-of buf 'term-title) ""))))
@@ -185,8 +196,8 @@
   (let ([buf (hash-try-get *terminals* id)])
     (when (and buf (memv buf (buffer-list)))
       (term-fit! id)
-      (term-follow! id buf)
       (let ([at (term-render! id buf)])
+        (term-follow! id buf)
         (when (and at (= buf (current-buffer)) (eq? *mode* 'terminal))
           (set-cursor! at))))))
 
@@ -560,6 +571,46 @@
     (when (terminal-source?) (terminal-send! (buffer-substring start end))))
   "send to terminal")
 (define-key! 'visual "gz" (lambda (count) (visual-operator! "gz" #f)) "send to terminal")
+
+;;; Prompts (OSC 133): ]] and [[ move between them; io is a command's
+;;; output, ao that with its prompt.
+
+(define (term-prompt-lines)
+  "The current buffer's prompt lines, oldest first: '() unless it is a
+   terminal whose shell marks them."
+  (map car (or (buffer-local 'term-prompts) '())))
+
+(define (prompt-motion n)
+  "To the start of the `n`th prompt after the cursor's line (before it if
+   `n` is negative), or as far as there are; #f if there are none."
+  (lambda (from count)
+    (let* ([line (offset->line from)]
+           [lines (if (> n 0)
+                      (filter (lambda (l) (> l line)) (term-prompt-lines))
+                      (reverse (filter (lambda (l) (< l line)) (term-prompt-lines))))]
+           [k (min (* count (abs n)) (length lines))])
+      (and (> k 0) (line-start (list-ref lines (- k 1)))))))
+
+(define-motion! "]]" 'exclusive (prompt-motion 1) "next prompt")
+(define-motion! "[[" 'exclusive (prompt-motion -1) "previous prompt")
+
+(define (prompt-object with-prompt?)
+  "The text object for the command the cursor is in: its output lines,
+   or with `with-prompt?` its prompt and command too. #f outside one, or
+   for a command with no output."
+  (lambda (from count)
+    (let* ([line (offset->line from)]
+           [prompts (or (buffer-local 'term-prompts) '())]
+           [before (filter (lambda (p) (<= (car p) line)) prompts)]
+           [after (filter (lambda (p) (> (car p) line)) prompts)])
+      (and (pair? before)
+           (let* ([p (last before)]
+                  [end (if (pair? after) (- (car (car after)) 1) (last-line))]
+                  [start (if with-prompt? (car p) (cadr p))])
+             (and start (<= start end) (lines-range start end)))))))
+
+(define-text-object! "io" (prompt-object #f))
+(define-text-object! "ao" (prompt-object #t))
 
 ;;; Picking a terminal (SPC o l)
 

@@ -14,4 +14,4 @@ frozen:
 
 ## Tasks
 
-- [ ] The marks: `term-prompts` from OSC 133 `A`, `C` and `D;N`, kept at the right lines as history scrolls and dropped when it scrolls away; a Rust test feeding sequences to a parser. Then `]]` and `[[` (counts, operators, nowhere elsewhere), `io` and `ao`, and the `›`/`✗` signs. Tests with a stand-in that prints the marks, and the reference page with the bash and zsh lines.
+- [x] The marks: `term-prompts` from OSC 133 `A`, `C` and `D;N`, kept at the right lines as history scrolls and dropped when it scrolls away; a Rust test feeding sequences to a parser. Then `]]` and `[[` (counts, operators, nowhere elsewhere), `io` and `ao`, and the `›`/`✗` signs. Tests with a stand-in that prints the marks, and the reference page with the bash and zsh lines.

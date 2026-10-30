@@ -243,3 +243,52 @@ fn the_last_title_stays_after_the_program_exits() {
         status_row(&mut s)
     );
 }
+
+/// A shell's session with OSC 133 marks: two commands, the second
+/// failing, then a prompt with "ready" typed at it.
+const MARKED: &str = r#"mark() { printf '\033]133;%s\007' "$1"; }
+cmd() { mark A; printf '$ '; mark B; echo "$1"; mark C; shift; for l in "$@"; do echo "$l"; done; }
+cmd first out1 out2; mark "D;0"
+cmd fail bad; mark "D;1"
+mark A; printf '$ '; mark B; echo ready; exec cat
+"#;
+
+#[test]
+fn prompts_are_marked_and_moved_between() {
+    let (mut s, root, _) = project("prompts", "");
+    let script = root.join("marks.sh");
+    std::fs::write(&script, MARKED).unwrap();
+    run(&mut s, &script);
+    s.keys(&["C-\\", "C-n"]);
+    let line = |s: &mut imp_server::Server| s.eval("(current-line)").unwrap();
+    type_keys(&mut s, "gg]]");
+    assert_eq!(line(&mut s), "3");
+    type_keys(&mut s, "]]");
+    assert_eq!(line(&mut s), "5");
+    type_keys(&mut s, "[[");
+    assert_eq!(line(&mut s), "3");
+    type_keys(&mut s, "G3[[");
+    assert_eq!(line(&mut s), "0");
+    // One command's output, and with its prompt.
+    type_keys(&mut s, "jyio");
+    assert_eq!(
+        s.eval("(car (register-get #\\\"))").unwrap(),
+        "\"out1\\nout2\\n\""
+    );
+    type_keys(&mut s, "4Gyao");
+    assert_eq!(
+        s.eval("(car (register-get #\\\"))").unwrap(),
+        "\"$ fail\\nbad\\n\""
+    );
+    // Signs: the failed command's prompt is marked so.
+    let signs = s
+        .eval("(cdr (buffer-local (list 'signs 'prompts)))")
+        .unwrap();
+    assert!(
+        signs.contains("(0 \"›\" \"sign.hint\")") && signs.contains("(3 \"✗\" \"sign.error\")"),
+        "{signs}"
+    );
+    // Elsewhere ]] goes nowhere.
+    type_keys(&mut s, "<C-^>gg]]");
+    assert_eq!(line(&mut s), "0");
+}

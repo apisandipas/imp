@@ -1330,6 +1330,20 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("term-bracketed-paste?", |id: isize| {
         crate::term::bracketed_paste(clamp(id) as u64)
     });
+    // The commands the shell marked (OSC 133) as (prompt-line output-line
+    // status), output-line and status #f until known.
+    engine.register_fn("term-prompts", |id: isize| {
+        crate::term::prompts(clamp(id) as u64)
+            .into_iter()
+            .map(|(prompt, output, status)| {
+                vec![
+                    SteelVal::IntV(prompt as isize),
+                    output.map_or(SteelVal::BoolV(false), |o| SteelVal::IntV(o as isize)),
+                    status.map_or(SteelVal::BoolV(false), |s| SteelVal::IntV(s as isize)),
+                ]
+            })
+            .collect::<Vec<_>>()
+    });
     // The title the program last set (OSC 0 or 2), or #f.
     engine.register_fn("term-title", |id: isize| {
         crate::term::title(clamp(id) as u64)
