@@ -1,7 +1,7 @@
 ---
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/16
-summary: "Programs on a pty in a buffer, in a TERMINAL state, and a shell per project toggled in a popup, which text can be sent to."
+summary: "Programs on a pty in a buffer, in a TERMINAL state, following the shell's directory and the program's title, and a shell per project toggled in a popup, which text can be sent to."
 anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, crates/imp-server/tests/term.rs, crates/imp-gui/src/keys.rs]
 ---
 # Terminals
@@ -33,6 +33,13 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - **You stay where you were.** The terminal's window comes up if it was hidden, and the cursor stays in your buffer; sending the line from normal state moves the cursor to the next line, so `SPC o s` again sends the one after. Visual mode ends after sending.
 - **Claude's sends** (`SPC a s`, `SPC a b`, `SPC a f`) are built on the same sending, with `<ret>` never sent and you taken to Claude's window, as now.
 
+### Following the program
+
+- **Its directory (OSC 7).** A terminal buffer has a directory: the one it started in, until the shell reports another with OSC 7 (`ESC ] 7 ; file://HOST/PATH`, the path percent-decoded). From a terminal buffer, `find-file` lists the files under its directory, `:e NAME` opens a relative `NAME` from there (its completion lists there too), `-` (the file browser) lists it, `:terminal` and `SPC o T` start in it, and the project is that directory's, except that a toggled terminal stays its own project's, so `SPC o t` inside it still hides it. The directory stays after the program exits.
+- **Only this machine's.** A report naming another host (a shell over `ssh` that sends OSC 7) is ignored, keeping the last directory; an empty host, `localhost`, or this machine's host name counts as this machine.
+- **Shells that don't send it.** Without OSC 7 the directory stays where the terminal started. imp doesn't change your shell's setup; its reference page gives the lines for bash and zsh, which don't send it by default.
+- **Its title (OSC 0 and 2).** When the program sets a title, it shows after the buffer's name in the status line, dimmed, and beside the name in `switch-buffer`'s list. The buffer's name doesn't change, so popup rules and toggles keep finding it, and two terminals with the same title are told apart by their names. An empty title clears it; after the program exits, its last title stays.
+
 ## Keys and options
 
 - `SPC o t`, `M-\``: `toggle-terminal`. `SPC o T`: `terminal`.
@@ -48,3 +55,6 @@ anchors: [runtime/term.scm, runtime/mouse.scm, crates/imp-server/src/term.rs, cr
 - Language-aware sending (a whole function, a cell between `# %%` markers), and adapting text for a particular REPL (IPython's `%cpaste`).
 - Middle-click pasting the primary selection in the window client.
 - Mouse movement without a button held (any-motion reporting), which the clients don't send.
+- Finding the directory without OSC 7 (reading the shell's from `/proc`), or setting it up in your shell for you.
+- Opening files on the other host of an `ssh` session, and the icon name (OSC 1).
+- Setting the outer terminal's or the window client's title from a terminal's.
