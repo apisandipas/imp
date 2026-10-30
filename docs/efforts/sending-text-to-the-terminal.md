@@ -15,5 +15,5 @@ The sending half of Claude's code moves to `runtime/term.scm`: `bracketed` and a
 ## Tasks
 
 - [x] `terminal-paste!`, and `SPC o s` (`terminal-send-region`) and `SPC o b` (`terminal-send-buffer`): the selection or line, or the buffer, goes to the project's terminal as a bracketed paste (or typed, for a program that didn't ask for it), a final line break dropped, then `<ret>` unless `terminal-send-enter` is off; the terminal is started if need be, and text for a new one waits for its first output; its window comes up and you stay in your buffer, a line sent from normal state moving the cursor down and visual mode ending. Tests, and a section in the terminals reference page.
-- [ ] The `gz` operator: `gz{motion}` and text objects, `gzz` for the line, `gz` in visual mode, and `.` repeating it, all through `terminal-send-region`'s sending. Tests, and the page.
+- [x] The `gz` operator: `gz{motion}` and text objects, `gzz` for the line, `gz` in visual mode, and `.` repeating it, all through `terminal-send-region`'s sending. Tests, and the page.
 - [ ] Claude's sends paste with `terminal-paste!` (no `<ret>`, Claude's window focused, its waiting kept); `tests/claude.rs` passes unchanged. The Claude spec says so.

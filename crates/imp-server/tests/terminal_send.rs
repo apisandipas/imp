@@ -163,3 +163,37 @@ fn a_hidden_terminal_is_shown_again_and_its_own_lines_are_not_sent() {
         s.status()
     );
 }
+
+#[test]
+fn gz_sends_what_a_motion_or_text_object_covers() {
+    let mut s = project("send-gz", &shell("0", true));
+    s.eval("(buffer-insert! (buffer-length) \"\\necho four\\n\")")
+        .unwrap();
+    type_keys(&mut s, "jgzap");
+    assert!(status_row(&mut s).contains("NORMAL"));
+    assert!(s.text().starts_with("echo one\n"));
+    wait_for(&mut s, "the paragraph", |s| {
+        // ap takes the blank line after it: only the last break is dropped.
+        terminal(s).contains("^[[200~echo one\necho two\necho three\n^[[201~^M")
+    });
+    // . sends the same again, from where you are.
+    type_keys(&mut s, "Gk.");
+    wait_for(&mut s, "the other paragraph", |s| {
+        terminal(s).contains("^[[200~\necho four^[[201~^M")
+    });
+}
+
+#[test]
+fn gzz_sends_the_line_and_gz_in_visual_the_selection() {
+    let mut s = project("send-gzz", &shell("0", true));
+    type_keys(&mut s, "jgzz");
+    wait_for(&mut s, "the line", |s| {
+        terminal(s).contains("$ ^[[200~echo two^[[201~^M")
+    });
+    // A characterwise selection is sent as it is.
+    type_keys(&mut s, "0wvegz");
+    assert!(status_row(&mut s).contains("NORMAL"));
+    wait_for(&mut s, "the word", |s| {
+        terminal(s).contains("^[[201~^M^[[200~two^[[201~^M")
+    });
+}

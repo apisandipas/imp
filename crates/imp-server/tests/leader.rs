@@ -149,7 +149,7 @@ fn keys_after_a_vim_prefix() {
     let mut s = server("");
     s.eval(
         r#"(define-key! 'normal "gb" 'switch-buffer "switch buffer")
-           (define-key! 'normal "gzq" 'switch-buffer)
+           (define-key! 'normal "gyq" 'switch-buffer)
            (define-major-mode! 'label-mode #f '() #f)
            (define-mode-key! 'label-mode 'normal "gu" (lambda (n) 1) "mode's own")"#,
     )
@@ -167,7 +167,7 @@ fn keys_after_a_vim_prefix() {
         "\"g=",
         "\"u=",
         "\"j=",
-        "\"z=+prefix\"",
+        "\"y=+prefix\"",
     ] {
         assert!(normal.contains(k), "{k} in {normal}");
     }

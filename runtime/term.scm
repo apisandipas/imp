@@ -390,6 +390,8 @@
 ;;;
 ;;;   SPC o s   send the selection (in visual), or the current line
 ;;;   SPC o b   send the whole buffer
+;;;   gz        an operator: gzap a paragraph, gzz the line, gz in visual
+;;;             the selection; . sends the same again
 ;;;
 ;;; It goes as a paste and then runs: <ret> follows it unless
 ;;; terminal-send-enter is off. You stay in your buffer.
@@ -456,6 +458,12 @@
   "Sends the whole buffer to the project's terminal."
   (when (terminal-source?)
     (terminal-send! (buffer-substring 0 (buffer-length)))))
+
+(define-operator! "gz"
+  (lambda (start end linewise?)
+    (when (terminal-source?) (terminal-send! (buffer-substring start end))))
+  "send to terminal")
+(define-key! 'visual "gz" (lambda (count) (visual-operator! "gz" #f)) "send to terminal")
 
 (define-command! 'terminal-send-region terminal-send-region!)
 (define-command! 'terminal-send-buffer terminal-send-buffer!)

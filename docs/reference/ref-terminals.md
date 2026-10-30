@@ -52,8 +52,11 @@ Send code from a file to run in your project's terminal:
 |---|---|
 | `SPC o s` | The selection in visual mode, or the current line in normal state |
 | `SPC o b` | The whole buffer |
+| `gz{motion}` | What the motion or text object covers: `gzap` a paragraph, `gzip` without its blank line |
+| `gzz` | The current line |
+| `gz` | In visual mode, the selection |
 
-The terminal starts if it isn't running and comes up if it's hidden. The cursor stays in your buffer. Sending the line moves the cursor to the next line, so `SPC o s` again sends that one. Visual mode ends after sending.
+The terminal starts if it isn't running and comes up if it's hidden. The cursor stays in your buffer. Sending the line moves the cursor to the next line, so `SPC o s` again sends that one. Visual mode ends after sending. `gz` is an operator like `d` or `y`, so `.` sends the same again from where the cursor is now.
 
 The text arrives as one paste, as your terminal's own paste does, with a final line break dropped. Then imp presses `<ret>` to run it. To have it wait for your `<ret>` instead, turn that off:
 
