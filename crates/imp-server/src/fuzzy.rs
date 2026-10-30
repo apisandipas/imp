@@ -40,8 +40,9 @@ pub fn filter(query: &str, candidates: &[String], limit: usize) -> Vec<String> {
 /// As `filter`, with each candidate's use score beside it in `uses` (0
 /// for one never picked; missing ones count as 0). With an empty query the
 /// used candidates come first, highest score first, then the rest in their
-/// order; otherwise a better match still comes first, and the use score
-/// decides between equally good ones before their length does.
+/// order; otherwise a candidate typed in full comes first, then a better
+/// match, and the use score decides between equally good ones before their
+/// length does.
 pub fn filter_ranked(
     query: &str,
     candidates: &[String],
@@ -66,8 +67,12 @@ pub fn filter_ranked(
         // then the rest as they were.
         scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.2.cmp(&b.2)));
     } else {
+        // What you typed in full is what you meant, however used the rest.
+        let exact = |c: &str| c == query.trim();
         scored.sort_by(|a, b| {
-            b.0.cmp(&a.0)
+            exact(b.3)
+                .cmp(&exact(a.3))
+                .then(b.0.cmp(&a.0))
                 .then(b.1.total_cmp(&a.1))
                 .then(a.3.len().cmp(&b.3.len()))
                 .then(a.2.cmp(&b.2))
@@ -154,6 +159,9 @@ mod tests {
             filter_ranked("find", &c, &uses, 10),
             strings(&["find-grep", "find-file"])
         );
+        // A candidate typed in full comes first, though another is used.
+        let c2 = strings(&["install-grammar", "install-grammars"]);
+        assert_eq!(filter_ranked("install-grammar", &c2, &[0.0, 9.0], 10), c2);
         // No uses: as filter.
         assert_eq!(filter_ranked("find", &c, &[], 10), filter("find", &c, 10));
     }

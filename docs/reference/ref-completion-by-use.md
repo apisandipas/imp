@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/completion-by-use]]"
 frozen:
-  docs/specs/completion-by-use.md: adc2d1d59a46
+  docs/specs/completion-by-use.md: f4083d7f5e38
 ---
 # Completion by use
 
@@ -12,7 +12,7 @@ Menus remember what you pick in them, and put what you use most and most recentl
 
 With nothing typed, what you've picked comes first, the most used and most recent at the top, and then everything else in the menu's usual order.
 
-Once you type, the best matches still come first. Between two equally good matches, the one you use more comes first. So typing `find` puts `find-file` above `find-grep` if that's the one you run.
+Once you type, the best matches still come first, and a name you type in full always comes first. Between two equally good matches, the one you use more comes first. So typing `find` puts `find-file` above `find-grep` if that's the one you run.
 
 How much a pick counts fades with time: a pick from the last hour counts four times as much as one from last week, and one from last month half as much again.
 

@@ -4,7 +4,7 @@ status: done
 specs: ["[[spec/completion-by-use]]"]
 issue: https://github.com/apisandipas/imp/issues/70
 frozen:
-  docs/specs/completion-by-use.md: adc2d1d59a46
+  docs/specs/completion-by-use.md: f4083d7f5e38
 ---
 # Completion by use
 
