@@ -41,7 +41,7 @@ GUIDE_PAGES = [
 GROUPS = [
     ("Editing", ["vim", "emacs-state", "auto-pairs", "leader-and-modes", "commands", "mouse", "look", "modus-themes", "start-screen"]),
     ("Files and windows", ["files", "buffers-and-windows", "projects", "dired", "file-tree", "folding", "terminals"]),
-    ("Code", ["completion", "completion-at-point", "lsp", "tree-sitter", "dap"]),
+    ("Code", ["completion", "completion-by-use", "completion-at-point", "lsp", "tree-sitter", "dap"]),
     ("Git and Org", ["git", "git-blame", "git-gutter", "org", "org-agenda", "org-export"]),
     ("Extending imp", ["live-scheme-and-help", "packages", "kdl-config", "wasm-plugins",
                        "daemon", "shared-buffers", "claude", "mcp"]),

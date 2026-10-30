@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/completion-by-use]]"]
 issue: https://github.com/apisandipas/imp/issues/70
 frozen:
@@ -14,5 +14,5 @@ frozen:
 
 ## Tasks
 
-- [ ] `fuzzy-filter-ranked` in `fuzzy.rs`: scored candidates first with nothing typed (highest first, the menu's order after), and the score between the match and the length once something is typed. Unit tests.
-- [ ] The history: recorded per menu on each pick, kept in the state directory (500 per menu, by score), scored by count and age; every `completing-read` menu ranked by it except `recent-files` and `switch-buffer`; `find-file` by full path; `completion-history` off stops it; `M-x clear-completion-history`. Tests, and a section in the completion reference page.
+- [x] `fuzzy-filter-ranked` in `fuzzy.rs`: scored candidates first with nothing typed (highest first, the menu's order after), and the score between the match and the length once something is typed. Unit tests.
+- [x] The history: recorded per menu on each pick, kept in the state directory (500 per menu, by score), scored by count and age; every `completing-read` menu ranked by it except `recent-files` and `switch-buffer`; `find-file` by full path; `completion-history` off stops it; `M-x clear-completion-history`. Tests, and a section in the completion reference page.

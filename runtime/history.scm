@@ -35,7 +35,8 @@
 (define (history-put! menu key entry)
   "Sets `menu`'s entry for `key` to `entry`, (count time)."
   (set! *history*
-        (hash-insert *history* menu (hash-insert (or (hash-try-get *history* menu) (hash)) key entry))))
+        (hash-insert *history* menu (hash-insert (or (hash-try-get *history* menu) (hash)) key entry)))
+  void)
 
 (define (history-score entry now)
   "The score of `entry`, (count time), at time `now`: its count, times 4

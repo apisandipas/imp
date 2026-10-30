@@ -42,7 +42,12 @@ pub fn filter(query: &str, candidates: &[String], limit: usize) -> Vec<String> {
 /// used candidates come first, highest score first, then the rest in their
 /// order; otherwise a better match still comes first, and the use score
 /// decides between equally good ones before their length does.
-pub fn filter_ranked(query: &str, candidates: &[String], uses: &[f64], limit: usize) -> Vec<String> {
+pub fn filter_ranked(
+    query: &str,
+    candidates: &[String],
+    uses: &[f64],
+    limit: usize,
+) -> Vec<String> {
     let use_of = |i: usize| uses.get(i).copied().unwrap_or(0.0);
     let parts: Vec<&str> = query.split_whitespace().collect();
     let mut scored: Vec<(i64, f64, usize, &String)> = candidates
@@ -130,10 +135,6 @@ fn is_separator(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-
-    fn strings(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
-    }
 
     #[test]
     fn use_puts_the_used_first_and_breaks_ties() {
