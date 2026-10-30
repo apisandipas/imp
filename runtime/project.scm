@@ -83,6 +83,12 @@
   "Whether `path` is inside directory `root` (not `root` itself)."
   (starts-with? path (string-append root "/")))
 
+(define-command! 'find-file
+  (lambda (count)
+    "Open a file in this buffer's project (or its directory), skipping what .gitignore does."
+    ;; Here rather than in completion.scm, which loads before project-root.
+    (project-find-file-in (or (project-root) (buffer-directory)))))
+
 (define-command! 'project-find-file
   (lambda (count)
     "Find a file in the current project and open it."

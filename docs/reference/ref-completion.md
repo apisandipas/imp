@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/completion]]"
 frozen:
-  docs/specs/completion.md: c12abe1827ac
+  docs/specs/completion.md: ca9eec425099
 ---
 # Completion at the prompt
 
@@ -39,7 +39,7 @@ For example, in `M-x`, typing `buf sw` finds `switch-buffer`.
 
 ## Finding a file
 
-`SPC f f` lists the files in your project. Inside a git repository, the files `.gitignore` ignores are left out. A long path is shortened from the start, so the file name stays in view.
+`SPC f f` (or `SPC SPC`) lists the files in the current buffer's project. Outside a project, it lists the files under the buffer's own directory, so from `~/.config/imp/init.scm` you get `~/.config/imp`. The prompt says which it is. Inside a git repository, the files `.gitignore` ignores are left out. A long path is shortened from the start, so the file name stays in view.
 
 Press `<tab>` to complete the path you typed one part at a time, as Emacs does. When there's nothing to add, `<tab>` moves down the menu instead.
 

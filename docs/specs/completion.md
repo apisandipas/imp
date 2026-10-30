@@ -14,7 +14,7 @@ A vertico/orderless-style menu at the prompt, one of the packages a new editor n
 - `C-n C-p <up> <down>` move, `<ret>` takes the selection (or the typed text when nothing matches), `<esc>` cancels.
 - Used by M-x, find-file, switch-buffer (offering the alternate buffer first) and describe-*.
 - M-x shows each command's keys (normal mode's and the leader's) and the first line of its docstring, else its `document-command!` text, else its which-key label.
-- Choosing a file, `<tab>` completes the typed path a part at a time, as Emacs does, and moves down the menu when there's nothing to add. find-file lists the project's files, skipping what `.gitignore` does (inside a git repository); a path starting with `/`, `~/`, `./` or `../` lists that directory instead, fuzzy on its last part, without hidden files.
+- Choosing a file, `<tab>` completes the typed path a part at a time, as Emacs does, and moves down the menu when there's nothing to add. find-file (`SPC SPC`, `SPC f f`) lists the files of the current buffer's project, or outside a project those under its directory (a file's, a file browser's or a terminal's; imp's working directory for a buffer with none), skipping what `.gitignore` does (inside a git repository), and says which in its prompt; a path starting with `/`, `~/`, `./` or `../` lists that directory instead, fuzzy on its last part, without hidden files.
 
 ## Keys and options
 

@@ -250,15 +250,6 @@
   "The first `n` elements of `items`, or all of them if fewer."
   (if (or (null? items) (= n 0)) '() (cons (car items) (take-at-most-keys (cdr items) (- n 1)))))
 
-(define-command! 'find-file
-  (lambda (count)
-    "Open a file under the current directory, skipping what .gitignore does."
-    ;; From a terminal, under its directory.
-    (let ([dir (or (buffer-local 'term-dir) (current-dir))])
-      (set! *completion-category* 'file)
-      (completing-read "Find file: " (list-files dir 50000)
-                       (lambda (f) (open-file! (from-terminal-directory f)))))))
-
 (define-command! 'switch-buffer
   (lambda (count)
     "Switch to another buffer by name."
