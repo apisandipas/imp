@@ -53,13 +53,6 @@
 
 ;;; Sending
 
-(define (bracketed text)
-  "`text` wrapped in bracketed-paste escapes.
-   Programs that asked for bracketed paste take it as one paste rather
-   than as typing, so its line breaks don't submit anything."
-  (let ([esc (string (integer->char 27))])
-    (string-append esc "[200~" text esc "[201~")))
-
 (define (claude-flush! buf tries)
   "Pastes what is waiting for `buf` once its Claude takes input.
    Until then, looks again every claude-ready-ms, `tries` more times,

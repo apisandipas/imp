@@ -133,7 +133,7 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   (`:Ex`, with permissions, size and time beside each name; `(` hides
   them), projects with search into a quickfix list, and terminals
   (`:terminal`, or `SPC o t` for the project's own shell down the right,
-  which keeps running while it's hidden). Search results open along the bottom and git down the
+  which keeps running while it's hidden; `SPC o s` sends it the line or selection to run). Search results open along the bottom and git down the
   right, closing with `q`; `define-popup-rule!` changes where.
 - **Claude Code.** `M-a` (or `SPC a a`) opens Claude Code for the current
   project in a window down the right, and hides it again from inside;
