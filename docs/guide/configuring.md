@@ -47,7 +47,7 @@ To find what a key does now, press `SPC h k` and then the key.
 
 ## Commands of your own
 
-A command is a function with a name. It shows in `M-x`, and you can bind it to keys. Its first line, a string, is the description `M-x` and `SPC h f` show.
+A command is a function with a name. It shows in `M-x`, `:NAME` runs it too, and you can bind it to keys. Its first line, a string, is the description `M-x` and `SPC h f` show.
 
 ```scheme
 (define-command! 'insert-date

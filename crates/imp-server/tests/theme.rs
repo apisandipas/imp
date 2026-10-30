@@ -22,12 +22,12 @@ fn themes_set_the_background_and_switch_completely() {
         Some(Color::Rgb(0x28, 0x2c, 0x34))
     );
     assert_eq!(f.text_rows()[0].chars().count(), 80);
-    type_keys(&mut s, ":theme one-light<ret>");
+    type_keys(&mut s, ":colorscheme one-light<ret>");
     let f = s.frame();
     assert_eq!(f.rows[0][0].style.bg, Some(Color::Rgb(0xfa, 0xfa, 0xfa)));
-    type_keys(&mut s, ":theme nope<ret>");
+    type_keys(&mut s, ":colorscheme nope<ret>");
     assert!(s.status().starts_with("no theme nope"), "{}", s.status());
-    type_keys(&mut s, ":theme<ret>");
+    type_keys(&mut s, ":colorscheme<ret>");
     assert_eq!(s.status(), "one-light");
 }
 
@@ -82,7 +82,7 @@ fn everforest_has_its_own_syntax_colors_and_leaves_none_behind() {
             .style
             .fg
     };
-    type_keys(&mut s, ":theme everforest-dark<ret>");
+    type_keys(&mut s, ":colorscheme everforest-dark<ret>");
     assert_eq!(
         s.frame().rows[0][0].style.bg,
         Some(Color::Rgb(0x2d, 0x35, 0x3b))
@@ -90,7 +90,7 @@ fn everforest_has_its_own_syntax_colors_and_leaves_none_behind() {
     assert_eq!(fg(&mut s, "fn"), Some(Color::Rgb(0xe6, 0x7e, 0x80)));
     assert_eq!(fg(&mut s, "\"hi\""), Some(Color::Rgb(0x83, 0xc0, 0x92)));
     // Switching away resets the faces Everforest changed.
-    type_keys(&mut s, ":theme one-dark<ret>");
+    type_keys(&mut s, ":colorscheme one-dark<ret>");
     assert_eq!(fg(&mut s, "fn"), Some(Color::Rgb(0xc6, 0x78, 0xdd)));
 }
 

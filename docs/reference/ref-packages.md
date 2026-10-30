@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/packages]]"
 frozen:
-  docs/specs/packages.md: 13552394352f
+  docs/specs/packages.md: e9a16175b04a
 ---
 # Packages
 
@@ -30,7 +30,7 @@ These come with imp:
 | `git-gutter` | A coloured bar beside each line that differs from git. See [Git gutter](ref-git-gutter.md) |
 | `org-export` | Exports Org files to HTML, PDF and other formats through pandoc. See [Org export](ref-org-export.md) |
 
-`:packages` lists the packages you've declared, and the ones that come with imp that you haven't.
+`M-x list-packages` lists the packages you've declared, and the ones that come with imp that you haven't.
 
 ## Packages from git
 
@@ -42,9 +42,9 @@ Give a package a `'git` address, and imp clones it the first time. `'rev` pins i
   'rev "4f1c2e9")
 ```
 
-The clone runs in the background, so the editor starts without waiting. The status line says `cloning surround...`, then `installed surround` once it has loaded. If the clone fails, the status line and `:packages` say why, and the next start tries again.
+The clone runs in the background, so the editor starts without waiting. The status line says `cloning surround...`, then `installed surround` once it has loaded. If the clone fails, the status line and `M-x list-packages` say why, and the next start tries again.
 
-`:package-update NAME` fetches the package again and reloads it. The editor waits for git while it does.
+`M-x package-update` asks which package, then fetches it again and reloads it. `:package-update NAME` names it at once. The editor waits for git while it does.
 
 ## Setting a package up
 

@@ -31,9 +31,11 @@
   (let ([p (expand-path path)]) (if (starts-with? p "/") p (string-append (current-dir) "/" p))))
 
 (define (project-root)
-  "The current buffer's project root (a browser buffer's directory counts),
-   or #f."
-  (project-root-of (cond [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
+  "The current buffer's project root (a browser buffer's or a terminal's
+   directory counts; a toggled terminal is its own project's), or #f."
+  (project-root-of (cond [(buffer-local 'toggled-root) (buffer-local 'toggled-root)]
+                         [(buffer-local 'term-dir) (buffer-local 'term-dir)]
+                         [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
                          [(buffer-local 'git-root) (buffer-local 'git-root)]
                          [(buffer-path) (directory-of (absolute (buffer-path)))]
                          [else (current-dir)])))
@@ -65,6 +67,8 @@
 (define (project-find-file-in root)
   "Asks for a file anywhere under `root`, then opens it."
   (set! *completion-category* 'file)
+  ;; Remembered by full path, so it ranks wherever you search from.
+  (set! *completion-key* (lambda (file) (if (outside-path? file) (absolute file) (string-append root "/" file))))
   (completing-read (string-append "Find file in " (file-name-of root) ": ")
                    (list-files root 50000)
                    (lambda (file)
@@ -80,6 +84,12 @@
 (define (under? path root)
   "Whether `path` is inside directory `root` (not `root` itself)."
   (starts-with? path (string-append root "/")))
+
+(define-command! 'find-file
+  (lambda (count)
+    "Open a file in this buffer's project (or its directory), skipping what .gitignore does."
+    ;; Here rather than in completion.scm, which loads before project-root.
+    (project-find-file-in (or (project-root) (buffer-directory)))))
 
 (define-command! 'project-find-file
   (lambda (count)

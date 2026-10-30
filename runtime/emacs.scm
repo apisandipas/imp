@@ -95,7 +95,7 @@
     (set! *emacs-arg* #f)
     (set! *emacs-arg-digits* #f)
     (if proc
-        (proc count)
+        (with-pairs-tracked (lambda () (proc count)))
         (message (string-append "no command " (symbol->string binding))))
     (set! *last-command* *this-command*))
   void)
@@ -124,11 +124,25 @@
 (define (self-insert! key n)
   "Inserts `key` `n` times at the cursor (<tab> as a tab).
    Typing goes into one undo step until another command runs, roughly as
-   Emacs groups self-inserts."
+   Emacs groups self-inserts. Brackets and quotes pair, and with the
+   region active wrap it."
   (unless (eq? *last-command* 'self-insert) (begin-change!))
   (set! *this-command* 'self-insert)
-  (deactivate-mark!)
-  (insert-text! (string-repeat (if (equal? key "<tab>") "\t" key) n)))
+  (let ([r (region)] [c (and (= (string-length key) 1) (string-ref key 0))])
+    (deactivate-mark!)
+    ;; Pairs as insert mode makes them (docs/specs/auto-pairs.md).
+    (cond
+      [(and r c (pair-partner c))
+       => (lambda (closer)
+            ;; Wrapping the region is a step of its own.
+            (begin-change!)
+            (set! *this-command* 'wrap-region)
+            (wrap-region! (car r) (cadr r) key closer))]
+      [(and c (= n 1) (pair-closing-at-cursor c)) (set-cursor! (+ (cursor) 1))]
+      [(and c (= n 1) (pair-closer c)) => (lambda (closer) (insert-pair! key closer))]
+      [(and c (= n 1)) (insert-typed-char! key)]
+      [else (insert-text! (string-repeat (if (equal? key "<tab>") "\t" key) n))]))
+  void)
 
 (define (emacs-edit! thunk)
   "Call `thunk` as one undo step, dropping the region first."
@@ -313,9 +327,10 @@
   (list 'delete-backward-char
         (lambda (n)
           (let ([r (region)])
-            (if r
-                (kill-range! (car r) (cadr r) #t 'kill-region)
-                (emacs-edit! (lambda () (let ([p (max 0 (- (cursor) n))]) (buffer-delete! p (cursor)) (set-cursor! p))))))))
+            (cond
+              [r (kill-range! (car r) (cadr r) #t 'kill-region)]
+              [(and (= n 1) (empty-pair-around-cursor)) (emacs-edit! delete-empty-pair!)]
+              [else (emacs-edit! (lambda () (let ([p (max 0 (- (cursor) n))]) (buffer-delete! p (cursor)) (set-cursor! p))))]))))
   (list 'newline (lambda (n) (emacs-edit! (lambda () (let loop ([i 0]) (when (< i n) (insert-newline!) (loop (+ i 1))))))))
   (list 'open-line (lambda (n) (emacs-edit! (lambda () (let ([p (cursor)]) (buffer-insert! p (make-string n #\newline)) (set-cursor! p))))))
   (list 'transpose-chars (lambda (n) (emacs-edit! transpose-chars!)))
@@ -462,6 +477,7 @@
     "Switch to Emacs keys (C-z switches back)."
     (when (eq? *mode* 'visual) (leave-visual!))
     (when (typing-mode?) (leave-insert!))
+    (set! *pairs* '())
     (set-mode! 'emacs)
     (message "Emacs state (C-z for Vim)")))
 

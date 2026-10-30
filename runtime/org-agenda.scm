@@ -2254,7 +2254,6 @@
     (org-search-view-prompt!)))
 (define-leader! "oas" 'org-search-view "search")
 (define-leader! "oaa" 'org-agenda-list "agenda")
-(define-ex! '("OrgAgenda") (lambda (ex) (org-agenda-dispatch!)))
 (define-leader! "oA" 'org-agenda "agenda dispatcher")
 (org-agenda-key! "sc" (lambda (n) (org-agenda-filter-category!)) "filter by category")
 (org-agenda-key! "st" (lambda (n) (org-agenda-filter-tag!)) "filter by tag")

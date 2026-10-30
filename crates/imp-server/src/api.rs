@@ -866,6 +866,9 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("quit!", || editor::with(|e| e.quit = true));
+    // Whether imp is a daemon, where :q detaches a client and everything
+    // keeps running.
+    engine.register_fn("daemon?", || editor::with(|e| e.daemon));
     // Stops a daemon (for every client). Standalone, the same as quit!.
     engine.register_fn("kill-server!", || {
         editor::with(|e| {
@@ -918,6 +921,19 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("set-mode-face!", |face: String| {
         editor::with(|e| e.mode_face = face)
     });
+    // A %{name} value for buffer `buf` (a terminal's title, set as its
+    // output arrives).
+    engine.register_fn(
+        "set-buffer-status-value!",
+        |buf: isize, name: String, value: String| {
+            editor::with(|e| {
+                e.status_values
+                    .entry(clamp(buf))
+                    .or_default()
+                    .insert(name, value);
+            })
+        },
+    );
     // A %{name} value for the current buffer, or every buffer if
     // `global?`.
     engine.register_fn(
@@ -954,9 +970,11 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("face-spec", |name: String| {
         editor::with(|e| e.faces.get(&name).map(|s| s.spec()))
     });
+    // The faces at `at` in the text as it is: the tree is parsed now if
+    // a parse is still running in the background, as drawing allows.
     engine.register_fn("faces-at", |at: isize| {
         editor::with(|e| {
-            e.update_syntax(e.current);
+            e.update_syntax_now(e.current);
             crate::render::faces_at(e, clamp(at))
         })
     });
@@ -1312,6 +1330,36 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("term-bracketed-paste?", |id: isize| {
         crate::term::bracketed_paste(clamp(id) as u64)
     });
+    // The commands the shell marked (OSC 133) as (prompt-line output-line
+    // status), output-line and status #f until known.
+    engine.register_fn("term-prompts", |id: isize| {
+        crate::term::prompts(clamp(id) as u64)
+            .into_iter()
+            .map(|(prompt, output, status)| {
+                vec![
+                    SteelVal::IntV(prompt as isize),
+                    output.map_or(SteelVal::BoolV(false), |o| SteelVal::IntV(o as isize)),
+                    status.map_or(SteelVal::BoolV(false), |s| SteelVal::IntV(s as isize)),
+                ]
+            })
+            .collect::<Vec<_>>()
+    });
+    // Takes what the program copied (OSC 52) since last asked, as
+    // (text primary?) lists.
+    engine.register_fn("term-take-copies!", |id: isize| {
+        crate::term::take_copies(clamp(id) as u64)
+            .into_iter()
+            .map(|(text, primary)| vec![SteelVal::StringV(text.into()), SteelVal::BoolV(primary)])
+            .collect::<Vec<_>>()
+    });
+    // The title the program last set (OSC 0 or 2), or #f.
+    engine.register_fn("term-title", |id: isize| {
+        crate::term::title(clamp(id) as u64)
+    });
+    // The directory the shell last reported on this machine (OSC 7), or #f.
+    engine.register_fn("term-directory", |id: isize| {
+        crate::term::directory(clamp(id) as u64)
+    });
     // Draws terminal `id` into buffer `buf`; returns its cursor's offset.
     engine.register_fn("term-render!", |id: isize, buf: isize| {
         editor::with(|e| {
@@ -1470,6 +1518,19 @@ pub fn register(engine: &mut Engine) {
     });
 
     // Completion: orderless fuzzy matching (fuzzy.rs) and project files.
+    // As fuzzy-filter, with each candidate's use score (completion by use).
+    engine.register_fn(
+        "fuzzy-filter-ranked",
+        |query: String, candidates: Vec<String>, uses: Vec<f64>, limit: isize| {
+            fuzzy::filter_ranked(&query, &candidates, &uses, clamp(limit))
+        },
+    );
+    // Seconds since 1970, for what needs to know how long ago.
+    engine.register_fn("unix-time", || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as isize)
+    });
     engine.register_fn(
         "fuzzy-filter",
         |query: String, candidates: Vec<String>, limit: isize| {
@@ -1601,6 +1662,52 @@ pub fn register(engine: &mut Engine) {
             crate::syntax::ancestors(root, e.buffer.rope(), clamp(at))
                 .into_iter()
                 .map(|(k, f, s, t)| node_value(k, f, s, t, true))
+                .collect::<Vec<_>>()
+        })
+    });
+    // The innermost language at char offset `at`, an embedded one inside
+    // a fence or <script>, and its named nodes around `at`: (language
+    // (kind field start end) ...), innermost first; '() with no tree. The
+    // tree is the text's as it is, parsed now if need be, as closing a tag
+    // just typed needs it.
+    engine.register_fn("syntax-at", |at: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax_now(id);
+            let rope = e.buffer.rope();
+            let Some((name, root)) = e
+                .syntax
+                .get(&id)
+                .and_then(|s| s.root_at(rope.char_to_byte(clamp(at).min(rope.len_chars()))))
+            else {
+                return Vec::new();
+            };
+            std::iter::once(SteelVal::StringV(name.into()))
+                .chain(
+                    crate::syntax::ancestors(root, rope, clamp(at))
+                        .into_iter()
+                        .map(|(k, f, s, t)| node_value(k, f, s, t, true)),
+                )
+                .collect::<Vec<_>>()
+        })
+    });
+    // syntax-children in the innermost language's tree at `start`, the one
+    // syntax-at gives nodes of.
+    engine.register_fn("syntax-children-at", |start: isize, end: isize| {
+        editor::with(|e| {
+            let id = e.current;
+            e.update_syntax_now(id);
+            let rope = e.buffer.rope();
+            let Some((_, root)) = e
+                .syntax
+                .get(&id)
+                .and_then(|s| s.root_at(rope.char_to_byte(clamp(start).min(rope.len_chars()))))
+            else {
+                return Vec::new();
+            };
+            crate::syntax::children(root, rope, clamp(start), clamp(end))
+                .into_iter()
+                .map(|(k, f, s, t, named)| node_value(k, f, s, t, named))
                 .collect::<Vec<_>>()
         })
     });

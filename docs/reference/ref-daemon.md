@@ -27,7 +27,7 @@ The daemon listens on `$XDG_RUNTIME_DIR/imp/default.sock`. To run more than one,
 
 `:q` closes the client's current window. On its last window, it detaches the client, and the daemon keeps running with your buffers.
 
-`:kill-server` stops the daemon.
+`:kill-server` stops the daemon. It asks first if programs are running in terminals, since they stop too; `:q` only detaches, and terminals keep running for the next client.
 
 ## Several clients
 

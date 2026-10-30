@@ -32,6 +32,8 @@ fn menu_narrows_as_you_type() {
 #[test]
 fn moving_the_selection() {
     let mut s = server("");
+    // The menu's own order, not what was picked (tests/completion_history.rs).
+    s.eval("(set-option! 'completion-history #f)").unwrap();
     s.eval(r#"(completing-read "Pick: " (list "a1" "a2" "a3") (lambda (x) (message x)))"#)
         .unwrap();
     s.keys(&["C-n", "C-n"]);
@@ -120,7 +122,9 @@ fn m_x_describes_each_command() {
         .expect(&menu);
     assert!(row.contains("SPC f f"), "{row}");
     assert!(
-        row.contains("Open a file under the current directory, skipping what .gitignore does."),
+        row.contains(
+            "Open a file in this buffer's project (or its directory), skipping what .gitignore does."
+        ),
         "{row}"
     );
     // With no docstring, its which-key label.
@@ -208,4 +212,48 @@ fn a_path_outside_lists_that_directory() {
     assert!(r.iter().any(|l| l.ends_with("/notes/todo.org")), "{r:?}");
     type_keys(&mut s, "<ret>");
     assert!(s.eval("(buffer-path)").unwrap().contains("todo.org"));
+}
+
+#[test]
+fn find_file_lists_the_buffers_project_or_directory() {
+    let mut s = server("");
+    s.set_size(200, 24);
+    // In a project: its files, from wherever imp was started.
+    let project = temp_path("ff-project");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(project.join("src/a.rs"), "a\n").unwrap();
+    std::fs::write(project.join("notes.md"), "n\n").unwrap();
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>", project.join("src/a.rs").display()),
+    );
+    s.eval("(run-command 'find-file)").unwrap();
+    let r = rows(&mut s);
+    assert!(
+        r.last().unwrap().starts_with("Find file in ff-project"),
+        "{r:?}"
+    );
+    assert!(r.iter().any(|l| l == "notes.md"), "{r:?}");
+    type_keys(&mut s, "notes<ret>");
+    assert_eq!(
+        s.eval("(buffer-path)").unwrap(),
+        format!("{:?}", project.join("notes.md").display().to_string())
+    );
+    // Outside any project: the file's own directory.
+    let loose = temp_path("ff-loose");
+    std::fs::create_dir_all(&loose).unwrap();
+    std::fs::write(loose.join("init.scm"), "x\n").unwrap();
+    std::fs::write(loose.join("other.scm"), "y\n").unwrap();
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>", loose.join("init.scm").display()),
+    );
+    s.eval("(run-command 'find-file)").unwrap();
+    let r = rows(&mut s);
+    assert!(
+        r.last().unwrap().starts_with("Find file in ff-loose"),
+        "{r:?}"
+    );
+    assert!(r.iter().any(|l| l == "other.scm"), "{r:?}");
 }

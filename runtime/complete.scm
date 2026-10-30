@@ -699,7 +699,9 @@
             (let ([docs (doc-lines)])
               (list (car ctx) (cadr ctx)
                     (map (lambda (c)
-                           (or (hash-try-get docs c)
+                           (or (and (command-proc (string->symbol c)) (not (hash-contains? *ex-commands* c))
+                                    (command-doc c docs))
+                               (hash-try-get docs c)
                                (and (starts-with? c "no") (hash-try-get docs (substring c 2 (string-length c))))
                                ""))
                          (cadr ctx))))))]

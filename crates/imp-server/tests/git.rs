@@ -54,7 +54,8 @@ fn repo(name: &str) -> PathBuf {
 fn status(dir: &Path) -> imp_server::Server {
     let mut s = server("");
     type_keys(&mut s, &format!(":e {}<ret>", dir.join("a.txt").display()));
-    type_keys(&mut s, ":Git<ret>");
+    // git with no arguments shows the status.
+    type_keys(&mut s, ":git<ret><ret>");
     s
 }
 
@@ -218,16 +219,27 @@ fn visit_log_and_show() {
     assert!(s.eval("(buffer-name)").unwrap().contains("a.txt"));
     assert_eq!(s.eval("(current-line)").unwrap(), "9");
     // The log, and a commit from it.
-    type_keys(&mut s, ":Git<ret>l");
+    type_keys(&mut s, ":git-status<ret>l");
     assert_eq!(s.eval("(major-mode)").unwrap(), "git-log-mode");
     assert!(s.text().contains("Add a"), "{}", s.text());
     type_keys(&mut s, "<ret>");
     assert_eq!(s.eval("(major-mode)").unwrap(), "git-diff-mode");
     assert!(s.text().starts_with("commit "), "{}", s.text());
     assert!(s.text().contains("+one"));
-    // :Git with arguments runs them.
-    type_keys(&mut s, ":Git rev-parse --abbrev-ref HEAD<ret>");
+    // git with arguments runs them, from : or from its prompt.
+    type_keys(&mut s, ":git rev-parse --abbrev-ref HEAD<ret>");
     assert!(s.frame().text_rows().join("\n").contains("main"));
+    type_keys(&mut s, "<esc>");
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "git<ret>rev-parse --is-inside-work-tree<ret>");
+    assert!(s.frame().text_rows().join("\n").contains("true"));
+    // The old names are gone.
+    type_keys(&mut s, "<esc>:Git<ret>");
+    assert!(
+        s.status().contains("not an editor command: Git"),
+        "{}",
+        s.status()
+    );
 }
 
 #[test]
@@ -256,7 +268,7 @@ fn outside_a_repository() {
     if git_root_exists(&dir) {
         return;
     }
-    type_keys(&mut s, ":Git<ret>");
+    type_keys(&mut s, ":git log<ret>");
     assert!(
         s.status().contains("not in a git repository"),
         "{}",

@@ -56,6 +56,10 @@
 (define *autoindent-line* #f)  ; a line holding only indent we added
 (define *replaced* '())        ; (offset . old-char) pairs, for <bs> in R
 (define *insert-return* #f)    ; C-o: go back to insert after one command
+(define *pasting* #f)          ; replaying a paste for `.`: its brackets don't pair
+(define *pairs* '())           ; pairs auto-pairs added in this insert, innermost first
+(define *pair-added* #f)       ; the pair the key being handled added
+(define *typed-char-handler* #f) ; called with each plain char typed (end tags, syntax.scm)
 (define *cmdline* "")           ; text typed at the prompt
 (define *cmdline-prompt* ":")
 (define *cmdline-submit* #f)   ; (lambda (text) ...) on <ret>
@@ -994,7 +998,7 @@
   (set! *last-change-count* count)
   (let ([change (with-register change (next-register *register-prefix*))])
   (if (typing-mode?)
-      (begin (set! *insert-entry* change) (set! *insert-keys* '()))
+      (begin (set! *insert-entry* change) (set! *insert-keys* '()) (set! *pairs* '()))
       (set! *last-change* change)))
   void)
 
@@ -1037,7 +1041,12 @@
        (let* ([c (key-char (cadr ks))] [reg (and c (valid-register? c) (register-get c))])
          (when reg (insert-text! (car reg))))
        (loop (cddr ks))]
-      [else (insert-key! (car ks)) (loop (cdr ks))])))
+      [(member (car ks) '("<paste-start>" "<paste-end>"))
+       (set! *pasting* (equal? (car ks) "<paste-start>"))
+       (loop (cdr ks))]
+      [else (insert-key! (car ks)) (loop (cdr ks))]))
+  (set! *pasting* #f)
+  void)
 
 (define (finish-insert-record! keys)
   "Completes the `.` record for an insert that just ended.
@@ -2315,8 +2324,12 @@
 (define (prefix-key? key)
   "Whether `key` waits for another key in normal mode.
    True for declared prefixes and char motions, and for char commands
-   when no operator is pending."
-  (or (hash-contains? *prefix-keys* key)
+   when no operator is pending. A prefix repeating an operator's last key
+   isn't one, so gzz is the linewise gz though z is a prefix (zffx is
+   still zf to the x: f is a char motion)."
+  (or (and (hash-contains? *prefix-keys* key)
+           (not (and *operator* (= (string-length *operator*) 2)
+                     (equal? key (substring *operator* 1 2)))))
       (hash-contains? *char-motions* key)
       (and (not *operator*) (hash-contains? *char-commands* key))))
 
@@ -2583,6 +2596,127 @@
       (shift-line! line -1)
       (set-cursor! (- (line-end line) from-end)))))
 
+;; auto-pairs: typing an opener also types its closer, before a gap
+;; (docs/specs/auto-pairs.md). auto-pairs-chars lists each opener and its
+;; closer, a quote being its own; modes set it locally.
+(define-option! 'auto-pairs #t '())
+(define-option! 'auto-pairs-chars "()[]{}\"\"''``" '())
+
+(define (pair-partner c)
+  "The closer of opener `c` in the buffer's pairs, or #f, wherever the
+   cursor is; #f too with auto-pairs off."
+  (and (option 'auto-pairs) (not *pasting*)
+       (let loop ([cs (string->list (option 'auto-pairs-chars))])
+         (cond [(or (null? cs) (null? (cdr cs))) #f]
+               [(equal? (car cs) c) (cadr cs)]
+               [else (loop (cddr cs))]))))
+
+(define (pair-closer c)
+  "The closer that typing opener `c` adds, or #f if it doesn't pair here.
+   A bracket pairs before a gap; a quote also not after a letter or digit,
+   nor inside a string or comment."
+  (let ([closer (pair-partner c)])
+    (and closer
+         (gap-after-cursor?)
+         (or (not (equal? c closer))
+             (not (or (word-before-cursor?) (in-string-or-comment?))))
+         closer)))
+
+(define (pair-brackets-closing)
+  "The closers of the pairs that aren't quotes, as chars."
+  (let loop ([cs (string->list (option 'auto-pairs-chars))] [out '()])
+    (cond [(or (null? cs) (null? (cdr cs))) out]
+          [(equal? (car cs) (cadr cs)) (loop (cddr cs) out)]
+          [else (loop (cddr cs) (cons (cadr cs) out))])))
+
+(define (gap-after-cursor?)
+  "Whether the char after the cursor leaves room for a pair: white space,
+   the end of the line, a closing bracket, or , ; : ."
+  (or (>= (cursor) (line-end (current-line)))
+      (let ([c (buffer-char-at (cursor))])
+        (or (char-whitespace? c)
+            (memv c (list #\, #\; #\: #\.))
+            (memv c (pair-brackets-closing))))))
+
+(define (word-before-cursor?)
+  "Whether the char before the cursor, on its line, is a letter or digit."
+  (and (> (cursor) (line-start (current-line)))
+       (let ([c (buffer-char-at (- (cursor) 1))])
+         (and (char-word? c) (not (equal? c #\_))))))
+
+(define (in-string-or-comment?)
+  "Whether the cursor is inside a string or comment, by the syntax tree.
+   Just past a string's closing quote is outside it; at the end of a
+   comment is still in it, as a line comment runs to the line's end."
+  (let ([p (cursor)])
+    (define (around? at test)
+      (let loop ([nodes (syntax-ancestors at)])
+        (and (pair? nodes)
+             (or (test (car (car nodes)) (caddr (car nodes)) (cadddr (car nodes)))
+                 (loop (cdr nodes))))))
+    (or (around? p (lambda (kind start end) (and (string-contains? kind "string") (< start p) (< p end))))
+        ;; The char before the cursor, as the tree has none at a line's end.
+        (and (> p 0)
+             (around? (- p 1)
+                      (lambda (kind start end) (and (string-contains? kind "comment") (< start p) (<= p end))))))))
+
+(define (insert-pair! opener closer)
+  "Types `opener` and puts `closer` after the cursor, remembering the pair
+   so that typing the closer steps over it and <bs> deletes both."
+  (insert-text! opener)
+  (buffer-insert! (cursor) (string closer))
+  (set! *pair-added* (list (- (cursor) 1) (cursor) (string-ref opener 0) closer))
+  void)
+
+;; A pair is (open close opener closer): the offsets of its two chars.
+(define (pair-live? pair)
+  "Whether `pair` is still in the buffer with the cursor inside it."
+  (let ([open (car pair)] [close (cadr pair)])
+    (and (< open (cursor)) (<= (cursor) close) (< close (buffer-length))
+         (equal? (buffer-char-at open) (caddr pair))
+         (equal? (buffer-char-at close) (cadddr pair)))))
+
+(define (track-pairs! before len)
+  "Moves the remembered pairs past an edit at the cursor, which was at
+   `before` with the buffer `len` chars long, and forgets those the
+   cursor has left."
+  (let ([delta (- (buffer-length) len)])
+    (set! *pairs*
+          (filter pair-live?
+                  (map (lambda (pair)
+                         (let ([shift (lambda (p) (if (>= p before) (+ p delta) p))])
+                           (list (shift (car pair)) (shift (cadr pair)) (caddr pair) (cadddr pair))))
+                       *pairs*))))
+  void)
+
+(define (pair-closing-at-cursor c)
+  "The pair whose closer `c` is the char at the cursor, or #f."
+  (let loop ([ps *pairs*])
+    (cond [(null? ps) #f]
+          [(and (= (cadr (car ps)) (cursor)) (equal? (cadddr (car ps)) c)) (car ps)]
+          [else (loop (cdr ps))])))
+
+(define (delete-empty-pair!)
+  "Deletes the empty pair around the cursor, both its chars."
+  (buffer-delete! (- (cursor) 1) (+ (cursor) 1))
+  (set-cursor! (- (cursor) 1))
+  void)
+
+(define (wrap-region! start end opener closer)
+  "Puts `opener` before start..end and `closer` after it, the cursor
+   just past the closer."
+  (buffer-insert! end (string closer))
+  (buffer-insert! start opener)
+  (set-cursor! (+ end 2))
+  void)
+
+(define (empty-pair-around-cursor)
+  "The pair that is empty with the cursor between its chars, or #f."
+  (let loop ([ps *pairs*])
+    (cond [(null? ps) #f]
+          [(and (= (cadr (car ps)) (cursor)) (= (car (car ps)) (- (cursor) 1))) (car ps)]
+          [else (loop (cdr ps))])))
+
 (define (delete-word-before!)
   "C-w: the word (or white space run, or line break) before the cursor."
   (let* ([p (cursor)] [lo (line-start (current-line))])
@@ -2639,12 +2773,31 @@
    <bs>, C-w, C-u, C-t, C-d, arrows...), then plain chars, then the
    insert keymap."
   (unless (member key '("<ret>" "C-j" "C-m")) (set! *autoindent-line* #f))
+  (with-pairs-tracked (lambda () (insert-key-edit! key))))
+
+(define (with-pairs-tracked thunk)
+  "Calls `thunk`, an edit at the cursor, keeping the pairs auto-pairs
+   added in step with it. Insert mode and the Emacs state run each key
+   through it."
+  (let ([before (cursor)] [len (buffer-length)])
+    (set! *pair-added* #f)
+    (thunk)
+    (track-pairs! before len)
+    ;; A pair this edit added is where it belongs already; only older ones move.
+    (when *pair-added*
+      (set! *pairs* (cons *pair-added* *pairs*))
+      (set! *pair-added* #f)))
+  void)
+
+(define (insert-key-edit! key)
+  "What insert-key! does with `key`, past the pairs it keeps track of."
   (cond
     ;; A mode's own insert keys come first (the REPL's <ret>).
     [(local-key-binding 'insert key) => run-insert-binding!]
     [(member key '("<ret>" "C-j" "C-m")) (insert-newline!)]
     [(equal? key "<tab>") (insert-tab!)]
     [(and (member key '("<bs>" "C-h")) (eq? *mode* 'replace)) (replace-backspace!)]
+    [(and (member key '("<bs>" "C-h")) (empty-pair-around-cursor)) (delete-empty-pair!)]
     [(member key '("<bs>" "C-h"))
      (when (> (cursor) 0)
        (buffer-delete! (- (cursor) 1) (cursor))
@@ -2662,12 +2815,23 @@
      (let ([line (clamp (+ (current-line) (if (equal? key "<up>") -1 1)) 0 (last-line))])
        (set-cursor! (line-col->offset line (current-col))))]
     [(and (= (string-length key) 1) (eq? *mode* 'replace)) (replace-char! key)]
+    [(and (= (string-length key) 1) (pair-closing-at-cursor (string-ref key 0)))
+     (set-cursor! (+ (cursor) 1))]
+    [(and (= (string-length key) 1) (pair-closer (string-ref key 0)))
+     => (lambda (closer) (insert-pair! key closer))]
     [(and (= (string-length key) 1) (closes-indent? (string-ref key 0)))
      (maybe-dedent-for! (string-ref key 0))
      (insert-text! key)]
-    [(= (string-length key) 1) (insert-text! key)]
+    [(= (string-length key) 1) (insert-typed-char! key)]
     [(key-binding 'insert key) => run-insert-binding!]
     [else #t]))
+
+(define (insert-typed-char! key)
+  "Types one plain char `key`, then lets *typed-char-handler* act on it,
+   as closing an end tag after a start tag's > does."
+  (insert-text! key)
+  (when *typed-char-handler* (*typed-char-handler* (string-ref key 0)))
+  void)
 
 (define (run-insert-binding! binding)
   "Runs an insert-state binding: a command name as a command (count 1),
@@ -2684,6 +2848,7 @@
    The cursor steps back onto the last char typed. Sets the ^ mark and
    where gi resumes, and drops indent autoindent added to an empty line."
   (drop-unused-autoindent!)
+  (set! *pairs* '())
   (mark-set! "^" (cursor))
   (set! *last-insert-pos* (cursor))
   (set-mode! 'normal)
@@ -2942,14 +3107,18 @@
       [(not i) #f]
       [(= name-end (string-length text))
        (let* ([typed (substring text i name-end)]
-              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))])
-         ;; Full names only, as Vim lists them: "noh" goes, "nohlsearch" stays.
-         (list i (sort (filter (lambda (n)
-                                 (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
-                                                                 (starts-with? m n)))
-                                                names)))
-                               names)
-                       string<?)))]
+              [names (filter (lambda (n) (starts-with? n typed)) (hash-keys->list *ex-commands*))]
+              ;; Full names only, as Vim lists them: "noh" goes,
+              ;; "nohlsearch" stays.
+              [full (filter (lambda (n)
+                              (null? (filter (lambda (m) (and (> (string-length m) (string-length n))
+                                                              (starts-with? m n)))
+                                             names)))
+                            names)]
+              ;; And the commands : runs by name (see lore:decision/0019).
+              [commands (filter (lambda (n) (and (starts-with? n typed) (not (member n full))))
+                                (map symbol->string (command-names)))])
+         (list i (sort (append full commands) string<?)))]
       [else
        (let* ([name (substring text i name-end)]
               [proc (hash-try-get *ex-completions* name)]
@@ -2964,7 +3133,10 @@
                   (cond [(< j 0) #f] [(equal? (string-ref typed j) #\/) j] [else (loop (- j 1))]))]
          [dir (if slash (substring typed 0 (+ slash 1)) "")]
          [prefix (substring typed (string-length dir) (string-length typed))]
-         [listing (directory-entries (if (equal? dir "") (current-dir) (expand-path dir)))])
+         ;; From a terminal, relative to its directory.
+         [listing (directory-entries (if (equal? dir "")
+                                         (or (buffer-local 'term-dir) (current-dir))
+                                         (expand-path (from-terminal-directory dir))))])
     (if (string? listing)
         '()
         (map (lambda (e) (string-append dir (car e) (if (cadr e) "/" "")))
@@ -3225,6 +3397,9 @@
 (define (ex-args ex)
   "The argument text of parsed command `ex`, after its name."
   (cadddr ex))
+(define (ex-range-text ex)
+  "The range of parsed command `ex` as typed (\"3\", \"%\"), or \"\"."
+  (list-ref ex 4))
 
 (define (char-at s i)
   "The char at index `i` of `s`, or #f past its end."
@@ -3316,7 +3491,8 @@
   (and c (let ([n (char->integer (char-downcase c))]) (and (>= n 97) (<= n 122)))))
 
 (define (parse-ex line)
-  "Parses a command line into (name ex), ex being (range given? bang args)."
+  "Parses a command line into (name ex), ex being (range given? bang args
+   range-text), range-text being the range as typed."
   (let* ([r (parse-range line 0)]
          [range (car r)]
          [i (skip-spaces line (caddr r))]
@@ -3334,7 +3510,7 @@
          [args-start (skip-spaces line (if bang? (+ name-end 1) name-end))]
          [args (substring line args-start (string-length line))]
          [range (list (clamp (car range) 0 (last-line)) (clamp (cadr range) 0 (last-line)))])
-    (list name (list range (cadr r) bang? args))))
+    (list name (list range (cadr r) bang? args (trim (substring line 0 (caddr r)))))))
 
 (define (run-ex! line)
   "Parses and runs the command line `line`, as typed after :.
@@ -3352,7 +3528,46 @@
              (when (ex-range-given? ex)
                (record-jump!)
                (set-cursor! (line-first-nonblank (cadr (ex-range ex)))))]
+            [(command-proc (string->symbol name))
+             (run-command-from-ex! name ex)]
             [else (set-status! (string-append "not an editor command: " line))])))))
+
+(define *command-text* #f)   ; text after :NAME while NAME runs, or #f
+(define *command-text-read* #f)
+
+(define (command-argument)
+  "The text typed after the command's name at the : line (:org-export html
+   gives \"html\"), or #f, as when it runs from M-x or a key. A command
+   whose question isn't a prompt, such as a menu of keys, reads its
+   answer here; one that asks with a prompt gets it there instead."
+  (set! *command-text-read* #t)
+  *command-text*)
+
+(define (run-command-from-ex! name ex)
+  "Runs command `name` (a string) for command line `ex`, when no ex
+   command has that name: a number before it is the count, and any other
+   range is refused. Text after the name answers the first question the
+   command asks, as if typed at its prompt and submitted; a command shows
+   it asks by leaving a prompt open, or by reading command-argument (see
+   lore:decision/0019)."
+  (let ([range (ex-range-text ex)] [text (trim-end (ex-args ex))])
+    (if (or (equal? range "") (string->number range))
+        (begin
+          (set! *command-text* (if (equal? text "") #f text))
+          (set! *command-text-read* #f)
+          (with-handler (lambda (e) (set-status! (error-message e)))
+                        (begin
+                          (run-command (string->symbol name)
+                                       (let ([n (string->number range)]) (if (and n (> n 0)) n 1)))
+                          (set! *command-text* #f)
+                          (unless (or (equal? text "") *command-text-read*)
+                            (if (eq? *mode* 'cmdline)
+                                (begin (cmdline-edit! text (string-length text))
+                                       (cmdline-key! "<ret>"))
+                                (set-status! (string-append name " takes no argument"))))))
+          (set! *command-text* #f)
+          void)
+        (set-status! (string-append name " takes no range")))))
 
 (define (error-message e)
   "The message of a caught error, without the space Steel puts in front."
@@ -3468,15 +3683,29 @@
         (set-status! "saveas needs a file name")
         (begin (set-buffer-path! (expand-path (ex-args ex))) (write-buffer! (list (ex-range ex) #f #f ""))))))
 
+;; The buffers with a program still running in them, which killing or
+;; quitting asks about first, as it does about unsaved changes; term.scm
+;; sets it.
+(define *running-buffers* (lambda () '()))
+
+(define (buffer-running? id)
+  "Whether a program is running in buffer `id` that killing it would stop."
+  (and (memv id (*running-buffers*)) #t))
+
 (define (quit-if-saved! ex)
-  "Quits unless some buffer has unsaved changes (or ! was given)."
-  (let ([dirty (modified-buffers)])
-    (if (and (pair? dirty) (not (ex-bang? ex)))
-        (begin
-          (set-status! (string-append "unsaved changes in " (car (buffer-info (car dirty)))
-                                      " (add ! to override)"))
-          (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty))))
-        (quit!))))
+  "Quits unless some buffer has unsaved changes or a running program (or
+   ! was given). In a daemon quitting only detaches, so programs keep
+   running and don't count."
+  (let ([dirty (modified-buffers)]
+        [running (if (daemon?) '() (*running-buffers*))]
+        [stop (lambda (id what)
+                (set-status! (string-append what (car (buffer-info id)) " (add ! to override)"))
+                (unless (= id (current-buffer)) (go-to-buffer! id)))])
+    (cond
+      [(ex-bang? ex) (quit!)]
+      [(pair? dirty) (stop (car dirty) "unsaved changes in ")]
+      [(pair? running) (stop (car running) "a program is running in ")]
+      [else (quit!)])))
 
 ;; :q closes the window when there are several, as in Vim; :qa quits.
 (define-ex! '("q" "quit")
@@ -3498,9 +3727,6 @@
 (define-ex! '("x" "xit" "exit")
   (lambda (ex)
     (when (or (not (buffer-modified?)) (save-buffer!)) (quit-window-or-editor! ex))))
-;; In a daemon, stops it for every client (:q only detaches one).
-(define-ex! '("kill-server") (lambda (ex) (kill-server!)))
-
 (define-ex! '("wqa" "wqall" "xa" "xall")
   (lambda (ex) (when (write-all!) (quit-if-saved! ex))))
 
@@ -3674,6 +3900,14 @@
     [(starts-with? path "~/") (string-append (home-dir) (substring path 1 (string-length path)))]
     [else path]))
 
+(define (from-terminal-directory path)
+  "`path` as typed in a terminal buffer: a relative one is taken from the
+   terminal's directory. Elsewhere, and absolute or ~ paths, unchanged."
+  (let ([dir (buffer-local 'term-dir)] [p (expand-path path)])
+    (if (and dir (not (equal? p "")) (not (starts-with? p "/")))
+        (string-append dir "/" p)
+        path)))
+
 (define (abbreviate-path path)
   "`path` with the home directory shown as ~, for display."
   (let ([home (home-dir)])
@@ -3706,7 +3940,7 @@
          (if (and *alternate-buffer* (memv *alternate-buffer* (buffer-list)))
              (go-to-buffer! *alternate-buffer*)
              (set-status! "no alternate file"))]
-        [(not (equal? arg "")) (open-file! arg)]
+        [(not (equal? arg "")) (open-file! (from-terminal-directory arg))]
         ;; A buffer that isn't a file says how to re-read it (the file
         ;; browser lists its directory again).
         [(buffer-local 'revert-handler)
@@ -3779,6 +4013,8 @@
         [(not id) #f]
         [(and (buffer-modified-by-id? id) (not (ex-bang? ex)))
          (set-status! "unsaved changes (add ! to discard them)")]
+        [(and (buffer-running? id) (not (ex-bang? ex)))
+         (set-status! "a program is running in it (add ! to kill it)")]
         [else (kill-buffer! id)]))))
 
 (define (kill-buffer! id)
@@ -4247,7 +4483,6 @@
                          (imp-eval-string text))])
     (unless (eq? v void) (show-result! v))))
 
-(define-ex! '("eval" "ev") (lambda (ex) (eval-and-show! (ex-args ex))))
 
 (define-ex! '("so" "source")
   (lambda (ex)
@@ -4316,6 +4551,10 @@
 (define-command! 'eval-expression
   (lambda (count)
     "Prompt for an expression and evaluate it (M-:)."
+    (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
+(define-command! 'eval
+  (lambda (count)
+    "Evaluate a Scheme expression, asked for: :eval (+ 1 2) runs it at once."
     (open-cmdline! "Eval: " "" eval-and-show! #f #f)))
 
 ;;; Entry points
@@ -4390,7 +4629,10 @@
       [(member *mode* '(insert replace emacs))
        (insert-text! text)
        (when (typing-mode?)
-         (set! *insert-keys* (append (reverse (map (lambda (c) (if (equal? c "\n") "<ret>" c)) chars))
+         ;; Marked, so `.` types it again without pairing its brackets.
+         (set! *insert-keys* (append (list "<paste-end>")
+                                     (reverse (map (lambda (c) (if (equal? c "\n") "<ret>" c)) chars))
+                                     (list "<paste-start>")
                                      *insert-keys*)))]
       [(member *mode* '(normal visual))
        (when (eq? *mode* 'visual) (leave-visual!))

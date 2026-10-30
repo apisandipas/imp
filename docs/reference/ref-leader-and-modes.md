@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: e3fcce9e04c2
+  docs/specs/leader-and-modes.md: 9d5b35157001
 ---
 # Leader and modes
 
@@ -32,6 +32,8 @@ Pause after `SPC` and a popup lists the keys that can come next and what each do
 
 Press `<bs>` to go back a level: `SPC g <bs>` shows the `SPC` popup again. At `SPC` alone, `<bs>` closes it, as `<esc>` does.
 
+A count typed before `SPC` goes to the command: `2 SPC o t` brings up your project's second terminal.
+
 Vim's prefix keys show the same popup: `g`, `z`, `Z`, `[`, `]` and `C-w`. Its title is what you've typed so far, count included, such as `3g`. It lists only keys that do something here, including the buffer's mode keys. Typing the next key closes it.
 
 There's no popup after `"`, after `f` and the other character motions, or after an operator such as `d`.
@@ -40,7 +42,7 @@ There's no popup after `"`, after `f` and the other character motions, or after 
 
 Each buffer has one major mode, picked by its file name when it opens. imp has major modes for about 20 languages. Each sets the indentation and how comments are written.
 
-`:mode rust` switches the buffer to another major mode, and `:mode` alone says which one it's in.
+`M-x set-major-mode` switches the buffer to another major mode: pick one, or type part of its name (`:set-major-mode rust`). The current mode is first in the list, so pressing `<ret>` straight away says which one it's in.
 
 A buffer can also have any number of minor modes. Keys from minor modes win over the major mode's, and the major mode's win over the usual keys.
 

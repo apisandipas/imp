@@ -646,6 +646,37 @@ impl Syntax {
         }
     }
 
+    /// Brings the trees up to date with `buffer` now, however long that
+    /// takes, for a question about the text as it is (`syntax-at`). The
+    /// parse is incremental from the edited old trees, so usually quick;
+    /// a background one still running is overtaken, and its result
+    /// dropped if the text changed meanwhile.
+    pub fn update_now(&mut self, buffer: &mut Buffer) {
+        self.apply_edits(buffer.take_edits());
+        if !self.stale {
+            return;
+        }
+        let (old, old_layers) = if self.reset {
+            (None, Vec::new())
+        } else {
+            (self.tree.clone(), self.layers.clone())
+        };
+        let parsing = self.parsing;
+        if let Some(parse) = parse(
+            &mut self.parser,
+            self.lang,
+            buffer.rope(),
+            old.as_ref(),
+            &old_layers,
+            None,
+        ) {
+            self.parsed(parse);
+            // The background parse still reports back; keep waiting for it
+            // so a second isn't started meanwhile.
+            self.parsing = parsing;
+        }
+    }
+
     fn parsed(&mut self, parse: Parse) {
         self.tree = Some(parse.root);
         self.layers = parse.layers;
@@ -702,6 +733,20 @@ impl Syntax {
 
     pub fn root(&self) -> Option<Node<'_>> {
         self.tree.as_ref().map(|t| t.root_node())
+    }
+
+    /// The innermost language at `byte` and its tree's root: an embedded
+    /// language's where a region of it covers `byte` (the deepest, if
+    /// they nest), otherwise the buffer's own.
+    pub fn root_at(&self, byte: usize) -> Option<(&'static str, Node<'_>)> {
+        let own = (self.lang.name, self.root()?);
+        Some(
+            self.layers
+                .iter()
+                .filter(|l| l.ranges.iter().any(|r| r.start <= byte && byte <= r.end))
+                .max_by_key(|l| l.depth)
+                .map_or(own, |l| (l.lang.name, l.tree.root_node())),
+        )
     }
 
     /// Highlighted char ranges within `bytes` of `rope`, as (start char,

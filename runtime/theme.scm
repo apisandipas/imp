@@ -2,7 +2,7 @@
 ;;;
 ;;; Every color is a face (core.scm). A theme here is a palette of a few
 ;;; named colors, from which theme-faces makes every face, so switching
-;;; themes leaves nothing behind. :theme NAME (or M-x load-theme) switches;
+;;; themes leaves nothing behind. :colorscheme NAME (or M-x load-theme) switches;
 ;;; in init.scm:
 ;;;
 ;;;   (load-theme! 'gruvbox-dark)
@@ -190,12 +190,12 @@
      (list "git.hash" (fg 'dim))
      (list "git.status" (fg 'yellow))
      (list "git.count" (fg 'dim))
+     ;; Two colours: the accent, and the text's own.
      (list "start.title" (fg 'blue "bold"))
-     (list "start.heading" (fg 'magenta "bold"))
-     (list "start.key" (fg 'yellow "bold"))
+     (list "start.key" (fg 'blue "bold"))
+     (list "start.label" "")
+     (list "start.heading" (fg 'comment))
      (list "start.dim" (fg 'comment))
-     (list "start.file" "")
-     (list "start.project" (fg 'cyan))
      (list "diff.added" (fg 'green))
      (list "diff.removed" (fg 'red))
      (list "diff.hunk" (fg 'cyan))
@@ -382,14 +382,14 @@
     (set! *completion-category* 'theme)
     (completing-read "Theme: " (theme-names) (lambda (name) (load-theme! (string->symbol name))))))
 
-(define-ex! '("theme" "colo" "colorscheme")
+(define-ex! '("colo" "colorscheme")
   (lambda (ex)
     (let ([arg (ex-args ex)])
       (cond [(equal? arg "") (message (if *theme* (symbol->string *theme*) "no theme"))]
             [(hash-contains? *themes* (string->symbol arg)) (load-theme! (string->symbol arg))]
             [else (message (string-append "no theme " arg "; there are " (string-join (theme-names) ", ")))]))))
 
-(define-ex-completion! '("theme" "colo" "colorscheme")
+(define-ex-completion! '("colo" "colorscheme")
   (lambda (typed) (filter (lambda (n) (starts-with? n typed)) (theme-names))))
 
 (define-leader! "tT" 'load-theme "theme")
@@ -400,13 +400,14 @@
 ;;;
 ;;; Formats as in Vim's 'statusline' (see render.rs status_line): %m mode,
 ;;; %f file, %M modified, %l %c position, %p percent, %{name} a value set
-;;; with set-status-value! (major: the major mode, diagnostics: counts),
+;;; with set-status-value! (major: the major mode, diagnostics: counts,
+;;; title: a terminal's title),
 ;;; %#face# a face (%#mode# the mode's), %* the status face, %= right side.
 
 (define-option! 'statusline
-  "%#mode# %m %* %#status.file#%f%* %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
+  "%#mode# %m %* %#status.file#%f%*%{title} %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
   '(stl))
-(define-option! 'statusline-inactive "  %f %M%=%{major}  %l:%c   " '())
+(define-option! 'statusline-inactive "  %f%{title} %M%=%{major}  %l:%c   " '())
 
 (define (update-statusline! _value)
   "Hands the statusline options to the renderer. The watcher of both

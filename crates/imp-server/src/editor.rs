@@ -71,6 +71,8 @@ pub struct Editor {
     pub quit: bool,
     /// Set by :kill-server: a daemon stops instead of detaching a client.
     pub kill_server: bool,
+    /// Whether this is a daemon, where quitting detaches a client.
+    pub daemon: bool,
     /// First buffer line shown in the current window.
     pub scroll: usize,
     /// First display column shown in the current window (without wrap).
@@ -357,6 +359,17 @@ impl Editor {
             let events = self.background.sender.clone();
             if let Some(buffer) = self.buffer_by_id_mut(id) {
                 syntax.update(buffer, id, events.as_ref());
+            }
+            self.syntax.insert(id, syntax);
+        }
+    }
+
+    /// Brings buffer `id`'s syntax trees up to date now, past the parse
+    /// budget if need be (`Syntax::update_now`).
+    pub fn update_syntax_now(&mut self, id: usize) {
+        if let Some(mut syntax) = self.syntax.remove(&id) {
+            if let Some(buffer) = self.buffer_by_id_mut(id) {
+                syntax.update_now(buffer);
             }
             self.syntax.insert(id, syntax);
         }

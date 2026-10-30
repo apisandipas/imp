@@ -96,6 +96,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("term.scm", include_str!("../../../runtime/term.scm")),
     ("claude.scm", include_str!("../../../runtime/claude.scm")),
     ("start.scm", include_str!("../../../runtime/start.scm")),
+    ("history.scm", include_str!("../../../runtime/history.scm")),
     ("wasm.scm", include_str!("../../../runtime/wasm.scm")),
     ("collab.scm", include_str!("../../../runtime/collab.scm")),
     ("theme.scm", include_str!("../../../runtime/theme.scm")),
@@ -390,10 +391,17 @@ impl Server {
                     ],
                 )
             }
-            ClientMsg::Resize { width, height } => editor::with(|e| {
-                e.width = width;
-                e.height = height;
-            }),
+            ClientMsg::Resize { width, height } => {
+                let changed = editor::with(|e| {
+                    let changed = (e.width, e.height) != (width, height);
+                    e.width = width;
+                    e.height = height;
+                    changed
+                });
+                if changed {
+                    self.call("imp-resized", vec![]);
+                }
+            }
             ClientMsg::Hello { heights } => self.set_heights(heights),
             ClientMsg::Cell { width } => self.set_cell_width(width),
         }

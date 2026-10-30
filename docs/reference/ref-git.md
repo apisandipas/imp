@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/git]]"
 frozen:
-  docs/specs/git.md: 30ca5c679a3b
+  docs/specs/git.md: 784db8c1c823
 ---
 # Git
 
@@ -16,7 +16,7 @@ imp has a Magit-style status buffer for git. From it you stage changes, commit, 
 
 ## The status buffer
 
-Press `SPC g g`, or type `:Git`, to open the status of the current file's repository. It opens down the right of the screen.
+Press `SPC g g`, or run `M-x git-status`, to open the status of the current file's repository. It opens down the right of the screen.
 
 From the top, it shows:
 
@@ -97,10 +97,10 @@ Press `<ret>` on a commit in the log to see it.
 
 ## Running any git command
 
-Type `:Git` with arguments to run any git command and see its output:
+Run `M-x git` and type git's arguments to run any git command and see its output. Press `<ret>` with none to open the status instead. After `:`, give the arguments at once:
 
 ```
-:Git log --oneline -5
+:git log --oneline -5
 ```
 
 ## Options

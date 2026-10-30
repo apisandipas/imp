@@ -164,10 +164,23 @@ fn local_leader_shows_mode_bindings() {
 }
 
 #[test]
-fn mode_command_switches() {
+fn set_major_mode_switches() {
     let mut s = server("x\n");
-    type_keys(&mut s, ":mode rust<ret>");
+    s.set_size(120, 20);
+    // Choosing nothing shows the current one: it's first.
+    type_keys(&mut s, ":set-major-mode<ret><ret>");
+    assert_eq!(s.status(), "fundamental-mode");
+    type_keys(&mut s, ":set-major-mode rust<ret>");
     assert_eq!(s.eval("(major-mode)").unwrap(), "rust-mode");
+    type_keys(&mut s, ":set-major-mode<ret>");
+    let rows = s.frame().text_rows().join("\n");
+    assert!(rows.contains("rust-mode"), "{rows}");
+    type_keys(&mut s, "<esc>:mode rust<ret>");
+    assert!(
+        s.status().contains("not an editor command: mode"),
+        "{}",
+        s.status()
+    );
 }
 
 #[test]

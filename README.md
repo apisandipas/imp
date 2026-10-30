@@ -77,7 +77,8 @@ whatever you have installed.
 display it runs in the terminal instead, and `imp --tui` always does (for
 `$EDITOR`, say: `export EDITOR="imp --tui"`).
 
-With no file it shows a start screen of recent files and projects; `imp
+With no file it shows a start screen (recent files, find a file, switch
+project and more, each on a key, which `init.scm` can change); `imp
 FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 `C--` zoom, `C-0` resets, and `--font FAMILY`, `--font-size PX` and
 `--scale F` (or `$IMP_GUI_SCALE`, for HiDPI screens) set the text. In
@@ -94,6 +95,9 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   terminals, `h` help, `t` toggles. `M-x` runs any command by name.
 - **Emacs keys.** `C-z` switches to an Emacs state (`C-x C-f`, `C-x C-s` and
   friends) and back.
+- **Pairs.** In insert mode a bracket or quote types its closer too, and
+  typing the closer steps over it (`auto-pairs`). A start tag's `>`
+  closes it in HTML, XML and JSX (`auto-close-tags`).
 - **IDE features.** Tree-sitter highlighting and text objects for Rust,
   Scheme, TypeScript/TSX, JavaScript, Nix, Markdown, HTML, CSS, JSON, YAML,
   TOML, Bash, C, Go, Python and Lua, including languages embedded in
@@ -129,7 +133,8 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   Doom's keys), an editable file browser
   (`:Ex`, with permissions, size and time beside each name; `(` hides
   them), projects with search into a quickfix list, and terminals
-  (`:terminal`). Search results open along the bottom and git down the
+  (`:terminal`, or `SPC o t` for the project's own shell down the right,
+  which keeps running while it's hidden; `SPC o s` sends it the line or selection to run). Search results open along the bottom and git down the
   right, closing with `q`; `define-popup-rule!` changes where.
 - **Claude Code.** `M-a` (or `SPC a a`) opens Claude Code for the current
   project in a window down the right, and hides it again from inside;
@@ -181,7 +186,7 @@ Packages load from `~/.config/imp/packages`, or from git with
 (use-package! 'file-tree)                     ; the project's folders down the left (SPC t e)
 ```
 
-`:packages` lists what's loaded and what else comes with imp.
+`M-x list-packages` lists what's loaded and what else comes with imp.
 
 ## Daemon
 

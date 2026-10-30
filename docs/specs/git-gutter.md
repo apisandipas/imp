@@ -21,12 +21,12 @@ The git-gutter package marks each line of a file that differs from git with a co
   - They are worked out when the file opens, `git-gutter-delay` milliseconds (300) after the last change, after a save, and when the buffer is shown again (the index may have changed).
   - git runs in the background, and the lines are compared in Rust ([[0005-rust-owns-data-and-speed-scheme-owns-behavior]]).
 - `]h` and `[h` move to the first line of the next and previous changed block, taking a count. Past the last one they stay put and say `no more hunks`.
-- `:GitGutter` turns `git-gutter-mode` off and on in the current buffer. Off, the column and its marks go.
+- `M-x git-gutter-mode` turns it off and on in the current buffer. Off, the column and its marks go.
 - A file outside a repository, or one git doesn't track, gets no column.
 
 ## Keys and options
 
-`]h`, `[h`, `:GitGutter`, `git-gutter-delay`, the faces `git-gutter.added`, `git-gutter.changed` and `git-gutter.removed`.
+`]h`, `[h`, `git-gutter-mode`, `git-gutter-delay`, the faces `git-gutter.added`, `git-gutter.changed` and `git-gutter.removed`.
 
 ## Out of scope
 

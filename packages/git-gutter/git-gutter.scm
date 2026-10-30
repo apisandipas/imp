@@ -15,7 +15,7 @@
 ;;; The marks are worked out when the file opens, git-gutter-delay ms
 ;;; after the last change, after a save and when the buffer is shown
 ;;; again. ]h and [h move to the next and previous changed block;
-;;; :GitGutter turns the mode off and on.
+;;; M-x git-gutter-mode turns the mode off and on.
 
 ;; How long after the last change the marks are worked out again, in ms.
 (define-option! 'git-gutter-delay 300 '())
@@ -49,7 +49,6 @@
     "Turn git-gutter-mode on or off: bars beside the lines that differ from git."
     (toggle-minor-mode! 'git-gutter-mode)))
 
-(define-ex! '("GitGutter") (lambda (ex) (run-command 'git-gutter-mode)))
 
 (define (git-gutter-on?)
   "Whether the current buffer is in git-gutter-mode."

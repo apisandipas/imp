@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 90d6bc3e4f74
+  docs/specs/look.md: 7a6d128a8691
 ---
 # Look
 
@@ -12,7 +12,7 @@ How imp looks: its colors, the status line, popups, and the window's font and sp
 
 A theme sets every color in imp from a small palette. imp comes with four: `one-dark`, the default, `gruvbox-dark`, `everforest-dark` and the light `one-light`.
 
-Switch with `:theme gruvbox-dark`, or press `SPC t T` and pick one. To choose one for good, load it in `init.scm`:
+Switch with `:colorscheme gruvbox-dark`, or press `SPC t T` and pick one. To choose one for good, load it in `init.scm`:
 
 ```scheme
 (load-theme! 'gruvbox-dark)
@@ -59,7 +59,7 @@ Set your own with a Vim-style format string:
 | `%l` / `%c` | The line and column |
 | `%L` | How many lines the file has |
 | `%p` | How far through the file you are |
-| `%{name}` | A named value, such as `%{major}` for the major mode or `%{org-clock}` for Org's running clock |
+| `%{name}` | A named value, such as `%{major}` for the major mode, `%{title}` for a terminal's title, or `%{org-clock}` for Org's running clock |
 | `%#face#` | Draw what follows in that face; `%*` goes back |
 | `%=` | What follows goes on the right |
 
@@ -97,7 +97,7 @@ In the window client, a face can be drawn larger, such as `height=1.3`. A line i
 | Option | Default | What it does |
 |---|---|---|
 | `statusline` | imp's own | The status line's format |
-| `statusline-inactive` | `"  %f %M%=%{major}  %l:%c   "` | The format for windows without the focus |
+| `statusline-inactive` | `"  %f%{title} %M%=%{major}  %l:%c   "` | The format for windows without the focus |
 | `font` | `""` | The window's font family; empty uses the client's default |
 | `font-size` | `0` | The font size in pixels; 0 uses the client's default |
 | `window-padding` | `0` | Pixels of space around the text |

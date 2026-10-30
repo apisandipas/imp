@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: 0f8ff7a1b057
+  docs/specs/tree-sitter.md: 8999c82bfadc
 ---
 # Tree-sitter
 
@@ -99,7 +99,7 @@ Each language says which parts of its tree are functions, classes and argument l
   '("formals" "list_expression"))       ; argument lists
 ```
 
-`:syntax-tree` shows the current buffer's tree, to find the node kinds.
+`M-x syntax-tree` shows the current buffer's tree, to find the node kinds.
 
 ## Indentation
 

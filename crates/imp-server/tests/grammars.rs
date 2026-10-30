@@ -6,6 +6,15 @@ mod common;
 use common::*;
 use std::path::{Path, PathBuf};
 
+/// Held for the whole of each test here. Making a server resets the
+/// query directory, which is the whole process's, so a test making one
+/// while another has set it would undo that.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/imptest")
 }
@@ -71,6 +80,7 @@ fn face_on(s: &mut imp_server::Server, file: &str, text: &str, word: &str) -> St
 
 #[test]
 fn a_registered_grammar_works_like_a_bundled_one() {
+    let _serial = one_at_a_time();
     let mut s = server("");
     register(&mut s, "imptest", "imptest");
     mode(&mut s, "imptest", "imptest");
@@ -115,6 +125,7 @@ fn a_registered_grammar_works_like_a_bundled_one() {
 
 #[test]
 fn a_registered_grammar_takes_a_bundled_ones_place() {
+    let _serial = one_at_a_time();
     let mut s = server("");
     register(&mut s, "toml", "toml");
     assert_eq!(
@@ -125,6 +136,7 @@ fn a_registered_grammar_takes_a_bundled_ones_place() {
 
 #[test]
 fn a_grammar_that_wont_load_says_why() {
+    let _serial = one_at_a_time();
     let mut s = server("");
     // A library without the grammar's function.
     register(&mut s, "nosymbol", "other");
@@ -154,6 +166,7 @@ fn a_grammar_that_wont_load_says_why() {
 
 #[test]
 fn queries_come_from_the_repository_or_the_config_directory() {
+    let _serial = one_at_a_time();
     let mut s = server("");
     // Named apart from the other tests' grammar: the query directory is
     // the whole process's.

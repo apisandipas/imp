@@ -55,10 +55,10 @@ fn it_turns_on_for_files_in_a_repository() {
     let dir = repo("blame-on");
     let mut s = visiting(&dir.join("a.txt"));
     assert!(on(&mut s));
-    // SPC g b and :GitBlame toggle it.
+    // SPC g b and git-blame-mode toggle it.
     type_keys(&mut s, " gb");
     assert!(!on(&mut s));
-    type_keys(&mut s, ":GitBlame<ret>");
+    type_keys(&mut s, ":git-blame-mode<ret>");
     assert!(on(&mut s));
     // Not for a file outside one.
     let outside = temp_path("blame-outside.txt");

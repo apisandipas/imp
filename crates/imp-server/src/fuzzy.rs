@@ -37,6 +37,54 @@ pub fn filter(query: &str, candidates: &[String], limit: usize) -> Vec<String> {
         .collect()
 }
 
+/// As `filter`, with each candidate's use score beside it in `uses` (0
+/// for one never picked; missing ones count as 0). With an empty query the
+/// used candidates come first, highest score first, then the rest in their
+/// order; otherwise a candidate typed in full comes first, then a better
+/// match, and the use score decides between equally good ones before their
+/// length does.
+pub fn filter_ranked(
+    query: &str,
+    candidates: &[String],
+    uses: &[f64],
+    limit: usize,
+) -> Vec<String> {
+    let use_of = |i: usize| uses.get(i).copied().unwrap_or(0.0);
+    let parts: Vec<&str> = query.split_whitespace().collect();
+    let mut scored: Vec<(i64, f64, usize, &String)> = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let mut total = 0;
+            for part in &parts {
+                total += score(part, c)?;
+            }
+            Some((total, use_of(i), i, c))
+        })
+        .collect();
+    if parts.is_empty() {
+        // Used ones by score (stable, so equal scores keep their order),
+        // then the rest as they were.
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.2.cmp(&b.2)));
+    } else {
+        // What you typed in full is what you meant, however used the rest.
+        let exact = |c: &str| c == query.trim();
+        scored.sort_by(|a, b| {
+            exact(b.3)
+                .cmp(&exact(a.3))
+                .then(b.0.cmp(&a.0))
+                .then(b.1.total_cmp(&a.1))
+                .then(a.3.len().cmp(&b.3.len()))
+                .then(a.2.cmp(&b.2))
+        });
+    }
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, _, c)| c.clone())
+        .collect()
+}
+
 /// How well `part` matches `candidate`, or `None` if it doesn't.
 pub fn score(part: &str, candidate: &str) -> Option<i64> {
     let sensitive = part.chars().any(char::is_uppercase);
@@ -92,6 +140,32 @@ fn is_separator(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn use_puts_the_used_first_and_breaks_ties() {
+        let c = strings(&["find-file", "find-grep", "fold", "format", "fill"]);
+        // Nothing typed: used ones by score, then the rest in order.
+        let uses = [0.0, 3.0, 0.0, 8.0];
+        assert_eq!(
+            filter_ranked("", &c, &uses, 10),
+            strings(&["format", "find-grep", "find-file", "fold", "fill"])
+        );
+        // Typed: the better match still first ("fo" starts fold and
+        // format, and is only a subsequence of find-file)...
+        let r = filter_ranked("fo", &c, &uses, 10);
+        assert_eq!(&r[..2], &strings(&["format", "fold"])[..]);
+        // ...and between equally good matches, the used one, though longer.
+        assert_eq!(
+            filter_ranked("find", &c, &uses, 10),
+            strings(&["find-grep", "find-file"])
+        );
+        // A candidate typed in full comes first, though another is used.
+        let c2 = strings(&["install-grammar", "install-grammars"]);
+        assert_eq!(filter_ranked("install-grammar", &c2, &[0.0, 9.0], 10), c2);
+        // No uses: as filter.
+        assert_eq!(filter_ranked("find", &c, &[], 10), filter("find", &c, 10));
+    }
+
     use super::*;
 
     fn strings(v: &[&str]) -> Vec<String> {

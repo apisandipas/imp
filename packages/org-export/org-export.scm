@@ -15,7 +15,7 @@
 ;;;
 ;;; Before the format, C-s exports only the subtree at the cursor, C-b
 ;;; only the body (no <head> or preamble) and C-v only what folds don't
-;;; hide; the menu's title shows the toggles that are on. :OrgExport FORMAT
+;;; hide; the menu's title shows the toggles that are on. :org-export FORMAT
 ;;; writes the file without the menu.
 ;;;
 ;;; The buffer's text is exported, unsaved edits included, by pandoc in the
@@ -229,18 +229,18 @@
 
 (define-command! 'org-export
   (lambda (count)
-    "Export the Org buffer through pandoc: a menu of formats (C-c C-e)."
-    (org-export-menu!)))
+    "Export the Org buffer through pandoc: a menu of formats (C-c C-e).
+     :org-export html exports to that format at once."
+    ;; A menu of keys isn't a prompt, so the format given after :org-export
+    ;; is read here (see lore:decision/0019).
+    (let ([format (command-argument)])
+      (if format
+          (org-export! (trim format) 'file '())
+          (org-export-menu!)))))
 
 (for-each (lambda (state) (define-mode-key! 'org-mode state "C-cC-e" 'org-export "export"))
           '(normal insert))
 (define-mode-leader! 'org-mode "e" (lambda (n) (org-export-menu!)) "export")
 
-(define-ex! '("OrgExport")
-  (lambda (ex)
-    (let ([name (trim-end (trim-start (ex-args ex)))])
-      (if (equal? name "")
-          (message "OrgExport needs a format: html, pdf, markdown, docx, latex, odt or text")
-          (org-export! name 'file '())))))
-(define-ex-completion! '("OrgExport")
+(define-ex-completion! '("org-export")
   (lambda (typed) (filter (lambda (n) (starts-with? n typed)) (map car *org-export-formats*))))

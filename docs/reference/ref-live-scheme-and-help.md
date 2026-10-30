@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/live-scheme-and-help]]"
 frozen:
-  docs/specs/live-scheme-and-help.md: 2bdca45a37b7
+  docs/specs/live-scheme-and-help.md: 1857073a1b00
 ---
 # Live Scheme and help
 
@@ -32,7 +32,7 @@ A `define` of a name that already exists replaces it everywhere, for every calle
 
 ## The REPL
 
-`:repl` or `SPC e i` opens a `*scheme*` buffer. Type an expression after the prompt and press `<ret>` at the end. The result prints below, then a new prompt.
+`M-x repl` or `SPC e i` opens a `*scheme*` buffer. Type an expression after the prompt and press `<ret>` at the end. The result prints below, then a new prompt.
 
 | Key | What it does |
 |---|---|
@@ -40,7 +40,7 @@ A `define` of a name that already exists replaces it everywhere, for every calle
 | `<up>` / `<down>` | The same, in insert state on the last prompt's line |
 | `<ret>` | Evaluate the input |
 
-As on the command line, history only steps through inputs that start with what you'd typed. Stepping past the newest brings your text back. Elsewhere in the buffer, `<up>` and `<down>` move between lines as usual.
+As on the command line, history only steps through inputs that start with what you'd typed. Closing brackets and quotes after the cursor don't count, so the `)` that [auto pairs](ref-auto-pairs.md) adds doesn't get in the way. Stepping past the newest brings your text back. Elsewhere in the buffer, `<up>` and `<down>` move between lines as usual.
 
 Each input is kept whole, even across several lines, and a repeated input replaces its earlier copy. The newest 200 are saved, so history lasts across sessions. There's no searching it (`M-r` in Emacs), and no history per project.
 
@@ -55,7 +55,7 @@ Each input is kept whole, even across several lines, and a repeated input replac
 | `SPC h a` | List definitions whose name contains some text |
 | `SPC h d` | Open the source of a definition |
 
-`:help NAME` describes a function, option or ex command. `:help` alone lists the help commands. `:describe-key`, `:describe-function`, `:apropos` and `:find-definition` do the same as the keys.
+`:help NAME` describes a function, option or ex command. `:help` alone lists the help commands. The commands `describe-key`, `describe-function`, `apropos` and `find-definition` do the same as the keys, from `M-x` or `:`.
 
 In a Scheme buffer, press `K` on a name for its help and `gd` to go to its definition. In other files, `K` needs a language server, and says so when there isn't one.
 

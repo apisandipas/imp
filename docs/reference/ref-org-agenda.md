@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org-agenda]]"
 frozen:
-  docs/specs/org-agenda.md: b6ab81427154
+  docs/specs/org-agenda.md: af3660bbd9ad
 ---
 # Org agenda
 
@@ -302,7 +302,7 @@ Compare properties with `=`, `<>`, `<`, `>`, `<=` or `>=`, against a number, a `
 
 ## The dispatcher
 
-`SPC o A` (or `M-x org-agenda`, or `:OrgAgenda`) shows a menu of views, as Org's agenda dispatcher does:
+`SPC o A` (or `M-x org-agenda`) shows a menu of views, as Org's agenda dispatcher does:
 
 | Key | View |
 |---|---|

@@ -412,6 +412,11 @@
   (set! *timers* (hash-remove *timers* id))
   void)
 
+(define (imp-resized)
+  "Called by the server when the client's screen changes size: runs the
+   resize hook, for screens drawn to fit (the start screen)."
+  (run-hooks 'resize))
+
 (define (imp-timer-fired id)
   "Called by the server when timer `id` fires."
   (let ([t (hash-try-get *timers* id)])
@@ -537,6 +542,17 @@
   "Sets the current buffer's own value for `name` to `value`."
   (set! *buffer-locals*
         (hash-insert *buffer-locals* (current-buffer) (hash-insert (buffer-locals) name value)))
+  void)
+
+(define (buffer-local-of buf name)
+  "Buffer `buf`'s value for `name`, or #f if it has none."
+  (hash-try-get (or (hash-try-get *buffer-locals* buf) (hash)) name))
+
+(define (set-buffer-local-of! buf name value)
+  "Sets buffer `buf`'s own value for `name` to `value`."
+  (set! *buffer-locals*
+        (hash-insert *buffer-locals* buf
+                     (hash-insert (or (hash-try-get *buffer-locals* buf) (hash)) name value)))
   void)
 
 (define (kill-buffer-locals! id)

@@ -24,7 +24,7 @@ Parsing in Rust; what it's used for in Scheme.
 
 ## Keys and options
 
-- `(define-mode-language! 'mode "lang")`, `(define-grammar! "name" "git-url" "rev" [subdir])`, commands `install-grammars` and `install-grammar`, `(define-language-alias! "alias" "language")`, `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`; primitives `syntax-ancestors`, `syntax-children`, `syntax-tree`.
+- `(define-mode-language! 'mode "lang")`, `(define-grammar! "name" "git-url" "rev" [subdir])`, commands `install-grammars` and `install-grammar`, `(define-language-alias! "alias" "language")`, `(define-syntax-objects! "lang" function-kinds class-kinds list-kinds)`; primitives `syntax-ancestors`, `syntax-children`, `syntax-tree`, `syntax-at` (the innermost language at an offset, embedded ones included, and its nodes there) and `syntax-children-at` (children in that same tree); these two parse first if the tree is behind the text.
 - `smartindent`, `indent-open`, `indent-close`.
 
 ## Out of scope

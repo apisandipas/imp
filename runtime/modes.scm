@@ -171,14 +171,20 @@
     (for-each (lambda (arg) (set-one-option-with! set-local-option! arg))
               (split-whitespace (ex-args ex)))))
 
-;; :mode NAME switches major mode (without -mode is fine: :mode rust).
-(define-ex! '("mode")
-  (lambda (ex)
-    (let* ([arg (ex-args ex)]
-           [name (string->symbol (if (ends-with? arg "-mode") arg (string-append arg "-mode")))])
-      (cond [(equal? arg "") (message (symbol->string (major-mode)))]
-            [(or (hash-contains? *major-modes* name) (eq? name 'fundamental-mode)) (set-major-mode! name)]
-            [else (message (string-append "no major mode " arg))]))))
+(define-command! 'set-major-mode
+  (lambda (count)
+    "Switch the current buffer's major mode, chosen by name.
+     The current one is first, so choosing nothing shows it."
+    (let* ([now (symbol->string (major-mode))]
+           [others (filter (lambda (n) (not (equal? n now)))
+                           (map symbol->string (cons 'fundamental-mode (hash-keys->list *major-modes*))))])
+      (completing-read "Major mode: " (cons now (sort others string<?))
+                       (lambda (choice)
+                         (let ([name (string->symbol choice)])
+                           (cond [(equal? choice now) (message now)]
+                                 [(or (hash-contains? *major-modes* name) (eq? name 'fundamental-mode))
+                                  (set-major-mode! name)]
+                                 [else (message (string-append "no major mode " choice))])))))))
 
 ;;; Commenting: gc{motion}, gcc, visual gc
 ;;;
@@ -264,10 +270,19 @@
 
 ;;; The modes that come with imp
 
+(define (set-mode-pairs! chars)
+  "Sets the buffer's auto-pairs-chars to `chars`, for a major mode's
+   setup, unless the user set the option globally."
+  (unless (option-set? 'auto-pairs-chars) (set-local-option! 'auto-pairs-chars chars))
+  void)
+
 (define-major-mode! 'fundamental-mode #f '() #f)
+;; Prose pairs no ' (apostrophes) or ` .
 (define-major-mode! 'text-mode #f '("txt" "text")
-  (lambda () (set-local-option! 'commentstring "# %s")))
-(define-major-mode! 'prog-mode #f '() #f)
+  (lambda ()
+    (set-local-option! 'commentstring "# %s")
+    (set-mode-pairs! "()[]{}\"\"")))
+(define-major-mode! 'prog-mode #f '() (lambda () (set-mode-pairs! "()[]{}\"\"''``")))
 
 (define (indent-with spaces? width)
   "Sets the current buffer to indent by `width`, with spaces if
@@ -284,7 +299,12 @@
      (define-major-mode! (car spec) 'prog-mode (cadr spec)
        (lambda ()
          (set-local-option! 'commentstring comment)
-         (indent-with spaces? width)))))
+         (indent-with spaces? width)
+         ;; ' and ` are quote and quasiquote in Lisps; ' starts a lifetime in Rust.
+         (case (car spec)
+           [(scheme-mode lisp-mode) (set-mode-pairs! "()[]{}\"\"")]
+           [(rust-mode) (set-mode-pairs! "()[]{}\"\"``")]
+           [else void])))))
  (list (list 'scheme-mode '("scm" "ss" "sld" "rkt") ";; %s" #t 2)
        (list 'lisp-mode '("lisp" "cl" "el" "clj" "cljs" "fnl") ";; %s" #t 2)
        (list 'rust-mode '("rs") "// %s" #t 4)
@@ -308,7 +328,10 @@
        (list 'makefile-mode '("mk" "make") "# %s" #f 8)))
 
 (define-major-mode! 'markdown-mode 'text-mode '("md" "markdown")
-  (lambda () (set-local-option! 'commentstring "<!-- %s -->")))
+  (lambda ()
+    (set-local-option! 'commentstring "<!-- %s -->")
+    ;; ` for code spans.
+    (set-mode-pairs! "()[]{}\"\"``")))
 
 (define-file-name-mode! "Makefile" 'makefile-mode)
 (define-file-name-mode! "makefile" 'makefile-mode)

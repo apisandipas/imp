@@ -1,6 +1,6 @@
 ;;; git.scm -- a Magit-style interface to git.
 ;;;
-;;; SPC g g (or :Git) opens the status of the current file's repository:
+;;; SPC g g (or M-x git-status) opens the status of the current file's repository:
 ;;; the branch, untracked, unstaged and staged files, stashes and recent
 ;;; commits. Act on whatever the cursor is on, a section, a file or a hunk:
 ;;;
@@ -15,7 +15,7 @@
 ;;;
 ;;; A commit message is edited in its own buffer: ZZ or C-c C-c commits,
 ;;; ZQ or C-c C-k cancels.
-;;; :Git ARGS runs any git command and shows what it printed.
+;;; :git ARGS runs any git command and shows what it printed.
 
 (define-option! 'git-recent-commits 10 '())
 ;; Whether the status buffer shows its main keys at the bottom of its window.
@@ -719,17 +719,24 @@
 (define-leader! "gg" 'git-status "status")
 (define-leader! "gl" 'git-log "log")
 
-(define-ex! '("Git" "G")
-  (lambda (ex)
-    (let ([args (trim (ex-args ex))])
-      (if (equal? args "")
-          (git-status!)
-          (let ([root (git-current-root)])
-            (if (not root)
-                (message "not in a git repository")
-                (let ([r (run-shell (git-command root args) "")])
-                  (show-popup! (let ([lines (text-lines (cadr r))]) (if (null? lines) (list "(no output)") lines)))
-                  (git-refresh!))))))))
+(define (git-run! args)
+  "Runs git with `args` in the current file's repository and shows what
+   it printed; with no arguments, shows the status."
+  (let ([args (trim args)])
+    (if (equal? args "")
+        (git-status!)
+        (let ([root (git-current-root)])
+          (if (not root)
+              (message "not in a git repository")
+              (let ([r (run-shell (git-command root args) "")])
+                (show-popup! (let ([lines (text-lines (cadr r))]) (if (null? lines) (list "(no output)") lines)))
+                (git-refresh!)))))))
+
+(define-command! 'git
+  (lambda (count)
+    "Run git with the arguments asked for, in the current file's repository.
+     With none, show the status. :git log --oneline runs git log --oneline."
+    (open-cmdline! "git " "" git-run! #f #f)))
 
 ;; The status refreshes whenever you come back to it.
 (add-hook! 'buffer-enter (lambda () (when (eq? (major-mode) 'git-status-mode) (git-refresh!))))

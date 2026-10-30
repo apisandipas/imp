@@ -4,7 +4,7 @@
 ;;;   (use-package! 'git-blame)
 ;;;
 ;;; git-blame-mode turns on in every buffer visiting a file in a git
-;;; repository. SPC g b or :GitBlame turns it off and on in a buffer.
+;;; repository. SPC g b or M-x git-blame-mode turns it off and on in a buffer.
 ;;;
 ;;; Once the cursor rests git-blame-delay ms on a line in normal state,
 ;;; `git blame --contents -` runs in the background on the buffer's text
@@ -38,7 +38,6 @@
     (toggle-minor-mode! 'git-blame-mode)))
 
 (define-leader! "gb" 'git-blame-mode "blame")
-(define-ex! '("GitBlame") (lambda (ex) (run-command 'git-blame-mode)))
 
 (define (git-blame-start!)
   "Turns git-blame-mode on in the current buffer if it visits a file in

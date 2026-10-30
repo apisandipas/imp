@@ -18,6 +18,15 @@
           [(equal? (string-ref path i) #\/) (if (= i 0) "/" (substring path 0 i))]
           [else (loop (- i 1))])))
 
+(define (buffer-directory)
+  "The directory the current buffer is in: a terminal's (the shell's,
+   once it reports it), the one a file browser lists, the file's, else
+   imp's current directory."
+  (cond [(buffer-local 'term-dir) (buffer-local 'term-dir)]
+        [(buffer-local 'dired-dir) (buffer-local 'dired-dir)]
+        [(buffer-path) (directory-of (absolute-path (buffer-path)))]
+        [else (current-dir)]))
+
 (define (list-find pred items)
   "The first item of `items` that `pred` accepts, or #f."
   (cond [(null? items) #f]
@@ -261,6 +270,15 @@
           (when (equal? key "y") (thunk))))
   void)
 
+;; Here rather than with the other buffer commands in leader.scm, as it
+;; asks with confirm!.
+(define-command! 'kill-buffer
+  (lambda (count)
+    "Close the current buffer (:bd), asking first if a program runs in it."
+    (if (buffer-running? (current-buffer))
+        (confirm! (string-append "kill the program running in " (buffer-name-of (current-buffer)) "?")
+                  (lambda () (run-ex! "bd!")))
+        (run-ex! "bd"))))
 (define (text-lines text)
   "The lines of `text`, without the empty one after a final line break."
   (let ([lines (split-many text "\n")])

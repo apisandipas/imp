@@ -11,7 +11,7 @@
 ;;; An agent gets the access you have: it can read and edit buffers, open
 ;;; and save files, move the cursor, search, run commands and ex commands,
 ;;; read diagnostics and evaluate Scheme. Each change it makes is noted on
-;;; the status line and in :mcp-log. Add tools with define-mcp-tool!.
+;;; the status line and in M-x mcp-log. Add tools with define-mcp-tool!.
 
 (define *mcp-listener* #f)
 (define *mcp-tools* '())         ; (name description schema handler), in order
@@ -28,7 +28,7 @@
   void)
 
 (define (mcp-log! text)
-  "Adds `text` to the :mcp-log, which keeps the newest 200 entries."
+  "Adds `text` to the mcp-log, which keeps the newest 200 entries."
   (set! *mcp-log* (cons text (if (> (length *mcp-log*) 199) (take *mcp-log* 199) *mcp-log*)))
   void)
 
@@ -66,8 +66,10 @@
 (define-command! 'mcp-disable (lambda (count)
                                 "Stop listening for MCP agents."
                                 (mcp-disable!)))
-(define-ex! '("mcp-log")
-  (lambda (ex) (show-popup! (if (null? *mcp-log*) (list "nothing yet") (reverse *mcp-log*)))))
+(define-command! 'mcp-log
+  (lambda (count)
+    "Show what MCP agents have asked the editor to do."
+    (show-popup! (if (null? *mcp-log*) (list "nothing yet") (reverse *mcp-log*)))))
 
 (define (mcp-send! conn msg)
   "Sends `msg` to `conn` as one line of JSON.
