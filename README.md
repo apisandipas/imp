@@ -188,6 +188,7 @@ Packages load from `~/.config/imp/packages`, or from git with
 (use-package! 'move-lines)                    ; J and K move lines selected with V
 (use-package! 'nerd-icons)                    ; icons in the status line and menus
 (use-package! 'file-tree)                     ; the project's folders down the left (SPC t e)
+(use-package! 'showkeys)                      ; M-x showkeys-mode shows the keys you press
 ```
 
 `M-x list-packages` lists what's loaded and what else comes with imp.

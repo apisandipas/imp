@@ -149,6 +149,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
         "modus-themes",
         include_str!("../../../packages/modus-themes/modus-themes.scm"),
     ),
+    (
+        "showkeys",
+        include_str!("../../../packages/showkeys/showkeys.scm"),
+    ),
 ];
 
 /// Built-in package `name`: (source name, path on disk if read from

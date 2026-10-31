@@ -882,6 +882,47 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| e.cmdline = Some((text, clamp(col))))
     });
     engine.register_fn("clear-cmdline!", || editor::with(|e| e.cmdline = None));
+    // A box over the windows at a corner or the middle of an edge, named
+    // so showing it again replaces it: `lines` as popups take them,
+    // `position` a symbol ('bottom-right, 'top-center...), and the
+    // border's face (#f or "" for "float.border"). core.scm's float-show!
+    // makes the border optional.
+    engine.register_fn(
+        "float-put!",
+        |name: String, lines: Vec<SteelVal>, position: SteelVal, border: Option<String>| {
+            const POSITIONS: [&str; 6] = [
+                "bottom-right",
+                "bottom-left",
+                "bottom-center",
+                "top-right",
+                "top-left",
+                "top-center",
+            ];
+            let position = match &position {
+                SteelVal::SymbolV(s) | SteelVal::StringV(s) => s.to_string(),
+                other => other.to_string(),
+            };
+            if !POSITIONS.contains(&position.as_str()) {
+                return Err(format!("float-show!: no position {position}"));
+            }
+            let float = crate::editor::Float {
+                name: name.clone(),
+                lines: lines.iter().map(popup_line).collect(),
+                position,
+                border: border
+                    .filter(|b| !b.is_empty())
+                    .unwrap_or_else(|| "float.border".into()),
+            };
+            editor::with(|e| match e.floats.iter_mut().find(|f| f.name == name) {
+                Some(f) => *f = float,
+                None => e.floats.push(float),
+            });
+            Ok(())
+        },
+    );
+    engine.register_fn("float-hide!", |name: String| {
+        editor::with(|e| e.floats.retain(|f| f.name != name))
+    });
     // Each line is a string, or a list of runs: strings, or (text face)
     // lists. Clearing the popup puts it back at the bottom, untitled.
     engine.register_fn("set-popup!", |lines: Vec<SteelVal>| {

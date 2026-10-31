@@ -372,6 +372,22 @@
             (set! *advice* (hash-insert *advice* name a))))))
   void)
 
+;;; Floating boxes: lines in a border at a corner or the middle of an
+;;; edge, over the windows and under popups (docs/specs/showkeys.md).
+;;;
+;;;   (float-show! "clock" (list (list (list "12:00" "bold"))) 'top-right)
+;;;   (float-hide! "clock")
+
+(define (float-show! name lines position . border)
+  "Shows the box named `name` holding `lines` (each a list of (text face)
+   runs, as popups take) at `position`: 'bottom-right, 'bottom-left,
+   'bottom-center, 'top-right, 'top-left or 'top-center. Showing a name
+   again replaces its box. An optional face for the border; the
+   float.border face by default.
+
+     (float-show! \"note\" (list (list (list \"saved\" \"\"))) 'bottom-right)"
+  (float-put! name lines position (and (pair? border) (car border))))
+
 ;;; Timers and jobs
 ;;;
 ;;; Background work reports back on the editor's thread, so these

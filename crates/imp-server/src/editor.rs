@@ -59,6 +59,9 @@ pub struct Editor {
     pub popup_center: Option<usize>,
     /// Shown in the popup's top border; empty for none.
     pub popup_title: String,
+    /// Boxes drawn over the windows at a corner or the middle of an edge,
+    /// in the order their names were first shown (`float-show!`).
+    pub floats: Vec<Float>,
     /// The status line formats (see render::status_line), for the focused
     /// window and the others.
     pub statusline: String,
@@ -166,6 +169,17 @@ pub struct Editor {
 
 /// One popup row: runs of (text, face); an empty face means the popup's.
 pub type PopupLine = Vec<(String, String)>;
+
+/// A floating box: `lines` in a border of face `border`, at `position`
+/// ("bottom-right", "top-center"...), drawn over the windows and under
+/// popups.
+#[derive(Debug, Clone)]
+pub struct Float {
+    pub name: String,
+    pub lines: Vec<PopupLine>,
+    pub position: String,
+    pub border: String,
+}
 
 /// A window: a view of a buffer.
 #[derive(Debug, Clone)]

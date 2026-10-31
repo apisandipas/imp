@@ -4,7 +4,7 @@
 //! bottom row, the message line or the command line being typed. Windows
 //! side by side are separated by a border column.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
 use unicode_width::UnicodeWidthChar;
@@ -120,6 +120,8 @@ pub fn frame(e: &mut Editor) -> Frame {
     let area = height - 1;
     // Where the command line's cursor is when it is drawn in a centred box.
     let mut boxed = None;
+    // Floating boxes go under the popups, which are drawn over them.
+    floats(e, &mut rows, area, width);
     if !e.popup.is_empty() {
         match (e.popup_center, e.popup_at_cursor) {
             (Some(percent), _) => boxed = center_popup(e, &mut rows, area, width, percent),
@@ -391,6 +393,87 @@ fn center_popup(
     push(&mut row, "╯", border);
     rows[y] = splice(&rows[y], x, row, inner + 2);
     cursor
+}
+
+/// A face, or `fallback` where the theme doesn't set it.
+fn face_or(e: &Editor, name: &str, fallback: &str) -> Style {
+    e.faces
+        .get(name)
+        .copied()
+        .unwrap_or_else(|| e.face(fallback))
+}
+
+/// The floating boxes (`float-show!`), each at its corner or the middle
+/// of an edge: one cell in from the sides, a top one from the first row,
+/// a bottom one ending above the bottom windows' status lines (`area` is
+/// the rows above the message line). Boxes at one position stack away
+/// from its edge; what doesn't fit the screen is cut off.
+fn floats(e: &Editor, rows: &mut [Row], area: usize, width: usize) {
+    // Rows a box may use: all but the bottom status lines.
+    let room = area.saturating_sub(1);
+    let mut used: HashMap<&str, usize> = HashMap::new();
+    let base = face_or(e, "float", "popup");
+    for float in &e.floats {
+        let taken = used.entry(float.position.as_str()).or_insert(0);
+        let left = room.saturating_sub(*taken);
+        if float.lines.is_empty() || left < 3 || width < 6 {
+            continue;
+        }
+        let shown = float.lines.len().min(left - 2);
+        let widest = float
+            .lines
+            .iter()
+            .map(|l| l.iter().map(|(t, _)| text_width(t)).sum::<usize>())
+            .max()
+            .unwrap_or(0);
+        // A space either side of the text, inside the border; one cell
+        // clear of each side of the screen.
+        let inner = (widest + 2).min(width - 4);
+        let outer = inner + 2;
+        let x = if float.position.ends_with("left") {
+            1
+        } else if float.position.ends_with("right") {
+            width - 1 - outer
+        } else {
+            (width - outer) / 2
+        };
+        let height = shown + 2;
+        let top = if float.position.starts_with("top") {
+            *taken
+        } else {
+            room - *taken - height
+        };
+        *taken += height;
+        let border = face_or(e, &float.border, "popup-border");
+        let edge = |l: &str, r: &str| {
+            let mut row = vec![Span::new(l, border)];
+            push(&mut row, &"─".repeat(inner), border);
+            push(&mut row, r, border);
+            row
+        };
+        rows[top] = splice(&rows[top], x, edge("╭", "╮"), outer);
+        for (i, line) in float.lines[..shown].iter().enumerate() {
+            let mut row = vec![Span::new("│", border)];
+            push(&mut row, " ", base);
+            let mut row_used = 0;
+            let room = inner - 2;
+            for (text, face) in line {
+                let style = if face.is_empty() {
+                    base
+                } else {
+                    e.face(face).over(base)
+                };
+                let text = clip(text, room - row_used);
+                row_used += text_width(&text);
+                push(&mut row, &text, style);
+            }
+            push(&mut row, &" ".repeat(room - row_used + 1), base);
+            push(&mut row, "│", border);
+            rows[top + 1 + i] = splice(&rows[top + 1 + i], x, row, outer);
+        }
+        let bottom = top + 1 + shown;
+        rows[bottom] = splice(&rows[bottom], x, edge("╰", "╯"), outer);
+    }
 }
 
 /// `row` with cells `x..x + width` replaced by `insert`. A wide char cut
