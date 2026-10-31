@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/leader-and-modes]]", "[[spec/live-scheme-and-help]]", "[[spec/vim]]"]
 issue: https://github.com/apisandipas/imp/issues/122
 frozen:
