@@ -93,10 +93,17 @@
   void)
 
 (define (key-does-something? state key)
-  "Whether `key` alone already does something in normal or visual `state`."
-  (or (local-key-proc state key) (lookup-key state key) (find-motion key)
-      (hash-contains? *operators* key) (hash-contains? *char-commands* key)
-      (prefix-key? key)))
+  "Whether `key` alone already does something in normal or visual `state`
+   other than wait for another key, as resolve-key says."
+  (let ([b (resolve-key state key)])
+    (and b (not (eq? (binding-record-kind b) 'prefix)))))
+
+(define (key-waits? state key)
+  "Whether `key` waits for another in normal or visual `state`: a Vim
+   prefix, or i and a before a text object in visual state."
+  (or (prefix-key? key)
+      (let ([b (resolve-key state key)])
+        (and b (eq? (binding-record-kind b) 'prefix)))))
 
 (define (define-mapping! state lhs rhs noremap?)
   "Maps `lhs` to typing `rhs` in `state`, both in Vim's key notation.
@@ -118,14 +125,14 @@
       [(and (not (eq? state 'insert)) (> (length keys) 2))
        (string-append "can't map " lhs ": only two keys, or <Leader> and more")]
       [(and (not (eq? state 'insert)) (= (length keys) 2)
-            (not (prefix-key? (car keys))) (key-does-something? state (car keys)))
+            (not (key-waits? state (car keys))) (key-does-something? state (car keys)))
        (string-append "can't map " lhs ": " (car keys) " already does something")]
       [(and (eq? state 'insert) (> (length keys) 1))
        (set! *insert-sequences* (hash-insert *insert-sequences* joined (list keys rhs-keys noremap?)))
        (remember! state)
        #f]
       [else
-       (when (and (not (eq? state 'insert)) (= (length keys) 2) (not (prefix-key? (car keys))))
+       (when (and (not (eq? state 'insert)) (= (length keys) 2) (not (key-waits? state (car keys))))
          (define-prefix! (car keys)))
        (define-key! (map-keymap state) joined
                     (if (eq? state 'insert)

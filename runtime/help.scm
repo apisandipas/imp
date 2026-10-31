@@ -317,8 +317,10 @@
 (define *describing-keys* #f)  ; the keys read so far, or #f
 
 (define (key-description keys)
-  "What a key sequence is bound to in normal mode, as (kind name site), or
-   #f. Kinds: motion, operator, text-object, command."
+  "What a key sequence runs in normal state in the current buffer, by the
+   rule resolve-key follows, as (kind name site), or #f. Kinds: motion,
+   motion taking a char, operator, command, command taking a char, and
+   mode key for a mode's own procedure."
   (let* ([quoted (string-append "\"" keys "\"")]
          [binds? (lambda (forms)
                    (lambda (line)
@@ -327,25 +329,27 @@
                             (or (starts-with? line (string-append "(" (car fs) " " quoted))
                                 (starts-with? line (string-append "(" (car fs) " 'normal " quoted))
                                 (loop (cdr fs)))))))]
-         [site-for (lambda (forms) (find-in-sources (binds? forms)))])
-    (cond
-      [(hash-contains? *motions* keys)
-       (list "motion" keys (site-for '("define-motion!")))]
-      [(and (> (string-length keys) 1) (hash-contains? *char-motions* (substring keys 0 1)))
-       (list "motion taking a char" (substring keys 0 1)
-             (find-in-sources (binds? '("define-char-motion!")) ))]
-      [(hash-contains? *operators* keys) (list "operator" keys (site-for '("define-operator!")))]
-      [(hash-contains? *text-objects* keys) (list "text object" keys (site-for '("define-text-object!")))]
-      [(key-binding 'normal keys)
-       => (lambda (b)
-            (if (symbol? b)
-                (list "command" (symbol->string b) (find-definition-site (symbol->string b)))
-                (list "command" keys
-                      (site-for '("define-key!" "insert-command!" "operator-command!" "paste-command!"
-                                  "define-normal-and-visual!")))))]
-      [(and (> (string-length keys) 1) (hash-contains? *char-commands* (substring keys 0 1)))
-       (list "command taking a char" (substring keys 0 1)
-             (find-in-sources (binds? '("define-char-command!"))))]
+         [site-for (lambda (forms) (find-in-sources (binds? forms)))]
+         [b (resolve-key 'normal keys)]
+         [lead (lambda () (substring keys 0 1))])
+    (case (and b (binding-record-kind b))
+      [(motion)
+       (if (and (> (string-length keys) 1) (hash-contains? *char-motions* (lead)))
+           (list "motion taking a char" (lead) (site-for '("define-char-motion!")))
+           (list "motion" keys (site-for '("define-motion!"))))]
+      [(operator) (list "operator" keys (site-for '("define-operator!")))]
+      [(char-command)
+       (list "command taking a char" (lead) (site-for '("define-char-command!")))]
+      [(mode-key normal-key)
+       (let ([command (binding-record-command b)])
+         (cond
+           [command (list "command" command (find-definition-site command))]
+           [(eq? (binding-record-kind b) 'mode-key)
+            (list "mode key" (or (binding-record-label b) keys) #f)]
+           [else
+            (list "command" keys
+                  (site-for '("define-key!" "insert-command!" "operator-command!" "paste-command!"
+                              "define-normal-and-visual!")))]))]
       [else #f])))
 
 (define (show-key-description! keys)
@@ -363,7 +367,7 @@
 (define (describe-key-input! key)
   "Called with each key while describe-key is reading."
   (let ([keys (string-append *describing-keys* key)])
-    (if (and (prefix-key-for-describe? keys) (not (key-description keys)))
+    (if (prefix-key-for-describe? keys)
         (set! *describing-keys* keys)
         (begin
           (set! *describing-keys* #f)
@@ -372,11 +376,10 @@
   void)
 
 (define (prefix-key-for-describe? keys)
-  "Whether `keys` could be the start of a longer key."
-  (and (= (string-length keys) 1)
-       (or (hash-contains? *prefix-keys* keys)
-           (hash-contains? *char-motions* keys)
-           (hash-contains? *char-commands* keys))))
+  "Whether `keys` wait for another key in normal state in the current
+   buffer, as resolve-key says."
+  (let ([b (resolve-key 'normal keys)])
+    (and b (eq? (binding-record-kind b) 'prefix))))
 
 (define-command! 'describe-key
   (lambda (count)

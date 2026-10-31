@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/live-scheme-and-help]]"
 frozen:
-  docs/specs/live-scheme-and-help.md: 1857073a1b00
+  docs/specs/live-scheme-and-help.md: ccb5a072e58a
 ---
 # Live Scheme and help
 
@@ -54,6 +54,8 @@ Each input is kept whole, even across several lines, and a repeated input replac
 | `SPC h c` | Describe a command |
 | `SPC h a` | List definitions whose name contains some text |
 | `SPC h d` | Open the source of a definition |
+
+`SPC h k` tells you what the keys would do in normal state in the buffer you're in. The buffer's own mode keys come first, as they do when you press them ([Leader and modes](ref-leader-and-modes.md) has the order). In git status, `d` is its diff menu, not Vim's delete.
 
 `:help NAME` describes a function, option or ex command. `:help` alone lists the help commands. The commands `describe-key`, `describe-function`, `apropos` and `find-definition` do the same as the keys, from `M-x` or `:`.
 

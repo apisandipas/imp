@@ -70,14 +70,14 @@
 (define (prefix-continuations state prefix)
   "The keys that can follow Vim prefix `prefix` in `state` ('normal or
    'visual), as sorted (key . label) pairs: each key bound after it in the
-   buffer's mode keymaps, the state's keymap, operators, motions and (in
-   visual) text objects. A key that is itself a prefix is +prefix; one
-   with no label has \"\"."
+   buffer's mode keymaps, the state's keymap, operators, motions, char
+   commands and (in visual) text objects, labelled as resolve-key says. A
+   key that is itself a prefix is +prefix; one with no label has \"\"."
   (let* ([n (string-length prefix)]
          [bound (apply append
                        (map hash-keys->list
                             (append (map keymap (*local-keymaps* state))
-                                    (list (keymap state) *operators* *motions*)
+                                    (list (keymap state) *operators* *motions* *char-commands*)
                                     (if (eq? state 'visual) (list *text-objects*) '()))))]
          [seen (hash)])
     (for-each

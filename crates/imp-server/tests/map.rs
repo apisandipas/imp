@@ -118,6 +118,31 @@ fn lhs_rules() {
 }
 
 #[test]
+fn lhs_rules_follow_what_keys_run() {
+    let mut s = server("abc\n");
+    // A key only the buffer's mode binds already does something.
+    s.eval(
+        r#"(define-major-mode! 'map-test-mode #f '() #f)
+           (define-mode-key! 'map-test-mode 'normal "Q" (lambda (n) (message "mode")))
+           (set-major-mode! 'map-test-mode)"#,
+    )
+    .unwrap();
+    feed(&mut s, ":nnoremap Qa x<ret>");
+    assert!(
+        s.status().contains("Q already does something"),
+        "{}",
+        s.status()
+    );
+    // In visual state i waits for a text object, so ix can be mapped, and
+    // i stays insert in normal state.
+    type_keys(&mut s, ":vnoremap ix d<ret>");
+    type_keys(&mut s, "vlix");
+    assert_eq!(s.text(), "c\n");
+    type_keys(&mut s, "iz<esc>");
+    assert_eq!(s.text(), "zc\n");
+}
+
+#[test]
 fn mode_keys_come_first() {
     let mut s = server("abc\n");
     s.eval(

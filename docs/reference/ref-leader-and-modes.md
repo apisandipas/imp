@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: 9d5b35157001
+  docs/specs/leader-and-modes.md: 31edc02513df
 ---
 # Leader and modes
 
@@ -46,6 +46,21 @@ Each buffer has one major mode, picked by its file name when it opens. imp has m
 
 A buffer can also have any number of minor modes. Keys from minor modes win over the major mode's, and the major mode's win over the usual keys.
 
+## Which key wins
+
+A key can be bound in several places: by the buffer's modes and by Vim. In normal and visual state, imp runs the first of these that binds the key:
+
+| State | Order |
+|---|---|
+| Normal | The buffer's mode keys, then Vim's operators, motions, normal keys, and keys that take a character (`r`) |
+| Visual | The buffer's mode keys, then visual keys, operators, text objects, keys that take a character, and motions |
+
+The mode keys are the minor modes' keys first, then the major mode's and the modes it builds on, then your `:map` mappings. A mode key can also take over a count digit, `/`, `?`, or a prefix such as `g` or `z`. That is how the start screen's `1` opens a recent file, `?` in git status lists its keys, and `q` closes special buffers.
+
+After an operator such as `d`, only a motion, a text object or the operator again (`dd`) counts. The buffer's mode keys don't apply there.
+
+Which-key, `describe-key` and `:map` follow the same order. So what they tell you about a key is what it would do in this buffer: `d` in git status is its diff menu, not Vim's delete.
+
 ## Commenting
 
 `gc` with a motion comments or uncomments lines, using the mode's comment style. `gcc` does the current line, and `gc` in visual state does the selected lines.
@@ -72,6 +87,15 @@ Add a leader key, and name a group so the popup shows it:
 ```
 
 The last argument, the label, is what which-key shows. `define-key!`, `define-motion!` and `define-operator!` take one too.
+
+To see which binding a key would run, call `resolve-key` with the state and the key, and an operator to ask about a key after it:
+
+```scheme
+(resolve-key 'normal "d")       ; in git status, its diff menu
+(resolve-key 'normal "w" "d")   ; the motion dw uses
+```
+
+It returns `#f` for a key that does nothing.
 
 Mode keys that start with a control or meta key, such as `C-c C-c`, wait for the rest of the sequence. They work in normal, visual and insert state, without getting in the way of `g`, `z` or typing. A mode can also bind keys that start with a letter, such as the agenda's `ct`: there, in normal state, `c` waits for the next key instead of starting a Vim change.
 
