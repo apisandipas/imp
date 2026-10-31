@@ -5,7 +5,7 @@ members = ["crates/imp-core", "crates/imp-server", "crates/imp", "crates/imp-gui
 exclude = ["examples/wasm-plugin"]
 
 [workspace.package]
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/apisandipas/imp"
