@@ -91,7 +91,7 @@
    `offset` is #f on a status line, which only focuses the window.
    Remembers the press for a drag."
   (close-menu!)
-  (when *popup-shown* (close-popup!))
+  (close-popup!)
   (reset-pending!)
   (let ([typing? (typing-mode?)])
     (if typing?
@@ -110,7 +110,7 @@
    outermost starting there, focusing the window. The cursor stays,
    unless the fold closes over it: then it goes to the fold's first line."
   (close-menu!)
-  (when *popup-shown* (close-popup!))
+  (close-popup!)
   (reset-pending!)
   (unless (= window (current-window))
     (if (typing-mode?) (begin (focus-window! window) (run-hooks 'buffer-enter)) (go-to-window! window)))

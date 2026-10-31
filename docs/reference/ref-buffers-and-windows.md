@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/buffers-and-windows]]"
 frozen:
-  docs/specs/buffers-and-windows.md: b71f00fec527
+  docs/specs/buffers-and-windows.md: ec5718f77b29
 ---
 # Buffers and windows
 

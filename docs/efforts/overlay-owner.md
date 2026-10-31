@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/overlays]]"]
 issue: https://github.com/apisandipas/imp/issues/123
 frozen:
-  docs/specs/overlays.md: 9d76655d90b7
+  docs/specs/overlays.md: e97eec256bf2
 ---
 # Overlay owner
 
@@ -16,7 +16,7 @@ One Scheme owner for the popup slot and the key interceptor, with every overlay 
 
 ## Tasks
 
-- [ ] Owner: `runtime/overlay.scm` with `overlay-open!`, `overlay-update!`, `overlay-close!` and `overlay-open?`, added to `RUNTIME` after `core.scm`.
+- [x] Owner: `runtime/overlay.scm` with `overlay-open!`, `overlay-update!`, `overlay-close!` and `overlay-open?`, added to `RUNTIME` after `core.scm`.
   - Opening sets every field. A new overlay replaces the open one, and the replaced one's `'on-close` runs.
   - A `show-popup!` popup waits behind an overlay that takes keys, and only the last one waits.
   - Scrolling shows at most 10 rows, and no more than the window height less 2.

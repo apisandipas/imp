@@ -747,7 +747,7 @@
   "Shows the diagnostic at the cursor on the status line, in normal mode.
    Only when nothing else is there; it runs after each command and when
    diagnostics arrive."
-  (when (and (eq? *mode* 'normal) (not *popup-shown*))
+  (when (and (eq? *mode* 'normal) (not (overlay-open? 'popup)))
     (let* ([d (and (lsp-uri) (diagnostic-at-cursor))]
            [status (status-text)]
            [free? (or (equal? status "") (equal? status *lsp-line-message*))])
@@ -909,9 +909,8 @@
                                 (let ([lines (hover-lines (jget result "contents"))])
                                   (if (null? lines)
                                       (message "no information here")
-                                      (begin
-                                        (show-popup! (take lines (min 20 (length lines))))
-                                        (set-popup-place! "cursor" 0 ""))))))))))
+                                      (show-popup! (take lines (min 20 (length lines)))
+                                                   'place 'cursor)))))))))
 
 ;;; Changing text from the server
 

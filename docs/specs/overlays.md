@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/123
+anchors: [runtime/overlay.scm, crates/imp-server/tests/overlay.rs]
 summary: "One owner for what opens over the windows for a moment, the popup and the keys it takes: which-key, menus, completion menus, show-and-close popups, prompts."
 ---
 # Overlays
@@ -17,7 +18,7 @@ An overlay is something that opens over the windows for a moment: the which-key 
 
 ### Opening, replacing and closing
 
-- `(overlay-open! name lines option value ...)` opens the overlay `name` (a symbol) with `lines`, each a list of `(text face)` runs as popups take. The options are given as pairs, as `use-package!` takes them:
+- `(overlay-open! name lines option value ...)` opens the overlay `name` (a symbol) with `lines`, each a list of `(text face)` runs as popups take. `lines` can instead be a procedure `(lambda (top rows) ...)` giving only the rows shown, from line `top`, with the `'count` option the number of lines; a long list then costs no more than the rows shown. The options are given as pairs, as `use-package!` takes them:
   - `'place`: `'bottom` (default), `'cursor` or `'center`; `'column` is the offset from the cursor's column for `'cursor`, and `'width` the percent of the screen for `'center`.
   - `'title`: shown in the popup's rule or border; none by default.
   - `'selected`: the index of the selected line, or `#f` (default) for none.
@@ -27,7 +28,7 @@ An overlay is something that opens over the windows for a moment: the which-key 
 - Opening an overlay sets every one of these; nothing is kept from the overlay before. A popup's place, title and selection never come from another overlay.
 - One overlay is open at a time. Opening one while another is open closes the other first, and its `'on-close` runs.
 - A `show-popup!` popup opened while an overlay with `'keys` is open waits instead, and opens when that overlay closes. Only the last waiting popup is kept. So a hover or git output that arrives late doesn't take the leader's or a menu's popup away.
-- `(overlay-update! name lines [selected])` changes the open overlay's lines and selection, and does nothing if `name` isn't open.
+- `(overlay-update! name lines option value ...)` changes the open overlay's lines and any options given (`'selected`, `'column`, `'title`, `'count`...), and does nothing if `name` isn't open.
 - `(overlay-close! name)` closes `name` if it is open, runs its `'on-close`, and does nothing otherwise, so one overlay never closes another's.
 - `(overlay-open? name)` says whether `name` is the open overlay; `(overlay-open?)` whether any is.
 
@@ -53,7 +54,7 @@ An overlay is something that opens over the windows for a moment: the which-key 
 
 ## Keys and options
 
-- `(overlay-open! name lines option value ...)`, `(overlay-update! name lines [selected])`, `(overlay-close! name)`, `(overlay-open? [name])`.
+- `(overlay-open! name lines option value ...)`, `(overlay-update! name lines option value ...)`, `(overlay-close! name)`, `(overlay-open? [name])`, `(overlay-top)` (the first line shown).
 - `show-popup!`, `close-popup!`, `menu!`, `confirm!`.
 
 ## Out of scope

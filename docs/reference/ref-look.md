@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 7a6d128a8691
+  docs/specs/look.md: 1762ab3f61ad
 ---
 # Look
 
