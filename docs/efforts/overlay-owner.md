@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/overlays]]"]
 issue: https://github.com/apisandipas/imp/issues/123
 frozen:
