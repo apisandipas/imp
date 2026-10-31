@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/vim]]"
 frozen:
-  docs/specs/vim.md: 7a2641f5642e
+  docs/specs/vim.md: 51ce58e56b12
 ---
 # Vim
 
@@ -172,7 +172,7 @@ The command line keeps a history and has Vim's editing keys, and `C-r` inserts a
 
 The `noremap` forms run imp's own keys; the `map` forms also follow other mappings. Both sides take Vim's key notation, such as `<CR>`, `<Esc>`, `<Tab>`, `<C-x>`, `<M-x>`, `<F1>` and `<Leader>`, which is space. A count typed before a mapping applies to it.
 
-In normal and visual state, a two-key mapping must start with a prefix such as `g`, `z` or `C-w`, or with a key that isn't bound. A longer one must start with `<Leader>`, and joins the [leader](ref-leader-and-modes.md) keys. If a mapping can't be made, `:map` says why.
+In normal and visual state, a two-key mapping must start with a prefix such as `g`, `z` or `C-w`, or with a key that does nothing here. A key the buffer's mode binds counts as doing something, by the order in [Which key wins](ref-leader-and-modes.md#which-key-wins). A longer one must start with `<Leader>`, and joins the [leader](ref-leader-and-modes.md) keys. If a mapping can't be made, `:map` says why.
 
 In insert state, after `:inoremap jk <Esc>`, typing `j` inserts it. If `k` follows within `timeoutlen`, the `j` is taken back out and `<Esc>` runs.
 

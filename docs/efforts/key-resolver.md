@@ -23,7 +23,7 @@ One rule for which binding a key runs in normal and visual state, used by dispat
 - [x] Dispatch: `normal-key!` runs the record from `resolve-key`, and the checks for a digit, `/`, `?` and a prefix ask `resolve-key` whether a mode key takes the key. Every existing test passes unchanged: vim, leader, modes, map, help, git and start screen. `bench.rs` runs again. If keys are more than about 5% slower, `resolve-key` is made cheaper before this task is done, and both sets of numbers go in the notes.
 - [x] Which-key: `binding-label` and `prefix-continuations` read the record, so visual which-key also lists text objects and char commands after a prefix. Tested in `leader.rs`. `ref-leader-and-modes.md` is rewritten for the revised spec, documenting `resolve-key`, and frozen.
 - [x] describe-key: `key-description` reads the record for normal state in the current buffer. It still finds the site where a key was bound itself. Tested in `help.rs`: `d` in git status is the mode's command, and `w`, `x`, `fx` and `d` in a plain buffer are described as before. `ref-live-scheme-and-help.md` is updated and frozen.
-- [ ] `:map`: `key-does-something?` asks `resolve-key`. The existing map tests pass unchanged, with a test of a key that only a mode binds. `ref-vim.md` is updated and frozen.
+- [x] `:map`: `key-does-something?` asks `resolve-key`. The existing map tests pass unchanged, with a test of a key that only a mode binds. `ref-vim.md` is updated and frozen.
 
 ## Notes
 
