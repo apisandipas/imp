@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/leader-and-modes]]", "[[spec/live-scheme-and-help]]", "[[spec/vim]]"]
 issue: https://github.com/apisandipas/imp/issues/122
 frozen:
@@ -18,7 +18,7 @@ One rule for which binding a key runs in normal and visual state, used by dispat
 
 ## Tasks
 
-- [ ] Baseline: run `cargo run --release -p imp-server --example bench` on `develop`'s code and keep the numbers in this effort's notes below, to compare against later.
+- [x] Baseline: run `cargo run --release -p imp-server --example bench` on `develop`'s code and keep the numbers in this effort's notes below, to compare against later.
 - [ ] Resolver: `(resolve-key state key [operator])` in `vim.scm` returns a binding record, or `#f` for a key that does nothing. Record kinds: `mode-key`, `visual-key`, `operator`, `text-object`, `motion`, `normal-key`, `char-command`, `operator-again` or `prefix`. Order: normal state, visual state, operator pending, a prefix alone. Nothing calls it yet. Each precedence case is tested in a new `tests/resolve_key.rs`: a git status mode key over operator `d`, a visual key over an operator, `dd` and `gUU` as `operator-again`, `g` as `prefix`, an unbound key as `#f`. "Binding record" and "key resolution" are added to `runtime/CONTEXT.md`. The anchors `symbol:resolve-key` and the test file go on `leader-and-modes.md`.
 - [ ] Dispatch: `normal-key!` runs the record from `resolve-key`, and the checks for a digit, `/`, `?` and a prefix ask `resolve-key` whether a mode key takes the key. Every existing test passes unchanged: vim, leader, modes, map, help, git and start screen. `bench.rs` runs again. If keys are more than about 5% slower, `resolve-key` is made cheaper before this task is done, and both sets of numbers go in the notes.
 - [ ] Which-key: `binding-label` and `prefix-continuations` read the record, so visual which-key also lists text objects and char commands after a prefix. Tested in `leader.rs`. `ref-leader-and-modes.md` is rewritten for the revised spec, documenting `resolve-key`, and frozen.
@@ -26,3 +26,16 @@ One rule for which binding a key runs in normal and visual state, used by dispat
 - [ ] `:map`: `key-does-something?` asks `resolve-key`. The existing map tests pass unchanged, with a test of a key that only a mode binds. `ref-vim.md` is updated and frozen.
 
 ## Notes
+
+Baseline on `develop` (87017b3), `bench.rs` in release, 20 runs each, ms per command including a frame. The sub-millisecond ones vary by run, so compare several runs, not one.
+
+| Keys | ms | Keys | ms |
+|---|---|---|---|
+| `j` | 0.18 | `/words<ret>` | 4.22 |
+| `w` | 0.19 | `n` | 0.43 |
+| `x` | 0.23 | `50%` | 0.35 |
+| `dd` | 0.27 | `ci(` | 6.41 |
+| `ihello<esc>` | 0.92 | `dit` (no tags) | 0.73 |
+| `G` | 0.23 | `}` | 2.03 |
+| `gg` | 0.69 | `vjjd` | 0.48 |
+| `u` | 0.22 | | |
