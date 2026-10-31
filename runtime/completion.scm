@@ -43,10 +43,6 @@
 ;; with the prompt inside (the posframe package sets that).
 (define *completion-place* (list "bottom" 0))
 
-(define (completion-rows)
-  "Menu height: up to ten rows, less in a small window."
-  (max 1 (min 10 (- (window-height) 2))))
-
 (define (refilter! text)
   "Narrows the menu to the candidates matching `text`, best first.
    Called as the prompt's text changes; selects the first match."
@@ -82,30 +78,35 @@
   (list (string-append " " (completion-icon-prefix c))
         (if (string-contains? c "/") (list c "popup.path") c)))
 
+(define (completion-rows-shown top rows)
+  "The menu's rows from match `top`, `rows` of them, with their notes."
+  (let ([shown (take (list-tail *completion-matches* top) (min rows (- (length *completion-matches*) top)))])
+    (if *completion-annotate*
+        (let ([width (+ 3 (apply max (cons 0 (map string-length shown))))])
+          (map (lambda (c)
+                 (let ([note (*completion-annotate* c)])
+                   (append (completion-row c)
+                           (if note
+                               (list (make-string (- width (string-length c)) #\space)
+                                     (list note "popup.detail"))
+                               '()))))
+               shown))
+        (map completion-row shown))))
+
 (define (show-completions!)
   "Draws the menu, scrolled so the selection is visible."
   (let* ([n (length *completion-matches*)]
-         [rows (completion-rows)]
-         [top (max 0 (min (- *completion-index* (- rows 1)) (- n rows)))]
-         [top (max 0 (min top *completion-index*))]
-         [shown (take (list-tail *completion-matches* top) (min rows (- n top)))])
-    (set-popup! (cond
-                  [(null? shown) (list (list (list "  (no matches)" "popup.detail")))]
-                  [*completion-annotate*
-                   (let ([width (+ 3 (apply max (map string-length shown)))])
-                     (map (lambda (c)
-                            (let ([note (*completion-annotate* c)])
-                              (append (completion-row c)
-                                      (if note
-                                          (list (make-string (- width (string-length c)) #\space)
-                                                (list note "popup.detail"))
-                                          '()))))
-                          shown))]
-                  [else (map completion-row shown)]))
-    ;; Titled with the prompt, without its colon.
-    (set-popup-place! (car *completion-place*) (cadr *completion-place*) (trim (let ([p (trim *cmdline-prompt*)])
-                                         (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p))))
-    (set-popup-selected! (if (null? shown) -1 (- *completion-index* top)))
+         [lines (if (= n 0) (list (list (list "  (no matches)" "popup.detail"))) completion-rows-shown)]
+         [selected (and (> n 0) *completion-index*)]
+         ;; Titled with the prompt, without its colon.
+         [title (trim (let ([p (trim *cmdline-prompt*)])
+                        (if (ends-with? p ":") (substring p 0 (- (string-length p) 1)) p)))])
+    ;; No 'keys: the prompt reads them and moves the selection.
+    (if (overlay-open? 'completing-read)
+        (overlay-update! 'completing-read lines 'count n 'selected selected 'title title)
+        (overlay-open! 'completing-read lines 'count n 'selected selected 'title title
+                       'place (string->symbol (car *completion-place*))
+                       'column (cadr *completion-place*) 'width (cadr *completion-place*)))
     (set-cmdline! (string-append *cmdline-prompt* *cmdline*
                                  (if (null? *completion-matches*)
                                      ""
@@ -128,8 +129,8 @@
     [(equal? key "<tab>") (unless (complete-typed-path!) (move-selection! 1)) #t]
     [(member key '("C-n" "<down>" "C-j")) (move-selection! 1) #t]
     [(member key '("C-p" "<up>" "<s-tab>" "C-k")) (move-selection! -1) #t]
-    [(equal? key "<pagedown>") (move-selection! (completion-rows)) #t]
-    [(equal? key "<pageup>") (move-selection! (- (completion-rows))) #t]
+    [(equal? key "<pagedown>") (move-selection! (overlay-rows (length *completion-matches*))) #t]
+    [(equal? key "<pageup>") (move-selection! (- (overlay-rows (length *completion-matches*)))) #t]
     [else #f]))
 
 (define (complete-typed-path!)
@@ -179,8 +180,7 @@
   (set! *completion-category* #f)
   (set! *completion-ranked* #t)
   (set! *completion-key* (lambda (candidate) candidate))
-  (set-popup! '())
-  (set-popup-selected! -1))
+  (overlay-close! 'completing-read))
 
 (define (completing-read prompt candidates on-select . annotate)
   "Asks for one of `candidates` with `prompt`, narrowing as you type.

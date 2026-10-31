@@ -331,3 +331,25 @@ fn the_menu_opens_at_once_and_stays_shut_after_accepting() {
     type_keys(&mut s, "<bs>");
     assert!(pump_until(&mut s, |s| s.eval("*menu-open*").unwrap() == "#true"));
 }
+
+#[test]
+fn the_command_line_menu_keeps_the_selection_in_view_in_a_short_window() {
+    let mut s = server("");
+    s.set_size(80, 8);
+    type_keys(&mut s, ":set c");
+    assert!(cmd_menu(&mut s).len() > 8);
+    for _ in 0..2 {
+        s.keys(&["C-n"]);
+    }
+    let chosen = s
+        .eval("(vector-ref *cmd-labels* (list-ref *cmd-hits* *cmd-index*))")
+        .unwrap();
+    let chosen = chosen.trim_matches('"');
+    // On the command line, and in the menu above it.
+    let rows = s.frame().text_rows();
+    let menu = &rows[..rows.len() - 1];
+    assert!(
+        menu.iter().any(|r| r.contains(&format!(" {chosen} "))),
+        "{chosen}: {rows:#?}"
+    );
+}

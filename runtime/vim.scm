@@ -40,7 +40,6 @@
 (define *jumps* '())           ; mark names of jump list entries, oldest first
 (define *jump-index* 0)        ; where C-o and C-i are in *jumps*
 (define *jump-counter* 0)      ; for naming jump marks
-(define *popup-shown* #f)      ; a popup is up until the next key
 (define *undo-group* #f)       ; while true, changes join one undo step
 (define *alternate-buffer* #f) ; for C-^ and :e #
 (define *insert-pending* #f)   ; C-r in insert mode waits for a register
@@ -2013,20 +2012,6 @@
 (define-key! 'normal "C-i" (lambda (count) (jump-to-index! (+ *jump-index* count))))
 (define-key! 'normal "<tab>" (lambda (count) (jump-to-index! (+ *jump-index* count))))
 
-;;; Popups: output longer than the status line
-
-(define (show-popup! lines)
-  "Shows `lines` in a popup that the next key closes."
-  (set-popup! lines)
-  (set! *popup-shown* #t)
-  void)
-
-(define (close-popup!)
-  "Closes the popup."
-  (set-popup! '())
-  (set! *popup-shown* #f)
-  void)
-
 (define (printable text)
   "`text` as it would be typed: line breaks as ^J, tabs as ^I."
   (apply string-append
@@ -3127,7 +3112,7 @@
   (when (pair? *wild*)
     (set! *wild* '())
     (set! *wild-index* -1)
-    (set-popup! '())))
+    (overlay-close! 'wildmenu)))
 
 (define (common-prefix a b)
   "The longest start that strings `a` and `b` share."
@@ -3226,8 +3211,10 @@
                      (list (list (pad-right (list-ref labels i) width)
                                  (if (= i *wild-index*) "popup-selected" "popup")))
                      '()))])
-    ;; Not show-popup!: keys go on to the command line, not to closing it.
-    (set-popup!
+    ;; No 'keys: they go on to the command line, not to closing it. It
+    ;; pages through the candidates itself, so it has no selected line.
+    (overlay-open!
+     'wildmenu
      (append
       (map (lambda (r)
              (cons " " (apply append (map (lambda (c) (cell (+ first (* r columns) c))) (range 0 columns)))))
@@ -4616,7 +4603,7 @@
    hooks always."
   (when (and *recording* (not (stops-recording? key)))
     (set! *recorded-keys* (cons key *recorded-keys*)))
-  (handle-top-level-key! key)
+  (process-key! key)
   (after-input!))
 
 (define (after-input!)
@@ -4687,18 +4674,6 @@
       [else (for-each process-key! chars)]))
   (after-input!))
 
-(define (handle-top-level-key! key)
-  "Handles a key, closing the popup first if one is up.
-   The key that closes a popup also runs, unless it is <ret>, <esc>,
-   space or C-c, as at Vim's \"Press ENTER\" prompt."
-  (if *popup-shown*
-      ;; Any key closes a popup; <ret>, <esc> and space only do that, other
-      ;; keys also run, as at Vim's "Press ENTER" prompt.
-      (begin
-        (close-popup!)
-        (unless (member key '("<ret>" "<esc>" " " "C-c")) (process-key! key)))
-      (process-key! key)))
-
 (define (stops-recording? key)
   "q stops recording, when it isn't part of a longer command."
   (and *recording* (equal? key "q") (member *mode* '(normal visual))
@@ -4709,7 +4684,9 @@
   (define typing? (typing-mode?))
   (cond
     [(stops-recording? key) (stop-recording!)]
-    ;; Something (describe-key) wants the next keys instead.
+    ;; The open overlay (a menu, the leader, a popup) sees keys first;
+    ;; then a snippet's placeholder keys.
+    [(overlay-key! key) #t]
     [*key-interceptor* (*key-interceptor* key)]
     [else (handle-key! key)])
   ;; After C-o's one command (once nothing is pending), back to insert.

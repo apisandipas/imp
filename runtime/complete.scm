@@ -326,8 +326,7 @@
                              (list->vector candidates))))
     (unless *menu-open*
       (set! *menu-open* #t)
-      (set! *menu-index* -1)
-      (set! *key-interceptor* menu-key!))
+      (set! *menu-index* -1))
     (refilter-menu!)))
 
 (define (menu-live-sources)
@@ -380,10 +379,6 @@
        (set! *menu-select* #f)
        (draw-menu!)])))
 
-(define (menu-rows)
-  "How many rows the completion menu shows: up to 10, to fit the window."
-  (max 1 (min 10 (- (window-height) 2))))
-
 ;; (lambda (source candidate)) -> a short string (an icon) drawn before a
 ;; candidate from `source` (its name: 'lsp, 'file...), or #f. The
 ;; nerd-icons package sets it.
@@ -416,21 +411,31 @@
              (if (> pad 0) (append line (list (list (make-string pad #\space) ""))) line)))
          lines)))
 
+(define (menu-rows-shown top rows)
+  "The completion menu's rows from hit `top`, `rows` of them, the labels
+   padded to the widest shown."
+  (let* ([shown (take (list-tail *menu-hits* top) (min rows (- (length *menu-hits*) top)))]
+         [width (min 30 (apply max (cons 1 (map (lambda (h) (string-length (car (car h)))) shown))))])
+    (pad-menu-lines (map (lambda (h) (menu-line h width)) shown))))
+
 (define (draw-menu!)
   "Draws the completion menu at the cursor, scrolled to the selection,
    its labels lined up with the text they complete."
-  (let* ([n (length *menu-hits*)] [rows (menu-rows)]
-         [i (max *menu-index* 0)]
-         [top (max 0 (min (- i (- rows 1)) (- n rows)))]
-         [top (max 0 (min top i))]
-         [shown (take (list-tail *menu-hits* top) (min rows (- n top)))]
-         [width (min 30 (apply max (cons 1 (map (lambda (h) (string-length (car (car h)))) shown))))]
-         [start (cadddr (car (list-ref *menu-hits* i)))]
+  (let* ([hit (list-ref *menu-hits* (max *menu-index* 0))]
          [icon (and (eq? (car (option 'completion-menu-columns)) 'icon)
-                    (*menu-icon* (menu-source-name (cdr (car shown))) (car (car shown))))])
-    (set-popup! (pad-menu-lines (map (lambda (h) (menu-line h width)) shown)))
-    (set-popup-place! "cursor" (- -1 (- (cursor) start) (if icon (+ 1 (string-length icon)) 0)) "")
-    (set-popup-selected! (if (< *menu-index* 0) -1 (- *menu-index* top)))))
+                    (*menu-icon* (menu-source-name (cdr hit)) (car hit)))]
+         [column (- -1 (- (cursor) (cadddr (car hit))) (if icon (+ 1 (string-length icon)) 0))]
+         [selected (and (>= *menu-index* 0) *menu-index*)])
+    (if (overlay-open? 'completion)
+        (overlay-update! 'completion menu-rows-shown 'count (length *menu-hits*)
+                         'selected selected 'column column)
+        ;; The menu's keys come first; a snippet placeholder's still work
+        ;; through menu-pass-key!.
+        (overlay-open! 'completion menu-rows-shown 'count (length *menu-hits*)
+                       'selected selected 'place 'cursor 'column column
+                       'keys (lambda (key) (menu-key! key) #t)
+                       'on-close close-menu!
+                       'click-closes #t))))
 
 (define (close-menu!)
   "Closes the completion menu, if it is open, and gives the keys back."
@@ -441,9 +446,7 @@
     (set! *menu-matches* '())
     (set! *menu-sources* (hash))
     (completion-store-clear!)
-    (set-popup! '())
-    (set-popup-selected! -1)
-    (when (eq? *key-interceptor* menu-key!) (set! *key-interceptor* #f)))
+    (overlay-close! 'completion))
   void)
 
 (define (move-menu! step)
@@ -492,6 +495,11 @@
        (case preset [(enter) 'accept] [(tab) #f] [else 'accept-selected])]
       [else #f])))
 
+(define (menu-pass-key! key)
+  "Sends `key`, which the completion menu doesn't use, on as usual: to a
+   snippet's placeholder if one is selected, else to its state."
+  (if *key-interceptor* (*key-interceptor* key) (handle-key! key)))
+
 (define (menu-key! key)
   "Handles `key` while the completion menu is open: moves, accepts or
    closes it as completion-keys says; other keys type as usual and narrow
@@ -499,18 +507,18 @@
    new directory after a /). Leaving insert state closes it."
   (let ([action (and (memq *mode* '(insert replace)) (menu-key-action key))])
     (cond
-      [(not (memq *mode* '(insert replace))) (close-menu!) (handle-key! key)]
+      [(not (memq *mode* '(insert replace))) (close-menu!) (menu-pass-key! key)]
       [(eq? action 'next) (move-menu! 1)]
       [(eq? action 'previous) (move-menu! -1)]
       [(eq? action 'accept) (accept-candidate! (list-ref *menu-hits* (max 0 *menu-index*)))]
       [(and (eq? action 'accept-selected) (>= *menu-index* 0))
        (accept-candidate! (list-ref *menu-hits* *menu-index*))]
       [(eq? action 'close) (close-menu!)]
-      [(member key '("<esc>" "C-c" "<ret>" "C-m")) (close-menu!) (handle-key! key)]
+      [(member key '("<esc>" "C-c" "<ret>" "C-m")) (close-menu!) (menu-pass-key! key)]
       [(and (equal? key "/") (memq 'file (map menu-source-name (menu-live-sources))))
-       (close-menu!) (handle-key! key) (complete-with! 'file #f)]
+       (close-menu!) (menu-pass-key! key) (complete-with! 'file #f)]
       [else
-       (handle-key! key)
+       (menu-pass-key! key)
        (when *menu-open* (refilter-menu!))
        (when (and *menu-open* (list-find (lambda (n) (menu-source-field n 4)) (menu-live-sources)))
          (schedule-completion! #t))])))
@@ -620,14 +628,14 @@
 ;; file names, C-x C-n and C-x C-p words. The key after C-x isn't typed.
 (define-key! 'insert "C-x"
   (lambda ()
-    (set! *key-interceptor*
-          (lambda (key)
-            (set! *key-interceptor* #f)
-            (cond [(equal? key "C-o") (complete-at-point! #t)]
-                  [(equal? key "C-f") (complete-with! 'file #t)]
-                  [(equal? key "C-n") (complete-with! 'words #t)]
-                  [(equal? key "C-p") (complete-with! 'words #t #t)]
-                  [else (handle-key! key)])))))
+    (overlay-open! 'complete-keys '()
+                   'keys (lambda (key)
+                           (overlay-close! 'complete-keys)
+                           (cond [(equal? key "C-o") (complete-at-point! #t) #t]
+                                 [(equal? key "C-f") (complete-with! 'file #t) #t]
+                                 [(equal? key "C-n") (complete-with! 'words #t) #t]
+                                 [(equal? key "C-p") (complete-with! 'words #t #t) #t]
+                                 [else #f])))))
 
 ;;; Completing as you type
 
@@ -642,7 +650,7 @@
                       (lambda ()
                         (set! *complete-timer* #f)
                         (when (and (= id (current-buffer)) (= at (cursor)) (eq? *mode* 'insert)
-                                   (if refresh? *menu-open* (not (or *menu-open* *key-interceptor*))))
+                                   (if refresh? *menu-open* (not (or *menu-open* *key-interceptor* (overlay-open?)))))
                           (if refresh?
                               (refresh-incomplete!)
                               (complete-at-point! #f)))))))
@@ -719,8 +727,7 @@
     (set! *cmd-open* #f)
     (set! *cmd-hits* '())
     (set! *cmd-index* -1)
-    (set-popup! '())
-    (set-popup-selected! -1)))
+    (overlay-close! 'cmdline-menu)))
 
 (define (cmd-refresh! manual?)
   "Fills the command line's menu for what is typed before the cursor, or
@@ -743,24 +750,28 @@
               (cmd-close!)
               (begin (set! *cmd-open* #t) (cmd-draw!)))))))
 
-(define (cmd-draw!)
-  "Draws the command line's menu above the line, scrolled to the one
-   chosen: a path's last part, then its doc dimmed."
-  (let* ([n (length *cmd-hits*)] [rows (min 10 n)]
-         [i (max *cmd-index* 0)]
-         [top (max 0 (min (- i (- rows 1)) (- n rows)))]
-         [shown (take (list-tail *cmd-hits* top) rows)]
+(define (cmd-rows-shown top rows)
+  "The command line menu's rows from hit `top`, `rows` of them: a path's
+   last part, then its doc dimmed."
+  (let* ([shown (take (list-tail *cmd-hits* top) (min rows (- (length *cmd-hits*) top)))]
          [label (lambda (k) (wild-label (vector-ref *cmd-labels* k)))]
          [width (min 40 (apply max (cons 1 (map (lambda (k) (string-length (label k))) shown))))]
          [icon (lambda (k) (*menu-icon* (if (member *cmdline-prompt* '("/" "?")) 'words 'cmdline)
                                         (list (vector-ref *cmd-labels* k) "" "" 0 #f)))])
-    (set-popup-place! "bottom" 0 "")
-    (set-popup! (map (lambda (k)
-                       (let ([detail (vector-ref *cmd-details* k)] [ic (icon k)])
-                         (list (list (string-append " " (if ic (string-append ic " ") "") (pad-right (label k) width)) "")
-                               (list (if (equal? detail "") "" (string-append "  " (clip detail 60))) "popup.detail"))))
-                     shown))
-    (set-popup-selected! (if (< *cmd-index* 0) -1 (- *cmd-index* top)))))
+    (map (lambda (k)
+           (let ([detail (vector-ref *cmd-details* k)] [ic (icon k)])
+             (list (list (string-append " " (if ic (string-append ic " ") "") (pad-right (label k) width)) "")
+                   (list (if (equal? detail "") "" (string-append "  " (clip detail 60))) "popup.detail"))))
+         shown)))
+
+(define (cmd-draw!)
+  "Draws the command line's menu above the line, scrolled to the one
+   chosen."
+  (let ([selected (and (>= *cmd-index* 0) *cmd-index*)] [n (length *cmd-hits*)])
+    ;; No 'keys: the command line reads them.
+    (if (overlay-open? 'cmdline-menu)
+        (overlay-update! 'cmdline-menu cmd-rows-shown 'count n 'selected selected)
+        (overlay-open! 'cmdline-menu cmd-rows-shown 'count n 'selected selected))))
 
 (define (cmd-put! text)
   "Puts `text` in the line in place of what the menu completes."

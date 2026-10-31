@@ -423,8 +423,7 @@
                                   (hash-keys->list table)))
                       bindings)
             (set! *leader-keys* "m")
-            (set! *key-interceptor* leader-input!)
-            (show-which-key!))))))
+            (leader-open!))))))
 
 (define-mode-leader! 'scheme-mode "e" 'eval-defun "eval top-level form")
 (define-mode-leader! 'scheme-mode "b" 'eval-buffer "eval buffer")

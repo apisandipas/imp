@@ -65,9 +65,6 @@
         (list "q" "close the tree" (lambda (n) (file-tree-close!)))
         (list "?" "show or hide these keys" (lambda (n) (file-tree-help!)))))
 
-;; Whether ? is showing the tree's keys.
-(define *file-tree-help* #f)
-
 ;; Git status by root: root -> (letters . folders), where letters maps a
 ;; changed file's path to "M", "A", "U" or "!", and folders maps a folder
 ;; holding changes to the most serious one's letter.
@@ -621,20 +618,15 @@
 
 (define (file-tree-hide-help!)
   "Takes down the popup of the tree's keys, if ? put it up."
-  (when *file-tree-help*
-    (set! *file-tree-help* #f)
-    (set-popup! '()))
-  void)
+  (overlay-close! 'file-tree-help))
 
 (define (file-tree-help!)
   "?: shows the tree's keys in a which-key popup, or hides it."
-  (if *file-tree-help*
+  (if (overlay-open? 'file-tree-help)
       (file-tree-hide-help!)
-      (begin
-        (set! *file-tree-help* #t)
-        (show-which-key-popup! (which-key-table (map (lambda (k) (cons (key-label (car k)) (cadr k))) *file-tree-keys*))
-                               "file tree")
-        void)))
+      (overlay-open! 'file-tree-help
+                     (which-key-table (map (lambda (k) (cons (key-label (car k)) (cadr k))) *file-tree-keys*))
+                     'title "file tree")))
 
 (define (file-tree-follow-current!)
   "Moves this frame's tree to the current buffer's file, if it is under
