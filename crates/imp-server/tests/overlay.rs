@@ -201,3 +201,57 @@ fn the_file_trees_help_comes_back_after_another_overlay_closed_it() {
     type_keys(&mut s, "?");
     assert!(rows(&mut s).contains("show or hide these keys"));
 }
+
+/// Runtime and package code, its comments taken out.
+fn scheme_sources() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = vec![];
+    let mut dirs = vec![root.join("runtime"), root.join("packages")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "scm") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                let code: Vec<&str> = text
+                    .lines()
+                    .map(|l| {
+                        if l.trim_start().starts_with(';') {
+                            ""
+                        } else {
+                            l
+                        }
+                    })
+                    .collect();
+                let name = path.strip_prefix(&root).unwrap().display().to_string();
+                files.push((name, code.join("\n")));
+            }
+        }
+    }
+    files
+}
+
+#[test]
+fn only_the_owner_touches_the_popup_and_the_interceptor() {
+    let mut found = vec![];
+    for (name, code) in scheme_sources() {
+        if name == "runtime/overlay.scm" {
+            continue;
+        }
+        for primitive in [
+            "(set-popup! ",
+            "(set-popup-place! ",
+            "(set-popup-selected! ",
+        ] {
+            if code.contains(primitive) {
+                found.push(format!("{name}: {primitive}"));
+            }
+        }
+        // Snippet placeholders are a mode, not an overlay.
+        if name != "runtime/snippet.scm" && code.contains("(set! *key-interceptor*") {
+            found.push(format!("{name}: sets *key-interceptor*"));
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}

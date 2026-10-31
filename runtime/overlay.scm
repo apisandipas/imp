@@ -101,6 +101,16 @@
   (let ([keys (and *overlay* (overlay-field 'keys))])
     (and keys (not (eq? (keys key) #f)))))
 
+(define (overlay-mouse! action)
+  "Called with each mouse event's `action` (\"press\", \"scroll-up\"...).
+   A press closes an overlay opened with 'click-closes. Whether the event
+   goes on: not while an overlay that takes keys is open, unless it
+   closes on a click."
+  (let ([closes? (and *overlay* (overlay-field 'click-closes))])
+    (when (and closes? (equal? action "press"))
+      (overlay-close! (overlay-field 'name)))
+    (or closes? (not *overlay*) (not (overlay-field 'keys)))))
+
 (define (overlay-rows count)
   "How many of `count` lines an overlay with a selected line shows: up
    to 10, and no more than the window height less 2."

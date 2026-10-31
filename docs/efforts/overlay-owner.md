@@ -28,9 +28,14 @@ One Scheme owner for the popup slot and the key interceptor, with every overlay 
 - [x] Menus and prompts: `menu!`, `confirm!`, describe-key and dired's `:w` go through the owner. Test: `<esc>` at dired's `:w` closes the popup and the y/n question together.
 - [x] Insert completion: the insert menu and the C-x keys go through the owner and its scrolling. Test: the menu opening during a snippet leaves the snippet's keys working.
 - [x] Command-line overlays: the command-line menu, the wildmenu, completing-read and the calendar give the owner their rows and scroll through it. Test: the command-line menu keeps the selected line in view in a short window.
-- [ ] Mouse and the rest:
+- [x] Mouse and the rest:
   - Clicks follow `'click-closes`.
   - The remaining callers move over: mouse, mcp, the `popup-lines` readers.
   - A test fails on any runtime or package code outside `overlay.scm` that calls `set-popup!`, `set-popup-place!` or `set-popup-selected!`, or sets `*key-interceptor*`. Snippets are allowed to set the interceptor.
 
 ## Notes
+
+- A popup with no selected line and a list of lines (a `show-popup!` page) shows them all; only lists with a selection, or lines from a procedure, scroll. The first cut capped every overlay at 10 rows, which cut describe pages short.
+- The wildmenu pages through its candidates in columns itself, so it gives the owner a page of rows with no selected line; the spec's scrolling names only the insert menu, the command-line menu and completing-read.
+- MCP's `command-output` only reads `popup-lines`, what the owner drew, so it needed no change.
+- The dev shell sets `IMP_RUNTIME` to the working copy, so tests read the runtime from disk: a check started before an edit sees the edit.
