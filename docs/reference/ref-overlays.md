@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/overlays]]"
 frozen:
-  docs/specs/overlays.md: e97eec256bf2
+  docs/specs/overlays.md: bc97912d2e13
 ---
 # Popups and menus
 
@@ -12,7 +12,7 @@ The which-key popup, menus, completion menus, describe pages and y/n questions a
 
 - A new overlay replaces the open one. A popup that only shows something, such as hover help or git output, doesn't take the place of a menu or the leader while you're typing into it. It waits, and opens when they close.
 - A describe or output popup closes on the next key. `<esc>`, `<ret>`, space and `C-c` only close it; any other key also does what it usually does.
-- A long list shows at most 10 rows, fewer in a short window, and scrolls to keep the selected line in view.
+- A long list you move through shows at most 10 rows, fewer in a short window, and scrolls to keep the selected line in view. A describe or output popup shows all its lines.
 - A mouse click closes a completion menu or an output popup. A menu or the leader ignores clicks until you finish it.
 
 ## Showing your own

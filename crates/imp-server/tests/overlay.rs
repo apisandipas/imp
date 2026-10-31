@@ -153,3 +153,51 @@ fn lines_from_a_procedure() {
     assert_eq!(s.eval("asked").unwrap(), "(491 10)");
     assert!(rows(&mut s).contains("item 500"));
 }
+
+#[test]
+fn a_page_with_no_selection_shows_every_line() {
+    let mut s = server("");
+    s.eval(&format!("(show-popup! {})", lines(15))).unwrap();
+    let r = rows(&mut s);
+    assert!(r.contains("line 0") && r.contains("line 14"), "{r}");
+}
+
+#[test]
+fn a_late_popup_does_not_take_the_leaders_popup() {
+    let mut s = server("");
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    type_keys(&mut s, " ");
+    let leader = rows(&mut s);
+    assert!(leader.contains("+file"), "{leader}");
+    // Hover or git output arriving now waits for the leader.
+    s.eval("(show-popup! (list (list (list \"late output\" \"\"))))")
+        .unwrap();
+    let r = rows(&mut s);
+    assert!(r.contains("+file") && !r.contains("late output"), "{r}");
+    // The leader still has its keys, and when it ends the popup shows.
+    type_keys(&mut s, "<esc>");
+    assert!(rows(&mut s).contains("late output"));
+}
+
+#[test]
+fn the_file_trees_help_comes_back_after_another_overlay_closed_it() {
+    let dir = temp_path("overlay-tree-help");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".git")).unwrap();
+    std::fs::write(dir.join("a.txt"), "").unwrap();
+    let mut s = server("");
+    s.eval("(use-package! 'file-tree)").unwrap();
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret> te?", dir.join("a.txt").display()),
+    );
+    assert!(rows(&mut s).contains("show or hide these keys"));
+    // Another overlay takes the popup, and closes.
+    s.eval("(show-popup! (list (list (list \"other\" \"\"))))")
+        .unwrap();
+    type_keys(&mut s, "<esc>");
+    assert!(!rows(&mut s).contains("show or hide these keys"));
+    // One ? shows the help again.
+    type_keys(&mut s, "?");
+    assert!(rows(&mut s).contains("show or hide these keys"));
+}

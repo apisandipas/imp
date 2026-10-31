@@ -41,7 +41,7 @@ An overlay is something that opens over the windows for a moment: the which-key 
 
 ### Scrolling
 
-- An overlay given more lines than fit shows a window of them around the selected line: at most 10 rows, and no more than the window height less 2. The window moves only as far as it must to keep the selected line in view. The insert completion menu, the command-line menu and completing-read scroll this way.
+- An overlay given more lines than fit shows a window of them around the selected line: at most 10 rows, and no more than the window height less 2. The window moves only as far as it must to keep the selected line in view. The insert completion menu, the command-line menu and completing-read scroll this way. An overlay with no selected line and a list of lines (a `show-popup!` page) shows them all, as now.
 
 ### Mouse
 

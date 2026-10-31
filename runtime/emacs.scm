@@ -65,22 +65,23 @@
       [(emacs-key-binding keys)
        => (lambda (binding)
             (set! *emacs-prefix* "")
-            (set-popup! '())
+            (overlay-close! 'emacs-prefix)
             (run-emacs-command! binding))]
       [(emacs-prefix? keys)
        (set! *emacs-prefix* keys)
        (set-status! (string-append keys "-"))
+       ;; No 'keys: emacs-key! reads the rest of the sequence itself.
        (if (<= (option 'which-key-delay) 0)
-           (show-which-key-popup! (emacs-which-key keys) keys)
+           (overlay-open! 'emacs-prefix (emacs-which-key keys) 'title keys)
            (run-after! (option 'which-key-delay)
                        (lambda ()
                          (when (equal? *emacs-prefix* keys)
-                           (show-which-key-popup! (emacs-which-key keys) keys)))))]
+                           (overlay-open! 'emacs-prefix (emacs-which-key keys) 'title keys)))))]
       [(and (equal? *emacs-prefix* "") (key-char key) (not (equal? key "<ret>")))
        (run-emacs-command! (lambda (n) (self-insert! key n)))]
       [else
        (set! *emacs-prefix* "")
-       (set-popup! '())
+       (overlay-close! 'emacs-prefix)
        (set! *emacs-arg* #f)
        (message (string-append keys " is undefined"))]))
   void)
@@ -115,7 +116,7 @@
   "Cancel a pending key sequence, the argument and the region (C-g)."
   (set! *emacs-prefix* "")
   (set! *emacs-arg* #f)
-  (set-popup! '())
+  (overlay-close! 'emacs-prefix)
   (deactivate-mark!)
   (message "Quit"))
 

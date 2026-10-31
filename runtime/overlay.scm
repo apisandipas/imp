@@ -102,8 +102,8 @@
     (and keys (not (eq? (keys key) #f)))))
 
 (define (overlay-rows count)
-  "How many of `count` lines an overlay shows: up to 10, and no more than
-   the window height less 2."
+  "How many of `count` lines an overlay with a selected line shows: up
+   to 10, and no more than the window height less 2."
   (max 0 (min count 10 (max 1 (- (window-height) 2)))))
 
 (define (overlay-scroll top selected count rows)
@@ -120,9 +120,10 @@
    selected line is in view, setting every field of the popup."
   (let* ([lines (overlay-field 'lines)]
          [count (if (procedure? lines) (or (overlay-field 'count) 0) (length lines))]
-         [rows (overlay-rows count)]
          [selected (overlay-field 'selected)]
          [selected (and selected (>= selected 0) (< selected count) selected)]
+         ;; A list to move through scrolls; a page shows every line.
+         [rows (if (or selected (procedure? lines)) (overlay-rows count) count)]
          [top (overlay-scroll (overlay-field 'top) selected count rows)]
          [place (overlay-field 'place)])
     (set! *overlay* (hash-insert *overlay* 'top top))
