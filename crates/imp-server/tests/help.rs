@@ -44,6 +44,27 @@ fn describe_key_finds_the_binding() {
 }
 
 #[test]
+fn describe_key_describes_what_runs_in_this_buffer() {
+    let mut s = server("");
+    let describe = |s: &mut imp_server::Server, keys: &str| {
+        s.eval("(run-command 'describe-key)").unwrap();
+        type_keys(s, keys);
+        let text = popup_text(s);
+        type_keys(s, "<esc>");
+        text
+    };
+    assert!(describe(&mut s, "d").contains("d runs the operator d"));
+    assert!(describe(&mut s, "x").contains("x runs the command x"));
+    assert!(describe(&mut s, "rx").contains("command taking a char r"));
+    // git status binds d itself, and z, which is Vim's prefix elsewhere.
+    s.eval("(set-major-mode! 'git-status-mode)").unwrap();
+    assert!(describe(&mut s, "d").contains("d runs the mode key diff menu"));
+    assert!(describe(&mut s, "z").contains("z runs the mode key stash"));
+    // Vim's keys it doesn't bind are still described as Vim's.
+    assert!(describe(&mut s, "w").contains("w runs the motion w"));
+}
+
+#[test]
 fn describe_key_names_commands() {
     let mut s = server("");
     s.eval("(define-key! 'normal \"Q\" 'eval-buffer)").unwrap();

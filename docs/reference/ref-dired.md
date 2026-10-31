@@ -37,7 +37,7 @@ The listing is ordinary text, and the usual Vim keys work on it.
 | Create a file | Add a line with its name |
 | Create a directory | Add a line ending in `/` |
 
-Nothing happens until you save. `:w` lists the renames, deletions and new files, and asks first. Press `y` to make them.
+Nothing happens until you save. `:w` lists the renames, deletions and new files, and asks first. Press `y` to make them; any other key closes the list and the question together.
 
 Moving a line with `dd` and `p` changes nothing, so it can't delete a file by accident. Swapping two names, or rotating several, renames each file.
 

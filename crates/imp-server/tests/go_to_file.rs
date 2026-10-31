@@ -1,0 +1,298 @@
+//! Go to file (runtime/gofile.scm, docs/specs/go-to-file.md): gf opens
+//! the file named under the cursor.
+
+mod common;
+
+use common::*;
+use std::path::{Path, PathBuf};
+
+/// A fresh directory holding `files` (path, text), a project (it has a
+/// .git) unless a path says otherwise.
+fn tree(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let root = temp_path(name);
+    let _ = std::fs::remove_dir_all(&root);
+    for (path, text) in files {
+        let p = root.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        if path.ends_with('/') {
+            std::fs::create_dir_all(&p).unwrap();
+        } else {
+            std::fs::write(p, text).unwrap();
+        }
+    }
+    root
+}
+
+/// A server with `path` open.
+fn open(path: &Path) -> imp_server::Server {
+    let mut s = server("");
+    s.eval(&format!("(open-file! {:?})", path.display().to_string()))
+        .unwrap();
+    s
+}
+
+fn current_path(s: &mut imp_server::Server) -> String {
+    s.eval("(buffer-path)")
+        .unwrap()
+        .trim_matches('"')
+        .to_string()
+}
+
+#[test]
+fn a_name_from_the_buffers_directory() {
+    let root = tree(
+        "gf-dir",
+        &[
+            ("a/notes.txt", "see other.txt here\n"),
+            ("a/other.txt", "x\n"),
+        ],
+    );
+    let mut s = open(&root.join("a/notes.txt"));
+    type_keys(&mut s, "wgf");
+    assert!(current_path(&mut s).ends_with("a/other.txt"));
+    // The jump is kept: C-o comes back.
+    type_keys(&mut s, "<C-o>");
+    assert!(current_path(&mut s).ends_with("a/notes.txt"));
+}
+
+#[test]
+fn quotes_end_the_name_and_endings_are_tried() {
+    let root = tree(
+        "gf-ts",
+        &[
+            (".git/", ""),
+            (
+                "src/lib/form.ts",
+                "import { x } from \"./form-context\";\nimport \"./lib\";\n",
+            ),
+            ("src/lib/form-context.ts", "export const x = 1;\n"),
+            ("src/lib/lib/index.tsx", "\n"),
+        ],
+    );
+    let mut s = open(&root.join("src/lib/form.ts"));
+    // Anywhere on the string.
+    type_keys(&mut s, "f\"lllgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("src/lib/form-context.ts").display().to_string()
+    );
+    // On the quote, the next name on the line; a directory gives its
+    // index, with an ending.
+    type_keys(&mut s, "<C-o>j0f\"gf");
+    assert!(current_path(&mut s).ends_with("src/lib/lib/index.tsx"));
+}
+
+#[test]
+fn then_the_project_root_but_not_for_dot_slash() {
+    let root = tree(
+        "gf-root",
+        &[
+            (".git/", ""),
+            ("README.md", "top\n"),
+            ("docs/guide.txt", "README.md\n./README.md\n"),
+        ],
+    );
+    let mut s = open(&root.join("docs/guide.txt"));
+    type_keys(&mut s, "gf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("README.md").display().to_string()
+    );
+    // ./ means the buffer's directory, and only that.
+    type_keys(&mut s, "<C-o>jgf");
+    assert!(current_path(&mut s).ends_with("docs/guide.txt"));
+    assert_eq!(s.status(), "Can't find file \"./README.md\" in path");
+}
+
+#[test]
+fn nothing_found_opens_nothing() {
+    let root = tree("gf-none", &[("a.txt", "nowhere.txt  ;\n")]);
+    let mut s = open(&root.join("a.txt"));
+    let buffers = s.eval("(length (buffer-list))").unwrap();
+    type_keys(&mut s, "gf");
+    assert_eq!(s.status(), "Can't find file \"nowhere.txt\" in path");
+    assert_eq!(s.eval("(length (buffer-list))").unwrap(), buffers);
+    // Past the last name on the line there is none.
+    type_keys(&mut s, "$gf");
+    assert_eq!(s.status(), "No file name under cursor");
+}
+
+#[test]
+fn a_directory_with_no_index_opens_in_the_file_browser() {
+    let root = tree("gf-browse", &[("a.txt", "sub\n"), ("sub/one.txt", "1\n")]);
+    let mut s = open(&root.join("a.txt"));
+    type_keys(&mut s, "gf");
+    let dir = s.eval("(buffer-local 'dired-dir)").unwrap();
+    assert!(dir.trim_matches('"').ends_with("sub"), "{dir}");
+}
+
+#[test]
+fn the_selection_is_the_name_in_visual_mode() {
+    let root = tree(
+        "gf-visual",
+        &[("a.txt", "x my file.txt y\n"), ("my file.txt", "!\n")],
+    );
+    let mut s = open(&root.join("a.txt"));
+    type_keys(&mut s, "wv10lgf");
+    assert!(current_path(&mut s).ends_with("my file.txt"));
+    assert_eq!(s.eval("*mode*").unwrap(), "normal");
+}
+
+#[test]
+fn home_and_environment_variables_are_expanded() {
+    assert_eq!(
+        server("")
+            .eval(r#"(equal? (expand-env "$HOME/a/${HOME}b$") (string-append (getenv "HOME") "/a/" (getenv "HOME") "b$"))"#)
+            .unwrap(),
+        "#true"
+    );
+    let mut s = server("");
+    assert_eq!(
+        s.eval(r#"(equal? (expand-env "$IMP_NO_SUCH_VAR/x") "/x")"#)
+            .unwrap(),
+        "#true"
+    );
+}
+
+#[test]
+fn only_script_modes_add_endings() {
+    let root = tree("gf-plain", &[("a.txt", "b\n"), ("b.ts", "\n")]);
+    let mut s = open(&root.join("a.txt"));
+    type_keys(&mut s, "gf");
+    assert_eq!(s.status(), "Can't find file \"b\" in path");
+    // Set by hand, any buffer has them.
+    type_keys(&mut s, ":setlocal sua=.ts<ret>gf");
+    assert!(current_path(&mut s).ends_with("b.ts"));
+}
+
+#[test]
+fn gf_capital_goes_to_the_line_after_the_name() {
+    let root = tree(
+        "gf-line",
+        &[
+            ("log.txt", "at code.rs:3 here\nat code.rs:2:5\ncode.rs(4)\ncode.rs line 2\ncode.rs\ncode.rs:99\n"),
+            ("code.rs", "one\n  two\nthree\nfour\n"),
+        ],
+    );
+    let mut s = open(&root.join("log.txt"));
+    let line_col = |s: &mut imp_server::Server| {
+        s.eval("(list (+ (current-line) 1) (+ (current-col) 1))")
+            .unwrap()
+    };
+    type_keys(&mut s, "wgF");
+    assert!(current_path(&mut s).ends_with("code.rs"));
+    assert_eq!(line_col(&mut s), "(3 1)");
+    // :line:col; (line); " line N"; the first non-blank without a column.
+    type_keys(&mut s, "<C-o>jwgF");
+    assert_eq!(line_col(&mut s), "(2 5)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(4 1)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(2 3)");
+    // No line: as gf. A count wins over none; past the end is the last line.
+    type_keys(&mut s, "<C-o>j03gF");
+    assert_eq!(line_col(&mut s), "(3 1)");
+    type_keys(&mut s, "<C-o>j0gF");
+    assert_eq!(line_col(&mut s), "(4 1)");
+    // gf doesn't go to the line: the buffer is where it was left.
+    type_keys(&mut s, "<C-o>ggwgf");
+    assert_eq!(line_col(&mut s), "(4 1)");
+}
+
+#[test]
+fn ctrl_w_f_opens_it_in_a_split() {
+    let root = tree(
+        "gf-split",
+        &[("a.txt", "b.txt:2\nnone.txt\n"), ("b.txt", "1\n2\n")],
+    );
+    let mut s = open(&root.join("a.txt"));
+    type_keys(&mut s, "<C-w>f");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
+    assert!(current_path(&mut s).ends_with("b.txt"));
+    type_keys(&mut s, "<C-w>o<C-o><C-w>F");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "2");
+    assert_eq!(s.eval("(+ (current-line) 1)").unwrap(), "2");
+    // Nothing found: no split.
+    type_keys(&mut s, "<C-w>o<C-o>j<C-w>f");
+    assert_eq!(s.status(), "Can't find file \"none.txt\" in path");
+    assert_eq!(s.eval("(length (window-list))").unwrap(), "1");
+}
+
+#[test]
+fn tsconfig_path_aliases() {
+    let root = tree(
+        "gf-alias",
+        &[
+            (".git/", ""),
+            (
+                "tsconfig.json",
+                // Comments and trailing commas, as tsconfig allows.
+                "{\n  // aliases\n  \"compilerOptions\": {\n    /* src */ \"paths\": { \"@/*\": [\"./src/*\"], \"@/ui/*\": [\"./design/*\",], \"lib\": [\"./src/lib/form.ts\"], },\n  },\n}\n",
+            ),
+            (
+                "src/lib/form.ts",
+                "import \"@/components/form/fields\";\nimport \"@/ui/button\";\nimport \"lib\";\nimport \"@/missing\";\n",
+            ),
+            ("src/components/form/fields.tsx", "\n"),
+            ("src/ui/button.ts", "\n"),
+            ("design/button.ts", "\n"),
+        ],
+    );
+    let mut s = open(&root.join("src/lib/form.ts"));
+    type_keys(&mut s, "f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("src/components/form/fields.tsx")
+            .display()
+            .to_string()
+    );
+    // The longest prefix wins: @/ui/* over @/*.
+    type_keys(&mut s, "<C-o>j0f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("design/button.ts").display().to_string()
+    );
+    // An exact pattern.
+    type_keys(&mut s, "<C-o>j0f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("src/lib/form.ts").display().to_string()
+    );
+    type_keys(&mut s, "j0f\"lgf");
+    assert_eq!(s.status(), "Can't find file \"@/missing\" in path");
+}
+
+#[test]
+fn aliases_from_an_extended_config_and_base_url() {
+    let root = tree(
+        "gf-extends",
+        &[
+            ("tsconfig.json", "{ \"extends\": \"./config/base\" }\n"),
+            (
+                "config/base.json",
+                "{ \"compilerOptions\": { \"baseUrl\": \"../app\", \"paths\": { \"~lib/*\": [\"lib/*\"] } } }\n",
+            ),
+            ("app/main.js", "require(\"~lib/util\")\n"),
+            ("app/lib/util.js", "\n"),
+        ],
+    );
+    let mut s = open(&root.join("app/main.js"));
+    type_keys(&mut s, "f\"lgf");
+    assert_eq!(
+        current_path(&mut s),
+        root.join("app/lib/util.js").display().to_string()
+    );
+}
+
+#[test]
+fn includeexpr_is_any_procedure() {
+    let root = tree("gf-expr", &[("a.txt", "pkg.mod\n"), ("pkg/mod.txt", "\n")]);
+    let mut s = open(&root.join("a.txt"));
+    s.eval(
+        r#"(set-local-option! 'includeexpr
+             (lambda (name) (list (string-append (string-join (split-many name ".") "/") ".txt"))))"#,
+    )
+    .unwrap();
+    type_keys(&mut s, "gf");
+    assert!(current_path(&mut s).ends_with("pkg/mod.txt"));
+}

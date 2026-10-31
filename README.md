@@ -125,6 +125,10 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 - **Files.** `SPC f D`, `SPC f R` and `SPC f C` (or `M-x delete-file`,
   `rename-file`, `copy-file`) act on the current buffer's file unless you
   name another; deleting asks first, and the buffer follows a rename.
+  `gf` opens the file named under the cursor, `gF` at the line after it
+  (`main.rs:42`), `C-w f` in a split; imports without an ending and
+  `tsconfig.json` aliases (`@/components/...`) resolve in TypeScript and
+  JavaScript.
 - **Packages that come with it.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, clocking and capture (templates, a capture
   window, `C-c C-c` to file, refiling, archiving), Org's agenda (day to
@@ -184,6 +188,7 @@ Packages load from `~/.config/imp/packages`, or from git with
 (use-package! 'move-lines)                    ; J and K move lines selected with V
 (use-package! 'nerd-icons)                    ; icons in the status line and menus
 (use-package! 'file-tree)                     ; the project's folders down the left (SPC t e)
+(use-package! 'showkeys)                      ; M-x showkeys-mode shows the keys you press
 ```
 
 `M-x list-packages` lists what's loaded and what else comes with imp.

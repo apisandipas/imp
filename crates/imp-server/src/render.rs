@@ -4,12 +4,12 @@
 //! bottom row, the message line or the command line being typed. Windows
 //! side by side are separated by a border column.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
 use unicode_width::UnicodeWidthChar;
 
-use crate::editor::{window_mark, Editor, Layer};
+use crate::editor::{window_mark, Editor, Layer, PopupLine};
 use crate::layout::Rect;
 
 /// How the gutter shows line numbers, set from Scheme (the `number` and
@@ -120,6 +120,8 @@ pub fn frame(e: &mut Editor) -> Frame {
     let area = height - 1;
     // Where the command line's cursor is when it is drawn in a centred box.
     let mut boxed = None;
+    // Floating boxes go under the popups, which are drawn over them.
+    floats(e, &mut rows, area, width);
     if !e.popup.is_empty() {
         match (e.popup_center, e.popup_at_cursor) {
             (Some(percent), _) => boxed = center_popup(e, &mut rows, area, width, percent),
@@ -190,12 +192,11 @@ pub fn frame(e: &mut Editor) -> Frame {
     }
 }
 
-/// A popup row `width` cells wide: its runs over the popup's face (or the
-/// selected one), padded. A row too wide has its first `popup.path` run
-/// shortened from the start, keeping the file name, as the status line
-/// does; then what still doesn't fit is cut.
-fn popup_row(e: &Editor, line: &[(String, String)], selected: bool, width: usize) -> Row {
-    let base = e.face(if selected { "popup-selected" } else { "popup" });
+/// A popup row `width` cells wide: its runs over `base` (a run with no
+/// face of its own is in `base`), padded. A row too wide has its first
+/// `popup.path` run shortened from the start, keeping the file name, as
+/// the status line does; then what still doesn't fit is cut.
+fn popup_row(e: &Editor, line: &[(String, String)], base: Style, width: usize) -> Row {
     let total: usize = line.iter().map(|(text, _)| text_width(text)).sum();
     let mut shortened = false;
     let line: Vec<(String, &String)> = line
@@ -230,16 +231,23 @@ fn popup_row(e: &Editor, line: &[(String, String)], selected: bool, width: usize
     row
 }
 
-/// A border row: `left`, the title (if any), `fill` to the width, `right`.
-fn border_row(e: &Editor, left: &str, right: &str, width: usize) -> Row {
-    let border = e.face("popup-border");
+/// A border row in `border`: `left`, `title` (if any), `─` to the width,
+/// `right`.
+fn border_row(
+    e: &Editor,
+    left: &str,
+    right: &str,
+    width: usize,
+    border: Style,
+    title: &str,
+) -> Row {
     let mut row = Vec::new();
     let inner = width.saturating_sub(text_width(left) + text_width(right));
     push(&mut row, left, border);
-    let title = if e.popup_title.is_empty() {
+    let title = if title.is_empty() {
         String::new()
     } else {
-        clip(&format!(" {} ", e.popup_title), inner.saturating_sub(1))
+        clip(&format!(" {title} "), inner.saturating_sub(1))
     };
     let mut used = 0;
     if !title.is_empty() {
@@ -252,15 +260,104 @@ fn border_row(e: &Editor, left: &str, right: &str, width: usize) -> Row {
     row
 }
 
+/// How a box is drawn: the faces of its border, its text and its selected
+/// line, the title in its top border, and whether a line cut to fit keeps
+/// a space before the right border (floats) or runs up to it (popups).
+struct BoxLook<'a> {
+    border: Style,
+    text: Style,
+    selected: Style,
+    title: &'a str,
+    margin: bool,
+}
+
+impl BoxLook<'_> {
+    /// The popup's look: its faces and title.
+    fn popup(e: &Editor) -> BoxLook<'_> {
+        BoxLook {
+            border: e.face("popup-border"),
+            text: e.face("popup"),
+            selected: e.face("popup-selected"),
+            title: &e.popup_title,
+            margin: false,
+        }
+    }
+}
+
+/// Draws a box into `rows` with its top-left corner at (`x`, `top`),
+/// `inner` cells wide inside the border: `header` over a rule, if given
+/// (a centred popup's command line), then `lines`, the `selected` one
+/// highlighted, each after a space. Returns the row of its bottom border;
+/// the caller makes sure the box fits.
+#[allow(clippy::too_many_arguments)]
+fn draw_box(
+    e: &Editor,
+    rows: &mut [Row],
+    (x, top): (usize, usize),
+    inner: usize,
+    look: &BoxLook,
+    header: Option<&PopupLine>,
+    lines: &[PopupLine],
+    selected: Option<usize>,
+) -> usize {
+    let outer = inner + 2;
+    let edge = |left: &str, right: &str| {
+        let mut row = vec![Span::new(left, look.border)];
+        push(&mut row, &"─".repeat(inner), look.border);
+        push(&mut row, right, look.border);
+        row
+    };
+    let content = |line: &PopupLine, base: Style| {
+        let mut text = vec![(String::from(" "), String::new())];
+        text.extend(line.iter().cloned());
+        let mut row = vec![Span::new("│", look.border)];
+        if look.margin {
+            row.extend(popup_row(e, &text, base, inner.saturating_sub(1)));
+            push(&mut row, " ", base);
+        } else {
+            row.extend(popup_row(e, &text, base, inner));
+        }
+        push(&mut row, "│", look.border);
+        row
+    };
+    let mut y = top;
+    let title = border_row(e, "╭", "╮", outer, look.border, look.title);
+    rows[y] = splice(&rows[y], x, title, outer);
+    if let Some(line) = header {
+        y += 1;
+        rows[y] = splice(&rows[y], x, content(line, look.text), outer);
+        y += 1;
+        rows[y] = splice(&rows[y], x, edge("├", "┤"), outer);
+    }
+    for (i, line) in lines.iter().enumerate() {
+        y += 1;
+        let base = if selected == Some(i) {
+            look.selected
+        } else {
+            look.text
+        };
+        rows[y] = splice(&rows[y], x, content(line, base), outer);
+    }
+    y += 1;
+    rows[y] = splice(&rows[y], x, edge("╰", "╯"), outer);
+    y
+}
+
 /// The popup across the bottom of the screen, above the message line,
 /// under a border with its title.
 fn bottom_popup(e: &Editor, rows: &mut [Row], area: usize, width: usize) {
     let shown = e.popup.len().min(area.saturating_sub(1));
     let first = e.popup.len() - shown;
     let top = area - shown - 1;
-    rows[top] = border_row(e, "", "", width);
+    let look = BoxLook::popup(e);
+    rows[top] = border_row(e, "", "", width, look.border, look.title);
     for (i, line) in e.popup[first..].iter().enumerate() {
-        rows[top + 1 + i] = popup_row(e, line, e.popup_selected == Some(first + i), width);
+        let base = if e.popup_selected == Some(first + i) {
+            look.selected
+        } else {
+            look.text
+        };
+        rows[top + 1 + i] = popup_row(e, line, base, width);
     }
 }
 
@@ -305,21 +402,17 @@ fn cursor_popup(
     };
     let x =
         (cursor.0 as isize + dx - 1).clamp(0, width.saturating_sub(inner + 2) as isize) as usize;
-    let border = e.face("popup-border");
-    rows[top] = splice(&rows[top], x, border_row(e, "╭", "╮", inner + 2), inner + 2);
-    for i in 0..shown {
-        let mut line = vec![(String::from(" "), String::new())];
-        line.extend(e.popup[i].iter().cloned());
-        let mut row = vec![Span::new("│", border)];
-        row.extend(popup_row(e, &line, e.popup_selected == Some(i), inner));
-        push(&mut row, "│", border);
-        rows[top + 1 + i] = splice(&rows[top + 1 + i], x, row, inner + 2);
-    }
-    let bottom = top + shown + 1;
-    let mut row = vec![Span::new("╰", border)];
-    push(&mut row, &"─".repeat(inner), border);
-    push(&mut row, "╯", border);
-    rows[bottom] = splice(&rows[bottom], x, row, inner + 2);
+    let look = BoxLook::popup(e);
+    draw_box(
+        e,
+        rows,
+        (x, top),
+        inner,
+        &look,
+        None,
+        &e.popup[..shown],
+        e.popup_selected,
+    );
 }
 
 /// The popup in a box across the middle of the screen, `percent` of its
@@ -350,47 +443,94 @@ fn center_popup(
         _ => 0,
     };
     let x = width.saturating_sub(inner + 2) / 2;
-    let border = e.face("popup-border");
-    let mut y = top;
-    rows[y] = splice(&rows[y], x, border_row(e, "╭", "╮", inner + 2), inner + 2);
-    let mut cursor = None;
-    if let Some((text, col)) = &e.cmdline {
-        y += 1;
-        // Keep the cursor's end of a long input in view.
+    // Keep the cursor's end of a long input in view.
+    let header = e.cmdline.as_ref().map(|(text, col)| {
         let room = inner.saturating_sub(2);
         let skip = (col + 1).saturating_sub(room);
         let shown: String = text.chars().skip(skip).take(room).collect();
-        let mut row = vec![Span::new("│", border)];
-        row.extend(popup_row(
+        (vec![(shown, String::new())], (x + 2 + col - skip, top + 1))
+    });
+    let look = BoxLook::popup(e);
+    draw_box(
+        e,
+        rows,
+        (x, top),
+        inner,
+        &look,
+        header.as_ref().map(|(line, _)| line),
+        &e.popup[first..first + shown],
+        e.popup_selected.and_then(|i| i.checked_sub(first)),
+    );
+    header.map(|(_, cursor)| cursor)
+}
+
+/// A face, or `fallback` where the theme doesn't set it.
+fn face_or(e: &Editor, name: &str, fallback: &str) -> Style {
+    e.faces
+        .get(name)
+        .copied()
+        .unwrap_or_else(|| e.face(fallback))
+}
+
+/// The floating boxes (`float-show!`), each at its corner or the middle
+/// of an edge: one cell in from the sides, a top one from the first row,
+/// a bottom one ending above the bottom windows' status lines (`area` is
+/// the rows above the message line). Boxes at one position stack away
+/// from its edge; what doesn't fit the screen is cut off.
+fn floats(e: &Editor, rows: &mut [Row], area: usize, width: usize) {
+    // Rows a box may use: all but the bottom status lines.
+    let room = area.saturating_sub(1);
+    let mut used: HashMap<&str, usize> = HashMap::new();
+    let text = face_or(e, "float", "popup");
+    for float in &e.floats {
+        let taken = used.entry(float.position.as_str()).or_insert(0);
+        let left = room.saturating_sub(*taken);
+        if float.lines.is_empty() || left < 3 || width < 6 {
+            continue;
+        }
+        let shown = float.lines.len().min(left - 2);
+        let widest = float
+            .lines
+            .iter()
+            .map(|l| l.iter().map(|(t, _)| text_width(t)).sum::<usize>())
+            .max()
+            .unwrap_or(0);
+        // A space either side of the text, inside the border; one cell
+        // clear of each side of the screen.
+        let inner = (widest + 2).min(width - 4);
+        let outer = inner + 2;
+        let x = if float.position.ends_with("left") {
+            1
+        } else if float.position.ends_with("right") {
+            width - 1 - outer
+        } else {
+            (width - outer) / 2
+        };
+        let height = shown + 2;
+        let top = if float.position.starts_with("top") {
+            *taken
+        } else {
+            room - *taken - height
+        };
+        *taken += height;
+        let look = BoxLook {
+            border: face_or(e, &float.border, "popup-border"),
+            text,
+            selected: text,
+            title: "",
+            margin: true,
+        };
+        draw_box(
             e,
-            &[(format!(" {shown}"), String::new())],
-            false,
+            rows,
+            (x, top),
             inner,
-        ));
-        push(&mut row, "│", border);
-        rows[y] = splice(&rows[y], x, row, inner + 2);
-        cursor = Some((x + 2 + col - skip, y));
-        y += 1;
-        let mut row = vec![Span::new("├", border)];
-        push(&mut row, &"─".repeat(inner), border);
-        push(&mut row, "┤", border);
-        rows[y] = splice(&rows[y], x, row, inner + 2);
+            &look,
+            None,
+            &float.lines[..shown],
+            None,
+        );
     }
-    for i in first..first + shown {
-        y += 1;
-        let mut line = vec![(String::from(" "), String::new())];
-        line.extend(e.popup[i].iter().cloned());
-        let mut row = vec![Span::new("│", border)];
-        row.extend(popup_row(e, &line, e.popup_selected == Some(i), inner));
-        push(&mut row, "│", border);
-        rows[y] = splice(&rows[y], x, row, inner + 2);
-    }
-    y += 1;
-    let mut row = vec![Span::new("╰", border)];
-    push(&mut row, &"─".repeat(inner), border);
-    push(&mut row, "╯", border);
-    rows[y] = splice(&rows[y], x, row, inner + 2);
-    cursor
 }
 
 /// `row` with cells `x..x + width` replaced by `insert`. A wide char cut

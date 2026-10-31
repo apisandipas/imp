@@ -396,16 +396,15 @@
     (if (null? changes)
         (begin (dired-refresh!) (message "no changes"))
         (begin
-          (show-popup! (map dired-describe changes))
           (confirm! (string-append "Make these " (number->string (length changes)) " changes?")
                     (lambda ()
-                      (set-popup! '())
                       (let ([problems (dired-apply! dir changes)] [line (current-line)])
                         (dired-refresh!)
                         (set-cursor! (line-start (min line (last-line))))
                         (message (if (null? problems)
                                      (string-append "made " (number->string (length changes)) " changes")
-                                     (string-join problems "; "))))))))))
+                                     (string-join problems "; ")))))
+                    (map dired-describe changes))))))
 
 ;;; Mode and keys
 

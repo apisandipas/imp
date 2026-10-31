@@ -37,9 +37,11 @@
    Ignored with nomouse, on the command line, and while something else
    is reading keys."
   (when (and (option 'mouse) (not (eq? *mode* 'cmdline))
-             ;; Something reading keys (the leader menu, describe-key)
-             ;; owns the next input, except the completion menu.
+             ;; A snippet's placeholder owns the next input, unless the
+             ;; completion menu is open over it; so does an overlay
+             ;; reading keys (the leader, a menu), unless a click closes it.
              (or (not *key-interceptor*) *menu-open*)
+             (overlay-mouse! action)
              (not (and *mouse-handler* (*mouse-handler* action button x y))))
     (let ([at (screen-position x y)])
       (cond
@@ -91,7 +93,7 @@
    `offset` is #f on a status line, which only focuses the window.
    Remembers the press for a drag."
   (close-menu!)
-  (when *popup-shown* (close-popup!))
+  (close-popup!)
   (reset-pending!)
   (let ([typing? (typing-mode?)])
     (if typing?
@@ -110,7 +112,7 @@
    outermost starting there, focusing the window. The cursor stays,
    unless the fold closes over it: then it goes to the fold's first line."
   (close-menu!)
-  (when *popup-shown* (close-popup!))
+  (close-popup!)
   (reset-pending!)
   (unless (= window (current-window))
     (if (typing-mode?) (begin (focus-window! window) (run-hooks 'buffer-enter)) (go-to-window! window)))

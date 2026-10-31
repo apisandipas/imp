@@ -270,6 +270,16 @@
 
 ;;; The modes that come with imp
 
+;; What gf tries after a name (docs/specs/go-to-file.md): endings,
+;; comma-separated, as Vim's suffixesadd.
+(define-option! 'suffixesadd "" '(sua))
+(define script-endings ".ts,.tsx,.d.ts,.js,.jsx,.mts,.mjs,.cts,.cjs")
+;; A procedure from a name to more names for gf to try, or #f.
+(define-option! 'includeexpr #f '(inex))
+;; TypeScript and JavaScript's: tsconfig's path aliases, which gofile.scm
+;; sets, as it loads later.
+(define *script-includeexpr* #f)
+
 (define (set-mode-pairs! chars)
   "Sets the buffer's auto-pairs-chars to `chars`, for a major mode's
    setup, unless the user set the option globally."
@@ -304,6 +314,9 @@
          (case (car spec)
            [(scheme-mode lisp-mode) (set-mode-pairs! "()[]{}\"\"")]
            [(rust-mode) (set-mode-pairs! "()[]{}\"\"``")]
+           [(typescript-mode javascript-mode)
+            (unless (option-set? 'suffixesadd) (set-local-option! 'suffixesadd script-endings))
+            (unless (option-set? 'includeexpr) (set-local-option! 'includeexpr *script-includeexpr*))]
            [else void])))))
  (list (list 'scheme-mode '("scm" "ss" "sld" "rkt") ";; %s" #t 2)
        (list 'lisp-mode '("lisp" "cl" "el" "clj" "cljs" "fnl") ";; %s" #t 2)
@@ -410,8 +423,7 @@
                                   (hash-keys->list table)))
                       bindings)
             (set! *leader-keys* "m")
-            (set! *key-interceptor* leader-input!)
-            (show-which-key!))))))
+            (leader-open!))))))
 
 (define-mode-leader! 'scheme-mode "e" 'eval-defun "eval top-level form")
 (define-mode-leader! 'scheme-mode "b" 'eval-buffer "eval buffer")

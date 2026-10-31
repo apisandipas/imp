@@ -45,6 +45,7 @@ use events::Event;
 /// which lets you edit them without rebuilding.
 const RUNTIME: &[(&str, &str)] = &[
     ("core.scm", include_str!("../../../runtime/core.scm")),
+    ("overlay.scm", include_str!("../../../runtime/overlay.scm")),
     ("fold.scm", include_str!("../../../runtime/fold.scm")),
     ("vim.scm", include_str!("../../../runtime/vim.scm")),
     ("help.scm", include_str!("../../../runtime/help.scm")),
@@ -94,6 +95,7 @@ const RUNTIME: &[(&str, &str)] = &[
     ("dired.scm", include_str!("../../../runtime/dired.scm")),
     ("project.scm", include_str!("../../../runtime/project.scm")),
     ("term.scm", include_str!("../../../runtime/term.scm")),
+    ("gofile.scm", include_str!("../../../runtime/gofile.scm")),
     ("claude.scm", include_str!("../../../runtime/claude.scm")),
     ("start.scm", include_str!("../../../runtime/start.scm")),
     ("history.scm", include_str!("../../../runtime/history.scm")),
@@ -147,6 +149,10 @@ pub(crate) const PACKAGES: &[(&str, &str)] = &[
     (
         "modus-themes",
         include_str!("../../../packages/modus-themes/modus-themes.scm"),
+    ),
+    (
+        "showkeys",
+        include_str!("../../../packages/showkeys/showkeys.scm"),
     ),
 ];
 

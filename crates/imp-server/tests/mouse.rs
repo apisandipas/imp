@@ -196,3 +196,22 @@ fn window_divider_width_is_in_the_clients_pixels() {
     s.set_cell_width(0);
     assert_eq!(s.frame().text_rows()[0], "ab    │ab");
 }
+
+#[test]
+fn a_click_waits_for_the_leader_and_closes_a_popup() {
+    let mut s = server("hello world\n");
+    s.eval("(set-option! 'which-key-delay 0)").unwrap();
+    // The leader takes keys and doesn't close on a click: the click is
+    // ignored.
+    type_keys(&mut s, " ");
+    click(&mut s, 6, 0);
+    assert_eq!(s.cursor(), 0);
+    assert_eq!(s.eval("(overlay-open? 'leader)").unwrap(), "#true");
+    type_keys(&mut s, "<esc>");
+    // A popup closes on a click, and the click moves the cursor.
+    s.eval("(show-popup! (list (list (list \"output\" \"\"))))")
+        .unwrap();
+    click(&mut s, 6, 0);
+    assert_eq!(s.eval("(overlay-open?)").unwrap(), "#false");
+    assert_eq!(s.cursor(), 6);
+}

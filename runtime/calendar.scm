@@ -264,11 +264,11 @@
 (define (date-redraw!)
   "Draws the calendar and the prompt with the date it would pick."
   (let* ([choice (date-choice)] [shown (if choice (car choice) *date-base*)])
-    (set-popup! (append (calendar-rows shown *date-today*)
-                        (list (list (list " ←→ day  ↑↓ week  PgUp PgDn month  . today   or type: fri  +3d  11-03  tom 3pm"
-                                          "popup.detail")))))
-    (set-popup-place! "bottom" 0 "")
-    (set-popup-selected! -1)
+    ;; No 'keys: the date prompt reads them.
+    (overlay-open! 'calendar
+                   (append (calendar-rows shown *date-today*)
+                           (list (list (list " ←→ day  ↑↓ week  PgUp PgDn month  . today   or type: fri  +3d  11-03  tom 3pm"
+                                             "popup.detail")))))
     (set-cmdline! (string-append *cmdline-prompt* *cmdline* "   "
                                  (if choice (date-timestamp (car choice) (cadr choice) #t) "(not a date)"))
                   (+ (string-length *cmdline-prompt*) *cmdline-pos*))))
@@ -293,8 +293,7 @@
 
 (define (date-close!)
   "Closes the calendar."
-  (set-popup! '())
-  (set-popup-selected! -1))
+  (overlay-close! 'calendar))
 
 (define (read-date prompt initial done)
   "Asks for a date with `prompt` and a calendar, starting at `initial` (a

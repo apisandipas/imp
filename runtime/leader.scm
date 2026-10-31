@@ -70,14 +70,14 @@
 (define (prefix-continuations state prefix)
   "The keys that can follow Vim prefix `prefix` in `state` ('normal or
    'visual), as sorted (key . label) pairs: each key bound after it in the
-   buffer's mode keymaps, the state's keymap, operators, motions and (in
-   visual) text objects. A key that is itself a prefix is +prefix; one
-   with no label has \"\"."
+   buffer's mode keymaps, the state's keymap, operators, motions, char
+   commands and (in visual) text objects, labelled as resolve-key says. A
+   key that is itself a prefix is +prefix; one with no label has \"\"."
   (let* ([n (string-length prefix)]
          [bound (apply append
                        (map hash-keys->list
                             (append (map keymap (*local-keymaps* state))
-                                    (list (keymap state) *operators* *motions*)
+                                    (list (keymap state) *operators* *motions* *char-commands*)
                                     (if (eq? state 'visual) (list *text-objects*) '()))))]
          [seen (hash)])
     (for-each
@@ -148,11 +148,6 @@
   "`text` padded with spaces on the left to `width` characters."
   (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
 
-(define (show-which-key-popup! lines title)
-  "Shows `lines` as the which-key popup, titled with the keys so far."
-  (set-popup! lines)
-  (set-popup-place! "bottom" 0 title))
-
 (define (leader-prompt)
   "The status-line prompt for the leader keys typed so far: \"SPC f \"."
   (string-append "SPC " (apply string-append (map (lambda (k) (string-append (key-label k) " "))
@@ -165,13 +160,24 @@
       '()
       (let ([k (first-key text)]) (cons k (split-keys (substring text (string-length k) (string-length text)))))))
 
+(define (leader-open!)
+  "Starts reading leader keys after *leader-keys*: the leader overlay
+   takes the keys, and shows which-key once its delay has passed."
+  (overlay-open! 'leader '()
+                 'keys (lambda (key) (leader-input! key) #t)
+                 'on-close (lambda ()
+                             (set! *leader-keys* "")
+                             (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))))
+  (show-which-key!))
+
 (define (leader-done!)
   "Ends the leader sequence: forgets its keys, stops reading keys
    for it and closes the which-key popup."
-  (set! *leader-keys* "")
-  (set! *key-interceptor* #f)
-  (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
-  (set-popup! '()))
+  (overlay-close! 'leader))
+
+(define (show-leader-which-key! keys)
+  "Shows the which-key popup for the leader keys `keys`."
+  (overlay-update! 'leader (which-key-lines keys) 'title (trim (leader-prompt))))
 
 (define (leader-back!)
   "Takes back the last leader key typed and shows the popup for the keys
@@ -183,7 +189,7 @@
           (set! *leader-keys* (apply string-append (reverse (cdr (reverse keys)))))
           (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
           (set-status! (leader-prompt))
-          (show-which-key-popup! (which-key-lines *leader-keys*) (trim (leader-prompt)))))))
+          (show-leader-which-key! *leader-keys*)))))
 
 (define (leader-input! key)
   "Handles `key`, typed after the leader: runs the command it completes,
@@ -224,31 +230,29 @@
   (set! *which-key-timer* #f)
   (let ([keys *leader-keys*])
     (if (<= (option 'which-key-delay) 0)
-        (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))
+        (show-leader-which-key! keys)
         (set! *which-key-timer*
               (run-after! (option 'which-key-delay)
                           (lambda ()
                             (set! *which-key-timer* #f)
                             ;; Only if still waiting on the same keys.
-                            (when (and (eq? *key-interceptor* leader-input!) (equal? *leader-keys* keys))
-                              (show-which-key-popup! (which-key-lines keys) (trim (leader-prompt)))))))))
+                            (when (and (overlay-open? 'leader) (equal? *leader-keys* keys))
+                              (show-leader-which-key! keys)))))))
   void)
 
 ;; Which-key for Vim's prefixes (vim.scm calls this through
 ;; *prefix-which-key*): the same popup and delay as the leader.
-(define *prefix-popup* #f)  ; the prefix whose popup is up, or #f
-
 (set! *prefix-which-key*
       (lambda (state title prefix)
         (when *which-key-timer* (cancel-timer! *which-key-timer*) (set! *which-key-timer* #f))
-        (when *prefix-popup* (set! *prefix-popup* #f) (set-popup! '()))
+        (overlay-close! 'prefix)
         (when (and prefix (pair? (prefix-continuations state prefix)))
+          ;; No 'keys: Vim reads the rest of the prefix itself.
           (let ([show! (lambda ()
-                         (set! *prefix-popup* prefix)
-                         (show-which-key-popup!
-                          (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e)))
-                                                (prefix-continuations state prefix)))
-                          title))])
+                         (overlay-open! 'prefix
+                                        (which-key-table (map (lambda (e) (cons (key-label (car e)) (cdr e)))
+                                                              (prefix-continuations state prefix)))
+                                        'title title))])
             (if (<= (option 'which-key-delay) 0)
                 (show!)
                 (set! *which-key-timer*
@@ -266,8 +270,7 @@
     "Start a leader sequence."
     (set! *leader-count* (and *count-given* count))
     (set! *leader-keys* "")
-    (set! *key-interceptor* leader-input!)
-    (show-which-key!)))
+    (leader-open!)))
 
 (define-key! 'normal " " 'leader)
 (define-key! 'visual " " 'leader)
