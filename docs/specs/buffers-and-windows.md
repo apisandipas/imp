@@ -15,7 +15,7 @@ anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runt
 - **Frames**: only changed rows are sent and redrawn.
 - **End-of-line text**: a buffer can have text drawn after the end of a line, two cells past its last char, in a face (`set-line-end-text!`, one per line, by line number; it doesn't follow edits). It isn't part of the text: the cursor can't go there, and it's cut at the window's edge. On a wrapped line it follows the last row; on a closed fold's line it isn't drawn.
 - **Footers**: a buffer can have footer lines, made of (text face) parts (`set-footer!`), pinned at the bottom of each window showing it, above its status line, however far the window scrolls. They take rows from the text, aren't part of it (the cursor can't go there, a click on them does nothing), and are cut to the window's width; a window with fewer than two rows of text beside them leaves them out.
-- **Special buffers**: generated buffers in `special-mode`, where `q` returns to where you were; `menu!` popups and `confirm!`; read-only buffers (`:set nomodifiable`).
+- **Special buffers**: generated buffers in `special-mode`, where `q` returns to where you were; `menu!` popups and `confirm!` ([[spec/overlays]]); read-only buffers (`:set nomodifiable`).
 
 ## Keys and options
 
