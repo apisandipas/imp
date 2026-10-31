@@ -49,7 +49,7 @@ An overlay is something that opens over the windows for a moment: the which-key 
 ### Names kept
 
 - `show-popup!`, `menu!` and `confirm!` keep their arguments and what they do, built on the owner.
-- `*key-interceptor*` stays: it is where a key goes first. Only the owner and snippet placeholders set it.
+- `*key-interceptor*` stays, for snippet placeholders: a key goes to the open overlay first, then to it, then on as usual. Only snippet placeholders set it.
 
 ## Keys and options
 

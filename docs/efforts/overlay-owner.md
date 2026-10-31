@@ -1,10 +1,10 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/overlays]]"]
 issue: https://github.com/apisandipas/imp/issues/123
 frozen:
-  docs/specs/overlays.md: d6ece2898591
+  docs/specs/overlays.md: 9d76655d90b7
 ---
 # Overlay owner
 
