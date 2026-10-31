@@ -2425,145 +2425,129 @@
       [(find-char-command key) => (lambda (c) (list 'char-command c #f #f))]
       [else #f])))
 
+(define (mode-key? b)
+  "Whether binding record `b` is one of the buffer's mode keys."
+  (and b (eq? (binding-record-kind b) 'mode-key)))
+
 (define (normal-key! key)
   "Handles `key` in normal or visual mode.
    Builds up counts, prefixes, registers and pending operators, then
-   runs the command, motion, operator or text object they make. Looks in
-   the buffer's mode keys before Vim's own. Afterwards keeps the cursor
-   on a char and updates the goal column."
+   runs the binding resolve-key gives for the key they make. A buffer's
+   mode key can take a digit, / or ? or a prefix from Vim. Afterwards
+   keeps the cursor on a char and updates the goal column."
   ;; The key after a prefix closes its which-key popup.
   (when *prefix* (*prefix-which-key* #f #f #f))
-  (cond
-    [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
-     (reset-pending!)]
-    [(and (member key '("<esc>" "C-c")) (not (eq? *mode* 'visual)))
-     (reset-pending!)]
+  (let* ([state (if (eq? *mode* 'visual) 'visual 'normal)]
+         ;; What the key alone runs, when it isn't the end of a prefix.
+         [alone (and (not *prefix*) (resolve-key state key *operator*))])
+    (cond
+      [(and (member key '("<esc>" "C-c")) (or *operator* *prefix* (not (equal? *count* ""))))
+       (reset-pending!)]
+      [(and (member key '("<esc>" "C-c")) (not (eq? *mode* 'visual)))
+       (reset-pending!)]
 
-    ;; Counts. A leading 0 is the motion, not a count, and a buffer's mode
-    ;; can bind digits (the start screen's recent files).
-    [(and (digit? key) (not *prefix*) (not (and (equal? key "0") (equal? *count* "")))
-          (not (and (equal? *count* "") (not *operator*)
-                    (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
-     (set! *count* (string-append *count* key))]
+      ;; Counts. A leading 0 is the motion, not a count, and a buffer's mode
+      ;; can bind digits (the start screen's recent files).
+      [(and (digit? key) (not *prefix*) (not (and (equal? key "0") (equal? *count* "")))
+            (not (and (equal? *count* "") (mode-key? alone))))
+       (set! *count* (string-append *count* key))]
 
-    ;; Search prompts. With an operator pending, the search is its motion.
-    ;; A buffer's mode can take / or ? over (? in the git status).
-    [(and (not *prefix*) (member key '("/" "?"))
-          (not (and (equal? *operator* "g?") (equal? key "?"))) ; g??
-          (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
-     (let ([op *operator*]
-           [count (* (count-value *operator-count*) (count-value *count*))])
-       (reset-pending!)
-       (start-search! (equal? key "/") op count))]
+      ;; Search prompts. With an operator pending, the search is its motion.
+      ;; A buffer's mode can take / or ? over (? in the git status).
+      [(and (not *prefix*) (member key '("/" "?"))
+            (not (and (equal? *operator* "g?") (equal? key "?"))) ; g??
+            (not (mode-key? alone)))
+       (let ([op *operator*]
+             [count (* (count-value *operator-count*) (count-value *count*))])
+         (reset-pending!)
+         (start-search! (equal? key "/") op count))]
 
-    ;; Prefix keys wait for the next key: `g`, `z`, char motions like `f`.
-    ;; A buffer's mode can take one over (q in special buffers).
-    [(and (not *prefix*) (prefix-key? key)
-          (not (and (not *operator*) (local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key))))
-     (set! *prefix* key)
-     ;; which-key for g, z, C-w ...; not for registers, char motions or
-     ;; an operator's motion.
-     (when (and (hash-contains? *prefix-keys* key) (not (equal? key "\"")) (not *operator*))
-       (*prefix-which-key* (if (eq? *mode* 'visual) 'visual 'normal) (string-append *count* key) key))]
-    [(and (or *operator* (eq? *mode* 'visual)) (not *prefix*) (member key '("i" "a")))
-     (set! *prefix* key)]
+      ;; Prefix keys wait for the next key: `g`, `z`, char motions like `f`,
+      ;; and i and a for a text object. A buffer's mode can take one over
+      ;; (q in special buffers).
+      [(and alone (eq? (binding-record-kind alone) 'prefix))
+       (set! *prefix* key)
+       ;; which-key for g, z, C-w ...; not for registers, char motions or
+       ;; an operator's motion.
+       (when (and (hash-contains? *prefix-keys* key) (not (equal? key "\"")) (not *operator*))
+         (*prefix-which-key* state (string-append *count* key) key))]
 
-    [else
-     (let* ([key (if *prefix* (string-append *prefix* key) key)]
-            [given (or (not (equal? *count* "")) (not (equal? *operator-count* "")))]
-            ;; 2d3w deletes six words: the two counts multiply.
-            [count (* (count-value *operator-count*) (count-value *count*))])
-       (set! *prefix* #f)
-       (set! *count-given* given)
-       (set! *register-just-set* #f)
-       (cond
-         ;; "x names the register for the command that follows.
-         [(and (= (string-length key) 2) (starts-with? key "\""))
-          (let ([c (string-ref key 1)])
-            (if (valid-register? c)
-                (begin (set! *register-prefix* c) (set! *register-just-set* #t))
-                (set-status! (string-append "invalid register " (string c)))))]
+      [else
+       (let* ([key (if *prefix* (string-append *prefix* key) key)]
+              [given (or (not (equal? *count* "")) (not (equal? *operator-count* "")))]
+              ;; 2d3w deletes six words: the two counts multiply.
+              [count (* (count-value *operator-count*) (count-value *count*))]
+              [b (if *prefix* (resolve-key state key *operator*) alone)]
+              [kind (and b (binding-record-kind b))]
+              [proc (and b (binding-record-proc b))])
+         (set! *prefix* #f)
+         (set! *count-given* given)
+         (set! *register-just-set* #f)
+         (cond
+           ;; "x names the register for the command that follows.
+           [(and (= (string-length key) 2) (starts-with? key "\""))
+            (let ([c (string-ref key 1)])
+              (if (valid-register? c)
+                  (begin (set! *register-prefix* c) (set! *register-just-set* #t))
+                  (set-status! (string-append "invalid register " (string c)))))]
 
-         ;; An operator is pending: this key is its motion, or the operator
-         ;; again for the linewise form (dd).
-         [*operator*
-          (let ([op *operator*])
-            (cond
-              [(find-motion key)
-               (let ([change (lambda (n) (run-operator! op key n))])
-                 (set! *operator* #f)
-                 (change count)
-                 (when (changing-operator? op) (record-change! change count)))]
-              [(hash-contains? *text-objects* key)
-               (let ([change (lambda (n) (run-text-object! op key n))])
-                 (set! *operator* #f)
-                 (change count)
-                 (when (changing-operator? op) (record-change! change count)))]
-              ;; dd, and for two-key operators both gugu and guu.
-              [(or (equal? key op)
-                   (and (= (string-length op) 2) (equal? key (substring op 1 2))))
-               (let ([change (lambda (n) (run-linewise-operator! op n))])
-                 (set! *operator* #f)
-                 (change count)
-                 (when (changing-operator? op) (record-change! change count)))]
-              [else (set-status! (string-append "no motion " key))]))
-          (set! *count* "")
-          (set! *operator-count* "")]
+           ;; An operator is pending: this key is its motion, a text object,
+           ;; or the operator again for the linewise form (dd).
+           [*operator*
+            (let* ([op *operator*]
+                   [change (case kind
+                             [(motion) (lambda (n) (run-operator! op key n))]
+                             [(text-object) (lambda (n) (run-text-object! op key n))]
+                             [(operator-again) proc]
+                             [else #f])])
+              (if change
+                  (begin
+                    (set! *operator* #f)
+                    (change count)
+                    (when (changing-operator? op) (record-change! change count)))
+                  (set-status! (string-append "no motion " key))))
+            (set! *count* "")
+            (set! *operator-count* "")]
 
-         ;; A buffer's mode keys come before Vim's own, so special buffers
-         ;; can bind operators and motions (c, d, l in git status).
-         [(local-key-proc (if (eq? *mode* 'visual) 'visual 'normal) key)
-          => (lambda (proc) (set! *count* "") (proc count))]
+           [(and (eq? kind 'operator) (eq? *mode* 'visual))
+            (visual-operator! key #f)
+            (set! *count* "")]
 
-         [(and (eq? *mode* 'visual) (lookup-key 'visual key))
-          (set! *count* "")
-          ((lookup-key 'visual key) count)]
+           [(eq? kind 'operator)
+            (set! *operator* key)
+            (set! *operator-count* *count*)
+            (set! *count* "")]
 
-         [(and (eq? *mode* 'visual) (hash-contains? *operators* key))
-          (visual-operator! key #f)
-          (set! *count* "")]
+           [(eq? kind 'text-object)
+            (visual-text-object! key count)
+            (set! *count* "")]
 
-         [(and (eq? *mode* 'visual) (hash-contains? *text-objects* key))
-          (visual-text-object! key count)
-          (set! *count* "")]
+           [(eq? kind 'motion)
+            (let ([target (proc (cursor) count)])
+              (cond
+                [(not target) (set! *command-failed* #t)]
+                [else
+                 (when (jump-motion? key) (record-jump!))
+                 (when (fold-opening-motion? key) (set! *fold-open-wanted* #t))
+                 (when (eq? *visual* 'block)
+                   (cond [(equal? key "$") (set! *block-eol* #t)]
+                         [(vertical-motion? key) #t]
+                         [else (set! *block-eol* #f)]))
+                 (set-cursor! target)]))
+            (set! *count* "")]
 
-         [(and (eq? *mode* 'visual) (find-char-command key))
-          => (lambda (cmd) (set! *count* "") (cmd count))]
+           ;; A mode key, a visual or normal key, or a char command. The
+           ;; count is cleared before it runs, so keys it feeds itself (a
+           ;; macro) start fresh.
+           [(memq kind '(mode-key visual-key normal-key char-command))
+            (set! *count* "")
+            (proc count)]
 
-         [(hash-contains? *operators* key)
-          (set! *operator* key)
-          (set! *operator-count* *count*)
-          (set! *count* "")]
-
-         [(find-motion key)
-          => (lambda (m)
-               (let ([target ((motion-proc m) (cursor) count)])
-                 (cond
-                   [(not target) (set! *command-failed* #t)]
-                   [else
-                    (when (jump-motion? key) (record-jump!))
-                    (when (fold-opening-motion? key) (set! *fold-open-wanted* #t))
-                    (when (eq? *visual* 'block)
-                      (cond [(equal? key "$") (set! *block-eol* #t)]
-                            [(vertical-motion? key) #t]
-                            [else (set! *block-eol* #f)]))
-                    (set-cursor! target)]))
-               (set! *count* ""))]
-
-         ;; The count is cleared before a command runs, so keys it feeds itself
-         ;; (a macro) start fresh.
-         [(and (not (eq? *mode* 'visual)) (lookup-key 'normal key))
-          (set! *count* "")
-          ((lookup-key 'normal key) count)]
-
-         [(and (not (eq? *mode* 'visual)) (find-char-command key))
-          => (lambda (cmd) (set! *count* "") (cmd count))]
-
-         [else
-          (set! *count* "")
-          (set! *command-failed* #t)
-          (set-status! (string-append "no binding for " key))])
-       (set! *count-given* #f))])
+           [else
+            (set! *count* "")
+            (set! *command-failed* #t)
+            (set-status! (string-append "no binding for " key))])
+         (set! *count-given* #f))]))
 
   ;; The register named with "x lasts for one command.
   (unless (or *operator* *prefix* *register-just-set* (not (equal? *count* "")))
