@@ -3112,7 +3112,7 @@
   (when (pair? *wild*)
     (set! *wild* '())
     (set! *wild-index* -1)
-    (set-popup! '())))
+    (overlay-close! 'wildmenu)))
 
 (define (common-prefix a b)
   "The longest start that strings `a` and `b` share."
@@ -3211,8 +3211,10 @@
                      (list (list (pad-right (list-ref labels i) width)
                                  (if (= i *wild-index*) "popup-selected" "popup")))
                      '()))])
-    ;; Not show-popup!: keys go on to the command line, not to closing it.
-    (set-popup!
+    ;; No 'keys: they go on to the command line, not to closing it. It
+    ;; pages through the candidates itself, so it has no selected line.
+    (overlay-open!
+     'wildmenu
      (append
       (map (lambda (r)
              (cons " " (apply append (map (lambda (c) (cell (+ first (* r columns) c))) (range 0 columns)))))

@@ -727,8 +727,7 @@
     (set! *cmd-open* #f)
     (set! *cmd-hits* '())
     (set! *cmd-index* -1)
-    (set-popup! '())
-    (set-popup-selected! -1)))
+    (overlay-close! 'cmdline-menu)))
 
 (define (cmd-refresh! manual?)
   "Fills the command line's menu for what is typed before the cursor, or
@@ -751,24 +750,28 @@
               (cmd-close!)
               (begin (set! *cmd-open* #t) (cmd-draw!)))))))
 
-(define (cmd-draw!)
-  "Draws the command line's menu above the line, scrolled to the one
-   chosen: a path's last part, then its doc dimmed."
-  (let* ([n (length *cmd-hits*)] [rows (min 10 n)]
-         [i (max *cmd-index* 0)]
-         [top (max 0 (min (- i (- rows 1)) (- n rows)))]
-         [shown (take (list-tail *cmd-hits* top) rows)]
+(define (cmd-rows-shown top rows)
+  "The command line menu's rows from hit `top`, `rows` of them: a path's
+   last part, then its doc dimmed."
+  (let* ([shown (take (list-tail *cmd-hits* top) (min rows (- (length *cmd-hits*) top)))]
          [label (lambda (k) (wild-label (vector-ref *cmd-labels* k)))]
          [width (min 40 (apply max (cons 1 (map (lambda (k) (string-length (label k))) shown))))]
          [icon (lambda (k) (*menu-icon* (if (member *cmdline-prompt* '("/" "?")) 'words 'cmdline)
                                         (list (vector-ref *cmd-labels* k) "" "" 0 #f)))])
-    (set-popup-place! "bottom" 0 "")
-    (set-popup! (map (lambda (k)
-                       (let ([detail (vector-ref *cmd-details* k)] [ic (icon k)])
-                         (list (list (string-append " " (if ic (string-append ic " ") "") (pad-right (label k) width)) "")
-                               (list (if (equal? detail "") "" (string-append "  " (clip detail 60))) "popup.detail"))))
-                     shown))
-    (set-popup-selected! (if (< *cmd-index* 0) -1 (- *cmd-index* top)))))
+    (map (lambda (k)
+           (let ([detail (vector-ref *cmd-details* k)] [ic (icon k)])
+             (list (list (string-append " " (if ic (string-append ic " ") "") (pad-right (label k) width)) "")
+                   (list (if (equal? detail "") "" (string-append "  " (clip detail 60))) "popup.detail"))))
+         shown)))
+
+(define (cmd-draw!)
+  "Draws the command line's menu above the line, scrolled to the one
+   chosen."
+  (let ([selected (and (>= *cmd-index* 0) *cmd-index*)] [n (length *cmd-hits*)])
+    ;; No 'keys: the command line reads them.
+    (if (overlay-open? 'cmdline-menu)
+        (overlay-update! 'cmdline-menu cmd-rows-shown 'count n 'selected selected)
+        (overlay-open! 'cmdline-menu cmd-rows-shown 'count n 'selected selected))))
 
 (define (cmd-put! text)
   "Puts `text` in the line in place of what the menu completes."
