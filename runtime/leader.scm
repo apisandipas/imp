@@ -148,11 +148,6 @@
   "`text` padded with spaces on the left to `width` characters."
   (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
 
-(define (show-which-key-popup! lines title)
-  "Shows `lines` as the which-key popup, titled with the keys so far."
-  (set-popup! lines)
-  (set-popup-place! "bottom" 0 title))
-
 (define (leader-prompt)
   "The status-line prompt for the leader keys typed so far: \"SPC f \"."
   (string-append "SPC " (apply string-append (map (lambda (k) (string-append (key-label k) " "))

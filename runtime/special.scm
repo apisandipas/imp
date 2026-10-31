@@ -220,23 +220,15 @@
 ;;;
 ;;;   (menu! "Commit" (list (list "c" "commit" commit!) (list "a" "amend" amend!)))
 
-(define *menu-entries* '())
-
-(define (menu-done!)
-  "Closes the menu: its popup goes and keys work as usual again."
-  (set! *key-interceptor* #f)
-  (set! *menu-entries* '())
-  (set-popup! '()))
-
-(define (menu-input! key)
-  "Runs the menu entry for `key`, the key typed while a menu is open.
-   The first key of a longer entry (g of gr) waits for the rest. Esc,
-   C-g, C-c and q just close the menu; any other key says it is
+(define (menu-input! entries key)
+  "Runs the entry of `entries` for `key`, the key typed while a menu is
+   open. The first key of a longer entry (g of gr) waits for the rest.
+   Esc, C-g, C-c and q just close the menu; any other key says it is
    undefined."
-  (let ([entry (list-find (lambda (e) (equal? (car e) key)) *menu-entries*)]
+  (let ([entry (list-find (lambda (e) (equal? (car e) key)) entries)]
         [longer (filter (lambda (e) (let ([ks (split-keys (car e))]) (and (> (length ks) 1) (equal? (car ks) key))))
-                        *menu-entries*)])
-    (menu-done!)
+                        entries)])
+    (overlay-close! 'menu)
     (cond [entry (message "") ((caddr entry))]
           [(pair? longer)
            (menu! (key-label key)
@@ -251,23 +243,25 @@
 
      (menu! \"Commit\" (list (list \"c\" \"commit\" commit!)
                            (list \"a\" \"amend\" amend!)))"
-  (set! *menu-entries* entries)
-  (set! *key-interceptor* menu-input!)
-  (show-which-key-popup! (which-key-table (map (lambda (e) (cons (key-label (car e)) (cadr e))) entries))
-                         title))
+  (overlay-open! 'menu (which-key-table (map (lambda (e) (cons (key-label (car e)) (cadr e))) entries))
+                 'title title
+                 'keys (lambda (key) (menu-input! entries key) #t)))
 
 (define (ask prompt default done)
   "Asks for a value on the command line, starting from `default`."
   (open-cmdline! prompt default (lambda (text) (unless (equal? text "") (done text))) #f #f))
 
-(define (confirm! question thunk)
-  "Asks a yes-or-no question on the message line; `thunk` runs on y."
+(define (confirm! question thunk . lines)
+  "Asks a yes-or-no question on the message line; `thunk` runs on y.
+   Popup lines given after `thunk` show above the question, and close
+   with it."
+  (overlay-open! 'confirm (if (pair? lines) (car lines) '())
+                 'keys (lambda (key)
+                         (overlay-close! 'confirm)
+                         (when (equal? key "y") (thunk))
+                         #t)
+                 'on-close (lambda () (message "")))
   (message (string-append question " (y or n)"))
-  (set! *key-interceptor*
-        (lambda (key)
-          (set! *key-interceptor* #f)
-          (message "")
-          (when (equal? key "y") (thunk))))
   void)
 
 ;; Here rather than with the other buffer commands in leader.scm, as it

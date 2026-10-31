@@ -371,7 +371,7 @@
         (set! *describing-keys* keys)
         (begin
           (set! *describing-keys* #f)
-          (set! *key-interceptor* #f)
+          (overlay-close! 'describe-key)
           (show-key-description! keys))))
   void)
 
@@ -385,7 +385,7 @@
   (lambda (count)
     "Describe what the next keys do (Emacs's C-h k)."
     (set! *describing-keys* "")
-    (set! *key-interceptor* describe-key-input!)
+    (overlay-open! 'describe-key '() 'keys (lambda (key) (describe-key-input! key) #t))
     (message "Describe key: ")))
 
 (define-command! 'apropos

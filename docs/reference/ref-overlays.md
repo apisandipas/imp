@@ -38,6 +38,8 @@ For a menu of keys, use `menu!`. Each entry is a key, a label and what to run:
 (confirm! "Say hello?" (lambda () (message "hello")))
 ```
 
+Lines given after it show in a popup above the question, and close with it.
+
 ## Overlays of your own
 
 `overlay-open!` opens an overlay with a name, its lines, and options given as pairs:

@@ -301,3 +301,20 @@ fn going_between_directories_reuses_the_buffer_and_q_closes_it() {
     type_keys(&mut s, ":Explore<ret>gg<ret>");
     assert_eq!(dired_buffers(&mut s), 2);
 }
+
+#[test]
+fn esc_at_w_closes_the_changes_and_the_question_together() {
+    let dir = tree("dired-esc");
+    let mut s = browse(&dir);
+    type_keys(&mut s, "jdd:w<ret>");
+    let shown = s.frame().text_rows().join("\n");
+    assert!(
+        shown.contains("delete  a.txt") && shown.contains("(y or n)"),
+        "{shown}"
+    );
+    assert_eq!(s.eval("(overlay-open? 'confirm)").unwrap(), "#true");
+    type_keys(&mut s, "<esc>");
+    assert_eq!(s.eval("(overlay-open?)").unwrap(), "#false");
+    assert!(!s.frame().text_rows().join("\n").contains("(y or n)"));
+    assert!(dir.join("a.txt").exists());
+}
