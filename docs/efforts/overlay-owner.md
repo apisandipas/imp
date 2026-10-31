@@ -26,7 +26,7 @@ One Scheme owner for the popup slot and the key interceptor, with every overlay 
   - Docs: the anchors go on the spec; `runtime/CONTEXT.md` gets the load order and `*key-interceptor*` as low-level; a new `ref-overlays.md` page; the look and buffers-and-windows pages re-stamped.
 - [x] Which-key: the leader and `SPC m`, Vim prefixes, Emacs prefixes and the file tree's help go through the owner. Tests: a late `show-popup!` doesn't take the leader's popup; the file tree's `?` shows its help again after another overlay closed it.
 - [x] Menus and prompts: `menu!`, `confirm!`, describe-key and dired's `:w` go through the owner. Test: `<esc>` at dired's `:w` closes the popup and the y/n question together.
-- [ ] Insert completion: the insert menu and the C-x keys go through the owner and its scrolling. Test: the menu opening during a snippet leaves the snippet's keys working.
+- [x] Insert completion: the insert menu and the C-x keys go through the owner and its scrolling. Test: the menu opening during a snippet leaves the snippet's keys working.
 - [ ] Command-line overlays: the command-line menu, the wildmenu, completing-read and the calendar give the owner their rows and scroll through it. Test: the command-line menu keeps the selected line in view in a short window.
 - [ ] Mouse and the rest:
   - Clicks follow `'click-closes`.

@@ -113,3 +113,17 @@ fn vscode_snippet_files() {
     type_keys(&mut s, "<C-y>1<tab>");
     assert_eq!(s.text(), "print(1)\n");
 }
+
+#[test]
+fn the_menu_opening_during_a_snippet_leaves_its_keys_working() {
+    let mut s = server("alpha\n");
+    type_keys(&mut s, "Go");
+    s.eval(r#"(snippet-insert! (cursor) (cursor) "al${1:pha} end")"#)
+        .unwrap();
+    // The placeholder is selected, after "al"; the menu opens over it.
+    s.eval("(complete-with! 'words #t)").unwrap();
+    assert_eq!(s.eval("(overlay-open? 'completion)").unwrap(), "#true");
+    // A typed char still replaces the placeholder.
+    type_keys(&mut s, "z");
+    assert_eq!(s.text(), "alpha\nalz end\n");
+}
