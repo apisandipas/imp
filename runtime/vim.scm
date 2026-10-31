@@ -2285,31 +2285,10 @@
 
 (define (binding-label state key)
   "The which-key label of `key` in `state` ('normal or 'visual): the label
-   it was bound with, else the name of the command it runs, else #f.
-   Looks where normal-key! does, in the same order, so the binding that
-   would run is the one described."
-  (let ([keymap-label
-         (lambda (table)
-           (let ([binding (hash-try-get (keymap table) key)])
-             (and binding
-                  (list (or (binding-label-in table key)
-                            (and (symbol? binding) (symbol->string binding)))))))]
-        [table-label
-         (lambda (table found?)
-           (and found? (list (binding-label-in table key))))])
-    (let loop ([lookups
-                (append
-                 (map (lambda (m) (lambda () (keymap-label m))) (*local-keymaps* state))
-                 (if (eq? state 'visual)
-                     (list (lambda () (keymap-label 'visual))
-                           (lambda () (table-label 'operator (hash-contains? *operators* key)))
-                           (lambda () (table-label 'motion (find-motion key))))
-                     (list (lambda () (table-label 'operator (hash-contains? *operators* key)))
-                           (lambda () (table-label 'motion (find-motion key)))
-                           (lambda () (keymap-label 'normal)))))])
-      (cond [(null? lookups) #f]
-            [((car lookups)) => car]
-            [else (loop (cdr lookups))]))))
+   it was bound with, else the name of the command it runs, else #f. It is
+   the label of the binding resolve-key says would run."
+  (let ([b (resolve-key state key)])
+    (and b (binding-record-label b))))
 
 ;; Keys that start a longer key: (define-prefix! "z") makes "zz", "zt" ...
 ;; reachable. Char motions and char commands are prefixes automatically.

@@ -145,6 +145,29 @@ fn keys_have_which_key_labels() {
 }
 
 #[test]
+fn a_label_is_the_binding_that_would_run() {
+    let mut s = server("");
+    s.eval(
+        r#"(define-motion! "gZ" 'exclusive (lambda (from n) from) "a motion")
+           (define-text-object! "gZ" (lambda (from n) #f))"#,
+    )
+    .unwrap();
+    let label = |s: &mut imp_server::Server, state: &str| {
+        s.eval(&format!("(binding-label '{state} \"gZ\")")).unwrap()
+    };
+    // In visual state a text object runs before a motion, so the motion's
+    // label isn't shown; in normal state the motion runs.
+    assert_eq!(label(&mut s, "visual"), "#false");
+    assert_eq!(label(&mut s, "normal"), "\"a motion\"");
+    // In git status, d is the mode's own.
+    s.eval("(set-major-mode! 'git-status-mode)").unwrap();
+    assert_eq!(
+        s.eval("(binding-label 'normal \"d\")").unwrap(),
+        "\"diff menu\""
+    );
+}
+
+#[test]
 fn keys_after_a_vim_prefix() {
     let mut s = server("");
     s.eval(
