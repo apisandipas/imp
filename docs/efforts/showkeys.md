@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/showkeys]]"]
 issue: https://github.com/apisandipas/imp/issues/118
 frozen:

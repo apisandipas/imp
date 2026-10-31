@@ -138,3 +138,39 @@ fn where_it_goes() {
     let rows = s.frame().text_rows();
     assert!(rows[1].starts_with("t│ j │"), "{:?}", rows[1]);
 }
+
+#[test]
+fn its_faces_or_the_floating_boxs() {
+    let mut s = screen();
+    s.eval(r#"(set-face! "float.border" "fg=#ff0000") (set-face! "float" "fg=#00ff00")"#)
+        .unwrap();
+    s.keys(&["j"]);
+    let style = |s: &mut imp_server::Server, text: &str| {
+        let f = s.frame();
+        f.rows
+            .iter()
+            .flatten()
+            .find(|span| span.text.contains(text))
+            .unwrap_or_else(|| panic!("no {text:?}"))
+            .style
+    };
+    // Unset, the keys and border are the floating box's.
+    assert_eq!(
+        style(&mut s, "j").fg,
+        Some(imp_core::Color::Rgb(0, 0xff, 0))
+    );
+    assert_eq!(
+        style(&mut s, "╭").fg,
+        Some(imp_core::Color::Rgb(0xff, 0, 0))
+    );
+    s.eval(r#"(set-face! "showkeys" "bold") (set-face! "showkeys.border" "fg=#0000ff")"#)
+        .unwrap();
+    s.keys(&["k"]);
+    let keys = style(&mut s, "j k");
+    assert!(keys.bold);
+    assert_eq!(keys.fg, Some(imp_core::Color::Rgb(0, 0xff, 0)));
+    assert_eq!(
+        style(&mut s, "╭").fg,
+        Some(imp_core::Color::Rgb(0, 0, 0xff))
+    );
+}

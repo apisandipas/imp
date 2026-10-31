@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/118
+anchors: [packages/showkeys/showkeys.scm, crates/imp-server/tests/showkeys.rs, crates/imp-server/tests/float.rs]
 summary: "The showkeys package shows the last few keys you pressed in a small box in a corner of the screen, for screencasts, on a floating box the core draws over the windows."
 ---
 # showkeys
