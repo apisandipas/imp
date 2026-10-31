@@ -31,3 +31,4 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 ## Notes
 
 - Dot-repeat of an insert replays the typed keys, as Vim does. A paste is recorded between `<paste-start>` and `<paste-end>`, so replaying it doesn't auto-pair.
+- **Key resolution** is deciding which binding a complete key runs in normal or visual state, by the order in [[spec/leader-and-modes]]. `resolve-key` in `vim.scm` is the one place it is decided. It gives a **binding record**: the binding's kind, the procedure it runs, its which-key label and its command's name. Dispatch, which-key, describe-key and `:map` read the record, so none of them looks keys up in an order of its own.

@@ -2327,11 +2327,16 @@
    when no operator is pending. A prefix repeating an operator's last key
    isn't one, so gzz is the linewise gz though z is a prefix (zffx is
    still zf to the x: f is a char motion)."
+  (prefix-key-after? key *operator*))
+
+(define (prefix-key-after? key operator)
+  "Whether `key` waits for another key with `operator` pending (#f for
+   none), as prefix-key? says."
   (or (and (hash-contains? *prefix-keys* key)
-           (not (and *operator* (= (string-length *operator*) 2)
-                     (equal? key (substring *operator* 1 2)))))
+           (not (and operator (= (string-length operator) 2)
+                     (equal? key (substring operator 1 2)))))
       (hash-contains? *char-motions* key)
-      (and (not *operator*) (hash-contains? *char-commands* key))))
+      (and (not operator) (hash-contains? *char-commands* key))))
 
 (define (digit? key)
   "Whether `key` is a single digit key, 0 to 9."
@@ -2345,6 +2350,80 @@
 (define (count-value s)
   "The count typed as the digits `s`, 1 if none were typed."
   (if (equal? s "") 1 (string->number s)))
+
+;;; Key resolution
+;;;
+;;; Which binding a complete key runs in normal or visual state, in one
+;;; place, so dispatch, which-key, describe-key and :map agree. A binding
+;;; record is (kind proc label command): kind is mode-key, visual-key,
+;;; operator, text-object, motion, normal-key, char-command,
+;;; operator-again or prefix; proc is what it runs (an operator's or
+;;; motion's own procedure, #f for a prefix); label is its which-key
+;;; label or #f; command is the name of the command it runs, or #f.
+
+(define (binding-record-kind b) "The kind of binding record `b`." (car b))
+(define (binding-record-proc b) "What binding record `b` runs." (cadr b))
+(define (binding-record-label b) "The which-key label of binding record `b`, or #f." (caddr b))
+(define (binding-record-command b)
+  "The name of the command binding record `b` runs, as a string, or #f."
+  (list-ref b 3))
+
+(define (keymap-binding-record kind table key binding)
+  "The binding record for `binding`, bound to `key` in keymap `table`."
+  (let ([command (and (symbol? binding) (symbol->string binding))])
+    (list kind
+          (if (symbol? binding) (command-proc binding) binding)
+          (or (binding-label-in table key) command)
+          command)))
+
+(define (mode-key-record state key)
+  "The binding record of `key` in the buffer's mode keys for `state`, or #f."
+  (let loop ([maps (*local-keymaps* state)])
+    (cond [(null? maps) #f]
+          [(hash-try-get (keymap (car maps)) key)
+           => (lambda (b) (keymap-binding-record 'mode-key (car maps) key b))]
+          [else (loop (cdr maps))])))
+
+(define (resolve-key state key . operator)
+  "The binding complete key `key` runs in `state` ('normal or 'visual),
+   with the operator given after it pending, as a binding record, or #f
+   when it does nothing. This is the order normal-key! runs keys in:
+     normal  mode key, operator, motion, normal key, char command
+     visual  mode key, visual key, operator, text object, char command, motion
+     with an operator pending, only a motion, a text object or the
+     operator again (dd, gUU), and no mode keys.
+   A key that waits for another (g, z, f, and i or a after an operator
+   or in visual state) is a prefix, unless a mode key takes it."
+  (let ([op (and (pair? operator) (car operator))]
+        [visual? (eq? state 'visual)]
+        [label (lambda (table) (binding-label-in table key))])
+    (cond
+      ;; i and a start a text object before any mode key looks at them.
+      [(and (or op visual?) (member key '("i" "a"))) (list 'prefix #f #f #f)]
+      [(and (not op) (mode-key-record state key)) => (lambda (b) b)]
+      [(prefix-key-after? key op) (list 'prefix #f #f #f)]
+      [op
+       (cond
+         [(find-motion key) => (lambda (m) (list 'motion (motion-proc m) (label 'motion) #f))]
+         [(hash-try-get *text-objects* key)
+          => (lambda (t) (list 'text-object t #f #f))]
+         [(or (equal? key op) (and (= (string-length op) 2) (equal? key (substring op 1 2))))
+          (list 'operator-again (lambda (n) (run-linewise-operator! op n)) (label 'operator) #f)]
+         [else #f])]
+      [(and visual? (hash-try-get (keymap 'visual) key))
+       => (lambda (b) (keymap-binding-record 'visual-key 'visual key b))]
+      [(hash-try-get *operators* key)
+       => (lambda (o) (list 'operator o (label 'operator) #f))]
+      [(and visual? (hash-try-get *text-objects* key))
+       => (lambda (t) (list 'text-object t #f #f))]
+      [(and visual? (find-char-command key))
+       => (lambda (c) (list 'char-command c #f #f))]
+      [(find-motion key) => (lambda (m) (list 'motion (motion-proc m) (label 'motion) #f))]
+      [visual? #f]
+      [(hash-try-get (keymap 'normal) key)
+       => (lambda (b) (keymap-binding-record 'normal-key 'normal key b))]
+      [(find-char-command key) => (lambda (c) (list 'char-command c #f #f))]
+      [else #f])))
 
 (define (normal-key! key)
   "Handles `key` in normal or visual mode.
