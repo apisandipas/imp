@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/leader-and-modes]]"
 frozen:
-  docs/specs/leader-and-modes.md: 31edc02513df
+  docs/specs/leader-and-modes.md: 039e08ed9d0b
 ---
 # Leader and modes
 
@@ -14,17 +14,32 @@ Press space in normal or visual state to reach most of imp's commands, with a po
 
 | Keys | Group |
 |---|---|
-| `SPC f` | Files |
+| `SPC a` | Claude Code |
 | `SPC b` | Buffers |
+| `SPC c` | Code: language server actions |
+| `SPC d` | Debugging |
 | `SPC e` | Evaluating Scheme |
+| `SPC f` | Files |
+| `SPC g` | Git |
 | `SPC h` | Help |
+| `SPC o` | Org and terminals; `SPC o a` is the Org agenda |
+| `SPC p` | Projects |
+| `SPC q` | Quit |
 | `SPC s` | Search |
 | `SPC t` | Toggles |
 | `SPC w` | Windows |
-| `SPC q` | Quit |
 | `SPC m` | The current major mode's own keys |
 
 For example, `SPC f f` finds a file and `SPC w v` splits the window to the right.
+
+A few keys work straight after `SPC`:
+
+| Keys | What it does |
+|---|---|
+| `SPC SPC` or `SPC .` | Find a file |
+| `SPC ,` | Switch buffer |
+| `SPC :` | Run a command by name, as `M-x` does |
+| ``SPC ` `` | Go back to the last buffer |
 
 ## The which-key popup
 

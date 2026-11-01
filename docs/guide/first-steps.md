@@ -1,3 +1,17 @@
+---
+type: Guide
+specs: ["[[spec/command-line]]", "[[spec/start-screen]]", "[[spec/vim]]", "[[spec/emacs-state]]", "[[spec/leader-and-modes]]", "[[spec/commands]]", "[[spec/live-scheme-and-help]]", "[[spec/lsp]]", "[[spec/git]]"]
+frozen:
+  docs/specs/command-line.md: 552dffb88851
+  docs/specs/start-screen.md: 3a63b6f3dc40
+  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/emacs-state.md: b74c1fe8672a
+  docs/specs/leader-and-modes.md: 039e08ed9d0b
+  docs/specs/commands.md: 31bb6b804788
+  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/lsp.md: 521f968e45ec
+  docs/specs/git.md: 784db8c1c823
+---
 # Install and first steps
 
 ## Install
@@ -9,7 +23,7 @@ tar xzf imp-*.tar.gz
 install -m 755 imp-*/imp ~/.local/bin/
 ```
 
-On macOS, clear the download quarantine first: `xattr -d com.apple.quarantine ~/.local/bin/imp`.
+On macOS, a downloaded binary is quarantined. Once it's installed, clear that before you run it: `xattr -d com.apple.quarantine ~/.local/bin/imp`.
 
 To build from source you need [Rust](https://rustup.rs) and a C compiler:
 
@@ -68,9 +82,13 @@ Press `SPC` in normal state and a menu shows what comes next. Each letter opens 
 | `SPC s` | Search: `SPC s p` searches the project |
 | `SPC g` | Git: `SPC g g` opens the git status |
 | `SPC c` | Code: language server actions |
-| `SPC o` | Org and terminals |
+| `SPC d` | Debugging |
+| `SPC o` | Org and terminals: `SPC o t` toggles a terminal, `SPC o a` the agenda |
+| `SPC a` | Claude Code: `SPC a a` opens it |
+| `SPC e` | Evaluating Scheme: `SPC e b` the buffer |
 | `SPC h` | Help |
 | `SPC t` | Toggles |
+| `SPC q` | Quit: `SPC q q` quits imp |
 
 `SPC SPC` finds a file. You don't need to learn these by heart: the menu always shows them. When you pause after `g`, `z`, `[`, `]` or `C-w`, imp shows the keys that can follow those too. See [Leader and modes](ref-leader-and-modes.md).
 

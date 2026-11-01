@@ -17,6 +17,7 @@ The website gets a documentation section for people using imp, not working on it
   - **Configuring init.scm:** options, keys, commands, hooks and themes, and redefining things while imp runs.
   - **Packages:** the bundled opt-in packages, loading them with `use-package!`, and writing your own.
   - **Coming from Emacs or Vim:** what carries over, Emacs state, and where imp differs.
+  - Each guide is a lore note of type Guide, frozen against the specs whose keys and behaviour it summarises (`specs:` in its frontmatter), so `lore check` and `tools/site-docs.py --check` fail when one of those specs changes. The guide is then read again against the spec, fixed if need be, and `--stamp-guide NAME` records the new versions.
 - **Reference:** one page per area, in `docs/reference/NAME.md`, written in plain English from the spec `docs/specs/NAME.md` by the `docs-page` skill ([[0018-user-reference-pages-are-written-from-the-specs-and-checked]]). Every spec but this one has a page. The sidebar groups them by area: editing, files and windows, code, git and Org, and extending imp.
   - A page is for someone using imp: short sentences, one idea per paragraph, sub-headings by task ("Folding headings", "Dates"), and tables for keys and options. It says what to press and what happens, not how imp does it.
   - What the area can't do yet, from the spec's Known gaps, shows as a notice at the top of the page ("Not yet in imp"), each gap with its issue link, so a user knows what is missing before reading on (the Org agenda's, for one).

@@ -85,14 +85,20 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
 `init.scm` the options `font`, `font-size`, `window-padding` (pixels) and
 `background-opacity` (0 to 1) set the window; in a terminal,
 `terminal-background` off lets the terminal's own background show.
+`imp --help` lists every flag.
+
+**[The docs](https://apisandipas.github.io/imp/docs/)** have guides for
+getting started and a reference page for each part of imp; their sources
+are [`docs/guide`](docs/guide) and [`docs/reference`](docs/reference).
 
 - **Vim.** Motions, operators, text objects, counts, `.`, registers, macros,
   marks, visual modes, search and `:s`, `:g`, folds, splits and buffers,
   matched against real Vim's behavior. A pause after `g`, `z`, `[`, `]` or
   `C-w` shows the keys that can follow.
 - **Space leader.** `SPC` shows what follows it: `f` files, `b` buffers, `w`
-  windows, `p` projects, `s` search, `g` git, `c` code, `o` org and
-  terminals, `h` help, `t` toggles. `M-x` runs any command by name.
+  windows, `p` projects, `s` search, `g` git, `c` code, `d` debug, `o` org
+  and terminals, `a` Claude Code, `e` eval, `h` help, `t` toggles, `q`
+  quit. `M-x` runs any command by name.
 - **Emacs keys.** `C-z` switches to an Emacs state (`C-x C-f`, `C-x C-s` and
   friends) and back.
 - **Pairs.** In insert mode a bracket or quote types its closer too, and
@@ -129,7 +135,7 @@ FILE...` opens files, `imp DIR` a file browser. In the window, `C-=` and
   (`main.rs:42`), `C-w f` in a split; imports without an ending and
   `tsconfig.json` aliases (`@/components/...`) resolve in TypeScript and
   JavaScript.
-- **Packages that come with it.** A Magit-style git interface (`SPC g g`),
+- **Built in.** A Magit-style git interface (`SPC g g`),
   Org outlines, TODOs, tables, clocking and capture (templates, a capture
   window, `C-c C-c` to file, refiling, archiving), Org's agenda (day to
   year views, TODO lists, tag matches, search, custom views, a time grid,
@@ -193,6 +199,13 @@ Packages load from `~/.config/imp/packages`, or from git with
 
 `M-x list-packages` lists what's loaded and what else comes with imp.
 
+There is also an optional declarative `~/.config/imp/config.kdl`
+([`examples/config.kdl`](examples/config.kdl)), read before `init.scm`. Only
+an imp built with the `kdl` feature reads it: the release binaries,
+`make install` and the Nix package are built without it, and show a
+message instead. To use it, build from source with
+`cargo install --git https://github.com/apisandipas/imp imp-editor --features kdl`.
+
 ## Daemon
 
 ```sh
@@ -231,6 +244,9 @@ The project's notes are [lore](https://github.com/apisandipas/lore) notes:
 [`CONTEXT.md`](CONTEXT.md) at the root and in each directory says what it
 holds and the rules for it, [`docs/decisions`](docs/decisions) has the design
 decisions and [`docs/specs`](docs/specs) what each area of imp does.
+The user docs on the website are built from [`docs/guide`](docs/guide) and
+[`docs/reference`](docs/reference), and [`docs/steel.md`](docs/steel.md)
+lists Steel Scheme's gotchas, worth reading before writing Scheme for imp.
 [`.lore/WORKFLOW.md`](.lore/WORKFLOW.md) is how work gets done, and known gaps
 are [issues](https://github.com/apisandipas/imp/issues).
 
