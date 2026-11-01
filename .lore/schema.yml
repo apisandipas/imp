@@ -1,7 +1,7 @@
 # lore's note types. `lore check` enforces these fields; `lore new` creates
 # notes in each type's dir, starting at the first status listed.
 notes: docs
-ignore: [target/**, docs/guide/**]
+ignore: [target/**]
 types:
   Spec:
     dir: docs/specs
@@ -32,3 +32,11 @@ types:
     freeze: [spec]
     fields:
       spec: { link: Spec, required: true }
+  # A guide on the website, written by hand: frozen against the specs
+  # whose keys and behaviour it summarises, so lore check says when one
+  # has changed and the guide needs reading again.
+  Guide:
+    dir: docs/guide
+    freeze: [specs]
+    fields:
+      specs: { link: Spec, many: true, required: true }

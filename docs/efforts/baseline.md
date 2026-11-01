@@ -23,7 +23,7 @@ frozen:
   docs/specs/mouse.md: 9ddcdd15e5ad
   docs/specs/move-lines.md: d4c34470f45d
   docs/specs/olivetti.md: 5b1ed15a4236
-  docs/specs/org.md: eacefd3dbd04
+  docs/specs/org.md: 3a958ecfb511
   docs/specs/packages.md: e9a16175b04a
   docs/specs/posframe.md: 9dd5f8aa7b18
   docs/specs/projects.md: fac9a61f6afa

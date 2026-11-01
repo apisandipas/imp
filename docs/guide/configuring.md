@@ -1,3 +1,14 @@
+---
+type: Guide
+specs: ["[[spec/live-scheme-and-help]]", "[[spec/leader-and-modes]]", "[[spec/vim]]", "[[spec/commands]]", "[[spec/look]]", "[[spec/start-screen]]"]
+frozen:
+  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/leader-and-modes.md: 039e08ed9d0b
+  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/commands.md: 31bb6b804788
+  docs/specs/look.md: 966eea438d82
+  docs/specs/start-screen.md: 3a63b6f3dc40
+---
 # Configuring init.scm
 
 Your settings live in `~/.config/imp/init.scm` (or `$XDG_CONFIG_HOME/imp/init.scm`). It's ordinary Scheme, run after the rest of imp loads, so it can change anything. Press `c` on the start screen to open it.

@@ -30,7 +30,7 @@ Org is the most common "why I can't leave Emacs", so `.org` files get a major mo
 - **Capture** (`SPC o c`): templates (`define-capture-template!`, targets `file`, `file+headline`, `file+datetree`, Org's `%` escapes, `%^t` and `%^u` asking for a date) in a `*capture*` buffer down the right. `C-c C-c` or `:w` files it, `C-c C-k` cancels, `C-c C-w` refiles under any agenda-file heading. An entry still as the template made it isn't filed. Filing goes through the file's buffer when open, else straight to the file.
 - **Indent** (`org-indent-mode`, `SPC m i`): sections drawn indented under their headings, display only.
 - **Heading heights** in the window client: `org-heading-heights` (default `'(1.4 1.25 1.1)`).
-- Running source blocks is the `org-babel` package ([[packages]]).
+- Running source blocks is the `org-babel` package ([[spec/packages]]).
 - Export to HTML, PDF and other formats is the org-export package, through pandoc ([[org-export]]).
 
 ## Keys and options

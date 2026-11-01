@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/org]]"
 frozen:
-  docs/specs/org.md: eacefd3dbd04
+  docs/specs/org.md: 3a958ecfb511
 ---
 # Org
 

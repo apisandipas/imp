@@ -1,3 +1,17 @@
+---
+type: Guide
+specs: ["[[spec/command-line]]", "[[spec/start-screen]]", "[[spec/vim]]", "[[spec/emacs-state]]", "[[spec/leader-and-modes]]", "[[spec/commands]]", "[[spec/live-scheme-and-help]]", "[[spec/lsp]]", "[[spec/git]]"]
+frozen:
+  docs/specs/command-line.md: 552dffb88851
+  docs/specs/start-screen.md: 3a63b6f3dc40
+  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/emacs-state.md: b74c1fe8672a
+  docs/specs/leader-and-modes.md: 039e08ed9d0b
+  docs/specs/commands.md: 31bb6b804788
+  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/lsp.md: 521f968e45ec
+  docs/specs/git.md: 784db8c1c823
+---
 # Install and first steps
 
 ## Install

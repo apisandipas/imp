@@ -7,11 +7,15 @@ committed.
 
     tools/site-docs.py [OUT]       build into OUT (default site/docs)
     tools/site-docs.py --check     specs without pages, pages without
-                                   specs, and pages whose spec has changed
+                                   specs, and pages and guides whose specs
+                                   have changed
     tools/site-docs.py --stamp NAME  record that ref-NAME.md is up to date
                                    with its spec (lore freeze)
+    tools/site-docs.py --stamp-guide NAME  record that guide NAME.md is
+                                   up to date with its specs
 
-A page is a lore note of type Page, frozen against its spec, so lore check
+A page is a lore note of type Page, frozen against its spec, and a guide
+one of type Guide, frozen against the specs it summarises, so lore check
 also says when a spec has moved on. Links between pages are written as
 [text](ref-NAME.md) and [text](GUIDE.md).
 """
@@ -54,12 +58,18 @@ SKIP = {"user-docs"}
 REF_PREFIX = "ref-"
 
 
-def read_page(path):
-    """A page's (title, lede markdown, [(heading, markdown)]), frontmatter
-    dropped."""
+def note_text(path):
+    """A page's or guide's markdown, its lore frontmatter dropped."""
     text = path.read_text()
     if text.startswith("---\n"):
         text = text[text.index("\n---\n", 4) + 5:]
+    return text
+
+
+def read_page(path):
+    """A page's (title, lede markdown, [(heading, markdown)]), frontmatter
+    dropped."""
+    text = note_text(path)
     match = re.search(r"^# (.+)$", text, re.M)
     title = match.group(1).strip() if match else path.stem
     parts = re.split(r"^## (.+)$", text[match.end():] if match else text, flags=re.M)
@@ -174,7 +184,7 @@ def reference_content(path):
 def index_content(titles):
     """The docs' front page: docs/guide/index.md, then the reference."""
     intro = GUIDES / "index.md"
-    parts = [to_html(intro.read_text()) if intro.exists() else "<h1>imp docs</h1>"]
+    parts = [to_html(note_text(intro)) if intro.exists() else "<h1>imp docs</h1>"]
     parts.append("<h2>Reference</h2>")
     for group, stems in GROUPS:
         if not any(s in titles for s in stems):
@@ -188,7 +198,8 @@ def index_content(titles):
 
 def problems():
     """What --check reports: the grouping, specs without pages, pages
-    without specs, and pages whose spec changed since they were written."""
+    without specs, and pages and guides whose specs changed since they
+    were written."""
     specs = {p.stem for p in SPECS.glob("*.md")} - SKIP
     grouped = [s for _, ss in GROUPS for s in ss]
     found = []
@@ -206,7 +217,7 @@ def problems():
     # CI's docs job, which has it, looks.
     try:
         lore = subprocess.run(["lore", "check"], cwd=ROOT, capture_output=True, text=True)
-        found += [line for line in lore.stdout.splitlines() if line.startswith("docs/reference/")]
+        found += [line for line in lore.stdout.splitlines() if line.startswith(("docs/reference/", "docs/guide/"))]
     except FileNotFoundError:
         pass
     return found
@@ -224,7 +235,7 @@ def build(out):
     for stem, title in GUIDE_PAGES:
         source = GUIDES / f"{stem}.md"
         if source.exists():
-            (out / f"{stem}.html").write_text(page(title, to_html(source.read_text()), f"{stem}.html", titles))
+            (out / f"{stem}.html").write_text(page(title, to_html(note_text(source)), f"{stem}.html", titles))
     for stem in titles:
         name = f"{REF_PREFIX}{stem}.html"
         title, content = reference_content(PAGES / f"{REF_PREFIX}{stem}.md")
@@ -240,6 +251,8 @@ def main():
         sys.exit(1 if found else 0)
     if args[:1] == ["--stamp"] and len(args) == 2:
         sys.exit(subprocess.run(["lore", "freeze", f"docs/reference/{REF_PREFIX}{args[1]}.md"], cwd=ROOT).returncode)
+    if args[:1] == ["--stamp-guide"] and len(args) == 2:
+        sys.exit(subprocess.run(["lore", "freeze", f"docs/guide/{args[1]}.md"], cwd=ROOT).returncode)
     build(Path(args[0]) if args else ROOT / "site" / "docs")
 
 

@@ -1,3 +1,15 @@
+---
+type: Guide
+specs: ["[[spec/vim]]", "[[spec/emacs-state]]", "[[spec/leader-and-modes]]", "[[spec/live-scheme-and-help]]", "[[spec/dired]]", "[[spec/git]]", "[[spec/org]]"]
+frozen:
+  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/emacs-state.md: b74c1fe8672a
+  docs/specs/leader-and-modes.md: 039e08ed9d0b
+  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/dired.md: a02aeaac49d8
+  docs/specs/git.md: 784db8c1c823
+  docs/specs/org.md: 3a958ecfb511
+---
 # Coming from Emacs or Vim
 
 imp takes its editing from Vim and its idea from Emacs: the editor is written in its own language, and you can change any of it while it runs. Here's what carries over, and what doesn't.

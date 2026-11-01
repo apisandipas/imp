@@ -1,3 +1,18 @@
+---
+type: Guide
+specs: ["[[spec/packages]]", "[[spec/olivetti]]", "[[spec/posframe]]", "[[spec/move-lines]]", "[[spec/showkeys]]", "[[spec/file-tree]]", "[[spec/git-blame]]", "[[spec/git-gutter]]", "[[spec/modus-themes]]", "[[spec/org-export]]"]
+frozen:
+  docs/specs/packages.md: e9a16175b04a
+  docs/specs/olivetti.md: 5b1ed15a4236
+  docs/specs/posframe.md: 9dd5f8aa7b18
+  docs/specs/move-lines.md: d4c34470f45d
+  docs/specs/showkeys.md: 8d44499288a6
+  docs/specs/file-tree.md: 93c6d2be9759
+  docs/specs/git-blame.md: d6706377c008
+  docs/specs/git-gutter.md: 50690fac14f4
+  docs/specs/modus-themes.md: 2f7f2ca55f07
+  docs/specs/org-export.md: d011ff8473b5
+---
 # Packages
 
 A package is a Scheme file that adds to imp. Some come with imp but stay off until you ask for them. You can also load packages from a git repository, or write your own.
