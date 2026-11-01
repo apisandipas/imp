@@ -17,6 +17,7 @@
 ;;; ZQ or C-c C-k cancels.
 ;;; :git ARGS runs any git command and shows what it printed.
 
+;; How many recent commits the status buffer lists.
 (define-option! 'git-recent-commits 10 '())
 ;; Whether the status buffer shows its main keys at the bottom of its window.
 (define-option! 'git-status-hints #t '())

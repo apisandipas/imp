@@ -192,6 +192,7 @@
 ;;; comments every line in the range at their smallest indent, or, if they
 ;;; are all commented already, uncomments them.
 
+;; How gc comments a line: "<before>%s<after>", e.g. ";; %s".
 (define-option! 'commentstring "# %s" '(cms))
 
 (define (comment-parts)

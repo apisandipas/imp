@@ -33,6 +33,7 @@
         [(pred (car items)) (car items)]
         [else (list-find pred (cdr items))]))
 
+;; Whether the current buffer can be changed; off makes it read-only.
 (define-computed-option! 'modifiable '(ma)
   (lambda () (not (buffer-read-only?)))
   (lambda (value) (set-buffer-read-only! (not value))))

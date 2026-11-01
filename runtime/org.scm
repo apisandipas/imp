@@ -28,7 +28,11 @@
 ;;; moves on when its heading is marked done, and the heading goes back
 ;;; to its first TODO keyword.
 
+;; Where Org files are: the agenda's files are under it, and capture's
+;; inbox.org.
 (define-option! 'org-directory "~/org" '())
+;; The files the agenda reads, relative ones under org-directory; empty
+;; reads every .org file under org-directory.
 (define-option! 'org-agenda-files '() '())
 ;; Empty means inbox.org in org-directory.
 (define-option! 'org-default-notes-file "" '())
@@ -49,6 +53,7 @@
 ;; stars but the last are drawn blank. Only the display changes, not the
 ;; file. org-indent-per-level is the columns a level adds.
 (define-option! 'org-indent #f '())
+;; Columns each heading level adds with org-indent.
 (define-option! 'org-indent-per-level 2 '())
 ;; How much bigger headings are drawn, from level 1 down: 1.4 is 1.4
 ;; times the font. Levels past the list are the font's size; '() makes

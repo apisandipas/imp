@@ -8,7 +8,7 @@ The files load in the order of `RUNTIME` in `crates/imp-server/src/lib.rs`: `cor
 
 ## Rules
 
-- Every function and command has an Emacs-style docstring: a string first in its body (or in the command's lambda), its first line a sentence of its own. Help and M-x show it. Variables and options get a comment above. `tools/docstrings.py missing` lists gaps.
+- Every function and command has an Emacs-style docstring: a string first in its body (or in the command's lambda), its first line a sentence of its own. Help and M-x show it. Variables and options get a comment above; for an option it is what `describe-option` shows. `tools/docstrings.py missing` lists gaps.
 - A file can't call a function first defined in a later file, and a `define` there won't replace an earlier file's function for its callers. To extend across files, use hooks, tables (`*extra-states*`) or variables set with `set!` (`*local-keymaps*`, `*cmdline-key-handler*`, `*typed-char-handler*`, which `syntax.scm` sets to close end tags).
 - Each top-level name belongs to one file, packages included: re-evaluating a file's definitions `set!`s the binding every file sees, so a second file's helper of the same name would change too. Helpers several files need go in `core.scm` (`pad-left`, `two-digits`, `shell-quote`, `child-path`); a file's own helper gets a name that says what it is for (`form-delimiter?`). `crates/imp-server/tests/runtime_names.rs` fails on a name two files define, except core's placeholders on its allow-list.
 - Show a package's buffers with `display-buffer!`, not `go-to-buffer!`, so popup rules apply.

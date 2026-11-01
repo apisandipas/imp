@@ -15,9 +15,12 @@
 ;;;
 ;;; Buffers in olivetti-modes turn it on by themselves when they open.
 
+;; How wide the column of text is, in columns.
 (define-option! 'olivetti-body-width 80 '())
+;; Major modes whose buffers turn olivetti-mode on when they open.
 (define-option! 'olivetti-modes '() '())
-(define-option! 'olivetti-wrap #t '())  ; wrap between words in its buffers
+;; Wrap long lines between words in olivetti-mode's buffers.
+(define-option! 'olivetti-wrap #t '())
 
 (define (olivetti-width)
   "This buffer's column width: its own if C-c } or C-c { changed it, else

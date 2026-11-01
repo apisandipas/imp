@@ -679,12 +679,19 @@
   (set! *option-watchers* (hash-insert *option-watchers* (known-option-name name) proc))
   (proc (option name)))
 
+;; Columns a tab character takes on screen.
 (define-option! 'tabstop 4 '(ts))
+;; Columns one level of indent takes: what >>, << and smartindent add.
 (define-option! 'shiftwidth 4 '(sw))
+;; Indent with spaces rather than tab characters.
 (define-option! 'expandtab #t '(et))
+;; A new line starts with the indent of the line before it.
 (define-option! 'autoindent #t '(ai))
+;; Searches wrap around the end of the buffer to its start, and back.
 (define-option! 'wrapscan #t '(ws))
+;; Highlight every match of the last search, until :noh.
 (define-option! 'hlsearch #t '(hls))
+;; Show where the pattern matches while it is typed.
 (define-option! 'incsearch #t '(is))
 ;; "unnamedplus" makes the unnamed register the system clipboard.
 (define-option! 'clipboard "" '(cb))
@@ -692,7 +699,10 @@
 
 ;; Line numbers: number, relativenumber, or both for hybrid (as in Vim).
 (define-option! 'number #f '(nu))
+;; Line numbers counted from the cursor's line; with number on too, the
+;; cursor's line shows its own.
 (define-option! 'relativenumber #f '(rnu))
+;; Highlight the line the cursor is on.
 (define-option! 'cursorline #f '(cul))
 ;; Long lines continue on the next screen rows; off, they scroll sideways.
 (define-option! 'wrap #t '())

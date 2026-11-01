@@ -14,8 +14,12 @@
 ;;;   copied to the state directory; on opening a file with a newer copy
 ;;;   there, :recover brings it back.
 
+;; Reload a file changed outside imp when its buffer has no changes.
 (define-option! 'autoread #t '(ar))
+;; Keep the previous version of a file as FILE~ on every save.
 (define-option! 'backup #f '(bk))
+;; Seconds between copies of modified buffers into the state directory,
+;; for :recover; 0 turns autosave off.
 (define-option! 'autosave-interval 30 '())
 ;; Where autosaved copies go; empty means $XDG_STATE_HOME/imp.
 (define-option! 'state-directory "" '())
@@ -25,16 +29,22 @@
    $XDG_STATE_HOME/imp when that is empty."
   (if (equal? (option 'state-directory) "") (state-dir) (option 'state-directory)))
 
+;; The current buffer's line endings, "unix" or "dos"; setting it converts
+;; the file on the next save.
 (define-computed-option! 'fileformat '(ff)
   (lambda () (car (buffer-file-format)))
   (lambda (value)
     (let ([f (buffer-file-format)]) (set-buffer-file-format! value (cadr f) (caddr f)))))
 
+;; The current buffer's encoding, "utf-8" or "latin1", as it was read;
+;; setting it converts the file on the next save.
 (define-computed-option! 'fileencoding '(fenc)
   (lambda () (cadr (buffer-file-format)))
   (lambda (value)
     (let ([f (buffer-file-format)]) (set-buffer-file-format! (car f) value (caddr f)))))
 
+;; Whether the current buffer's file starts with a UTF-8 byte order mark,
+;; which saving keeps.
 (define-computed-option! 'bomb '()
   (lambda () (caddr (buffer-file-format)))
   (lambda (value)

@@ -18,7 +18,9 @@
 ;;; :set nomouse ignores the mouse. While the terminal reports it, most
 ;;; terminals still select text for copying with shift held down.
 
+;; Whether imp takes the mouse; :set nomouse leaves it to the terminal.
 (define-option! 'mouse #t '())
+;; Lines the scroll wheel moves a window by.
 (define-option! 'mouse-scroll 3 '())
 
 (define *mouse-press* #f)  ; (window offset) where the left button went down

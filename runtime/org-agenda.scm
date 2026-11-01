@@ -710,6 +710,7 @@
 ;; SCHEDULED: date. It shows on today only, with a graph of the days
 ;; around it, as Org's org-habit draws it.
 (define-option! 'org-habit-preceding-days 21 '())
+;; Days after today a habit's graph shows.
 (define-option! 'org-habit-following-days 7 '())
 
 (define (org-habit? e)

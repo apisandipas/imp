@@ -23,7 +23,10 @@
 ;;; completion source after file paths, so C-n, C-x C-o and completion as
 ;;; you type (lsp-auto-complete) ask it.
 
+;; Start language servers for the buffers that have one; off, none starts.
 (define-option! 'lsp #t '())
+;; Ask the language server for completions as you type, not only on
+;; request.
 (define-option! 'lsp-auto-complete #t '())
 ;; Milliseconds of quiet before changes are sent (completion-delay is
 ;; complete.scm's, before completing).

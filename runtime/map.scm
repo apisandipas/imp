@@ -145,6 +145,7 @@
 ;;; Insert mappings of several keys: jk inserts j, and if k follows within
 ;;; timeoutlen the j is removed and the {rhs} runs, as Vim shows it.
 
+;; Milliseconds an insert mapping of several keys waits for its next key.
 (define-option! 'timeoutlen 1000 '())
 ;; lhs keys joined -> (lhs-keys rhs-keys noremap?)
 (define *insert-sequences* (hash))
