@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/live-scheme-and-help]]"]
 issue: https://github.com/apisandipas/imp/issues/131
 frozen:
@@ -21,3 +21,8 @@ Then one error convention. A `Result<_, String>` raises with the message Debug-q
 - [x] Move `register` into `api/`, one file per area, with the shared helpers in `api/mod.rs`; no primitive changes. `crates/imp-server/CONTEXT.md` names the area files, and decision 0005's anchor follows the move.
 - [x] `api::fail` makes a `SteelErr`, and every primitive in `api/` that returned `Result<_, String>` returns `Result<_, SteelErr>`, so its message raises unquoted; tests that matched a quoted message are updated.
 - [x] The primitives that returned an error as a value (`buffer-open!`, `directory-entries`, `rename-file!`, `copy-file!`, `make-directory!`, `delete-path!`, `job-start!`, `socket-listen!`, `socket-connect!`, `term-start!`, `set-buffer-language!`) or dropped it (`delete-file!`, `save!`, `lsp-take-message`) raise it; every caller in `runtime/` and `packages/` catches it and says what it said before, with tests for the error paths. The rule goes in `crates/imp-server/CONTEXT.md` and `docs/steel.md`.
+
+## Notes
+
+- Nothing in the live-scheme-and-help spec's behaviour changed. Error messages from primitives lose the quotes Steel put around them; `tests/files.rs`, `tests/dap.rs` and `tests/background.rs` cover the error paths.
+- Left as they are: `lsp-read-messages` still drops a server message that isn't JSON, since raising would lose the good messages read with it; `crdt`, `wasm` and `kdl` register their own primitives outside `api/` and still return `Result<_, String>`, so their errors raise quoted.
