@@ -189,14 +189,10 @@ pub struct Server {
 
 impl Server {
     pub fn new(buffer: Buffer, options: Options) -> Result<Self, String> {
-        let mut ed = Editor {
-            buffer,
-            width: 80,
-            height: 24,
-            tab_width: 8,
-            ..Editor::default()
-        };
-        ed.init_windows();
+        let mut ed = Editor::new(buffer);
+        ed.width = 80;
+        ed.height = 24;
+        ed.tab_width = 8;
         let (sender, events) = mpsc::channel();
         ed.background.sender = Some(sender.clone());
         editor::install(ed);
@@ -503,11 +499,11 @@ impl Server {
     }
 
     pub fn text(&self) -> String {
-        editor::with(|e| e.buffer.text())
+        editor::with(|e| e.buffer().text())
     }
 
     pub fn cursor(&self) -> usize {
-        editor::with(|e| e.cursor)
+        editor::with(|e| e.cursor())
     }
 
     pub fn status(&self) -> String {

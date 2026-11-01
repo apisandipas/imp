@@ -22,13 +22,13 @@ pub type MarginText = Vec<(String, String)>;
 pub struct Editor {
     /// The current buffer. Every buffer primitive acts on this one; other
     /// buffers wait in `parked` until switched to.
-    pub buffer: Buffer,
+    buffer: Buffer,
     /// Id of the current buffer.
-    pub current: usize,
-    pub parked: BTreeMap<usize, Parked>,
+    current: usize,
+    parked: BTreeMap<usize, Parked>,
     pub next_id: usize,
     /// Cursor as a char offset into the buffer.
-    pub cursor: usize,
+    cursor: usize,
     pub mode_name: String,
     /// Shown at the right of the status line, before the position (the
     /// buffer's major mode).
@@ -77,15 +77,15 @@ pub struct Editor {
     /// Whether this is a daemon, where quitting detaches a client.
     pub daemon: bool,
     /// First buffer line shown in the current window.
-    pub scroll: usize,
+    scroll: usize,
     /// First display column shown in the current window (without wrap).
-    pub hscroll: usize,
+    hscroll: usize,
     /// Every window. The current window's scroll and cursor live in the
     /// fields above while it is current; another window's cursor is a
     /// mark in its buffer (see `window_mark`), so edits keep it in place.
-    pub windows: BTreeMap<usize, Window>,
+    windows: BTreeMap<usize, Window>,
     pub layout: Layout,
-    pub current_window: usize,
+    current_window: usize,
     pub next_window_id: usize,
     /// Whether long lines wrap onto the next screen rows.
     pub wrap: bool,
@@ -248,10 +248,56 @@ pub struct Highlight {
 }
 
 impl Editor {
+    /// An editor showing `buffer` in its one window.
+    pub fn new(buffer: Buffer) -> Self {
+        Editor {
+            buffer,
+            windows: BTreeMap::from([(
+                1,
+                Window {
+                    buffer: 0,
+                    scroll: 0,
+                    hscroll: 0,
+                },
+            )]),
+            layout: Layout::Window(1),
+            current_window: 1,
+            next_window_id: 1,
+            ..Editor::default()
+        }
+    }
+
     /// The current buffer: the current window's. Buffer primitives act on
     /// this one.
     pub fn buffer(&self) -> &Buffer {
         &self.buffer
+    }
+
+    pub fn buffer_mut(&mut self) -> &mut Buffer {
+        &mut self.buffer
+    }
+
+    /// The current window's cursor, as a char offset into its buffer.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn set_cursor(&mut self, at: usize) {
+        self.cursor = at;
+    }
+
+    /// The first buffer line the current window shows.
+    pub fn scroll(&self) -> usize {
+        self.scroll
+    }
+
+    pub fn set_scroll(&mut self, line: usize) {
+        self.scroll = line;
+    }
+
+    /// The buffer window `id` shows, if there is such a window.
+    pub fn window_buffer(&self, id: usize) -> Option<usize> {
+        self.windows.get(&id).map(|w| w.buffer)
     }
 
     /// Id of the current buffer.
@@ -512,22 +558,6 @@ impl Editor {
         } else {
             0
         }
-    }
-
-    /// Makes the first window, showing the current buffer. Called once
-    /// when the editor is set up.
-    pub fn init_windows(&mut self) {
-        self.next_window_id = 1;
-        self.current_window = 1;
-        self.windows.insert(
-            1,
-            Window {
-                buffer: self.current,
-                scroll: 0,
-                hscroll: 0,
-            },
-        );
-        self.layout = Layout::Window(1);
     }
 
     /// Takes the current windows out as a client's view, leaving them in

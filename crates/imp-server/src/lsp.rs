@@ -242,7 +242,7 @@ pub fn drop_completion(key: &str, id: i64) {
 /// The offset of LSP position (`line`, `character`) in the current buffer,
 /// clamped to it; `character` counts in `encoding` (lsp.scm's lsp-offset).
 fn offset(e: &Editor, line: usize, character: usize, utf32: bool) -> usize {
-    let buffer = &e.buffer;
+    let buffer = e.buffer();
     if line >= buffer.line_count() {
         return buffer.len();
     }

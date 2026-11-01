@@ -102,15 +102,10 @@ pub fn buffer_words(
     let mut out = Vec::new();
     INDEXES.with(|indexes| {
         let mut indexes = indexes.borrow_mut();
-        indexes.retain(|id, _| *id == e.current || e.parked.contains_key(id));
+        indexes.retain(|&id, _| e.buffer_by_id(id).is_some());
         for (n, &id) in ids.iter().enumerate() {
-            let buffer = if id == e.current {
-                &e.buffer
-            } else {
-                match e.parked.get(&id) {
-                    Some(p) => &p.buffer,
-                    None => continue,
-                }
+            let Some(buffer) = e.buffer_by_id(id) else {
+                continue;
             };
             let key = (buffer.version(), buffer.len(), extra.to_string());
             let index = indexes.entry(id).or_insert_with(|| Index {
@@ -209,7 +204,7 @@ pub fn filter_candidates(
 ) -> Vec<isize> {
     let typed = |start: usize| {
         (start <= cursor)
-            .then(|| e.buffer.slice(start, cursor))
+            .then(|| e.buffer().slice(start, cursor))
             .filter(|t| !t.contains(char::is_whitespace))
     };
     filter(0, &typed, prefix_only, live, fuzzy, limit)
