@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/files]]"
 frozen:
-  docs/specs/files.md: b452a5d99077
+  docs/specs/files.md: ac86235d1774
 ---
 # Files
 
@@ -32,7 +32,7 @@ If you have changed the buffer too, imp warns you instead. `:w` then refuses to 
 
 ## Autosave and recovery
 
-Every `autosave-interval` seconds, imp copies each buffer with unsaved changes into its state directory. If imp or your machine crashes, open the file again. When the autosaved copy is newer, imp says so; `:recover` puts it in the buffer, and `:w` keeps it.
+Every `autosave-interval` seconds, imp copies each buffer with unsaved changes into its state directory. Only you can read the copies, even when the file itself is readable by others. If imp or your machine crashes, open the file again. When the autosaved copy is newer, imp says so; `:recover` puts it in the buffer, and `:w` keeps it.
 
 ## Deleting, renaming and copying files
 

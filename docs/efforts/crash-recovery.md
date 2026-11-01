@@ -1,11 +1,11 @@
 ---
 type: Effort
-status: planned
+status: active
 specs: ["[[spec/crash-recovery]]", "[[spec/files]]"]
 issue: https://github.com/apisandipas/imp/issues/130
 frozen:
-  docs/specs/crash-recovery.md: f14937760c33
-  docs/specs/files.md: b452a5d99077
+  docs/specs/crash-recovery.md: fca65e3437db
+  docs/specs/files.md: ac86235d1774
 ---
 # Crash recovery
 
@@ -21,7 +21,7 @@ A copy's owner is the `#PID` in its name; a copy is in use when that PID is this
 
 ## Tasks
 
-- [ ] `write-private-file!`: `fileio::write_private` writes atomically with the file born `0600` and its directory created `0700`, tightened to `0700` when it is the user's and looser; autosave writes through it, so copies are no longer `0644` in a `0755` directory. Unit tests in `fileio.rs`, a server test that a copy and its directory are private.
+- [x] `write-private-file!`: `fileio::write_private` writes atomically with the file born `0600` and its directory created `0700`, tightened to `0700` when it is the user's and looser; autosave writes through it, so copies are no longer `0644` in a `0755` directory. Unit tests in `fileio.rs`, a server test that a copy and its directory are private.
 - [ ] `process-id`, `imp-running?` (Linux `/proc/PID/comm`, `kill(PID, 0)` elsewhere) and `input-idle-ms` (stamped on every key, paste and mouse event), with tests.
 - [ ] Autosave timing and naming: copies named as the spec says (`%home%me%notes.org#4242`, `unnamed-N#PID`); the one-second check writes a changed buffer once input is `autosave-idle` seconds idle (new option, 4) or its first uncopied change is `autosave-interval` old, never rewrites an unchanged one; unnamed ordinary text buffers are copied; a name over 255 bytes or a failed write is said once per buffer. Key-driven tests; spec, files spec and both ref pages updated.
 - [ ] Orphaned copies and the open prompt: when a buffer is first shown, a copy whose PID isn't alive is offered with `r`/`d`/`k` (same text deleted silently; a newer file noted; old-form names count as orphaned); `r` recovers as one undoable change and renames the copy to this process; another live imp's copy gives the "also being edited" warning once. Tests simulate a crash with a copy under a dead PID.

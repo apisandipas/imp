@@ -110,6 +110,45 @@ fn autosave_and_recover() {
     assert_eq!(s.eval("(recoverable?)").unwrap(), "#false");
 }
 
+#[cfg(unix)]
+#[test]
+fn autosave_copies_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let state = temp_path("private-state");
+    let _ = std::fs::remove_dir_all(&state);
+    // A state directory left too open by an older imp is tightened.
+    std::fs::create_dir_all(state.join("autosave")).unwrap();
+    std::fs::set_permissions(
+        state.join("autosave"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let path = temp_path("shared.txt");
+    std::fs::write(&path, "public\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'state-directory \"{}\")",
+        state.display()
+    ))
+    .unwrap();
+    open(&mut s, &path);
+    type_keys(&mut s, "Asecret<esc>");
+    s.eval("(autosave-all!)").unwrap();
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let copies: Vec<_> = std::fs::read_dir(state.join("autosave"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(copies.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(&copies[0]).unwrap(),
+        "publicsecret\n"
+    );
+    assert_eq!(mode(&copies[0]), 0o600);
+    assert_eq!(mode(&state.join("autosave")), 0o700);
+}
+
 #[test]
 fn saves_are_atomic_and_keep_symlinks() {
     let real = temp_path("real.txt");

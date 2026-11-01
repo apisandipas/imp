@@ -120,4 +120,4 @@ Behaviour is Scheme ([[0005-rust-owns-data-and-speed-scheme-owns-behavior]]), in
 
 ## Known gaps
 
-- Not built yet ([#130](https://github.com/apisandipas/imp/issues/130)). Until it is, imp works as [[spec/files]] says: every modified file buffer is copied every `autosave-interval` seconds, with default permissions and no record of which imp wrote it, unnamed buffers aren't copied, and `:recover` is offered by a message rather than a prompt.
+- Not built yet ([#130](https://github.com/apisandipas/imp/issues/130)). Until it is, imp works as [[spec/files]] says: every modified file buffer is copied every `autosave-interval` seconds, privately but with no record of which imp wrote it, unnamed buffers aren't copied, and `:recover` is offered by a message rather than a prompt.

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: f14937760c33
+  docs/specs/crash-recovery.md: fca65e3437db
 ---
 # Crash recovery
 

@@ -42,6 +42,13 @@ pub(super) fn register(engine: &mut Engine) {
         }
         imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(fail)
     });
+    // Writes `text` to `path` atomically for the user alone: the file
+    // 0600, its directory 0700 (tightened if it is the user's and
+    // looser). For crash copies (files.scm), which may hold secrets.
+    engine.register_fn("write-private-file!", |path: String, text: String| {
+        imp_core::fileio::write_private(Path::new(&path), text.as_bytes())
+            .map_err(|err| fail(format!("{path}: {err}")))
+    });
     // (permissions size mtime) for `path`, not following a symlink:
     // permissions as ls shows them ("drwxr-xr-x"), size in bytes, mtime
     // in seconds since the epoch. #f if it isn't there.

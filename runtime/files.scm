@@ -11,8 +11,9 @@
 ;;;   until :w!. Checked every few seconds and on entering a buffer.
 ;;; - backup keeps the previous version as FILE~ on every save.
 ;;; - autosave-interval: every so many seconds, modified buffers are
-;;;   copied to the state directory; on opening a file with a newer copy
-;;;   there, :recover brings it back.
+;;;   copied to the state directory, readable only by the user (a copy
+;;;   may hold a secret the file never had); on opening a file with a
+;;;   newer copy there, :recover brings it back.
 
 ;; Reload a file changed outside imp when its buffer has no changes.
 (define-option! 'autoread #t '(ar))
@@ -91,7 +92,7 @@
    A copy that can't be written is skipped quietly."
   (when (and (buffer-path) (buffer-modified?))
     (with-handler (lambda (e) #f)
-                  (write-text-file! (autosave-path (buffer-path)) (buffer-substring 0 (buffer-length))))))
+                  (write-private-file! (autosave-path (buffer-path)) (buffer-substring 0 (buffer-length))))))
 
 (define (autosave-all!)
   "Autosaves every modified buffer that has a file."
