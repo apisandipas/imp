@@ -37,11 +37,19 @@
 ;;; the others and closes through popup handling, while the tree stays put
 ;;; beside them.
 
+;; Columns the tree's window takes, down the left of the frame.
 (define-option! 'file-tree-width 30 '())
-(define-option! 'file-tree-show-hidden #f '())   ; dotfiles
-(define-option! 'file-tree-show-ignored #f '())  ; files git ignores
+;; Whether the tree starts out showing dotfiles; H shows or hides them.
+(define-option! 'file-tree-show-hidden #f '())
+;; Whether the tree starts out showing files git ignores; I shows or hides
+;; them.
+(define-option! 'file-tree-show-ignored #f '())
+;; Open the tree beside the first window when imp starts, the cursor left
+;; in that window.
 (define-option! 'file-tree-open-at-start #f '())
-(define-option! 'file-tree-follow #t '())  ; reveal the current buffer's file
+;; Switching to a buffer whose file is under a root moves the tree's
+;; cursor to it, opening the folders on the way.
+(define-option! 'file-tree-follow #t '())
 
 (define *file-tree-buffer-name* "*file-tree*")
 

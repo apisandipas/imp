@@ -6,7 +6,10 @@
 ;;; other. Loaded after syntax.scm, for the node kinds the text objects
 ;;; know, and after vim.scm, for its keys.
 
+;; How folds are made: "manual" (zf and the like), or worked out from the
+;; text by "indent", "syntax" or "expr" (foldexpr).
 (define-option! 'foldmethod "manual" '(fdm))
+;; Folds deeper than this start closed when foldmethod makes them.
 (define-option! 'foldlevel 99 '(fdl))
 ;; A procedure (lambda (line) level) for foldmethod expr, or #f.
 (define-option! 'foldexpr #f '(fde))

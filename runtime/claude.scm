@@ -22,6 +22,7 @@
 ;;;   (define-popup-rule! "*claude" 'side 'bottom 'size 0.3)
 ;;; moves it.
 
+;; The program the Claude terminal runs, in the project root.
 (define-option! 'claude-command "claude" '())
 
 (define *claude-pending* (hash))  ; Claude buffer -> texts waiting for it to take input

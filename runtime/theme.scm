@@ -404,9 +404,12 @@
 ;;; title: a terminal's title),
 ;;; %#face# a face (%#mode# the mode's), %* the status face, %= right side.
 
+;; The current window's status line, in Vim's 'statusline' format: %f
+;; the file, %l:%c the position, %{name} a value; the codes are listed above.
 (define-option! 'statusline
   "%#mode# %m %* %#status.file#%f%*%{title} %#status.modified#%M%* %{diagnostics}%=%{org-clock}%#status.dim#%{major}%*  %l:%c %#mode# %p %*"
   '(stl))
+;; The status line of the other windows.
 (define-option! 'statusline-inactive "  %f%{title} %M%=%{major}  %l:%c   " '())
 
 (define (update-statusline! _value)
@@ -448,19 +451,25 @@
     (error (string-append (symbol->string name) " is a number from "
                           (number->string low) " to " (number->string high)))))
 
+;; The window's font family; "" for the default.
 (define-appearance-option! 'font ""
   (lambda (v) (unless (string? v) (error "font is a family name, \"\" for the default"))
               (set-appearance! "font" v)))
+;; The window's font size; 0 for the default. A terminal ignores it.
 (define-appearance-option! 'font-size 0
   (lambda (v) (check-number 'font-size v 0 400) (set-appearance! "font-size" v)))
+;; Pixels of space around the text, in the background color.
 (define-appearance-option! 'window-padding 0
   (lambda (v) (check-number 'window-padding v 0 1000) (set-appearance! "padding" v)))
 ;; Pixels between side-by-side windows, rounded to whole columns (0: one
 ;; column, as in a terminal, which always gets one).
 (define-appearance-option! 'window-divider-width 0
   (lambda (v) (check-number 'window-divider-width v 0 1000) (set-appearance! "divider" v)))
+;; How opaque the window's background is, from 0 to 1 (opaque).
 (define-appearance-option! 'background-opacity 1
   (lambda (v) (check-number 'background-opacity v 0 1)
               (set-appearance! "transparency" (* 100 (- 1 v)))))
+;; Paint the theme's background in a terminal; off, the terminal's own
+;; shows.
 (define-appearance-option! 'terminal-background #t
   (lambda (v) (set-appearance! "clear-terminal-background" (not v))))

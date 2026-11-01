@@ -31,6 +31,7 @@
   "The value of string option `name` if it is set and not \"\", else #f."
   (and (option-name name) (let ([v (option name)]) (and (string? v) (not (equal? v "")) v))))
 
+;; Where packages live; empty means packages/ in the config directory.
 (define-option! 'packages-dir "" '())
 
 (define (package-option options key)

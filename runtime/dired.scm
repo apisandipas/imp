@@ -20,7 +20,10 @@
 ;;; accident; they follow their entry as lines move. ( hides or shows them
 ;;; (the dired-details option).
 
+;; Whether the browser lists dotfiles; g. shows or hides them.
 (define-option! 'dired-show-hidden #f '())
+;; Whether each entry's permissions, size and time show in the margin;
+;; ( shows or hides them.
 (define-option! 'dired-details #t '())
 ;; Going to another directory replaces the browser buffer, as Emacs's
 ;; dired-kill-when-opening-new-dired-buffer.

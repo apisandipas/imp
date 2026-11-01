@@ -2565,7 +2565,10 @@
 ;; indented one shiftwidth more, and <ret> between a pair of brackets puts
 ;; the closing one on its own line. Modes set which brackets count.
 (define-option! 'smartindent #f '(si))
+;; The opening brackets smartindent indents after.
 (define-option! 'indent-open "{[(" '())
+;; The closing brackets smartindent dedents when typed first on a line,
+;; and moves to a line of their own on <ret> between a pair.
 (define-option! 'indent-close "}])" '())
 
 (define (char-before-cursor-on-line)
@@ -2628,6 +2631,8 @@
 ;; (docs/specs/auto-pairs.md). auto-pairs-chars lists each opener and its
 ;; closer, a quote being its own; modes set it locally.
 (define-option! 'auto-pairs #t '())
+;; Each opener followed by its closer, a quote being its own; major modes
+;; set it locally.
 (define-option! 'auto-pairs-chars "()[]{}\"\"''``" '())
 
 (define (pair-partner c)
@@ -4085,7 +4090,9 @@
 ;;; these are Vim's commands for it. A new split shows the same buffer and
 ;;; is focused; it goes above or to the left unless splitbelow/splitright.
 
+;; A horizontal split puts the new window below, not above.
 (define-option! 'splitbelow #f '(sb))
+;; A vertical split puts the new window on the right, not the left.
 (define-option! 'splitright #f '(spr))
 
 (define (leave-pending-states!)
