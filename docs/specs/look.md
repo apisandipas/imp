@@ -11,7 +11,7 @@ anchors: [runtime/theme.scm, crates/imp-server/tests/theme.rs, crates/imp-server
 - **Faces**: `describe-face` (`SPC h F`) and `list-faces`. Terminal ANSI colors 0-15 come from the theme.
 - **Status line**: a Vim-style format string per window (`%m %f %M %l %c %L %p %{name} %#face# %* %=`), with a colored mode badge, file (and a terminal's title, [[spec/terminals]]), modified dot, diagnostics counts, major mode, position and percent; values drop first when narrow, and long paths shorten from the start.
 - **Popups**: which-key and menus under a titled rule with colored keys; LSP completion and hover in a bordered box at the cursor. One is open at a time ([[spec/overlays]]).
-- **Window appearance**: `font`, `font-size`, `window-padding`, `window-divider-width`, `background-opacity`, `terminal-background`. Command-line `--font` and `--font-size` win over the options. The terminal, with `terminal-background` off, sends no background for `normal` cells.
+- **Window appearance**: `font`, `font-size`, `window-padding`, `window-divider-width`, `background-opacity`, `terminal-background`. Command-line `--font` and `--font-size` win over the options ([[spec/command-line]]). The terminal, with `terminal-background` off, sends no background for `normal` cells.
 - **Text heights**: a face can say `height=1.3`; the window client draws lines as tall as their tallest face. Org headings use it ([[org]]).
 
 ## Keys and options

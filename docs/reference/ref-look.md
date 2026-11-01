@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 1762ab3f61ad
+  docs/specs/look.md: 966eea438d82
 ---
 # Look
 
@@ -84,7 +84,7 @@ In the window client you can set the font, the space around the text, and how se
 (set-option! 'background-opacity 0.9)
 ```
 
-`--font` and `--font-size` on the command line win over these options.
+`--font` and `--font-size` on the command line win over these options, and `--scale` makes the text larger on HiDPI screens; see [Command line](ref-command-line.md).
 
 In a terminal, set `terminal-background` to `#f` to leave the theme's background unpainted. The terminal's own background shows through instead.
 
