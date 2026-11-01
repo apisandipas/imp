@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: 8b128ad9ed63
+  docs/specs/crash-recovery.md: f14937760c33
 ---
 # Crash recovery
 
@@ -63,7 +63,7 @@ A copy is deleted once your changes are safe or you've thrown them away:
 - when the buffer goes back to the saved text, with `:e!`, a reload, or undo;
 - when you kill the buffer, or quit with `:qa!`.
 
-Quitting any other way keeps the copies of buffers you haven't saved, and imp offers them the next time you open those files. Detaching from the daemon with `:q` keeps everything as it is.
+Quitting any other way keeps the copies of buffers you haven't saved, and imp offers them the next time you open those files. Detaching from the daemon with `:q`, or with `:qa!`, keeps everything as it is: the daemon still has your buffers. `:kill-server` doesn't ask about unsaved changes, but their copies are kept, so you can recover them.
 
 Only the text comes back. Your cursor, undo history and open windows don't.
 
