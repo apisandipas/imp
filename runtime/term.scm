@@ -513,6 +513,7 @@
 ;;; It goes as a paste and then runs: <ret> follows it unless
 ;;; terminal-send-enter is off. You stay in your buffer.
 
+;; Press <ret> after text sent to the terminal, so it runs.
 (define-option! 'terminal-send-enter #t '())
 (define terminal-ready-ms 100)   ; how often to look for a new shell's prompt
 (define terminal-ready-tries 50) ; and how many times, before giving up

@@ -12,6 +12,8 @@
 ;;; separated by spaces: (define-key! 'emacs "C-x C-s" 'save-buffer).
 ;;; Major modes can add their own with (define-mode-key! mode 'emacs ...).
 
+;; The state imp starts in: "vim" (normal state) or "emacs". Set it in
+;; init.scm.
 (define-option! 'editing-style "vim" '())
 
 (define *emacs-prefix* "")      ; keys of an unfinished sequence ("C-x")

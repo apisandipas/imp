@@ -44,8 +44,8 @@
           (if line (list (car names) line) (loop (cdr names)))))))
 
 (define (defines-name? line name)
-  "Does `line` define `name` with define, define-command!, define-option!
-   or define-syntax?"
+  "Does `line` define `name` with define, define-command!, define-syntax
+   or one of the define-...-option! forms?"
   (equal? (defined-name line) name))
 
 (define (find-definition-site name)
@@ -296,7 +296,8 @@
 
 (define (defined-name line)
   "The name a line defines, if it starts a definition."
-  (let loop ([prefixes '("(define (" "(define-command! '" "(define-option! '" "(define-syntax " "(define ")])
+  (let loop ([prefixes '("(define (" "(define-command! '" "(define-option! '" "(define-computed-option! '"
+                         "(define-appearance-option! '" "(define-syntax " "(define ")])
     (cond
       [(null? prefixes) #f]
       [(starts-with? line (car prefixes))

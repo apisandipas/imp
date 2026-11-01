@@ -2,7 +2,7 @@
 
 - `check.sh`: tests (also with every feature on), clippy (also the terminal-only build) and fmt; fails if any fail. Gate every commit on it, with `lore check`. It runs cargo inside `nix develop` when Nix is installed.
 - `parens.py FILE.scm`: finds unbalanced brackets (Steel's parse errors don't say where).
-- `docstrings.py missing` lists runtime functions without a docstring; `insert` adds them.
+- `docstrings.py missing` lists runtime and package functions without a docstring, and options without a comment above; `insert` adds docstrings.
 - `site-docs.py [OUT]` builds the website's docs section, `site/docs/` (ignored by git), from `docs/guide` and `docs/reference` with pandoc ([[0018-user-reference-pages-are-written-from-the-specs-and-checked]]). Every spec must be in one of its `GROUPS`. `--check` also fails when a spec changed since a reference page or a guide that summarises it was written; `--stamp NAME` and `--stamp-guide NAME` record that one is up to date again.
 - `drive.py` drives the real binary in a pty (see its docstring); `shot.py` does the same and saves the screen as a PNG. Set `HOME` to a temporary directory so no user config loads.
 

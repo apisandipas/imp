@@ -49,7 +49,10 @@
 ;;;            (begin (done (cursor) (list (completion-candidate "🙂"))) #t)))
 ;;;     'priority 10)
 
+;; Whether the menu opens by itself as you type in insert state.
 (define-option! 'completion-auto #t '())
+;; How many characters of a word to type before the menu opens by itself
+;; (a source can ask for another number).
 (define-option! 'completion-auto-min 3 '())
 ;; Milliseconds of quiet before the menu opens by itself; 0 opens it
 ;; as soon as the key is drawn, as blink.cmp and nvim-cmp's local
@@ -684,7 +687,9 @@
 ;;; the one chosen and closes it, C-e puts back what was typed. With
 ;;; cmdline-completion off, <tab> is Vim's wildmenu instead.
 
+;; Complete on the : line with the menu; off, <tab> is Vim's wildmenu.
 (define-option! 'cmdline-completion #t '())
+;; Open the : line's menu by itself as you type, not only on <tab>.
 (define-option! 'cmdline-completion-auto #t '())
 
 (define *cmd-open* #f)

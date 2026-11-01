@@ -6,6 +6,8 @@
 ;;; completing-read puts the high scorers first (completion.scm). Kept in
 ;;; the state directory; (set-option! 'completion-history #f) turns it off.
 
+;; Remember what is picked in each menu, so it comes first next time;
+;; kept in the state directory.
 (define-option! 'completion-history #t '())
 
 (define completion-history-max 500)  ; candidates kept per menu
