@@ -60,7 +60,7 @@ fn clamp(n: isize) -> usize {
 
 /// Fails if the current buffer is read-only.
 fn writable(e: &Editor) -> Result<(), String> {
-    if e.buffer.read_only {
+    if e.buffer().read_only {
         Err("E21: Cannot make changes, 'modifiable' is off".into())
     } else {
         Ok(())
@@ -84,37 +84,37 @@ fn node_value(kind: String, field: String, start: usize, end: usize, named: bool
 pub fn register(engine: &mut Engine) {
     // Reading the buffer.
     engine.register_fn("buffer-length", || {
-        editor::with(|e| e.buffer.len() as isize)
+        editor::with(|e| e.buffer().len() as isize)
     });
     engine.register_fn("buffer-char-at", |offset: isize| {
-        editor::with(|e| e.buffer.char_at(clamp(offset)))
+        editor::with(|e| e.buffer().char_at(clamp(offset)))
     });
     // Steel has no char-alphabetic?, and Unicode classification belongs here
     // anyway. Word chars are letters, digits and underscore, as in Vim.
     engine.register_fn("char-word?", |c: char| c.is_alphanumeric() || c == '_');
     engine.register_fn("buffer-substring", |start: isize, end: isize| {
-        editor::with(|e| e.buffer.slice(clamp(start), clamp(end)))
+        editor::with(|e| e.buffer().slice(clamp(start), clamp(end)))
     });
     engine.register_fn("buffer-line-count", || {
-        editor::with(|e| e.buffer.line_count() as isize)
+        editor::with(|e| e.buffer().line_count() as isize)
     });
     engine.register_fn("buffer-line-length", |line: isize| {
-        editor::with(|e| e.buffer.line_len(clamp(line)) as isize)
+        editor::with(|e| e.buffer().line_len(clamp(line)) as isize)
     });
     engine.register_fn("line-col->offset", |line: isize, col: isize| {
-        editor::with(|e| e.buffer.line_col_to_offset(clamp(line), clamp(col)) as isize)
+        editor::with(|e| e.buffer().line_col_to_offset(clamp(line), clamp(col)) as isize)
     });
     engine.register_fn("offset->line", |offset: isize| {
-        editor::with(|e| e.buffer.offset_to_line(clamp(offset)) as isize)
+        editor::with(|e| e.buffer().offset_to_line(clamp(offset)) as isize)
     });
     engine.register_fn("offset->col", |offset: isize| {
-        editor::with(|e| e.buffer.offset_to_col(clamp(offset)) as isize)
+        editor::with(|e| e.buffer().offset_to_col(clamp(offset)) as isize)
     });
     engine.register_fn("buffer-path", || {
-        editor::with(|e| e.buffer.path().map(|p| p.display().to_string()))
+        editor::with(|e| e.buffer().path().map(|p| p.display().to_string()))
     });
     engine.register_fn("buffer-version", || {
-        editor::with(|e| e.buffer.version() as isize)
+        editor::with(|e| e.buffer().version() as isize)
     });
     // The edits since the buffer was at `version`, oldest first, as
     // (start old-end new-end text start-line start-col old-end-line
@@ -123,7 +123,7 @@ pub fn register(engine: &mut Engine) {
         editor::with(|e| {
             let changes = u64::try_from(version)
                 .ok()
-                .and_then(|v| e.buffer.changes_since(v));
+                .and_then(|v| e.buffer().changes_since(v));
             changes.map(|changes| {
                 let int = |n: usize| SteelVal::IntV(n as isize);
                 SteelVal::ListV(
@@ -151,9 +151,11 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("buffer-modified?", || {
-        editor::with(|e| e.buffer.is_modified())
+        editor::with(|e| e.buffer().is_modified())
     });
-    engine.register_fn("buffer-name", || editor::with(|e| e.buffer.display_name()));
+    engine.register_fn("buffer-name", || {
+        editor::with(|e| e.buffer().display_name())
+    });
 
     // Buffers. The primitives above act on the current buffer; these list
     // buffers and switch between them. Ids are integers.
@@ -165,7 +167,7 @@ pub fn register(engine: &mut Engine) {
                 .collect::<Vec<_>>()
         })
     });
-    engine.register_fn("current-buffer", || editor::with(|e| e.current as isize));
+    engine.register_fn("current-buffer", || editor::with(|e| e.current() as isize));
     engine.register_fn("switch-to-buffer!", |id: isize| {
         editor::with(|e| e.switch_to(clamp(id)))
     });
@@ -212,15 +214,15 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("buffer-changed-on-disk?", || {
-        editor::with(|e| e.buffer.changed_on_disk())
+        editor::with(|e| e.buffer().changed_on_disk())
     });
     engine.register_fn("buffer-forget-disk-change!", || {
-        editor::with(|e| e.buffer.forget_disk_change())
+        editor::with(|e| e.buffer_mut().forget_disk_change())
     });
     // ("unix"|"dos" "utf-8"|"latin1" bom?) for the current buffer.
     engine.register_fn("buffer-file-format", || {
         editor::with(|e| {
-            let f = e.buffer.format();
+            let f = e.buffer().format();
             vec![
                 SteelVal::StringV(if f.crlf { "dos" } else { "unix" }.into()),
                 SteelVal::StringV(
@@ -249,7 +251,7 @@ pub fn register(engine: &mut Engine) {
                 other => return Err(format!("unknown fileformat {other}")),
             };
             editor::with(|e| {
-                e.buffer.set_format(FileFormat {
+                e.buffer_mut().set_format(FileFormat {
                     crlf,
                     bom,
                     encoding,
@@ -259,16 +261,16 @@ pub fn register(engine: &mut Engine) {
         },
     );
     engine.register_fn("set-backup!", |on: bool| {
-        editor::with(|e| e.buffer.backup = on)
+        editor::with(|e| e.buffer_mut().backup = on)
     });
     engine.register_fn("buffer-reload!", || {
-        editor::with(|e| e.buffer.reload().map_err(|err| err.to_string()))
+        editor::with(|e| e.buffer_mut().reload().map_err(|err| err.to_string()))
     });
     engine.register_fn("set-buffer-unmodified!", || {
-        editor::with(|e| e.buffer.set_unmodified())
+        editor::with(|e| e.buffer_mut().set_unmodified())
     });
     engine.register_fn("set-buffer-name!", |name: String| {
-        editor::with(|e| e.buffer.set_name(Some(name)))
+        editor::with(|e| e.buffer_mut().set_name(Some(name)))
     });
 
     // Changing the buffer.
@@ -277,7 +279,7 @@ pub fn register(engine: &mut Engine) {
             if !text.is_empty() {
                 writable(e)?;
             }
-            e.buffer.insert(clamp(offset), &text);
+            e.buffer_mut().insert(clamp(offset), &text);
             Ok::<_, String>(())
         })
     });
@@ -286,23 +288,25 @@ pub fn register(engine: &mut Engine) {
             if start < end {
                 writable(e)?;
             }
-            Ok::<_, String>(e.buffer.delete(clamp(start), clamp(end)))
+            Ok::<_, String>(e.buffer_mut().delete(clamp(start), clamp(end)))
         })
     });
     engine.register_fn("set-buffer-read-only!", |on: bool| {
-        editor::with(|e| e.buffer.read_only = on)
+        editor::with(|e| e.buffer_mut().read_only = on)
     });
-    engine.register_fn("buffer-read-only?", || editor::with(|e| e.buffer.read_only));
+    engine.register_fn("buffer-read-only?", || {
+        editor::with(|e| e.buffer().read_only)
+    });
     // Files and processes.
     engine.register_fn("write-file!", |path: String| {
         editor::with(|e| {
-            e.buffer
+            e.buffer()
                 .write_to(Path::new(&path))
                 .map_err(|err| format!("{path}: {err}"))
         })
     });
     engine.register_fn("set-buffer-path!", |path: String| {
-        editor::with(|e| e.buffer.set_path(Some(PathBuf::from(path))))
+        editor::with(|e| e.buffer_mut().set_path(Some(PathBuf::from(path))))
     });
     engine.register_fn("read-file", |path: String| {
         std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
@@ -542,20 +546,20 @@ pub fn register(engine: &mut Engine) {
     });
 
     engine.register_fn("undo-boundary!", || {
-        editor::with(|e| e.buffer.undo_boundary())
+        editor::with(|e| e.buffer_mut().undo_boundary())
     });
     // Both return the offset where the text changed, or #f if there was
     // nothing to undo or redo.
     engine.register_fn("undo!", || {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer.undo().map(|at| at as isize))
+            Ok::<_, String>(e.buffer_mut().undo().map(|at| at as isize))
         })
     });
     engine.register_fn("redo!", || {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer.redo().map(|at| at as isize))
+            Ok::<_, String>(e.buffer_mut().redo().map(|at| at as isize))
         })
     });
     // g+ (#t) and g-: the state made just after or before, across
@@ -563,14 +567,14 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("undo-step!", |forward: bool| {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer.undo_step(forward).map(|at| at as isize))
+            Ok::<_, String>(e.buffer_mut().undo_step(forward).map(|at| at as isize))
         })
     });
     // The tip of each undo branch as (change-number changes-deep
     // seconds-ago), oldest first.
     engine.register_fn("undo-list", || {
         editor::with(|e| {
-            e.buffer
+            e.buffer_mut()
                 .undo_list()
                 .into_iter()
                 .map(|(n, depth, made)| {
@@ -581,7 +585,7 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("save!", || {
-        editor::with(|e| match e.buffer.save() {
+        editor::with(|e| match e.buffer_mut().save() {
             Ok(()) => true,
             Err(err) => {
                 e.status = format!("save failed: {err}");
@@ -592,24 +596,24 @@ pub fn register(engine: &mut Engine) {
 
     // Marks: positions that move with the text.
     engine.register_fn("mark-set!", |name: String, offset: isize| {
-        editor::with(|e| e.buffer.set_mark(&name, clamp(offset)))
+        editor::with(|e| e.buffer_mut().set_mark(&name, clamp(offset)))
     });
     // A mark that stays put when text is inserted right at it.
     engine.register_fn("mark-set-sticky!", |name: String, offset: isize| {
-        editor::with(|e| e.buffer.set_sticky_mark(&name, clamp(offset)))
+        editor::with(|e| e.buffer_mut().set_sticky_mark(&name, clamp(offset)))
     });
     engine.register_fn("mark-get", |name: String| {
-        editor::with(|e| e.buffer.mark(&name).map(|m| m as isize))
+        editor::with(|e| e.buffer().mark(&name).map(|m| m as isize))
     });
     engine.register_fn("mark-delete!", |name: String| {
-        editor::with(|e| e.buffer.delete_mark(&name))
+        editor::with(|e| e.buffer_mut().delete_mark(&name))
     });
-    engine.register_fn("mark-names", || editor::with(|e| e.buffer.mark_names()));
+    engine.register_fn("mark-names", || editor::with(|e| e.buffer().mark_names()));
 
     // The cursor.
-    engine.register_fn("cursor", || editor::with(|e| e.cursor as isize));
+    engine.register_fn("cursor", || editor::with(|e| e.cursor() as isize));
     engine.register_fn("set-cursor!", |offset: isize| {
-        editor::with(|e| e.cursor = clamp(offset).min(e.buffer.len()))
+        editor::with(|e| e.set_cursor(clamp(offset).min(e.buffer().len())))
     });
 
     // Windows. Ids are integers; the current window's buffer is the current
@@ -624,7 +628,7 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("current-window", || {
-        editor::with(|e| e.current_window as isize)
+        editor::with(|e| e.current_window() as isize)
     });
     // `where` is "above", "below", "left" or "right" of the current window.
     engine.register_fn("split-window!", |place: String| {
@@ -657,7 +661,7 @@ pub fn register(engine: &mut Engine) {
     });
     engine.register_fn("only-window!", || editor::with(|e| e.only_window()));
     engine.register_fn("window-buffer", |id: isize| {
-        editor::with(|e| e.windows.get(&clamp(id)).map(|w| w.buffer as isize))
+        editor::with(|e| e.window_buffer(clamp(id)).map(|b| b as isize))
     });
     // The window to the "left", "right", "up" or "down" of the current
     // one, or #f.
@@ -685,7 +689,7 @@ pub fn register(engine: &mut Engine) {
         };
         editor::with(|e| {
             let (area, gap) = (e.windows_area(), e.divider());
-            let id = e.current_window;
+            let id = e.current_window();
             e.layout.resize(id, dir, delta, area, gap)
         })
     });
@@ -787,11 +791,11 @@ pub fn register(engine: &mut Engine) {
     });
 
     // The window: which buffer lines are on screen.
-    engine.register_fn("window-top", || editor::with(|e| e.scroll as isize));
+    engine.register_fn("window-top", || editor::with(|e| e.scroll() as isize));
     engine.register_fn("window-width", || editor::with(|e| e.width as isize));
     engine.register_fn("window-height", || editor::with(|e| e.text_rows() as isize));
     engine.register_fn("set-window-top!", |line: isize| {
-        editor::with(|e| e.scroll = clamp(line).min(e.buffer.line_count().saturating_sub(1)))
+        editor::with(|e| e.set_scroll(clamp(line).min(e.buffer().line_count().saturating_sub(1))))
     });
 
     // "off", "absolute", "relative" or "hybrid": the line numbers of
@@ -803,7 +807,7 @@ pub fn register(engine: &mut Engine) {
     // or #f to use everyone's.
     engine.register_fn("set-buffer-line-numbers!", |mode: Option<String>| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             match mode {
                 Some(mode) => e.buffer_line_numbers.insert(id, line_numbers(&mode)),
                 None => e.buffer_line_numbers.remove(&id),
@@ -814,7 +818,7 @@ pub fn register(engine: &mut Engine) {
     // "auto" (while it has signs).
     engine.register_fn("set-sign-column!", |mode: String| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.sign_columns.insert(id, gutter_column(&mode));
         })
     });
@@ -822,7 +826,7 @@ pub fn register(engine: &mut Engine) {
     // "auto" (while it has folds).
     engine.register_fn("set-fold-column!", |mode: String| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.fold_columns.insert(id, gutter_column(&mode));
         })
     });
@@ -830,7 +834,7 @@ pub fn register(engine: &mut Engine) {
     // columns a level, as Org's org-indent-mode does; 0 stops.
     engine.register_fn("set-outline-indent!", |per_level: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             if per_level > 0 {
                 e.outline_indents.insert(id, per_level as usize);
             } else {
@@ -981,7 +985,7 @@ pub fn register(engine: &mut Engine) {
         "set-status-value!",
         |name: String, value: String, global: bool| {
             editor::with(|e| {
-                let id = if global { usize::MAX } else { e.current };
+                let id = if global { usize::MAX } else { e.current() };
                 e.status_values.entry(id).or_default().insert(name, value);
             })
         },
@@ -1015,7 +1019,7 @@ pub fn register(engine: &mut Engine) {
     // a parse is still running in the background, as drawing allows.
     engine.register_fn("faces-at", |at: isize| {
         editor::with(|e| {
-            e.update_syntax_now(e.current);
+            e.update_syntax_now(e.current());
             crate::render::faces_at(e, clamp(at))
         })
     });
@@ -1074,7 +1078,7 @@ pub fn register(engine: &mut Engine) {
             }
         }
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.folds.insert(id, outer);
             e.fold_starts.insert(id, starts);
         })
@@ -1105,7 +1109,7 @@ pub fn register(engine: &mut Engine) {
             }
         }
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.signs.insert(id, map);
         })
     });
@@ -1131,7 +1135,7 @@ pub fn register(engine: &mut Engine) {
             _ => return Err("set-change-marks!: expected a list or #f".to_string()),
         };
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             match marks {
                 Some(marks) => e.change_marks.insert(id, marks),
                 None => e.change_marks.remove(&id),
@@ -1171,7 +1175,7 @@ pub fn register(engine: &mut Engine) {
             map.insert(clamp(*line), parts);
         }
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             if map.is_empty() {
                 e.margins.remove(&id);
             } else {
@@ -1184,7 +1188,7 @@ pub fn register(engine: &mut Engine) {
     // with blank margins either side; 0 lets it fill the window again.
     engine.register_fn("set-body-width!", |width: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             if width > 0 {
                 e.body_widths.insert(id, clamp(width));
             } else {
@@ -1193,7 +1197,7 @@ pub fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("body-width", || {
-        editor::with(|e| e.body_widths.get(&e.current).map_or(0, |w| *w as isize))
+        editor::with(|e| e.body_widths.get(&e.current()).map_or(0, |w| *w as isize))
     });
 
     // (window offset) under screen cell (x, y), offset #f on a status
@@ -1215,7 +1219,7 @@ pub fn register(engine: &mut Engine) {
         "set-line-end-text!",
         |line: isize, text: SteelVal, face: String| {
             editor::with(|e| {
-                let id = e.current;
+                let id = e.current();
                 let texts = e.line_end_texts.entry(id).or_default();
                 match text {
                     SteelVal::StringV(t) => {
@@ -1251,7 +1255,7 @@ pub fn register(engine: &mut Engine) {
             })
             .collect();
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             if lines.is_empty() {
                 e.footers.remove(&id);
             } else {
@@ -1460,10 +1464,10 @@ pub fn register(engine: &mut Engine) {
     engine.register_fn("search-all", |pattern: String, limit: isize| {
         let re = search::compile(&pattern)?;
         Ok::<_, String>(editor::with(|e| {
-            let text = e.buffer.shared_text();
+            let text = e.buffer().shared_text();
             re.find_iter(&text)
                 .take(clamp(limit))
-                .map(|m| e.buffer.byte_to_char(m.start()) as isize)
+                .map(|m| e.buffer().byte_to_char(m.start()) as isize)
                 .collect::<Vec<_>>()
         }))
     });
@@ -1475,10 +1479,10 @@ pub fn register(engine: &mut Engine) {
             if needle.is_empty() {
                 return Vec::new();
             }
-            let text = e.buffer.shared_text();
+            let text = e.buffer().shared_text();
             text.match_indices(&needle)
                 .take(clamp(limit))
-                .map(|(b, _)| e.buffer.byte_to_char(b) as isize)
+                .map(|(b, _)| e.buffer().byte_to_char(b) as isize)
                 .collect::<Vec<_>>()
         })
     });
@@ -1628,7 +1632,7 @@ pub fn register(engine: &mut Engine) {
             let live: Vec<usize> = live.into_iter().map(clamp).collect();
             let fuzzy: Vec<usize> = fuzzy.into_iter().map(clamp).collect();
             editor::with(|e| {
-                complete::filter_candidates(e, e.cursor, prefix_only, &live, &fuzzy, clamp(limit))
+                complete::filter_candidates(e, e.cursor(), prefix_only, &live, &fuzzy, clamp(limit))
             })
         },
     );
@@ -1642,15 +1646,15 @@ pub fn register(engine: &mut Engine) {
     // Tree-sitter (syntax.rs): a language per buffer, and its tree.
     engine.register_fn("set-buffer-language!", |name: String| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             match crate::syntax::Syntax::new(&name) {
                 Ok(Some(syntax)) => {
-                    e.buffer.track_edits(true);
+                    e.buffer_mut().track_edits(true);
                     e.syntax.insert(id, syntax);
                     SteelVal::BoolV(true)
                 }
                 other => {
-                    e.buffer.track_edits(false);
+                    e.buffer_mut().track_edits(false);
                     e.syntax.remove(&id);
                     match other {
                         Err(why) => SteelVal::StringV(why.into()),
@@ -1679,7 +1683,7 @@ pub fn register(engine: &mut Engine) {
         crate::syntax::set_query_dir((!dir.is_empty()).then(|| dir.into()));
     });
     engine.register_fn("buffer-language", || {
-        editor::with(|e| e.syntax.get(&e.current).map(|s| s.lang.name.to_string()))
+        editor::with(|e| e.syntax.get(&e.current()).map(|s| s.lang.name.to_string()))
     });
     engine.register_fn("syntax-languages", || {
         let mut names: Vec<String> = crate::syntax::bundled_names()
@@ -1695,12 +1699,12 @@ pub fn register(engine: &mut Engine) {
     // (kind field start end); the field is "" when the node has none.
     engine.register_fn("syntax-ancestors", |at: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax(id);
             let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
                 return Vec::new();
             };
-            crate::syntax::ancestors(root, e.buffer.rope(), clamp(at))
+            crate::syntax::ancestors(root, e.buffer().rope(), clamp(at))
                 .into_iter()
                 .map(|(k, f, s, t)| node_value(k, f, s, t, true))
                 .collect::<Vec<_>>()
@@ -1713,9 +1717,9 @@ pub fn register(engine: &mut Engine) {
     // just typed needs it.
     engine.register_fn("syntax-at", |at: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax_now(id);
-            let rope = e.buffer.rope();
+            let rope = e.buffer().rope();
             let Some((name, root)) = e
                 .syntax
                 .get(&id)
@@ -1736,9 +1740,9 @@ pub fn register(engine: &mut Engine) {
     // syntax-at gives nodes of.
     engine.register_fn("syntax-children-at", |start: isize, end: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax_now(id);
-            let rope = e.buffer.rope();
+            let rope = e.buffer().rope();
             let Some((_, root)) = e
                 .syntax
                 .get(&id)
@@ -1756,12 +1760,12 @@ pub fn register(engine: &mut Engine) {
     // start end named?).
     engine.register_fn("syntax-children", |start: isize, end: isize| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax(id);
             let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
                 return Vec::new();
             };
-            crate::syntax::children(root, e.buffer.rope(), clamp(start), clamp(end))
+            crate::syntax::children(root, e.buffer().rope(), clamp(start), clamp(end))
                 .into_iter()
                 .map(|(k, f, s, t, named)| node_value(k, f, s, t, named))
                 .collect::<Vec<_>>()
@@ -1771,7 +1775,7 @@ pub fn register(engine: &mut Engine) {
     // foldmethod syntax (syntax::fold_lines).
     engine.register_fn("syntax-fold-lines", |kinds: Vec<String>| {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax(id);
             let Some(root) = e.syntax.get(&id).and_then(|s| s.root()) else {
                 return Vec::new();
@@ -1786,7 +1790,7 @@ pub fn register(engine: &mut Engine) {
     // text objects.
     engine.register_fn("syntax-tree", || {
         editor::with(|e| {
-            let id = e.current;
+            let id = e.current();
             e.update_syntax(id);
             e.syntax
                 .get(&id)
@@ -1803,19 +1807,19 @@ pub fn register(engine: &mut Engine) {
                 return None;
             }
             editor::with(|e| {
-                scan::find_open(e.buffer.rope(), open, close, from as usize, clamp(count))
+                scan::find_open(e.buffer().rope(), open, close, from as usize, clamp(count))
                     .map(|p| p as isize)
             })
         },
     );
     engine.register_fn("find-close", |open: char, close: char, from: isize| {
         editor::with(|e| {
-            scan::find_close(e.buffer.rope(), open, close, clamp(from)).map(|p| p as isize)
+            scan::find_close(e.buffer().rope(), open, close, clamp(from)).map(|p| p as isize)
         })
     });
     engine.register_fn("tag-pairs-around", |offset: isize| {
         editor::with(|e| {
-            scan::tag_pairs_around(e.buffer.rope(), clamp(offset))
+            scan::tag_pairs_around(e.buffer().rope(), clamp(offset))
                 .into_iter()
                 .map(|t| t.iter().map(|&x| x as isize).collect::<Vec<isize>>())
                 .collect::<Vec<_>>()
@@ -1831,7 +1835,7 @@ pub fn register(engine: &mut Engine) {
         |pattern: String, from: isize, forward: bool| {
             let re = search::compile(&pattern)?;
             Ok::<_, String>(editor::with(|e| {
-                search::next_match(&e.buffer, &re, clamp(from), forward)
+                search::next_match(e.buffer(), &re, clamp(from), forward)
                     .map(|(at, wrapped)| vec![at as isize, isize::from(wrapped)])
             }))
         },
@@ -1843,7 +1847,7 @@ pub fn register(engine: &mut Engine) {
             editor::with(|e| writable(e))?;
             Ok::<_, String>(editor::with(|e| {
                 let (count, line) = search::substitute(
-                    &mut e.buffer,
+                    e.buffer_mut(),
                     &re,
                     &replacement,
                     clamp(first),

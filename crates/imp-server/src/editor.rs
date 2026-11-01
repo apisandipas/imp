@@ -20,15 +20,15 @@ pub type MarginText = Vec<(String, String)>;
 
 #[derive(Debug, Default)]
 pub struct Editor {
-    /// The current buffer. Every buffer primitive acts on this one; other
-    /// buffers wait in `parked` until switched to.
-    pub buffer: Buffer,
-    /// Id of the current buffer.
-    pub current: usize,
-    pub parked: BTreeMap<usize, Parked>,
+    /// Every buffer, by id. Read them through `buffer()` (the current
+    /// one, which buffer primitives act on) and `buffer_by_id`.
+    buffers: BTreeMap<usize, Kept>,
+    /// Id of the current buffer: the current window's.
+    current: usize,
     pub next_id: usize,
-    /// Cursor as a char offset into the buffer.
-    pub cursor: usize,
+    /// The current window's cursor, as a char offset into its buffer.
+    /// Other windows' cursors are marks (see `window_view`).
+    cursor: usize,
     pub mode_name: String,
     /// Shown at the right of the status line, before the position (the
     /// buffer's major mode).
@@ -76,16 +76,12 @@ pub struct Editor {
     pub kill_server: bool,
     /// Whether this is a daemon, where quitting detaches a client.
     pub daemon: bool,
-    /// First buffer line shown in the current window.
-    pub scroll: usize,
-    /// First display column shown in the current window (without wrap).
-    pub hscroll: usize,
-    /// Every window. The current window's scroll and cursor live in the
-    /// fields above while it is current; another window's cursor is a
+    /// Every window, the current one too, with its buffer and scroll.
+    /// The current window's cursor is `cursor`; another window's is a
     /// mark in its buffer (see `window_mark`), so edits keep it in place.
-    pub windows: BTreeMap<usize, Window>,
+    windows: BTreeMap<usize, Window>,
     pub layout: Layout,
-    pub current_window: usize,
+    current_window: usize,
     pub next_window_id: usize,
     /// Whether long lines wrap onto the next screen rows.
     pub wrap: bool,
@@ -181,10 +177,23 @@ pub struct Float {
     pub border: String,
 }
 
-/// A window: a view of a buffer.
+/// A window: a view of a buffer, and where it's scrolled to.
 #[derive(Debug, Clone)]
 pub struct Window {
     pub buffer: usize,
+    /// The first buffer line shown.
+    pub scroll: usize,
+    /// The first display column shown (without wrap).
+    pub hscroll: usize,
+}
+
+/// What a window shows and where (`Editor::window_view`).
+#[derive(Debug, Clone, Copy)]
+pub struct WindowView<'a> {
+    pub buffer_id: usize,
+    pub buffer: &'a Buffer,
+    /// The window's cursor, within the buffer.
+    pub cursor: usize,
     pub scroll: usize,
     pub hscroll: usize,
 }
@@ -206,12 +215,13 @@ pub struct ClientView {
     current_window: usize,
 }
 
-/// A buffer that isn't current, with where its cursor and window were.
+/// A buffer, with where its cursor and window were when it was last
+/// left, for switching back to it.
 #[derive(Debug)]
-pub struct Parked {
-    pub buffer: Buffer,
-    pub cursor: usize,
-    pub scroll: usize,
+struct Kept {
+    buffer: Buffer,
+    cursor: usize,
+    scroll: usize,
 }
 
 /// A named set of highlighted ranges, such as the visual selection or the
@@ -237,54 +247,188 @@ pub struct Highlight {
 }
 
 impl Editor {
+    /// An editor showing `buffer` in its one window.
+    pub fn new(buffer: Buffer) -> Self {
+        Editor {
+            buffers: BTreeMap::from([(
+                0,
+                Kept {
+                    buffer,
+                    cursor: 0,
+                    scroll: 0,
+                },
+            )]),
+            windows: BTreeMap::from([(
+                1,
+                Window {
+                    buffer: 0,
+                    scroll: 0,
+                    hscroll: 0,
+                },
+            )]),
+            layout: Layout::Window(1),
+            current_window: 1,
+            next_window_id: 1,
+            ..Editor::default()
+        }
+    }
+
+    /// The current buffer: the current window's. Buffer primitives act on
+    /// this one.
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffers[&self.current].buffer
+    }
+
+    pub fn buffer_mut(&mut self) -> &mut Buffer {
+        &mut self
+            .buffers
+            .get_mut(&self.current)
+            .expect("the current buffer exists")
+            .buffer
+    }
+
+    /// The current window's cursor, as a char offset into its buffer.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn set_cursor(&mut self, at: usize) {
+        self.cursor = at;
+    }
+
+    /// The first buffer line the current window shows.
+    pub fn scroll(&self) -> usize {
+        self.windows
+            .get(&self.current_window)
+            .map_or(0, |w| w.scroll)
+    }
+
+    pub fn set_scroll(&mut self, line: usize) {
+        if let Some(w) = self.windows.get_mut(&self.current_window) {
+            w.scroll = line;
+        }
+    }
+
+    /// The buffer window `id` shows, if there is such a window.
+    pub fn window_buffer(&self, id: usize) -> Option<usize> {
+        self.windows.get(&id).map(|w| w.buffer)
+    }
+
+    /// Id of the current buffer.
+    pub fn current(&self) -> usize {
+        self.current
+    }
+
+    /// Id of the current window.
+    pub fn current_window(&self) -> usize {
+        self.current_window
+    }
+
+    /// What window `id` shows and where: its buffer, cursor and scroll.
+    /// `None` if there is no such window.
+    pub fn window_view(&self, id: usize) -> Option<WindowView<'_>> {
+        let w = self.windows.get(&id)?;
+        let buffer = self.buffer_by_id(w.buffer).unwrap_or(self.buffer());
+        // The current window's cursor moves with every key, so it is a
+        // plain field; the others' are marks, which edits keep in place.
+        let cursor = if id == self.current_window {
+            self.cursor
+        } else {
+            buffer.mark(&window_mark(id)).unwrap_or(0)
+        };
+        Some(WindowView {
+            buffer_id: w.buffer,
+            buffer,
+            cursor: cursor.min(buffer.len()),
+            scroll: w.scroll,
+            hscroll: w.hscroll,
+        })
+    }
+
+    /// Sets where window `id` is scrolled to, as drawing worked out.
+    pub fn set_window_scroll(&mut self, id: usize, scroll: usize, hscroll: usize) {
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.scroll = scroll;
+            w.hscroll = hscroll;
+        }
+    }
+
+    /// The current window, or one on the current buffer if there is none.
+    fn current_window_state(&self) -> Window {
+        self.windows
+            .get(&self.current_window)
+            .cloned()
+            .unwrap_or(Window {
+                buffer: self.current,
+                scroll: 0,
+                hscroll: 0,
+            })
+    }
+
     /// Ids of all buffers, in the order they were made.
     pub fn buffer_ids(&self) -> Vec<usize> {
-        let mut ids: Vec<usize> = self.parked.keys().copied().collect();
-        ids.push(self.current);
-        ids.sort_unstable();
-        ids
+        self.buffers.keys().copied().collect()
     }
 
     pub fn buffer_by_id(&self, id: usize) -> Option<&Buffer> {
-        if id == self.current {
-            Some(&self.buffer)
-        } else {
-            self.parked.get(&id).map(|p| &p.buffer)
-        }
+        self.buffers.get(&id).map(|k| &k.buffer)
+    }
+
+    pub fn buffer_by_id_mut(&mut self, id: usize) -> Option<&mut Buffer> {
+        self.buffers.get_mut(&id).map(|k| &mut k.buffer)
     }
 
     /// Buffer `id` and its cursor, to change a buffer that may not be
-    /// current.
+    /// current: the current window's cursor, or where the buffer was left.
     pub fn buffer_and_cursor_mut(&mut self, id: usize) -> Option<(&mut Buffer, &mut usize)> {
-        if id == self.current {
-            Some((&mut self.buffer, &mut self.cursor))
+        let kept = self.buffers.get_mut(&id)?;
+        let cursor = if id == self.current {
+            &mut self.cursor
         } else {
-            self.parked
-                .get_mut(&id)
-                .map(|p| (&mut p.buffer, &mut p.cursor))
+            &mut kept.cursor
+        };
+        Some((&mut kept.buffer, cursor))
+    }
+
+    /// Notes where the current window is in the current buffer, for when
+    /// the buffer is switched back to.
+    fn remember_place(&mut self) {
+        let (cursor, scroll) = (self.cursor, self.scroll());
+        if let Some(k) = self.buffers.get_mut(&self.current) {
+            k.cursor = cursor;
+            k.scroll = scroll;
         }
     }
 
-    /// Makes buffer `id` current. Returns false if there is no such buffer.
+    /// Makes buffer `id` current, with the cursor where it was left, and
+    /// returns where it was scrolled to; `None` if there is no such buffer.
+    /// The windows are left as they are.
+    fn enter_buffer(&mut self, id: usize) -> Option<usize> {
+        let k = self.buffers.get(&id)?;
+        let (cursor, scroll) = (k.cursor.min(k.buffer.len()), k.scroll);
+        if id != self.current {
+            self.remember_place();
+            self.current = id;
+            self.cursor = cursor;
+        }
+        Some(scroll)
+    }
+
+    /// Makes buffer `id` current, in the current window. Returns false if
+    /// there is no such buffer.
     pub fn switch_to(&mut self, id: usize) -> bool {
         if id == self.current {
             return true;
         }
-        let Some(next) = self.parked.remove(&id) else {
+        let Some(scroll) = self.enter_buffer(id) else {
             return false;
         };
-        let old = Parked {
-            buffer: std::mem::replace(&mut self.buffer, next.buffer),
-            cursor: self.cursor,
-            scroll: self.scroll,
-        };
-        self.hscroll = 0;
-        self.parked.insert(self.current, old);
-        self.current = id;
-        self.cursor = next.cursor.min(self.buffer.len());
-        self.scroll = next.scroll;
         if let Some(w) = self.windows.get_mut(&self.current_window) {
-            w.buffer = id;
+            *w = Window {
+                buffer: id,
+                scroll,
+                hscroll: 0,
+            };
         }
         true
     }
@@ -293,9 +437,9 @@ impl Editor {
     pub fn add_buffer(&mut self, buffer: Buffer) -> usize {
         self.next_id += 1;
         let id = self.next_id;
-        self.parked.insert(
+        self.buffers.insert(
             id,
-            Parked {
+            Kept {
                 buffer,
                 cursor: 0,
                 scroll: 0,
@@ -307,19 +451,20 @@ impl Editor {
     /// The buffer visiting `path`, if one is open.
     pub fn find_file_buffer(&self, path: &Path) -> Option<usize> {
         let wanted = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        self.buffer_ids().into_iter().find(|&id| {
-            self.buffer_by_id(id)
-                .and_then(|b| b.path())
+        self.buffers.iter().find_map(|(&id, k)| {
+            k.buffer
+                .path()
                 .is_some_and(|p| {
                     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()) == wanted
                 })
+                .then_some(id)
         })
     }
 
     /// Removes buffer `id`. Windows showing it show another buffer; if it
     /// was the last buffer, a new empty one.
     pub fn kill_buffer(&mut self, id: usize) -> bool {
-        if id != self.current && !self.parked.contains_key(&id) {
+        if !self.buffers.contains_key(&id) {
             return false;
         }
         let other = self
@@ -327,27 +472,18 @@ impl Editor {
             .into_iter()
             .find(|&b| b != id)
             .unwrap_or_else(|| self.add_buffer(Buffer::default()));
-        let showing: Vec<usize> = self
-            .windows
-            .iter()
-            .filter(|(_, w)| w.buffer == id)
-            .map(|(&wid, _)| wid)
-            .collect();
-        for wid in showing {
-            if wid == self.current_window {
-                self.switch_to(other);
-            } else if let Some(w) = self.windows.get_mut(&wid) {
-                *w = Window {
-                    buffer: other,
-                    scroll: 0,
-                    hscroll: 0,
-                };
-            }
-        }
+        // The current window shows the current buffer.
         if id == self.current {
             self.switch_to(other);
         }
-        self.parked.remove(&id);
+        for w in self.windows.values_mut().filter(|w| w.buffer == id) {
+            *w = Window {
+                buffer: other,
+                scroll: 0,
+                hscroll: 0,
+            };
+        }
+        self.buffers.remove(&id);
         self.syntax.remove(&id);
         self.buffer_layers.remove(&id);
         self.folds.remove(&id);
@@ -452,31 +588,11 @@ impl Editor {
         }
     }
 
-    /// Makes the first window, showing the current buffer. Called once
-    /// when the editor is set up.
-    pub fn init_windows(&mut self) {
-        self.next_window_id = 1;
-        self.current_window = 1;
-        self.windows.insert(
-            1,
-            Window {
-                buffer: self.current,
-                scroll: 0,
-                hscroll: 0,
-            },
-        );
-        self.layout = Layout::Window(1);
-    }
-
     /// Takes the current windows out as a client's view, leaving them in
     /// place until another view is put.
     pub fn take_view(&mut self) -> ClientView {
-        let id = self.current_window;
-        self.buffer.set_mark(&window_mark(id), self.cursor);
-        if let Some(w) = self.windows.get_mut(&id) {
-            w.scroll = self.scroll;
-            w.hscroll = self.hscroll;
-        }
+        let (id, cursor) = (self.current_window, self.cursor);
+        self.buffer_mut().set_mark(&window_mark(id), cursor);
         ClientView {
             windows: self.windows.clone(),
             layout: self.layout.clone(),
@@ -488,13 +604,20 @@ impl Editor {
     /// buffer, cursor and scroll. A window whose buffer has gone shows the
     /// current buffer instead.
     pub fn put_view(&mut self, view: ClientView) {
+        let Some(target) = view.windows.get(&view.current_window).map(|w| w.buffer) else {
+            return;
+        };
         let fallback = self.current;
+        // Leave the current buffer while the windows that showed it are
+        // still here, so it remembers their place.
+        if self.buffers.contains_key(&target) {
+            self.enter_buffer(target);
+        }
         self.windows = view.windows;
         self.layout = view.layout;
         self.current_window = view.current_window;
-        let ids = self.buffer_ids();
         for w in self.windows.values_mut() {
-            if !ids.contains(&w.buffer) {
+            if !self.buffers.contains_key(&w.buffer) {
                 *w = Window {
                     buffer: fallback,
                     scroll: 0,
@@ -502,30 +625,21 @@ impl Editor {
                 };
             }
         }
-        let Some(target) = self.windows.get(&self.current_window).cloned() else {
-            return;
-        };
-        self.switch_to(target.buffer);
         let mark = window_mark(self.current_window);
-        self.cursor = self.buffer.mark(&mark).unwrap_or(0).min(self.buffer.len());
-        self.buffer.delete_mark(&mark);
-        self.scroll = target.scroll;
-        self.hscroll = target.hscroll;
+        let buffer = self.buffer_mut();
+        let cursor = buffer.mark(&mark).unwrap_or(0).min(buffer.len());
+        buffer.delete_mark(&mark);
+        self.cursor = cursor;
     }
 
     /// A view for a new client: one window on the current buffer, where
     /// the current window is. The current windows stay as they are.
     pub fn new_view(&mut self) -> ClientView {
         self.next_window_id += 1;
-        let id = self.next_window_id;
-        self.buffer.set_mark(&window_mark(id), self.cursor);
-        let window = Window {
-            buffer: self.current,
-            scroll: self.scroll,
-            hscroll: self.hscroll,
-        };
+        let (id, cursor) = (self.next_window_id, self.cursor);
+        self.buffer_mut().set_mark(&window_mark(id), cursor);
         ClientView {
-            windows: BTreeMap::from([(id, window)]),
+            windows: BTreeMap::from([(id, self.current_window_state())]),
             layout: Layout::Window(id),
             current_window: id,
         }
@@ -545,41 +659,30 @@ impl Editor {
         if id == self.current_window {
             return true;
         }
-        let Some(target) = self.windows.get(&id).cloned() else {
+        let Some(target) = self.windows.get(&id).map(|w| w.buffer) else {
             return false;
         };
-        let old = self.current_window;
-        self.buffer.set_mark(&window_mark(old), self.cursor);
-        if let Some(w) = self.windows.get_mut(&old) {
-            w.scroll = self.scroll;
-            w.hscroll = self.hscroll;
-        }
+        let (old, cursor) = (self.current_window, self.cursor);
+        self.buffer_mut().set_mark(&window_mark(old), cursor);
+        // Before the current window changes, so the buffer left behind
+        // remembers the old window's place.
+        self.enter_buffer(target);
         self.current_window = id;
-        if target.buffer != self.current {
-            self.switch_to(target.buffer);
+        let mark = window_mark(id);
+        let buffer = self.buffer_mut();
+        let at = buffer.mark(&mark);
+        buffer.delete_mark(&mark);
+        if let Some(at) = at {
+            self.cursor = at;
         }
-        self.cursor = self.buffer.mark(&window_mark(id)).unwrap_or(self.cursor);
-        self.buffer.delete_mark(&window_mark(id));
-        self.scroll = target.scroll;
-        self.hscroll = target.hscroll;
         true
     }
 
     /// Splits the current window; the new window shows the same buffer at
     /// the same place and becomes current. `dir` and `before` place it.
     pub fn split_window(&mut self, dir: Dir, before: bool) -> usize {
-        self.next_window_id += 1;
-        let id = self.next_window_id;
-        self.windows.insert(
-            id,
-            Window {
-                buffer: self.current,
-                scroll: self.scroll,
-                hscroll: self.hscroll,
-            },
-        );
+        let id = self.add_window();
         self.layout.split(self.current_window, id, dir, before);
-        self.buffer.set_mark(&window_mark(id), self.cursor);
         self.focus_window(id);
         id
     }
@@ -587,19 +690,19 @@ impl Editor {
     /// Opens a window along an edge of the frame, `fraction` of its width
     /// or height, showing the current buffer and focused.
     pub fn split_frame(&mut self, dir: Dir, before: bool, fraction: f64) -> usize {
-        self.next_window_id += 1;
-        let id = self.next_window_id;
-        self.windows.insert(
-            id,
-            Window {
-                buffer: self.current,
-                scroll: self.scroll,
-                hscroll: self.hscroll,
-            },
-        );
+        let id = self.add_window();
         self.layout.split_edge(id, dir, before, fraction);
-        self.buffer.set_mark(&window_mark(id), self.cursor);
         self.focus_window(id);
+        id
+    }
+
+    /// Adds a window like the current one, not yet in the layout, and
+    /// returns its id.
+    fn add_window(&mut self) -> usize {
+        self.next_window_id += 1;
+        let (id, cursor) = (self.next_window_id, self.cursor);
+        self.windows.insert(id, self.current_window_state());
+        self.buffer_mut().set_mark(&window_mark(id), cursor);
         id
     }
 
@@ -633,14 +736,6 @@ impl Editor {
             .collect();
         for w in others {
             self.close_window(w);
-        }
-    }
-
-    pub fn buffer_by_id_mut(&mut self, id: usize) -> Option<&mut Buffer> {
-        if id == self.current {
-            Some(&mut self.buffer)
-        } else {
-            self.parked.get_mut(&id).map(|p| &mut p.buffer)
         }
     }
 

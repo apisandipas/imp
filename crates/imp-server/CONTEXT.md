@@ -3,7 +3,7 @@
 The editor. It owns all state; clients only send input and draw frames ([[0004-client-and-server]]).
 
 - `lib.rs`: `Server`, `run()`, runtime and package loading (`RUNTIME`, `PACKAGES`), `eval()`.
-- `editor.rs`: editor state, thread-local: buffers, windows, faces, highlight layers.
+- `editor.rs`: editor state, thread-local: buffers, windows, faces, highlight layers. Every buffer is in one map and every window's buffer and scroll in its `Window`, the current one's too; only ids say which is current. Read a window through `window_view(id)`, the one place that knows the current window's cursor is a field and the others' are marks; don't branch on the current window to find state.
 - `events.rs`: the loop's events; timers and jobs. `daemon.rs`: `imp --daemon`, the socket server.
 - `api.rs`: the Rust/Scheme boundary, every primitive Scheme can call.
 - `render.rs`: editor to `Frame`: windows, wrap, Unicode width, gutter, highlights, popups, status lines.
