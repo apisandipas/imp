@@ -6,6 +6,8 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
+use std::rc::Rc;
 
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
 use unicode_width::UnicodeWidthChar;
@@ -75,10 +77,11 @@ pub fn frame(e: &mut Editor) -> Frame {
         if focused {
             cursor = drawn.cursor;
         }
-        scrolls.push((*id, drawn.scroll, drawn.hscroll));
+        scrolls.push((*id, drawn.scroll, drawn.hscroll, drawn.text));
     }
-    for (id, scroll, hscroll) in scrolls {
+    for (id, scroll, hscroll, text) in scrolls {
         e.set_window_scroll(id, scroll, hscroll);
+        e.set_window_drawn(id, text);
     }
 
     let separator = e.face("separator");
@@ -579,6 +582,86 @@ struct DrawnWindow {
     /// Its text, for a client that draws heights; `rows` then leaves it
     /// blank.
     block: Option<WindowBlock>,
+    /// Where its text went, for clicks.
+    text: DrawnText,
+}
+
+/// Where a frame drew a window's text: what clicks look up, so they land
+/// where the text was drawn without laying it out again. Kept with its
+/// window (`Editor::window_drawn`) until the next frame.
+#[derive(Debug)]
+pub struct DrawnText {
+    /// What it was drawn from; a click on a window that has changed since
+    /// (another buffer, an edit, a scroll, a resize) lays it out afresh.
+    buffer_id: usize,
+    version: u64,
+    rect: Rect,
+    scroll: usize,
+    hscroll: usize,
+    /// Cells before the text: the olivetti indent and the gutter.
+    left: usize,
+    rows: Vec<DrawnRow>,
+    /// Every row's chars, one run after another, in one allocation.
+    chars: Vec<DrawnChar>,
+    /// The first line not drawn, for a click below the last row.
+    after: usize,
+}
+
+/// One drawn row of text.
+#[derive(Debug)]
+struct DrawnRow {
+    /// Its buffer line, or None past the buffer's end.
+    line: Option<usize>,
+    /// Whether it is its line's first row (the one with the gutter's
+    /// number and chevron).
+    first: bool,
+    /// How far down the window it starts and how tall it is, in rows of
+    /// one cell; its text is `height` times the font's size.
+    top: f32,
+    height: f32,
+    /// The outline indent before its text, in cells of the font's size.
+    prefix: usize,
+    /// Its run of `DrawnText::chars`, left to right. A closed fold's row
+    /// has none.
+    chars: Range<usize>,
+    /// The char column a click past its last char gives: the next row's
+    /// first, or the line's end.
+    end: usize,
+}
+
+/// A drawn char: its column in its line, and the cells it starts at and
+/// takes from the row's left edge, in cells of the row's size. A wide
+/// char cut by `hscroll` keeps only its cells inside the window.
+#[derive(Debug)]
+struct DrawnChar {
+    col: u32,
+    x: u16,
+    w: u16,
+}
+
+impl DrawnChar {
+    fn new(col: usize, x: usize, w: usize) -> DrawnChar {
+        DrawnChar {
+            col: col.min(u32::MAX as usize) as u32,
+            x: x.min(u16::MAX as usize) as u16,
+            w: w.min(u16::MAX as usize) as u16,
+        }
+    }
+}
+
+impl DrawnRow {
+    /// A row with no chars, where a click gives the line's start.
+    fn blank(line: Option<usize>, top: f32, height: f32) -> DrawnRow {
+        DrawnRow {
+            line,
+            first: true,
+            top,
+            height,
+            prefix: 0,
+            chars: 0..0,
+            end: 0,
+        }
+    }
 }
 
 /// A buffer's closed folds: (first, last) lines, sorted, not nested. A
@@ -792,6 +875,9 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     };
     // The text rows, each with its height, until the window is full.
     let mut out: Vec<(Row, f32)> = Vec::with_capacity(rect.h);
+    // And where each one's text went.
+    let mut drawn: Vec<DrawnRow> = Vec::with_capacity(rect.h);
+    let mut chars: Vec<DrawnChar> = Vec::new();
     let mut used = 0.0;
     // Where the cursor is: its row in `out`, and how far across in cells.
     let mut cursor_at = (0, 0.0);
@@ -803,6 +889,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 break;
             }
             out.push((vec![Span::new("~", e.face("nontext"))], 1.0));
+            drawn.push(DrawnRow::blank(None, used, 1.0));
             used += 1.0;
             continue;
         }
@@ -813,9 +900,10 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 break;
             }
             let mut row = view
-                .line_rows(first, scale)
+                .line_rows(first, scale, &mut Vec::new())
                 .into_iter()
                 .next()
+                .map(|(row, _)| row)
                 .unwrap_or_default();
             let note = format!(" ··· {} lines", last - first + 1);
             let used_cells: f32 = row
@@ -829,6 +917,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 cursor_at = (out.len(), left);
             }
             out.push((row, scale));
+            // A click anywhere on it goes to its start.
+            drawn.push(DrawnRow::blank(Some(first), used, scale));
             used += scale;
             line = last + 1;
             continue;
@@ -837,7 +927,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         if used + scale > room {
             break;
         }
-        let line_rows = view.line_rows(line, scale);
+        let line_rows = view.line_rows(line, scale, &mut chars);
         if line == cursor_line {
             let x = cursor_x.saturating_sub(hscroll).min(cursor_width - 1);
             cursor_at = (
@@ -845,9 +935,11 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 left + x as f32 * scale,
             );
         }
-        for row in line_rows {
+        for (row, mut at) in line_rows {
             if used + scale <= room {
                 out.push((row, scale));
+                at.top = used;
+                drawn.push(at);
                 used += scale;
             }
         }
@@ -912,6 +1004,17 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         scroll,
         hscroll,
         block,
+        text: DrawnText {
+            buffer_id,
+            version: buffer.version(),
+            rect,
+            scroll,
+            hscroll,
+            left: indent + gutter,
+            rows: drawn,
+            chars,
+            after: line,
+        },
     }
 }
 
@@ -1172,10 +1275,16 @@ fn cursor_position(
 }
 
 impl View<'_> {
-    /// The screen rows for buffer line `line`, with its gutter. Its text
-    /// is drawn `scale` times the font's size (see `line_scale`), so it
-    /// has that many times fewer cells across.
-    fn line_rows(&self, line: usize, scale: f32) -> Vec<Row> {
+    /// The screen rows for buffer line `line`, with its gutter, each with
+    /// where its chars went, which are added to `chars`. Its text is drawn
+    /// `scale` times the font's size (see `line_scale`), so it has that
+    /// many times fewer cells across.
+    fn line_rows(
+        &self,
+        line: usize,
+        scale: f32,
+        chars: &mut Vec<DrawnChar>,
+    ) -> Vec<(Row, DrawnRow)> {
         let e = self.e;
         let start = self.buffer.line_col_to_offset(line, 0);
         let text = self.buffer.line_text(line);
@@ -1221,12 +1330,28 @@ impl View<'_> {
         let width = scaled_width(self.text_width.saturating_sub(prefix), scale);
 
         let mut rows: Vec<Row> = Vec::new();
+        // Each row's chars, and the column a click past them gives.
+        let line_end = text.chars().count();
+        let mut drawn: Vec<(Range<usize>, usize)> = Vec::new();
         if e.wrap {
             let at = wrapped(&cells, width, e.linebreak);
             let count = at.last().map_or(1, |(r, _)| r + 1);
             rows.resize(count, Vec::new());
-            for (cell, &(r, _)) in cells.iter().zip(&at) {
+            drawn.resize(count, (chars.len()..chars.len(), line_end));
+            // A row's chars follow the row before's.
+            for (cell, &(r, x)) in cells.iter().zip(&at) {
                 push_cell(&mut rows[r], cell, cell.w, &styles);
+                if drawn[r].0.is_empty() {
+                    drawn[r].0 = chars.len()..chars.len();
+                }
+                chars.push(DrawnChar::new(cell.index, x, cell.w));
+                drawn[r].0.end = chars.len();
+            }
+            // Past a row's end is the next row's first char.
+            for r in 1..count {
+                if !drawn[r].0.is_empty() {
+                    drawn[r - 1].1 = chars[drawn[r].0.start].col as usize;
+                }
             }
             let end = at.last().map_or(0, |&(_, x)| x) + cells.last().map_or(0, |c| c.w);
             if eol_style != Style::default() && end < width {
@@ -1242,9 +1367,15 @@ impl View<'_> {
         } else {
             let (left, right) = (self.hscroll, self.hscroll + width);
             let mut row: Row = Vec::new();
+            let start = chars.len();
+            let mut end = line_end;
             let mut x_end = 0;
-            for cell in &cells {
+            for (i, cell) in cells.iter().enumerate() {
                 x_end = cell.x + cell.w;
+                if cell.x + cell.w.max(1) > left {
+                    let x = cell.x.max(left);
+                    chars.push(DrawnChar::new(cell.index, x - left, x_end.max(x) - x));
+                }
                 // The cells of this char inside the window.
                 let visible = (cell.x.max(left)..x_end.min(right)).len();
                 if cell.w == 0 && cell.x >= left && cell.x < right {
@@ -1256,9 +1387,11 @@ impl View<'_> {
                     push(&mut row, &" ".repeat(visible), styles[cell.index]);
                 }
                 if x_end >= right {
+                    end = cells.get(i + 1).map_or(line_end, |c| c.index);
                     break;
                 }
             }
+            drawn.push((start..chars.len(), end));
             if eol_style != Style::default() && x_end >= left && x_end < right {
                 push(&mut row, " ", eol_style);
             }
@@ -1274,8 +1407,9 @@ impl View<'_> {
             e.face("line-number")
         };
         rows.into_iter()
+            .zip(drawn)
             .enumerate()
-            .map(|(i, text_row)| {
+            .map(|(i, (text_row, (run, end)))| {
                 let mut row = Vec::new();
                 if self.indent > 0 {
                     row.push(Span::new(" ".repeat(self.indent), Style::default()));
@@ -1366,7 +1500,16 @@ impl View<'_> {
                         e.face("cursorline"),
                     );
                 }
-                row
+                let drawn = DrawnRow {
+                    line: Some(line),
+                    first: i == 0,
+                    top: 0.0,
+                    height: scale,
+                    prefix,
+                    chars: run,
+                    end,
+                };
+                (row, drawn)
             })
             .collect()
     }
@@ -1711,39 +1854,80 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
 /// The line whose chevron is at screen cell (`x`, `y`): a fold's first
 /// line, on its first row, in the fold column of the window there.
 pub fn fold_column_at(e: &Editor, x: usize, y: usize) -> Option<usize> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
-    let WindowView {
-        buffer_id, buffer, ..
-    } = e.window_view(id)?;
+    let (id, rect) = window_at(e, x, y)?;
+    let buffer_id = e.window_view(id)?.buffer_id;
     let starts = shown_fold_starts(e, buffer_id)?;
-    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
-    let text = rect.x + indent + gutter;
+    // Not on the status line or the footer.
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
+        return None;
+    }
+    let drawn = drawn_text(e, id, rect);
+    let text = rect.x + drawn.left;
     if x >= text || x + FOLD_WIDTH < text {
         return None;
     }
-    let line_at = |y| match screen_position(e, x, y) {
-        Some((_, Some(at))) => Some(buffer.offset_to_line(at.min(buffer.len()))),
-        _ => None,
-    };
-    let line = line_at(y)?;
+    let row = drawn.row_at(fine(e, x, y).1 - rect.y as f32)?;
     // A wrapped line's later rows have no chevron.
-    let first_row = y == rect.y || line_at(y - 1) != Some(line);
-    (first_row && starts.contains_key(&line)).then_some(line)
+    let line = row.line.filter(|_| row.first)?;
+    starts.contains_key(&line).then_some(line)
 }
 
-/// Columns for text in the current window: its width less the gutter.
+/// The window at screen cell (`x`, `y`), and where it is.
+fn window_at(e: &Editor, x: usize, y: usize) -> Option<(usize, Rect)> {
+    e.window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+}
+
+/// Where in screen cell (`x`, `y`) the mouse is, in cells: exactly, when
+/// its client sent where, or the cell's middle.
+fn fine(e: &Editor, x: usize, y: usize) -> (f32, f32) {
+    e.mouse_fine
+        .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
+        .unwrap_or((x as f32 + 0.5, y as f32 + 0.5))
+}
+
+/// Where window `id`, at `rect`, drew its text: in the last frame, or
+/// laid out afresh, as the next frame would draw it, when the window has
+/// changed since or hasn't been drawn yet.
+fn drawn_text(e: &Editor, id: usize, rect: Rect) -> Rc<DrawnText> {
+    let view = e.window_view(id).expect("a window on screen");
+    match e.window_drawn(id) {
+        Some(d)
+            if d.buffer_id == view.buffer_id
+                && d.version == view.buffer.version()
+                && d.rect == rect
+                && d.scroll == view.scroll
+                && d.hscroll == view.hscroll =>
+        {
+            d
+        }
+        _ => Rc::new(draw_window(e, id, rect, id == e.current_window(), false).text),
+    }
+}
+
+impl DrawnText {
+    /// The row `down` rows of one cell below the window's top, or None
+    /// below the last.
+    fn row_at(&self, down: f32) -> Option<&DrawnRow> {
+        self.rows.iter().find(|r| down < r.top + r.height)
+    }
+
+    /// The char column under `across` cells (of its size) into `row`.
+    fn col_at(&self, row: &DrawnRow, across: usize) -> usize {
+        self.chars[row.chars.clone()]
+            .iter()
+            .find(|c| across < c.x as usize + (c.w as usize).max(1))
+            .map_or(row.end, |c| c.col as usize)
+    }
+}
+
 /// The text cell at screen cell (`x`, `y`) as (window, line, column),
 /// counting lines from the window's first and ignoring folds and wrapping
 /// (for terminals, which have neither). `None` off a window's text, as on
 /// its status line or gutter.
 pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usize)> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y + 1 < r.y + r.h)?;
+    let (id, rect) = window_at(e, x, y).filter(|(_, r)| y + 1 < r.y + r.h)?;
     let WindowView {
         buffer_id,
         buffer,
@@ -1773,6 +1957,7 @@ pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
     Some((rows, text_area(e, buffer_id, buffer, rect.w).2))
 }
 
+/// Columns for text in the current window: its width less the gutter.
 pub fn window_text_width(e: &Editor) -> usize {
     let rect = e.window_rect(e.current_window());
     text_area(e, e.current(), e.buffer(), rect.w).2
@@ -2045,97 +2230,42 @@ fn clip_row(row: &Row, width: usize) -> Row {
 
 /// What is at screen cell (`x`, `y`): the window there, and the buffer
 /// offset under the cell, or `None` on its status line; nothing at all on
-/// its footer. Clicking past a
-/// line's end gives the end of that screen row. Uses the scroll positions
-/// of the last frame drawn, and the mouse's exact position when its client
-/// sent one (rows of other heights).
+/// its footer. Clicking past a line's end gives the end of that screen
+/// row. Looks the cell up where the last frame drew the window's text
+/// (`drawn_text`), with the mouse's exact position when its client sent
+/// one (rows of other heights).
 pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<usize>)> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
+    let (id, rect) = window_at(e, x, y)?;
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
     }
     let WindowView {
-        buffer_id,
-        buffer,
-        cursor,
-        scroll,
-        hscroll,
+        buffer_id, buffer, ..
     } = e.window_view(id)?;
     // A click on the footer does nothing.
     if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
         return None;
     }
-    // Where in the cell: exactly, or its middle.
-    let (fx, fy) = e
-        .mouse_fine
-        .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
-        .unwrap_or((x as f32 + 0.5, y as f32 + 0.5));
-    let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
-    let dx = (fx - (rect.x + indent + gutter) as f32).max(0.0);
-    let cursor_line = buffer.offset_to_line(cursor);
-    // How far down the window, in rows of one cell.
-    let mut down = fy - rect.y as f32;
-    let folds = Folds::of(e, buffer_id);
-    let mut line = folds.shown(scroll);
-    while line < buffer.line_count() {
-        let start = buffer.line_col_to_offset(line, 0);
-        if let Some((first, last)) = folds.at(line) {
-            let scale = line_scale(e, buffer_id, buffer, first);
-            if down < scale {
-                return Some((id, Some(start)));
-            }
-            down -= scale;
-            line = last + 1;
-            continue;
-        }
-        let scale = line_scale(e, buffer_id, buffer, line);
-        let prefix = outline_prefix(e, buffer_id, buffer, line);
-        // The column across the line's text, in cells of its size.
-        let across = ((dx - prefix as f32).max(0.0) / scale) as usize;
-        let width = scaled_width(width.saturating_sub(prefix), scale);
-        let text = buffer.line_text(line);
-        let cells = line_cells(
-            &text,
-            e.tab_width,
-            layers_of(e, buffer_id),
-            line != cursor_line,
-        );
-        // A cell's char column, or the line's end past the last cell.
-        let end = text.chars().count();
-        let col_of = |i: usize| cells.get(i).map_or(end, |c| c.index);
-        let rows = if e.wrap {
-            line_rows(&cells, width, e.linebreak)
+    let (fx, fy) = fine(e, x, y);
+    let drawn = drawn_text(e, id, rect);
+    let Some(row) = drawn.row_at(fy - rect.y as f32) else {
+        // Below the last row, where the next line didn't fit: that line.
+        let at = if drawn.after < buffer.line_count() {
+            buffer.line_col_to_offset(drawn.after, 0)
         } else {
-            1
+            buffer.len()
         };
-        if down < rows as f32 * scale {
-            let row = ((down / scale) as usize).min(rows - 1);
-            if !e.wrap {
-                let at = across + hscroll;
-                let col = col_of(
-                    cells
-                        .iter()
-                        .position(|c| at < c.x + c.w.max(1))
-                        .unwrap_or(cells.len()),
-                );
-                return Some((id, Some(start + col)));
-            }
-            let at = wrapped(&cells, width, e.linebreak);
-            // The cell under the click, or the last one on that row.
-            let on_row: Vec<usize> = (0..cells.len()).filter(|&i| at[i].0 == row).collect();
-            let col = on_row
-                .iter()
-                .copied()
-                .find(|&i| across < at[i].1 + cells[i].w.max(1))
-                .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
-                .unwrap_or(cells.len());
-            return Some((id, Some(start + col_of(col))));
-        }
-        down -= rows as f32 * scale;
-        line += 1;
-    }
-    Some((id, Some(buffer.len())))
+        return Some((id, Some(at)));
+    };
+    // Past the buffer's end: its end.
+    let Some(line) = row.line else {
+        return Some((id, Some(buffer.len())));
+    };
+    // How far across the line's text, in cells of its size.
+    let dx = (fx - (rect.x + drawn.left) as f32).max(0.0);
+    let across = ((dx - row.prefix as f32).max(0.0) / row.height) as usize;
+    Some((
+        id,
+        Some(buffer.line_col_to_offset(line, 0) + drawn.col_at(row, across)),
+    ))
 }

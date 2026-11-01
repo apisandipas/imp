@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::rc::Rc;
 
 use imp_core::{Buffer, CursorShape, Style};
 use regex::Regex;
@@ -185,6 +186,9 @@ pub struct Window {
     pub scroll: usize,
     /// The first display column shown (without wrap).
     pub hscroll: usize,
+    /// Where the last frame drew its text, for clicks; shared, as client
+    /// views copy their windows.
+    pub drawn: Option<Rc<crate::render::DrawnText>>,
 }
 
 /// What a window shows and where (`Editor::window_view`).
@@ -264,6 +268,7 @@ impl Editor {
                     buffer: 0,
                     scroll: 0,
                     hscroll: 0,
+                    drawn: None,
                 },
             )]),
             layout: Layout::Window(1),
@@ -353,15 +358,31 @@ impl Editor {
         }
     }
 
+    /// Keeps where the last frame drew window `id`'s text.
+    pub fn set_window_drawn(&mut self, id: usize, drawn: crate::render::DrawnText) {
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.drawn = Some(Rc::new(drawn));
+        }
+    }
+
+    /// Where the last frame drew window `id`'s text, if it has been drawn.
+    pub fn window_drawn(&self, id: usize) -> Option<Rc<crate::render::DrawnText>> {
+        self.windows.get(&id)?.drawn.clone()
+    }
+
     /// The current window, or one on the current buffer if there is none.
     fn current_window_state(&self) -> Window {
         self.windows
             .get(&self.current_window)
-            .cloned()
+            .map(|w| Window {
+                drawn: None,
+                ..w.clone()
+            })
             .unwrap_or(Window {
                 buffer: self.current,
                 scroll: 0,
                 hscroll: 0,
+                drawn: None,
             })
     }
 
@@ -428,6 +449,7 @@ impl Editor {
                 buffer: id,
                 scroll,
                 hscroll: 0,
+                drawn: None,
             };
         }
         true
@@ -481,6 +503,7 @@ impl Editor {
                 buffer: other,
                 scroll: 0,
                 hscroll: 0,
+                drawn: None,
             };
         }
         self.buffers.remove(&id);
@@ -622,6 +645,7 @@ impl Editor {
                     buffer: fallback,
                     scroll: 0,
                     hscroll: 0,
+                    drawn: None,
                 };
             }
         }

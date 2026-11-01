@@ -225,3 +225,106 @@ fn a_click_waits_for_the_leader_and_closes_a_popup() {
     assert_eq!(s.eval("(overlay-open?)").unwrap(), "#false");
     assert_eq!(s.cursor(), 6);
 }
+
+/// The cursor's (line, column).
+fn line_col(s: &mut imp_server::Server) -> (String, String) {
+    (
+        s.eval("(current-line)").unwrap(),
+        s.eval("(current-col)").unwrap(),
+    )
+}
+
+/// A click with no frame drawn since what came before it.
+fn click_unframed(s: &mut imp_server::Server, x: u16, y: u16) {
+    for action in ["press", "release"] {
+        s.handle(ClientMsg::Mouse {
+            action: action.into(),
+            button: "left".into(),
+            x,
+            y,
+            fine: None,
+        });
+    }
+}
+
+#[test]
+fn clicks_past_a_row_broken_between_words_land_on_the_next_row() {
+    // With linebreak, row 0 ends after 13 "wordy "s (78 cells); the
+    // 14th starts row 1.
+    let mut s = server(&format!("{}\n", "wordy ".repeat(20)));
+    type_keys(&mut s, ":set linebreak<ret>");
+    click(&mut s, 2, 1);
+    assert_eq!(s.cursor(), 80);
+    type_keys(&mut s, "i");
+    click(&mut s, 79, 0);
+    assert_eq!(s.cursor(), 78);
+}
+
+#[test]
+fn clicks_on_a_closed_fold_go_to_its_start() {
+    let mut s = server("fn a\n    one\n    two\nfn b\n    three\n");
+    s.eval("(set-option! 'shiftwidth 4)").unwrap();
+    type_keys(&mut s, ":setlocal fdm=indent<ret>zcG");
+    // Rows: the fold of lines 0-2, "fn b", "    three", each after the
+    // two-cell fold column.
+    click(&mut s, 8, 0);
+    assert_eq!(line_col(&mut s), ("0".into(), "0".into()));
+    click(&mut s, 6, 2);
+    assert_eq!(line_col(&mut s), ("4".into(), "4".into()));
+    click(&mut s, 3, 1);
+    assert_eq!(line_col(&mut s), ("3".into(), "1".into()));
+}
+
+#[test]
+fn clicks_count_the_columns_scrolled_off_without_wrap() {
+    let line: String = (0..200)
+        .map(|i| char::from(b'a' + (i % 26) as u8))
+        .collect();
+    let mut s = server(&format!("{line}\n"));
+    type_keys(&mut s, ":set nowrap<ret>101|");
+    s.frame();
+    // Column 100 is the window's last, so 21 columns are scrolled off.
+    click(&mut s, 5, 0);
+    assert_eq!(s.cursor(), 26);
+}
+
+#[test]
+fn clicks_count_a_control_char_without_wrap() {
+    let mut s = server("a\x1bbc\n");
+    type_keys(&mut s, ":set nowrap<ret>");
+    click(&mut s, 2, 0);
+    assert_eq!(s.cursor(), 1);
+    click(&mut s, 3, 0);
+    assert_eq!(s.cursor(), 2);
+}
+
+#[test]
+fn clicks_land_beside_an_org_section_s_indent() {
+    let mut s = server("* Heading\ntext\n");
+    s.eval("(set-option! 'org-indent #t)").unwrap();
+    s.eval("(set-major-mode! 'org-mode)").unwrap();
+    // Text under a level-1 heading is drawn two cells in.
+    click(&mut s, 4, 1);
+    assert_eq!(line_col(&mut s), ("1".into(), "2".into()));
+    click(&mut s, 0, 1);
+    assert_eq!(line_col(&mut s), ("1".into(), "0".into()));
+}
+
+#[test]
+fn a_click_before_any_frame_or_after_a_scroll_lands_where_the_text_is() {
+    let text: String = (0..100).map(|i| format!("line {i}\n")).collect();
+    let mut s = server(&text);
+    click_unframed(&mut s, 5, 1);
+    assert_eq!(line_col(&mut s), ("1".into(), "5".into()));
+    s.frame();
+    // The wheel scrolls three lines; no frame is drawn before the click.
+    s.handle(ClientMsg::Mouse {
+        action: "scroll-down".into(),
+        button: "".into(),
+        x: 0,
+        y: 0,
+        fine: None,
+    });
+    click_unframed(&mut s, 0, 2);
+    assert_eq!(line_col(&mut s), ("5".into(), "0".into()));
+}
