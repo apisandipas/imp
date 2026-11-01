@@ -61,3 +61,64 @@ fn undo_puts_marks_back() {
     type_keys(&mut s, "gg'a");
     assert_eq!(s.eval("(current-line)").unwrap(), "2");
 }
+
+// Undo across repeats, macros and completion. Each expectation was checked
+// against Vim 9.2 and Neovim, which agree: every `.` is its own undo step,
+// a whole `@q` is one, and an insert that accepted a completion is one
+// step holding both the typed text and the completion.
+
+#[test]
+fn each_dot_repeat_is_one_undo_step() {
+    let mut s = server("x\n");
+    type_keys(&mut s, "Aa<esc>..");
+    assert_eq!(line(&s), "xaaa");
+    type_keys(&mut s, "u");
+    assert_eq!(line(&s), "xaa");
+    type_keys(&mut s, "u");
+    assert_eq!(line(&s), "xa");
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(line(&s), "xaa");
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(line(&s), "xaaa");
+}
+
+#[test]
+fn dot_repeat_of_a_delete_is_one_undo_step() {
+    let mut s = server("a b c d\n");
+    type_keys(&mut s, "dw..");
+    assert_eq!(line(&s), "d");
+    type_keys(&mut s, "u");
+    assert_eq!(line(&s), "c d");
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(line(&s), "d");
+}
+
+#[test]
+#[ignore = "imp makes each change in a replayed macro its own undo step; Vim makes the whole @q one"]
+fn a_macro_is_one_undo_step() {
+    let mut s = server("x\n");
+    type_keys(&mut s, "qqA1<esc>A2<esc>A3<esc>q");
+    assert_eq!(line(&s), "x123");
+    type_keys(&mut s, "@q");
+    assert_eq!(line(&s), "x123123");
+    type_keys(&mut s, "u");
+    assert_eq!(line(&s), "x123");
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(line(&s), "x123123");
+    // The changes typed while recording were steps of their own.
+    type_keys(&mut s, "uu");
+    assert_eq!(line(&s), "x12");
+}
+
+#[test]
+fn an_insert_that_accepts_a_completion_is_one_undo_step() {
+    let mut s = server("foobar\n");
+    type_keys(&mut s, "A fo");
+    s.keys(&["C-n"]);
+    type_keys(&mut s, "<C-y><esc>");
+    assert_eq!(line(&s), "foobar foobar");
+    type_keys(&mut s, "u");
+    assert_eq!(line(&s), "foobar");
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(line(&s), "foobar foobar");
+}
