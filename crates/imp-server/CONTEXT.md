@@ -5,7 +5,7 @@ The editor. It owns all state; clients only send input and draw frames ([[0004-c
 - `lib.rs`: `Server`, `run()`, runtime and package loading (`RUNTIME`, `PACKAGES`), `eval()`.
 - `editor.rs`: editor state, thread-local: buffers, windows, faces, highlight layers. Every buffer is in one map and every window's buffer and scroll in its `Window`, the current one's too; only ids say which is current. Read a window through `window_view(id)`, the one place that knows the current window's cursor is a field and the others' are marks; don't branch on the current window to find state.
 - `events.rs`: the loop's events; timers and jobs. `daemon.rs`: `imp --daemon`, the socket server.
-- `api.rs`: the Rust/Scheme boundary, every primitive Scheme can call.
+- `api/`: the Rust/Scheme boundary, every primitive Scheme can call, a file per area: `buffer.rs` (the current buffer, the buffer list, undo, marks, the cursor), `system.rs` (files, directories, the environment, shell commands, the clipboard), `source.rs` (loaded Scheme sources, built-in packages), `window.rs` (windows, layout, wrap, line numbers, gutter columns), `background.rs` (timers, jobs, sockets), `ui.rs` (status, command line, popups, floats), `faces.rs` (faces, highlight layers), `display.rs` (folds, signs, change marks, margins, footers, body width), `mouse.rs`, `term.rs`, `search.rs` (search and bracket scans), `lsp.rs` (JSON, LSP and DAP), `complete.rs` and `syntax.rs`. `mod.rs` calls each file's `register` and holds the helpers they share.
 - `render.rs`: editor to `Frame`: windows, wrap, Unicode width, gutter, highlights, popups, status lines.
 - `layout.rs`: the window split tree. Others: `search.rs` (Vim regex to the `regex` crate), `scan.rs` (bracket and tag scans), `complete.rs` and `fuzzy.rs` (completion stores and matching), `lsp.rs`, `docs.rs`, `syntax.rs`, `term.rs`, `clipboard.rs`, `shell.rs`; `wasm.rs`, `crdt.rs` and `kdl.rs` are behind features.
 
@@ -18,9 +18,9 @@ The editor. It owns all state; clients only send input and draw frames ([[0004-c
 - Runtime files are embedded with `include_str!`; `IMP_RUNTIME` loads them from disk instead.
 - Live redefinition: the server appends `(set! name name)` for every top-level definition of each runtime file, and user code goes through `imp-eval-string` (`runtime/core.scm`), which turns a `define` of an existing name into `set!`. `tests/eval.rs` and `tests/config.rs` check it.
 
-## The API (`api.rs`)
+## The API (`api/`)
 
-All positions are char offsets; integers are `isize` and negatives clamp. Primitives cover buffers, changes and undo, files and processes, marks, search, windows and layout, UI (status, popups, command line, signs, margins, faces, highlight layers), background timers and jobs, tree-sitter, JSON and LSP framing, sockets, and the mouse. Help doesn't cover primitives; their arguments are in `api.rs`, where each is registered. Primitives returning `Result<_, String>` raise errors whose message is Debug-quoted, so when Scheme needs to show an error, return it instead (like `pattern-error`).
+All positions are char offsets; integers are `isize` and negatives clamp. Primitives cover buffers, changes and undo, files and processes, marks, search, windows and layout, UI (status, popups, command line, signs, margins, faces, highlight layers), background timers and jobs, tree-sitter, JSON and LSP framing, sockets, and the mouse. Help doesn't cover primitives; their arguments are in `api/`, where each is registered. Primitives returning `Result<_, String>` raise errors whose message is Debug-quoted, so when Scheme needs to show an error, return it instead (like `pattern-error`).
 
 ## Rendering notes
 

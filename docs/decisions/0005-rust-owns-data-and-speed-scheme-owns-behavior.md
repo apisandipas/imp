@@ -1,7 +1,7 @@
 ---
 type: Decision
 status: accepted
-anchors: ["crates/imp-server/src/api.rs"]
+anchors: ["crates/imp-server/src/api/**"]
 ---
 # Rust owns data and speed, Scheme owns behavior
 

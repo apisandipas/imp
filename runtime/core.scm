@@ -1,6 +1,6 @@
 ;;; core.scm -- the editor-wide pieces every mode builds on.
 ;;;
-;;; The Rust side only provides primitives (see crates/imp-server/src/api.rs):
+;;; The Rust side only provides primitives (see crates/imp-server/src/api/):
 ;;; buffer access, the cursor, the status line. Keymaps, modes and commands
 ;;; are all defined here and in the files loaded after this one, and any of
 ;;; them can be redefined from ~/.config/imp/init.scm.
