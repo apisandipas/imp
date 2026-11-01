@@ -5,7 +5,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -96,14 +96,14 @@ pub(super) fn register(engine: &mut Engine) {
         let int = |v: &SteelVal| match v {
             SteelVal::IntV(n) => Ok(*n),
             SteelVal::NumV(f) => Ok(f.round() as isize),
-            _ => Err(format!("{what}: expected a number")),
+            _ => Err(fail(format!("{what}: expected a number"))),
         };
         editor::with(|e| {
             let a = &mut e.appearance;
             match what.as_str() {
                 "font" => match &value {
                     SteelVal::StringV(s) => a.font = s.to_string(),
-                    _ => return Err("font: expected a string".to_string()),
+                    _ => return Err(fail("font: expected a string")),
                 },
                 "font-size" => a.font_size = int(&value)?.clamp(0, 400) as u16,
                 "padding" => a.padding = int(&value)?.clamp(0, 1000) as u16,
@@ -112,7 +112,7 @@ pub(super) fn register(engine: &mut Engine) {
                 "clear-terminal-background" => {
                     a.clear_terminal_background = matches!(value, SteelVal::BoolV(true))
                 }
-                _ => return Err(format!("no appearance setting {what}")),
+                _ => return Err(fail(format!("no appearance setting {what}"))),
             }
             Ok(())
         })

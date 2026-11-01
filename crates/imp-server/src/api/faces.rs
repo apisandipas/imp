@@ -2,19 +2,20 @@
 //! draws it.
 
 use imp_core::Style;
+use steel::rerrs::SteelErr;
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor::{self, Highlight};
 use crate::search;
 
 pub(super) fn register(engine: &mut Engine) {
     // Faces and highlights. Scheme decides what is highlighted; Rust draws it.
     engine.register_fn("set-face!", |name: String, spec: String| {
-        let style = Style::parse(&spec)?;
+        let style = Style::parse(&spec).map_err(fail)?;
         editor::with(|e| e.faces.insert(name, style));
-        Ok::<(), String>(())
+        Ok::<(), SteelErr>(())
     });
     // Removes a face, so text drawn in it falls back to its general face
     // (syntax.function.builtin to syntax.function). For load-theme!.
@@ -52,9 +53,9 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn(
         "highlight-pattern!",
         |layer: String, pattern: String, face: String| {
-            let re = search::compile(&pattern)?;
+            let re = search::compile(&pattern).map_err(fail)?;
             editor::with(|e| e.layer_mut(&layer).pattern = Some((re, face)));
-            Ok::<(), String>(())
+            Ok::<(), SteelErr>(())
         },
     );
 
@@ -81,9 +82,9 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn(
         "buffer-highlight-pattern!",
         |layer: String, pattern: String, face: String| {
-            let re = search::compile(&pattern)?;
+            let re = search::compile(&pattern).map_err(fail)?;
             editor::with(|e| e.buffer_layer_mut(&layer).pattern = Some((re, face)));
-            Ok::<(), String>(())
+            Ok::<(), SteelErr>(())
         },
     );
     // Hides what `pattern`'s groups match in the current buffer (all of a
@@ -94,10 +95,10 @@ pub(super) fn register(engine: &mut Engine) {
             let re = if pattern.is_empty() {
                 None
             } else {
-                Some(search::compile(&pattern)?)
+                Some(search::compile(&pattern).map_err(fail)?)
             };
             editor::with(|e| e.buffer_layer_mut(&layer).conceal = re);
-            Ok::<(), String>(())
+            Ok::<(), SteelErr>(())
         },
     );
     engine.register_fn(

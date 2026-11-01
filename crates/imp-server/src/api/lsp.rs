@@ -5,7 +5,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -13,10 +13,12 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("json-decode", |text: String| {
         serde_json::from_str::<serde_json::Value>(&text)
             .map(crate::json::to_steel)
-            .map_err(|e| format!("bad JSON: {e}"))
+            .map_err(|e| fail(format!("bad JSON: {e}")))
     });
     engine.register_fn("json-encode", |value: SteelVal| {
-        crate::json::from_steel(&value).map(|v| v.to_string())
+        crate::json::from_steel(&value)
+            .map(|v| v.to_string())
+            .map_err(fail)
     });
     engine.register_fn("lsp-frame", |body: String| crate::json::frame(&body));
     // (message rest) for the first whole message in `text`, the message

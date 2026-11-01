@@ -5,7 +5,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -102,7 +102,7 @@ pub(super) fn register(engine: &mut Engine) {
                     })
                     .collect::<std::collections::BTreeMap<_, _>>(),
             ),
-            _ => return Err("set-change-marks!: expected a list or #f".to_string()),
+            _ => return Err(fail("set-change-marks!: expected a list or #f")),
         };
         editor::with(|e| {
             let id = e.current();

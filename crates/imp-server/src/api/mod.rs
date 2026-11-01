@@ -9,6 +9,7 @@
 //!
 //! Each file registers one area's primitives; this one holds what they share.
 
+use steel::rerrs::{ErrorKind, SteelErr};
 use steel::steel_vm::engine::Engine;
 
 use crate::editor::Editor;
@@ -53,10 +54,17 @@ fn clamp(n: isize) -> usize {
     n.max(0) as usize
 }
 
+/// A primitive's error, raised in Scheme with `msg` as its message. Every
+/// fallible primitive returns `Result<_, SteelErr>` made with this: an
+/// `Err(String)` would raise too, but with the message Debug-quoted.
+fn fail(msg: impl std::fmt::Display) -> SteelErr {
+    SteelErr::new(ErrorKind::Generic, msg.to_string())
+}
+
 /// Fails if the current buffer is read-only.
-fn writable(e: &Editor) -> Result<(), String> {
+fn writable(e: &Editor) -> Result<(), SteelErr> {
     if e.buffer().read_only {
-        Err("E21: Cannot make changes, 'modifiable' is off".into())
+        Err(fail("E21: Cannot make changes, 'modifiable' is off"))
     } else {
         Ok(())
     }

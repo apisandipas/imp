@@ -4,7 +4,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -43,7 +43,7 @@ pub(super) fn register(engine: &mut Engine) {
     // The theme's colors for ANSI 0-15 in terminals, as "#rrggbb" strings.
     engine.register_fn("set-terminal-palette!", |colors: Vec<String>| {
         let parsed: Result<Vec<_>, _> = colors.iter().map(|c| imp_core::Color::parse(c)).collect();
-        parsed.map(|p| crate::term::set_palette(&p))
+        parsed.map(|p| crate::term::set_palette(&p)).map_err(fail)
     });
     engine.register_fn("term-application-cursor?", |id: isize| {
         crate::term::application_cursor(clamp(id) as u64)

@@ -6,6 +6,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
+use super::fail;
 use crate::clipboard;
 use crate::editor;
 use crate::shell;
@@ -16,14 +17,14 @@ pub(super) fn register(engine: &mut Engine) {
         editor::with(|e| {
             e.buffer()
                 .write_to(Path::new(&path))
-                .map_err(|err| format!("{path}: {err}"))
+                .map_err(|err| fail(format!("{path}: {err}")))
         })
     });
     engine.register_fn("set-buffer-path!", |path: String| {
         editor::with(|e| e.buffer_mut().set_path(Some(PathBuf::from(path))))
     });
     engine.register_fn("read-file", |path: String| {
-        std::fs::read_to_string(&path).map_err(|err| format!("{path}: {err}"))
+        std::fs::read_to_string(&path).map_err(|err| fail(format!("{path}: {err}")))
     });
     engine.register_fn("file-exists?", |path: String| Path::new(&path).exists());
     // Milliseconds since the epoch the file was modified, or #f.
@@ -37,9 +38,9 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("write-text-file!", |path: String, text: String| {
         let path = Path::new(&path);
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(dir).map_err(fail)?;
         }
-        imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(|e| e.to_string())
+        imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(fail)
     });
     // (permissions size mtime) for `path`, not following a symlink:
     // permissions as ls shows them ("drwxr-xr-x"), size in bytes, mtime
@@ -154,6 +155,7 @@ pub(super) fn register(engine: &mut Engine) {
     // the output being stdout and stderr together.
     engine.register_fn("run-shell", |command: String, input: String| {
         shell::run(&command, &input)
+            .map_err(fail)
             .map(|(code, out)| vec![SteelVal::IntV(code as isize), SteelVal::StringV(out.into())])
     });
 

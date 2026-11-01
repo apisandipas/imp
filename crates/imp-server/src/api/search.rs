@@ -1,10 +1,11 @@
 //! Searching (patterns use Vim's syntax; see search.rs) and bracket and
 //! tag scans (scan.rs).
 
+use steel::rerrs::SteelErr;
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
-use super::{clamp, writable};
+use super::{clamp, fail, writable};
 use crate::editor;
 use crate::scan;
 use crate::search;
@@ -18,13 +19,13 @@ pub(super) fn register(engine: &mut Engine) {
             .case_insensitive(true)
             .build()
             .map(|re| re.is_match(&text))
-            .map_err(|e| format!("bad regexp {pattern}: {e}"))
+            .map_err(|e| fail(format!("bad regexp {pattern}: {e}")))
     });
 
     // Char offsets of every match of `pattern` in the buffer, up to `limit`.
     engine.register_fn("search-all", |pattern: String, limit: isize| {
-        let re = search::compile(&pattern)?;
-        Ok::<_, String>(editor::with(|e| {
+        let re = search::compile(&pattern).map_err(fail)?;
+        Ok::<_, SteelErr>(editor::with(|e| {
             let text = e.buffer().shared_text();
             re.find_iter(&text)
                 .take(clamp(limit))
@@ -82,8 +83,8 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn(
         "search-next",
         |pattern: String, from: isize, forward: bool| {
-            let re = search::compile(&pattern)?;
-            Ok::<_, String>(editor::with(|e| {
+            let re = search::compile(&pattern).map_err(fail)?;
+            Ok::<_, SteelErr>(editor::with(|e| {
                 search::next_match(e.buffer(), &re, clamp(from), forward)
                     .map(|(at, wrapped)| vec![at as isize, isize::from(wrapped)])
             }))
@@ -92,9 +93,9 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn(
         "substitute!",
         |pattern: String, replacement: String, first: isize, last: isize, global: bool| {
-            let re = search::compile(&pattern)?;
+            let re = search::compile(&pattern).map_err(fail)?;
             editor::with(|e| writable(e))?;
-            Ok::<_, String>(editor::with(|e| {
+            Ok::<_, SteelErr>(editor::with(|e| {
                 let (count, line) = search::substitute(
                     e.buffer_mut(),
                     &re,

@@ -20,7 +20,7 @@ The editor. It owns all state; clients only send input and draw frames ([[0004-c
 
 ## The API (`api/`)
 
-All positions are char offsets; integers are `isize` and negatives clamp. Primitives cover buffers, changes and undo, files and processes, marks, search, windows and layout, UI (status, popups, command line, signs, margins, faces, highlight layers), background timers and jobs, tree-sitter, JSON and LSP framing, sockets, and the mouse. Help doesn't cover primitives; their arguments are in `api/`, where each is registered. Primitives returning `Result<_, String>` raise errors whose message is Debug-quoted, so when Scheme needs to show an error, return it instead (like `pattern-error`).
+All positions are char offsets; integers are `isize` and negatives clamp. Primitives cover buffers, changes and undo, files and processes, marks, search, windows and layout, UI (status, popups, command line, signs, margins, faces, highlight layers), background timers and jobs, tree-sitter, JSON and LSP framing, sockets, and the mouse. Help doesn't cover primitives; their arguments are in `api/`, where each is registered. A fallible primitive returns `Result<_, SteelErr>`, its error made with `fail` (`api/mod.rs`), so Scheme raises it with the message as written; an `Err(String)` would raise it Debug-quoted, quotes and all.
 
 ## Rendering notes
 

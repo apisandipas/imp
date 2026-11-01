@@ -2,11 +2,12 @@
 //! marks and the cursor.
 
 use std::path::PathBuf;
+use steel::rerrs::SteelErr;
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::{clamp, writable};
+use super::{clamp, fail, writable};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -171,12 +172,12 @@ pub(super) fn register(engine: &mut Engine) {
             let encoding = match encoding.as_str() {
                 "latin1" | "latin-1" | "iso-8859-1" => Encoding::Latin1,
                 "utf-8" | "utf8" => Encoding::Utf8,
-                other => return Err(format!("unknown encoding {other}")),
+                other => return Err(fail(format!("unknown encoding {other}"))),
             };
             let crlf = match ff.as_str() {
                 "dos" => true,
                 "unix" => false,
-                other => return Err(format!("unknown fileformat {other}")),
+                other => return Err(fail(format!("unknown fileformat {other}"))),
             };
             editor::with(|e| {
                 e.buffer_mut().set_format(FileFormat {
@@ -192,7 +193,7 @@ pub(super) fn register(engine: &mut Engine) {
         editor::with(|e| e.buffer_mut().backup = on)
     });
     engine.register_fn("buffer-reload!", || {
-        editor::with(|e| e.buffer_mut().reload().map_err(|err| err.to_string()))
+        editor::with(|e| e.buffer_mut().reload().map_err(fail))
     });
     engine.register_fn("set-buffer-unmodified!", || {
         editor::with(|e| e.buffer_mut().set_unmodified())
@@ -208,7 +209,7 @@ pub(super) fn register(engine: &mut Engine) {
                 writable(e)?;
             }
             e.buffer_mut().insert(clamp(offset), &text);
-            Ok::<_, String>(())
+            Ok::<_, SteelErr>(())
         })
     });
     engine.register_fn("buffer-delete!", |start: isize, end: isize| {
@@ -216,7 +217,7 @@ pub(super) fn register(engine: &mut Engine) {
             if start < end {
                 writable(e)?;
             }
-            Ok::<_, String>(e.buffer_mut().delete(clamp(start), clamp(end)))
+            Ok::<_, SteelErr>(e.buffer_mut().delete(clamp(start), clamp(end)))
         })
     });
     engine.register_fn("set-buffer-read-only!", |on: bool| {
@@ -234,13 +235,13 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("undo!", || {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer_mut().undo().map(|at| at as isize))
+            Ok::<_, SteelErr>(e.buffer_mut().undo().map(|at| at as isize))
         })
     });
     engine.register_fn("redo!", || {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer_mut().redo().map(|at| at as isize))
+            Ok::<_, SteelErr>(e.buffer_mut().redo().map(|at| at as isize))
         })
     });
     // g+ (#t) and g-: the state made just after or before, across
@@ -248,7 +249,7 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("undo-step!", |forward: bool| {
         editor::with(|e| {
             writable(e)?;
-            Ok::<_, String>(e.buffer_mut().undo_step(forward).map(|at| at as isize))
+            Ok::<_, SteelErr>(e.buffer_mut().undo_step(forward).map(|at| at as isize))
         })
     });
     // The tip of each undo branch as (change-number changes-deep

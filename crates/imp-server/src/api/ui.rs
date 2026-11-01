@@ -6,7 +6,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -68,7 +68,7 @@ pub(super) fn register(engine: &mut Engine) {
                 other => other.to_string(),
             };
             if !POSITIONS.contains(&position.as_str()) {
-                return Err(format!("float-show!: no position {position}"));
+                return Err(fail(format!("float-show!: no position {position}")));
             }
             let float = crate::editor::Float {
                 name: name.clone(),
