@@ -8,7 +8,9 @@
 
 ## Releases
 
-GPL-3.0-or-later. Pushing a `v*` tag runs `.github/workflows/release.yml`: a GitHub release (a prerelease for tags with a `-`) with binaries for x86_64 and aarch64 Linux and Apple-silicon macOS. To release, with the owner's go-ahead: merge `develop` into `main`, `make bump VERSION=x.y.z`, commit "Release x.y.z", `git tag -a vx.y.z -m 'imp x.y.z'`, push `main` and the tag, then merge `main` into `develop`. The release workflow takes about 15 minutes; CI's check job about 55. `ci.yml` runs `check.sh` (with Nix, and again with rustup alone, as people without Nix build) and `nix build` on pushes to `main` and `develop` and on pull requests.
+GPL-3.0-or-later. Pushing a `v*` tag runs `.github/workflows/release.yml`: it builds binaries for x86_64 and aarch64 Linux and Apple-silicon macOS with a read-only token, then, only if every build passed, one job with write access makes the GitHub release (a prerelease for tags with a `-`) with them attached. To release, with the owner's go-ahead: merge `develop` into `main`, `make bump VERSION=x.y.z`, commit "Release x.y.z", `git tag -a vx.y.z -m 'imp x.y.z'`, push `main` and the tag, then merge `main` into `develop`. The release workflow takes about 15 minutes; CI's check job about 55. `ci.yml` runs `check.sh` (with Nix, and again with rustup alone, as people without Nix build), `nix build`, and `lore check` with `site-docs.py --check` (the docs job, which downloads a pinned lore release) on pushes to `main` and `develop` and on pull requests.
+
+The workflows' tokens are read-only unless a job needs more. Every third-party action is pinned to a commit SHA with its version in a comment; to update one, look up the new tag's commit (`gh api repos/OWNER/REPO/commits/TAG -q .sha`). The Rust version in `ci.yml` and `release.yml` follows `flake.lock`; bump all three together.
 
 ## Disk
 
