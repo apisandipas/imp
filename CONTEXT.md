@@ -12,7 +12,7 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 - `crates/imp-gui`: the window client.
 - `runtime/`: the editor itself, in Steel Scheme, loaded at startup.
 - `packages/`: opt-in packages that ship with imp.
-- `docs/`: lore notes: `decisions/`, `specs/`, `efforts/`. `.lore/WORKFLOW.md` is the process.
+- `docs/`: lore notes: `decisions/`, `specs/`, `efforts/`. `.lore/WORKFLOW.md` is the process. The user docs the website builds (`tools/site-docs.py`): `guide/`, written by hand, and `reference/`, a page per spec. `docs/steel.md`: Steel Scheme's gotchas.
 - `tools/`: checks and scripts for driving the real binary.
 - `examples/`: a starter `init.scm`, a `config.kdl`, a WASM plugin.
 
