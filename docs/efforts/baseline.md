@@ -7,7 +7,7 @@ frozen:
   docs/specs/claude.md: ea885bd760a5
   docs/specs/completion-at-point.md: 7a992144e52e
   docs/specs/completion.md: ca9eec425099
-  docs/specs/daemon.md: 52dfa8b283fe
+  docs/specs/daemon.md: 1ae89cf0fc57
   docs/specs/dap.md: b1a36380474b
   docs/specs/dired.md: a02aeaac49d8
   docs/specs/emacs-state.md: b74c1fe8672a
@@ -23,10 +23,10 @@ frozen:
   docs/specs/org.md: eacefd3dbd04
   docs/specs/packages.md: e9a16175b04a
   docs/specs/projects.md: fac9a61f6afa
-  docs/specs/shared-buffers.md: edc911376d67
+  docs/specs/shared-buffers.md: 42534f57ec33
   docs/specs/start-screen.md: 3a63b6f3dc40
   docs/specs/terminals.md: 127f6a0b5b15
-  docs/specs/tree-sitter.md: 8999c82bfadc
+  docs/specs/tree-sitter.md: 4a87962c1110
   docs/specs/vim.md: 51ce58e56b12
   docs/specs/wasm-plugins.md: b62f9140ac75
 ---

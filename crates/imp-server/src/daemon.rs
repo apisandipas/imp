@@ -6,7 +6,7 @@
 //! `:kill-server` stops the daemon.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
@@ -16,6 +16,21 @@ use imp_core::{protocol, Buffer, ClientMsg, Frame, ServerMsg};
 use crate::editor::ClientView;
 use crate::events::Event;
 use crate::{Options, Server};
+
+/// Checks a daemon name (`--name`): it becomes a file in the private
+/// socket directory, so it may not be empty or reach outside it.
+/// `--socket` is there for other paths.
+pub fn check_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        Err("--name needs a name".into())
+    } else if name.contains('/') || name.contains("..") {
+        Err(format!(
+            "--name {name:?}: a name can't contain / or ..; use --socket PATH for a path"
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 /// The socket for daemon `name`: `$XDG_RUNTIME_DIR/imp/NAME.sock`, or under
 /// `/tmp/imp-$USER` without a runtime directory.
@@ -116,7 +131,8 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
             }
             let events = events.clone();
             std::thread::spawn(move || {
-                for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                // A line past the cap disconnects the client.
+                for line in protocol::read_lines(stream, protocol::MAX_CLIENT_LINE) {
                     if let Ok(msg) = protocol::from_line::<ClientMsg>(&line) {
                         if events.send(Event::FromClient(id, msg)).is_err() {
                             return;
@@ -185,7 +201,11 @@ pub fn run(socket: &Path, options: Options) -> Result<(), String> {
             }
             Event::FromClient(id, ClientMsg::Resize { width, height }) => {
                 if let Some(c) = clients.all.get_mut(&id) {
-                    c.size = (width, height);
+                    // Clamped: every frame allocates a grid this size.
+                    c.size = (
+                        width.min(protocol::MAX_SIZE),
+                        height.min(protocol::MAX_SIZE),
+                    );
                     c.last = None;
                 }
             }

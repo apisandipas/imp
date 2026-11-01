@@ -16,9 +16,10 @@
 //!   imp --mcp                      relay stdin/stdout to the editor's MCP
 //!                                  socket, for AI agents ((mcp-enable!))
 //!
-//! `--socket PATH` picks a socket instead of the named one.
+//! `--socket PATH` picks a socket instead of the named one; a `--name` is
+//! a plain name, without `/` or `..`.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -70,7 +71,10 @@ fn parse_args() -> Result<Args, String> {
             Some("--connect") => args.connect = true,
             Some("--bridge") => args.bridge = true,
             Some("--mcp") => args.mcp = true,
-            Some("--name") => args.name = value("--name")?,
+            Some("--name") => {
+                args.name = value("--name")?;
+                imp_server::daemon::check_name(&args.name)?;
+            }
             Some("--socket") => args.socket = Some(PathBuf::from(value("--socket")?)),
             Some("--via") => args.via = Some(value("--via")?),
             Some("--tui") => args.tui = true,
@@ -118,7 +122,10 @@ const USAGE: &str =
        imp --version
 
 imp opens a window when there is a display ($WAYLAND_DISPLAY or $DISPLAY;
-on macOS, outside SSH) and uses this terminal otherwise or with --tui.";
+on macOS, outside SSH) and uses this terminal otherwise or with --tui.
+
+--name NAME picks the socket $XDG_RUNTIME_DIR/imp/NAME.sock; NAME is a
+plain name, without / or .. (use --socket PATH for anywhere else).";
 
 fn main() {
     let result = parse_args().and_then(|args| {
@@ -277,7 +284,7 @@ fn connect(args: &Args, socket: &std::path::Path) -> Result<(), String> {
         }
     });
     thread::spawn(move || {
-        for line in BufReader::new(reader).lines().map_while(Result::ok) {
+        for line in protocol::read_lines(reader, protocol::MAX_SERVER_LINE) {
             match protocol::from_line::<ServerMsg>(&line) {
                 Ok(msg) => {
                     if incoming.send(msg).is_err() {

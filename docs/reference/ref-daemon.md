@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/daemon]]"
 frozen:
-  docs/specs/daemon.md: 52dfa8b283fe
+  docs/specs/daemon.md: 1ae89cf0fc57
 ---
 # Daemon
 
@@ -21,7 +21,9 @@ imp --connect notes.org    # a client: attach and open notes.org
 
 `imp --connect` with no files shows the buffer the most recently active client was on. Either way, a new client starts with one window.
 
-The daemon listens on `$XDG_RUNTIME_DIR/imp/default.sock`. To run more than one, give each a name with `--name`, or a socket path with `--socket`, and pass the same to `--connect`.
+The daemon listens on `$XDG_RUNTIME_DIR/imp/default.sock`. To run more than one, give each a name with `--name`, or a socket path with `--socket`, and pass the same to `--connect`. A name is just a name, such as `work`, and becomes `work.sock` in the same directory; one with a `/` or `..` in it is refused, so use `--socket` to put a socket anywhere else.
+
+A client that sends the daemon a message longer than 16 MiB is disconnected, and a client's size counts as at most 4096 columns by 4096 rows, so a misbehaving client can't make the daemon run out of memory.
 
 ## Leaving and stopping
 

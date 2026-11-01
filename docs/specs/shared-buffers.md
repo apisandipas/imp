@@ -11,6 +11,7 @@ A prototype, built carefully: the CRDT is `yrs` (the Rust Yjs), not hand-written
 
 - A shared buffer keeps a yrs document beside its rope as a mirror. Local changes are found by comparing the buffer with the mirror, so every way of editing is covered without hooks; remote changes arrive as ordinary edits, so marks, the cursor and the syntax tree follow.
 - `:share [NAME]` serves the current buffer on a socket, `:join [NAME]` opens one from another editor, `:unshare` stops. The host relays updates between guests; each side syncs after every command and every 200 ms.
+- A NAME with a slash is a socket path, so `:join` can reach any socket the user can. Joining trusts the peer on it: its buffer content and every change it sends become the joined buffer's text unchecked. A message line longer than 64 MiB closes the connection.
 
 ## Known gaps
 

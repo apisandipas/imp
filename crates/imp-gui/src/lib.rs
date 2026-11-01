@@ -20,7 +20,7 @@
 mod keys;
 mod render;
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -66,7 +66,11 @@ fn parse_args(argv: Vec<std::ffi::OsString>) -> Result<Args, String> {
         };
         match arg.to_str() {
             Some("--connect") => args.connect = true,
-            Some("--name") => args.name = Some(value("--name")?),
+            Some("--name") => {
+                let name = value("--name")?;
+                imp_server::daemon::check_name(&name)?;
+                args.name = Some(name);
+            }
             Some("--socket") => args.socket = Some(value("--socket")?.into()),
             Some("--screenshot") => args.screenshot = Some(value("--screenshot")?.into()),
             Some("--keys") => args.keys = value("--keys")?,
@@ -199,7 +203,7 @@ fn connect(
             }
         });
         thread::spawn(move || {
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            for line in protocol::read_lines(stream, protocol::MAX_SERVER_LINE) {
                 if let Ok(msg) = protocol::from_line::<ServerMsg>(&line) {
                     if to_client.send(msg).is_err() {
                         break;

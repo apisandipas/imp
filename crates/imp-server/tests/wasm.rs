@@ -20,8 +20,8 @@ fn without_the_feature_it_says_so() {
         .contains("without the wasm feature"));
 }
 
-/// A plugin: upcase (ASCII, logging its result), spin (forever) and bad
-/// (returns a string outside memory).
+/// A plugin: upcase (ASCII, logging its result), spin (forever), bad
+/// (returns a string outside memory) and huge (returns a 4 GiB length).
 #[cfg(feature = "wasm")]
 const PLUGIN: &str = r#"
 (module
@@ -52,7 +52,9 @@ const PLUGIN: &str = r#"
     (loop $forever (br $forever))
     (i64.const 0))
   (func (export "bad") (param i32 i32) (result i64)
-    (i64.const 0x0001000000000010)))
+    (i64.const 0x0001000000000010))
+  (func (export "huge") (param i32 i32) (result i64)
+    (i64.const 0x00000000ffffffff)))
 "#;
 
 #[cfg(feature = "wasm")]
@@ -79,7 +81,7 @@ fn calls_a_plugin_function() {
     );
     assert_eq!(
         s.eval("(wasm-exports (wasm-plugin 'caps))").unwrap(),
-        r#"("upcase" "spin" "bad")"#
+        r#"("upcase" "spin" "bad" "huge")"#
     );
     assert_eq!(s.eval("(wasm-log)").unwrap(), r#"("caps: HELLO, WASM")"#);
     let err = s
@@ -101,6 +103,11 @@ fn a_runaway_or_broken_plugin_errors_and_recovers() {
         .eval(r#"(wasm-call (wasm-plugin 'caps) "bad" "")"#)
         .unwrap_err();
     assert!(err.contains("bad returned a bad string"), "{err}");
+    // A length far past its memory is refused, not allocated.
+    let err = s
+        .eval(r#"(wasm-call (wasm-plugin 'caps) "huge" "")"#)
+        .unwrap_err();
+    assert!(err.contains("huge returned a bad string"), "{err}");
     // It still works afterwards.
     assert_eq!(
         s.eval(r#"(wasm-call (wasm-plugin 'caps) "upcase" "ok")"#)
@@ -135,7 +142,7 @@ fn plugins_edit_as_operators_filters_and_ex_commands() {
         .frame()
         .text_rows()
         .join("\n")
-        .contains("caps: upcase spin bad"));
+        .contains("caps: upcase spin bad huge"));
 }
 
 /// The Rust example in examples/wasm-plugin, when it has been built.
