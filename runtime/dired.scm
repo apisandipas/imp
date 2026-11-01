@@ -39,10 +39,6 @@
   "The directory the current browser buffer lists."
   (buffer-local 'dired-dir))
 
-(define (dired-join dir name)
-  "The path of `name` in directory `dir`."
-  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
-
 (define (dired-strip-slash name)
   "`name` without the trailing slash that marks a directory.
    A lone \"/\" stays as it is."
@@ -93,10 +89,6 @@
 
 (define *month-names* (vector "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
 
-(define (two-digits n)
-  "`n` as at least two digits, with a leading zero."
-  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
-
 (define (format-file-time seconds now offset)
   "`seconds` (since the epoch, UTC) as ls shows it, 12 columns: \"Oct 19 14:02\"
    within half a year of `now`, else \"Oct 19  2024\". `offset` is the local
@@ -142,7 +134,7 @@
   (let* ([clock (clock-now)] [now (car clock)] [offset (cadr clock)])
     (set-buffer-local! 'dired-details
       (foldl (lambda (e h)
-               (let ([info (file-info (dired-join dir (cadr e)))])
+               (let ([info (file-info (child-path dir (cadr e)))])
                  (if info
                      (hash-insert h (car e)
                                   (list (list (string-append (car info) " ") "dired.permissions")
@@ -232,7 +224,7 @@
 (define (dired-entry-path line)
   "The full path that `line` of the listing names, or #f for a blank one."
   (let ([name (trim (line-text line))])
-    (and (not (equal? name "")) (dired-join (dired-dir) (dired-strip-slash name)))))
+    (and (not (equal? name "")) (child-path (dired-dir) (dired-strip-slash name)))))
 
 (define (dired-visit!)
   "<ret>: opens the entry at the cursor, a directory in the browser.
@@ -357,7 +349,7 @@
   "Makes the changes; returns the problems, if any."
   (let* ([problems '()]
          [try (lambda (r) (when (string? r) (set! problems (cons r problems))))]
-         [path (lambda (name) (dired-join dir (dired-strip-slash name)))]
+         [path (lambda (name) (child-path dir (dired-strip-slash name)))]
          [renames (filter (lambda (c) (eq? (car c) 'rename)) changes)])
     ;; Renames go through temporary names, so swapping two names works.
     ;; An entry whose first step fails is left alone after that: its one

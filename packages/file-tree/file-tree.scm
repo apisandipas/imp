@@ -105,10 +105,6 @@
           (loop (+ n 1))
           (buffer-new! name)))))
 
-(define (file-tree-join dir name)
-  "The path of `name` in directory `dir`."
-  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
-
 (define (file-tree-root-for)
   "The root a tree opened now shows: the current buffer's project root,
    else the working directory."
@@ -144,7 +140,7 @@
    in an `ignored` folder is ignored too."
   (apply append
          (map (lambda (e)
-                (let* ([path (file-tree-join dir (car e))]
+                (let* ([path (child-path dir (car e))]
                        [gone (or ignored (caddr e))]
                        [row (list path (cadr e) depth root gone)])
                   (if (and (cadr e) (file-tree-expanded? path))
@@ -268,7 +264,7 @@
                [name (and letter (substring line 3 (string-length line)))]
                ;; A rename reads "old -> new": the new name is the one shown.
                [name (and name (let ([parts (split-many name " -> ")]) (if (> (length parts) 1) (last parts) name)))]
-               [path (and name (file-tree-strip-slash (file-tree-join top (file-tree-unquote name))))])
+               [path (and name (file-tree-strip-slash (child-path top (file-tree-unquote name))))])
           (if (and path (starts-with? path (string-append root "/")))
               (loop (cdr lines)
                     (hash-insert letters path letter)
@@ -508,7 +504,7 @@
 (define (file-tree-add! dir name)
   "Makes `name` in folder `dir`: a folder if it ends in /, else an empty
    file, with any folders it needs on the way."
-  (let* ([path (file-tree-join dir (file-tree-strip-slash name))]
+  (let* ([path (child-path dir (file-tree-strip-slash name))]
          [folder? (ends-with? name "/")]
          [r (cond [(file-exists? path) (string-append (file-tree-relative path) " already exists")]
                   [folder? (make-directory! path)]
@@ -552,7 +548,7 @@
 (define (file-tree-rename! from text)
   "Renames or moves `from` to `text`, a path relative to its root,
    making the folders it needs."
-  (let* ([to (file-tree-join (file-tree-root-of from) (file-tree-strip-slash text))]
+  (let* ([to (child-path (file-tree-root-of from) (file-tree-strip-slash text))]
          [made (make-directory! (directory-of to))]
          [r (if (string? made) made (rename-file! from to))])
     (if (string? r)

@@ -797,6 +797,31 @@
           (loop (+ p 1))
           p))))
 
+;;; Small helpers shared by the runtime and packages
+;;;
+;;; Each top-level name belongs to one file: re-evaluating a file's
+;;; definitions set!s the one binding every file sees, so a helper two
+;;; files define for themselves would take one file's meaning in both.
+;;; Helpers more than one file needs live here, loaded first.
+
+(define (pad-left text width)
+  "`text` padded with spaces on the left to `width` characters."
+  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
+
+(define (two-digits n)
+  "`n` as at least two digits, with a leading zero: 7 -> \"07\"."
+  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
+
+(define (shell-quote text)
+  "`text` in single quotes, safe to put in a shell command."
+  (string-append "'" (apply string-append (map (lambda (c) (if (equal? c #\') "'\\''" (string c)))
+                                               (string->list text)))
+                 "'"))
+
+(define (child-path dir name)
+  "The path of `name` in directory `dir`."
+  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
+
 ;;; Entry points called by the server
 
 (define (imp-init)

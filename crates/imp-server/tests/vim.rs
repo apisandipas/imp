@@ -853,6 +853,12 @@ fn increment_numbers() {
     let mut s = server("0x0F\n");
     s.keys(&["C-a"]);
     assert_eq!(s.text(), "0x10\n");
+    // Hex keeps its width, padded with zeros, the cursor on the last digit
+    // (as in Vim).
+    let mut s = server("0x0009\n");
+    s.keys(&["C-a"]);
+    assert_eq!(s.text(), "0x000a\n");
+    assert_eq!(s.cursor(), 5);
     let mut s = server("no number\n");
     s.keys(&["C-a"]);
     assert_eq!(s.text(), "no number\n");

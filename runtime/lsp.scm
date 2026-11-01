@@ -106,12 +106,6 @@
     (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value)))))
   void)
 
-(define (shell-quote text)
-  "`text` in single quotes, safe to put in a shell command."
-  (string-append "'" (apply string-append (map (lambda (c) (if (equal? c #\') "'\\''" (string c)))
-                                               (string->list text)))
-                 "'"))
-
 (define (lsp-dirname path)
   "The directory part of `path`, without a trailing slash (\"/\" at the top)."
   (let loop ([i (- (string-length path) 1)])

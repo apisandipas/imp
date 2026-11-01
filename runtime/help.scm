@@ -92,7 +92,7 @@
           [(equal? c #\;) (skip-blank lines (cons (+ (car pos) 1) 0))]
           [else pos])))
 
-(define (delimiter? c)
+(define (source-delimiter? c)
   "Whether `c` ends a symbol: whitespace, a bracket, a quote, a ; or
    the end of the source (#f)."
   (or (not c) (char-whitespace? c) (memv c '(#\( #\) #\[ #\] #\" #\;))))
@@ -126,16 +126,16 @@
       [(and (equal? c #\#) (equal? (source-char lines (source-next lines pos)) #\\))
        ;; A character: #\( is one, so step over the char before the name.
        (let loop ([pos (source-next lines (source-next lines (source-next lines pos)))])
-         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))]
+         (if (source-delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))]
       [else
        (let loop ([pos pos])
-         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))])))
+         (if (source-delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))])))
 
 (define (token-at lines pos)
   "The symbol at `pos`, or \"\"."
   (let loop ([p pos] [acc '()])
     (let ([c (source-char lines p)])
-      (if (delimiter? c) (list->string (reverse acc)) (loop (source-next lines p) (cons c acc))))))
+      (if (source-delimiter? c) (list->string (reverse acc)) (loop (source-next lines p) (cons c acc))))))
 
 (define (body-docstring lines pos)
   "The docstring at `pos`, the start of a body, or #f: a string literal
