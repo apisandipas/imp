@@ -1,9 +1,9 @@
 ---
 type: Effort
 status: done
-specs: ["[[spec/buffers-and-windows]]", "[[spec/claude]]", "[[spec/completion-at-point]]", "[[spec/completion]]", "[[spec/daemon]]", "[[spec/dap]]", "[[spec/dired]]", "[[spec/emacs-state]]", "[[spec/files]]", "[[spec/folding]]", "[[spec/git]]", "[[spec/kdl-config]]", "[[spec/live-scheme-and-help]]", "[[spec/look]]", "[[spec/lsp]]", "[[spec/mcp]]", "[[spec/mouse]]", "[[spec/org]]", "[[spec/packages]]", "[[spec/projects]]", "[[spec/shared-buffers]]", "[[spec/start-screen]]", "[[spec/terminals]]", "[[spec/tree-sitter]]", "[[spec/vim]]", "[[spec/wasm-plugins]]"]
+specs: ["[[spec/buffers-and-windows]]", "[[spec/claude]]", "[[spec/completion-at-point]]", "[[spec/completion]]", "[[spec/daemon]]", "[[spec/dap]]", "[[spec/dired]]", "[[spec/emacs-state]]", "[[spec/files]]", "[[spec/folding]]", "[[spec/git]]", "[[spec/kdl-config]]", "[[spec/live-scheme-and-help]]", "[[spec/look]]", "[[spec/lsp]]", "[[spec/mcp]]", "[[spec/mouse]]", "[[spec/move-lines]]", "[[spec/olivetti]]", "[[spec/org]]", "[[spec/packages]]", "[[spec/posframe]]", "[[spec/projects]]", "[[spec/shared-buffers]]", "[[spec/start-screen]]", "[[spec/terminals]]", "[[spec/tree-sitter]]", "[[spec/vim]]", "[[spec/wasm-plugins]]"]
 frozen:
-  docs/specs/buffers-and-windows.md: ec5718f77b29
+  docs/specs/buffers-and-windows.md: bc8c82b25ab1
   docs/specs/claude.md: ea885bd760a5
   docs/specs/completion-at-point.md: 7a992144e52e
   docs/specs/completion.md: ca9eec425099
@@ -20,8 +20,11 @@ frozen:
   docs/specs/lsp.md: 521f968e45ec
   docs/specs/mcp.md: eb9a936be6e7
   docs/specs/mouse.md: 9ddcdd15e5ad
+  docs/specs/move-lines.md: d4c34470f45d
+  docs/specs/olivetti.md: 5b1ed15a4236
   docs/specs/org.md: eacefd3dbd04
   docs/specs/packages.md: e9a16175b04a
+  docs/specs/posframe.md: 9dd5f8aa7b18
   docs/specs/projects.md: fac9a61f6afa
   docs/specs/shared-buffers.md: 42534f57ec33
   docs/specs/start-screen.md: 3a63b6f3dc40

@@ -20,9 +20,9 @@ These come with imp:
 
 | Package | What it does |
 |---|---|
-| `olivetti` | Keeps text in a comfortable column in the middle of the window, wrapping between words. `SPC t o` turns it on or off |
-| `posframe` | Draws `M-x`, find-file, switch-buffer and other pickers in a box in the middle of the screen |
-| `move-lines` | In visual line mode (`V`), `J` and `K` move the selected lines down and up |
+| `olivetti` | Keeps text in a comfortable column in the middle of the window, wrapping between words. `SPC t o` turns it on or off. See [Olivetti](ref-olivetti.md) |
+| `posframe` | Draws `M-x`, find-file, switch-buffer and other pickers in a box in the middle of the screen. See [Posframe](ref-posframe.md) |
+| `move-lines` | In visual line mode (`V`), `J` and `K` move the selected lines down and up. See [Move lines](ref-move-lines.md) |
 | `org-babel` | In Org, `C-c C-c` in a source block runs it and puts the output under the block |
 | `nerd-icons` | Nerd Font icons in the status line, the pickers, completion, the file browser and the file tree |
 | `file-tree` | The project's folders as a tree down the left. `SPC t e` opens or closes it. See [File tree](ref-file-tree.md) |
