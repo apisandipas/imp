@@ -99,7 +99,7 @@
 
 (define (remove-autosave!)
   "Deletes the current buffer's autosave copy, once it is saved."
-  (when (buffer-path) (delete-file! (autosave-path (buffer-path)))))
+  (when (buffer-path) (error-text (lambda () (delete-file! (autosave-path (buffer-path)))))))
 
 (define (recoverable?)
   "Whether there is an autosave copy newer than the file itself."
@@ -166,8 +166,8 @@
       (lambda (path)
         (confirm! (string-append "Delete " (abbreviate-path path) "?")
           (lambda ()
-            (let ([r (delete-path! path)] [id (buffer-for-path path)])
-              (cond [(string? r) (message r)]
+            (let ([r (error-text (lambda () (delete-path! path)))] [id (buffer-for-path path)])
+              (cond [r (message r)]
                     [(and id (buffer-modified-by-id? id))
                      (message (string-append "deleted " (abbreviate-path path) "; its buffer has unsaved changes, so it stays"))]
                     [else (when id (kill-buffer! id))
@@ -183,8 +183,8 @@
             (let ([to (destination-path from name)])
               (if (equal? to from)
                   (message "same name; nothing to do")
-                  (let ([r (rename-file! from to)])
-                    (if (string? r)
+                  (let ([r (error-text (lambda () (rename-file! from to)))])
+                    (if r
                         (message r)
                         (let ([id (buffer-for-path from)])
                           (when id (with-buffer id (lambda () (buffer-renamed! from to))))
@@ -204,8 +204,8 @@
       (lambda (from)
         (ask (string-append "Copy " (abbreviate-path from) " to: ") (abbreviate-path from)
           (lambda (name)
-            (let* ([to (destination-path from name)] [r (copy-file! from to)])
-              (message (if (string? r)
+            (let* ([to (destination-path from name)] [r (error-text (lambda () (copy-file! from to)))])
+              (message (if r
                            r
                            (string-append "copied " (abbreviate-path from) " to " (abbreviate-path to)))))))))))
 

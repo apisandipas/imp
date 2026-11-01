@@ -7,7 +7,7 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 ## Layout
 
 - `crates/imp-core`: shared types and the client/server protocol.
-- `crates/imp-server`: the editor: state, the event loop, rendering, and the Rust/Scheme boundary (`api.rs`).
+- `crates/imp-server`: the editor: state, the event loop, rendering, and the Rust/Scheme boundary (`src/api/`).
 - `crates/imp`: the `imp` binary (package `imp-editor`) and the terminal client.
 - `crates/imp-gui`: the window client.
 - `runtime/`: the editor itself, in Steel Scheme, loaded at startup.
@@ -28,7 +28,7 @@ Without Nix: install Rust (rustup) and a C compiler, export `IMP_RUNTIME=$PWD/ru
 
 ## Rules
 
-- New editing behavior goes in Scheme. Add a primitive to `crates/imp-server/src/api.rs` only when Scheme can't do it or measures too slow (`cargo run --release -p imp-server --example bench`); keep primitives small and general.
+- New editing behavior goes in Scheme. Add a primitive to `crates/imp-server/src/api/` only when Scheme can't do it or measures too slow (`cargo run --release -p imp-server --example bench`); keep primitives small and general.
 - Match real Vim. Test Vim behavior by feeding keys and asserting text and cursor, compared against Vim or Neovim: Vim users leave the moment their habits break.
 - Every function and command in `runtime/` and `packages/` has an Emacs-style docstring; variables and options get a comment above.
 - What isn't essential to editing is an opt-in package ([[0011-non-essential-features-are-opt-in-packages]]).

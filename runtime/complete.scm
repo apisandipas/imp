@@ -203,7 +203,7 @@
       (and (path-like? typed)
            (let* ([slash (last-slash typed)]
                   [dir (if slash (substring typed 0 (+ slash 1)) "./")]
-                  [entries (directory-entries (completion-dir dir))])
+                  [entries (with-handler (lambda (e) #f) (directory-entries (completion-dir dir)))])
              (and (list? entries)
                   (begin
                     (done (+ start (if slash (+ slash 1) 0))

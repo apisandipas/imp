@@ -137,7 +137,7 @@
   (for-each (lambda (id)
               (with-buffer id (lambda ()
                                 (when (equal? (language-for-buffer) name)
-                                  (set-buffer-language! name)))))
+                                  (error-text (lambda () (set-buffer-language! name)))))))
             (buffer-list))
   void)
 

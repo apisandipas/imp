@@ -192,3 +192,13 @@ fn pause_asks_the_adapter_for_a_thread() {
     assert_eq!(pause["arguments"]["threadId"], 7, "{pause}");
     type_keys(&mut s, " dq");
 }
+
+#[test]
+fn a_message_that_is_not_json_is_reported_and_skipped() {
+    let mut s = server("text\n");
+    s.eval(r#"(dap-output! (string-append (lsp-frame "{bad") (lsp-frame "{}")) "stdout")"#)
+        .unwrap();
+    assert!(s.status().starts_with("debug: bad JSON"), "{}", s.status());
+    // The message after it was read too.
+    assert_eq!(s.eval("*dap-input*").unwrap(), "\"\"");
+}

@@ -279,9 +279,10 @@
    Returns the terminal's id, or #f after saying why it couldn't start
    (and killing `buf`)."
   (set-major-mode! 'term-mode)
-  (let ([id (term-start! command cwd (window-height) (window-text-width))])
-    (if (string? id)
-        (begin (message id) (buffer-kill! buf) #f)
+  (let ([id (with-handler (lambda (e) (message (error-message e)) #f)
+                          (term-start! command cwd (window-height) (window-text-width)))])
+    (if (not id)
+        (begin (buffer-kill! buf) #f)
         (begin
           (set-buffer-local! 'term-id id)
           (set-buffer-local! 'term-command command)

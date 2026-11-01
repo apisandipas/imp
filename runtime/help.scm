@@ -274,7 +274,7 @@
        (show-popup! (cons (string-append name " is a command, defined without a source line.")
                           (let ([doc (hash-try-get *command-docs* name)]) (if doc (list "" doc) '()))))]
       [(bound? (string->symbol name))
-       (show-popup! (list (string-append name " is built into Steel or Rust; see crates/imp-server/src/api.rs.")))]
+       (show-popup! (list (string-append name " is built into Steel or Rust; see crates/imp-server/src/api/.")))]
       [else (message (string-append "no definition of " name))])))
 
 (define (describe-option name)

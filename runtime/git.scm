@@ -374,7 +374,10 @@
       [(not item) (message "nothing to discard here")]
       [(and (eq? (car item) 'file) (eq? (cadr item) 'untracked))
        (confirm! (string-append "Delete " (caddr item) "?")
-                 (lambda () (delete-file! (string-append root "/" (caddr item))) (git-refresh!)))]
+                 (lambda ()
+                   (let ([r (error-text (lambda () (delete-file! (string-append root "/" (caddr item)))))])
+                     (git-refresh!)
+                     (when r (message r)))))]
       [(and (eq? (car item) 'file) (eq? (cadr item) 'unstaged))
        (confirm! (string-append "Discard changes to " (caddr item) "?")
                  (lambda () (git-do! root (string-append "restore -- " (shell-quote (caddr item)))) (git-refresh!)))]

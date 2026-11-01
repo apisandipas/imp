@@ -73,3 +73,16 @@ fn errors_in_callbacks_are_shown() {
     pump(&mut s);
     assert!(s.status().contains("error in timer"), "{}", s.status());
 }
+
+#[test]
+fn a_socket_that_cannot_connect_says_why() {
+    let mut s = server("");
+    let path = temp_path("nobody-listens.sock").display().to_string();
+    assert_eq!(
+        s.eval(&format!("(connect-socket! {path:?} #f #f)"))
+            .unwrap(),
+        "#false"
+    );
+    let status = s.status();
+    assert!(!status.is_empty() && !status.starts_with('"'), "{status}");
+}

@@ -1460,10 +1460,9 @@
   "The id of the buffer visiting `path`, opening it in the background
    (remembered for ZQ) if none does, or #f after saying why."
   (or (buffer-for-path (absolute-path path))
-      (let ([id (buffer-open! path)])
-        (if (string? id)
-            (begin (message id) #f)
-            (begin (set! *org-agenda-opened* (cons id *org-agenda-opened*)) id)))))
+      (let ([id (with-handler (lambda (e) (message (error-message e)) #f) (buffer-open! path))])
+        (when id (set! *org-agenda-opened* (cons id *org-agenda-opened*)))
+        id)))
 
 (define (org-agenda-act! proc)
   "Runs (proc line) on the heading of the entry at the cursor, in its
