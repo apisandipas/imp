@@ -436,8 +436,10 @@ pub fn lookup(name: &str) -> Result<Option<&'static Lang>, String> {
 /// (dashes as underscores).
 fn load_grammar(name: &str, library: &Path) -> Result<Language, String> {
     let shown = library.display();
-    // SAFETY: a grammar library is generated C that defines its language
-    // tables and the function returning them; loading it runs nothing else.
+    // SAFETY: none beyond trust. Loading runs the library's constructors,
+    // and its parse functions run with every call; a grammar's scanner.c
+    // is arbitrary native code built from the source its `init.scm` names.
+    // A grammar is as trusted as imp itself (docs/specs/tree-sitter.md).
     let library = unsafe { libloading::Library::new(library) }
         .map_err(|e| format!("grammar {name}: can't load {shown}: {e}"))?;
     let symbol = format!("tree_sitter_{}", name.replace('-', "_"));

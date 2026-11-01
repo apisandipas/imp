@@ -10,7 +10,8 @@ Buffers that survive closing the window, as with `emacs --daemon` ([[0004-client
 
 ## Behaviour
 
-- `imp --daemon` runs the editor with no client, listening on a Unix socket (`$XDG_RUNTIME_DIR/imp/default.sock`; `--name` or `--socket` pick another).
+- `imp --daemon` runs the editor with no client, listening on a Unix socket (`$XDG_RUNTIME_DIR/imp/default.sock`; `--name` or `--socket` pick another). A `--name` is a plain name, `NAME.sock` in that private directory: an empty one, or one with `/` or `..`, is an error saying to use `--socket` for a path.
+- Limits, so a client can't make the daemon allocate without bound: a message line longer than 16 MiB disconnects the client, and a client's size is clamped to 4096 columns and rows. Clients likewise stop reading at a line from the server longer than 256 MiB.
 - `imp --connect [FILE...]` attaches a client and opens the files there. Several clients can attach; each gets frames at its own size, and the daemon keeps per-client facts (size, heights, cell width).
 - Each client has its own windows, as Emacs gives each `emacsclient` its own frame ([[0015-daemon-clients-own-their-windows-and-share-the-typing]]): its layout, its current window, and each window's buffer, cursor and scroll. Splitting, closing, scrolling or switching windows or buffers in one client leaves the others as they were.
 - Shared between clients: buffers, their text, undo, marks and registers, options and folds; and the typing state, as for one person moving between clients: the mode, pending keys, the command line, menus and the which-key popup, and messages.

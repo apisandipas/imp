@@ -215,6 +215,59 @@ fn the_socket_directory_is_private() {
     assert!(err.unwrap_err().contains("not a directory"));
 }
 
+#[test]
+fn a_name_stays_in_the_socket_directory() {
+    use imp_server::daemon::check_name;
+    assert!(check_name("work").is_ok());
+    assert!(check_name("my.daemon").is_ok());
+    for bad in ["", "../x", "a/b", "/abs", ".."] {
+        let err = check_name(bad).unwrap_err();
+        assert!(err.contains("--name"), "{bad}: {err}");
+    }
+}
+
+#[test]
+fn a_client_size_is_clamped() {
+    let socket = start_daemon("clamp");
+    let mut a = Client::connect(&socket);
+    a.send(ClientMsg::Resize {
+        width: 20,
+        height: u16::MAX,
+    });
+    assert!(a.until(|f| f.rows.len() == protocol::MAX_SIZE as usize));
+    kill_server(&mut a);
+}
+
+#[test]
+fn a_line_too_long_disconnects_the_client() {
+    let socket = start_daemon("long");
+    let mut a = Client::connect(&socket);
+    let mut b = Client::connect(&socket);
+    assert!(b.until(|f| !f.rows.is_empty()));
+    // No line break: the daemon stops reading past the cap and hangs up,
+    // so the rest of this write may fail.
+    let mut w = b.w.try_clone().unwrap();
+    let writer = std::thread::spawn(move || {
+        let _ = w.write_all(&vec![b'x'; protocol::MAX_CLIENT_LINE + 2]);
+    });
+    // b reads to the end of its stream (or a reset, as the daemon hangs
+    // up with b's bytes unread), not to the read timeout.
+    loop {
+        let mut line = String::new();
+        match b.r.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => break,
+            Err(e) => panic!("b was never disconnected: {e}"),
+        }
+    }
+    writer.join().unwrap();
+    // The daemon carries on for the others.
+    a.keys(&["i", "o", "k", "<esc>"]);
+    assert!(a.until(|f| f.text_rows()[0].trim_end() == "ok"));
+    kill_server(&mut a);
+}
+
 fn kill_server(c: &mut Client) {
     c.keys(&[
         ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",

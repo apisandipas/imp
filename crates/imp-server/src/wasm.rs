@@ -253,10 +253,13 @@ mod imp {
             .map_err(|e| format!("imp_alloc gave a bad pointer: {e}"))?;
         let packed = func.call(&mut *store, (ptr, len)).map_err(trap)? as u64;
         let (out_ptr, out_len) = ((packed >> 32) as usize, (packed & 0xffff_ffff) as usize);
-        let mut out = vec![0; out_len];
-        memory
-            .read(&*store, out_ptr, &mut out)
-            .map_err(|e| format!("{name} returned a bad string: {e}"))?;
-        String::from_utf8(out).map_err(|_| format!("{name} returned invalid UTF-8").into())
+        // Slice the plugin's memory rather than allocate `out_len` first: a
+        // length up to 4 GiB that the plugin doesn't have would otherwise
+        // allocate past its memory limit before the bounds were checked.
+        let out = out_ptr
+            .checked_add(out_len)
+            .and_then(|end| memory.data(&*store).get(out_ptr..end))
+            .ok_or_else(|| format!("{name} returned a bad string: out of bounds"))?;
+        String::from_utf8(out.to_vec()).map_err(|_| format!("{name} returned invalid UTF-8").into())
     }
 }

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/tree-sitter]]"
 frozen:
-  docs/specs/tree-sitter.md: 8999c82bfadc
+  docs/specs/tree-sitter.md: 4a87962c1110
 ---
 # Tree-sitter
 
@@ -34,6 +34,8 @@ Then run M-x `install-grammars`. It installs every declared grammar that isn't b
 Only the declared revision is fetched, without the repository's history, since grammar repositories can be hundreds of megabytes. Opening a file whose grammar is declared but not built says to run M-x `install-grammars`, and nothing is downloaded or built until you do.
 
 A grammar needs `git` and a C compiler to install, and the message line says which is missing. A repository without a generated `src/parser.c` can't be built, since generating one needs the tree-sitter CLI. To remove a grammar, delete its files under `grammars/`.
+
+Only install grammars you trust. A grammar is native code: its `scanner.c` can be any C at all, and once loaded it runs inside imp with everything imp can do, with nothing to sandbox it. Declaring a repository in `define-grammar!`, or registering a library, trusts it as much as imp itself.
 
 A grammar you built yourself, as a shared library, can be used the same way. Register it with the library's path and the directory of its `highlights.scm` (and `injections.scm`, if it has one). The library is loaded the first time a buffer or a code fence uses the language:
 
