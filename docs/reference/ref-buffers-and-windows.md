@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/buffers-and-windows]]"
 frozen:
-  docs/specs/buffers-and-windows.md: ec5718f77b29
+  docs/specs/buffers-and-windows.md: bc8c82b25ab1
 ---
 # Buffers and windows
 
@@ -71,6 +71,8 @@ To choose where a buffer opens, give a rule in `init.scm` with the start of its 
 Long lines wrap onto the next row, as in Vim. Turn on `linebreak` to wrap between words, not in the middle of one. Turn off `wrap` and long lines scroll sideways instead.
 
 Wide characters take two cells, and combining marks take none.
+
+Control characters show as Vim shows them, so a file can't send escape codes to your terminal: ESC is `^[`, BEL `^G`, DEL `^?`, and the C1 codes their number in hex, like `<9b>`. Each is still one character: `l` steps over `^[` in one go. The same goes for text in the status line, messages and popups.
 
 A buffer that sets `number` or `relativenumber` with `:setlocal` keeps its own line numbers, even while you work in another window. Special buffers such as the file tree and terminals turn them off this way.
 

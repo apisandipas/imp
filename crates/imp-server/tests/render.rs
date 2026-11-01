@@ -188,6 +188,62 @@ fn wide_chars_take_two_cells() {
     assert_eq!(s.frame().cursor, (6, 0));
 }
 
+/// Whether any span of `s`'s frame would send a control char.
+fn sends_control_chars(s: &mut Server) -> bool {
+    s.frame()
+        .rows
+        .iter()
+        .flatten()
+        .any(|span| span.text.contains(char::is_control))
+}
+
+#[test]
+fn control_chars_show_in_caret_notation() {
+    // ESC, BEL, a C1 char and DEL, drawn as Vim draws them.
+    let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);
+    assert_eq!(s.frame().text_rows()[0], "a^[b^Gc<9b>d^?");
+    assert!(!sends_control_chars(&mut s));
+    // A lone CR too.
+    let mut s = sized("a\rb\n", 30, 4);
+    assert!(s.frame().text_rows()[0].starts_with("a^M"));
+    assert!(!sends_control_chars(&mut s));
+}
+
+#[test]
+fn the_cursor_steps_over_a_control_char_whole() {
+    // As in Vim: one char each, the cursor on the first of its cells.
+    let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);
+    let mut at = Vec::new();
+    for _ in 0..7 {
+        at.push(s.frame().cursor.0);
+        s.keys(&["l"]);
+    }
+    assert_eq!(at, [0, 1, 3, 4, 6, 7, 11]);
+    s.keys(&["$"]);
+    assert_eq!((s.cursor(), s.frame().cursor), (7, (12, 0)));
+}
+
+#[test]
+fn control_chars_wrap_whole() {
+    let mut s = sized("aaa\x1b\n", 4, 5);
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "aaa");
+    assert_eq!(rows[1], "^[");
+}
+
+#[test]
+fn messages_and_the_status_line_send_no_control_chars() {
+    let mut s = sized("x\n", 40, 4);
+    s.eval(r#"(set-status! (string-append "a" (string (integer->char 27)) "]0;pwned" (string (integer->char 7))))"#)
+        .unwrap();
+    s.eval(r#"(set-statusline! (string-append "b" (string (integer->char 155)) "c") "")"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[3], "a^[]0;pwned^G");
+    assert!(rows[2].starts_with("b<9b>c"), "{:?}", rows[2]);
+    assert!(!sends_control_chars(&mut s));
+}
+
 #[test]
 fn wide_chars_wrap_whole() {
     let mut s = sized("aaaa日\n", 5, 5);

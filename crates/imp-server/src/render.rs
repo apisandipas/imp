@@ -4,6 +4,7 @@
 //! bottom row, the message line or the command line being typed. Windows
 //! side by side are separated by a border column.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
@@ -142,13 +143,17 @@ pub fn frame(e: &mut Editor) -> Frame {
             cursor = boxed.expect("checked");
         }
         Some((text, col)) => {
+            let (text, col) = drawn_input(text, *col);
             // Keep the cursor's end of a long command line in view.
             let skip = (col + 1).saturating_sub(width);
-            let shown: String = text.chars().skip(skip).take(width).collect();
-            rows.push(vec![Span::new(shown, Style::default())]);
+            let drawn: String = text.chars().skip(skip).take(width).collect();
+            rows.push(vec![Span::new(drawn, Style::default())]);
             cursor = ((col - skip).min(width - 1), height - 1);
         }
-        None => rows.push(vec![Span::new(clip(&e.status, width), Style::default())]),
+        None => rows.push(vec![Span::new(
+            printable(&clip(&e.status, width)),
+            Style::default(),
+        )]),
     }
 
     // A client that draws one size gets no heights.
@@ -445,6 +450,7 @@ fn center_popup(
     let x = width.saturating_sub(inner + 2) / 2;
     // Keep the cursor's end of a long input in view.
     let header = e.cmdline.as_ref().map(|(text, col)| {
+        let (text, col) = drawn_input(text, *col);
         let room = inner.saturating_sub(2);
         let skip = (col + 1).saturating_sub(room);
         let shown: String = text.chars().skip(skip).take(room).collect();
@@ -540,7 +546,7 @@ fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
     let mut at = 0;
     for span in row {
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if at + w <= x {
                 push(&mut out, &ch.to_string(), span.style);
             } else if at < x {
@@ -565,7 +571,7 @@ fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
     let mut at = 0;
     for span in row {
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if at >= end {
                 push(&mut out, &ch.to_string(), span.style);
             } else if at + w > end {
@@ -956,7 +962,7 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
             let w = if ch == '\t' {
                 tab_width - x % tab_width
             } else {
-                ch.width().unwrap_or(0)
+                char_width(ch)
             };
             let cell = Cell { index, ch, x, w };
             x += w;
@@ -1002,7 +1008,7 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
             let w = if ch == '\t' {
                 tab_width - x % tab_width
             } else {
-                ch.width().unwrap_or(0)
+                char_width(ch)
             };
             let cell = Cell { index, ch, x, w };
             x += w;
@@ -1297,7 +1303,7 @@ impl View<'_> {
                     numbers -= SIGN_WIDTH;
                     match signs.get(&line).filter(|_| i == 0) {
                         Some((text, face)) => {
-                            let text: String = text.chars().take(SIGN_WIDTH).collect();
+                            let text: String = printable(text).chars().take(SIGN_WIDTH).collect();
                             let pad = SIGN_WIDTH.saturating_sub(text_width(&text));
                             row.push(Span::new(
                                 format!("{text}{}", " ".repeat(pad)),
@@ -1346,7 +1352,7 @@ impl View<'_> {
                 if let Some(changes) = self.changes {
                     match changes.get(&line).filter(|_| i == 0) {
                         Some((text, face)) => {
-                            let text: String = text.chars().take(CHANGE_WIDTH).collect();
+                            let text: String = printable(text).chars().take(CHANGE_WIDTH).collect();
                             let pad = CHANGE_WIDTH.saturating_sub(text_width(&text));
                             row.push(Span::new(
                                 format!("{text}{}", " ".repeat(pad)),
@@ -1645,12 +1651,60 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     faces
 }
 
-/// Appends text to a row, merging it into the last span if the style matches.
+/// Appends text to a row, merging it into the last span if the style
+/// matches. Control chars go in in `caret` notation, so none reaches a
+/// terminal, where they could move its cursor or set its title or
+/// clipboard.
 fn push(row: &mut Row, text: &str, style: Style) {
+    let text = printable(text);
     match row.last_mut() {
-        Some(last) if last.style == style => last.text.push_str(text),
+        Some(last) if last.style == style => last.text.push_str(&text),
         _ => row.push(Span::new(text, style)),
     }
+}
+
+/// How control char `ch` is drawn, as Vim draws it: C0 and DEL in caret
+/// notation (`^[`, `^G`, `^?`), C1 as its code in hex (`<9b>`). None for
+/// any other char. A tab counts: buffer text lays its tabs out before
+/// they get here, and a tab anywhere else would jump the terminal's
+/// cursor.
+fn caret(ch: char) -> Option<String> {
+    match ch as u32 {
+        c @ 0..=0x1f => Some(format!("^{}", char::from(c as u8 + 0x40))),
+        0x7f => Some("^?".into()),
+        c @ 0x80..=0x9f => Some(format!("<{c:02x}>")),
+        _ => None,
+    }
+}
+
+/// The cells `ch` takes as drawn: wide chars two, combining marks none,
+/// control chars their `caret` notation's.
+fn char_width(ch: char) -> usize {
+    match caret(ch) {
+        Some(shown) => shown.len(),
+        None => ch.width().unwrap_or(0),
+    }
+}
+
+/// Command line `text` as drawn, its control chars in `caret` notation,
+/// and where char `col` of it is drawn.
+fn drawn_input(text: &str, col: usize) -> (String, usize) {
+    let before: String = text.chars().take(col).collect();
+    (
+        printable(text).into_owned(),
+        printable(&before).chars().count(),
+    )
+}
+
+/// `text` as drawn: its control chars in `caret` notation.
+fn printable(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| caret(c).is_some()) {
+        return text.into();
+    }
+    text.chars()
+        .map(|c| caret(c).unwrap_or_else(|| c.to_string()))
+        .collect::<String>()
+        .into()
 }
 
 /// The display column of char column `col` on `line` of the current
@@ -1750,7 +1804,7 @@ pub fn window_text_width(e: &Editor) -> usize {
 
 /// Display width of a string.
 fn text_width(text: &str) -> usize {
-    text.chars().map(|c| c.width().unwrap_or(0)).sum()
+    text.chars().map(char_width).sum()
 }
 
 /// `text` cut to `width` display cells.
@@ -1758,7 +1812,7 @@ fn clip(text: &str, width: usize) -> String {
     let mut used = 0;
     text.chars()
         .take_while(|c| {
-            used += c.width().unwrap_or(0);
+            used += char_width(*c);
             used <= width
         })
         .collect()
@@ -1864,7 +1918,7 @@ fn trim_start(name: &str, cells: usize) -> String {
     let mut start = name.len();
     let mut used = 0;
     for (i, ch) in name.char_indices().rev() {
-        let w = ch.width().unwrap_or(0);
+        let w = char_width(ch);
         if used + w > keep {
             break;
         }
@@ -1882,7 +1936,7 @@ fn clip_row_end(row: &Row, width: usize) -> Row {
     for span in row {
         let mut text = String::new();
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if skip >= w && skip > 0 {
                 skip -= w;
             } else if skip > 0 {
