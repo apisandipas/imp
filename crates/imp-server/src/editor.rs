@@ -189,6 +189,17 @@ pub struct Window {
     pub hscroll: usize,
 }
 
+/// What a window shows and where (`Editor::window_view`).
+#[derive(Debug, Clone, Copy)]
+pub struct WindowView<'a> {
+    pub buffer_id: usize,
+    pub buffer: &'a Buffer,
+    /// The window's cursor, within the buffer.
+    pub cursor: usize,
+    pub scroll: usize,
+    pub hscroll: usize,
+}
+
 /// The buffer mark that holds window `id`'s cursor while it isn't current.
 pub fn window_mark(id: usize) -> String {
     format!("window:{id}")
@@ -237,6 +248,57 @@ pub struct Highlight {
 }
 
 impl Editor {
+    /// The current buffer: the current window's. Buffer primitives act on
+    /// this one.
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    /// Id of the current buffer.
+    pub fn current(&self) -> usize {
+        self.current
+    }
+
+    /// Id of the current window.
+    pub fn current_window(&self) -> usize {
+        self.current_window
+    }
+
+    /// What window `id` shows and where: its buffer, cursor and scroll,
+    /// wherever they are kept for it. `None` if there is no such window.
+    pub fn window_view(&self, id: usize) -> Option<WindowView<'_>> {
+        let (buffer_id, scroll, hscroll) = if id == self.current_window {
+            (self.current, self.scroll, self.hscroll)
+        } else {
+            let w = self.windows.get(&id)?;
+            (w.buffer, w.scroll, w.hscroll)
+        };
+        let buffer = self.buffer_by_id(buffer_id).unwrap_or(&self.buffer);
+        let cursor = if id == self.current_window {
+            self.cursor
+        } else {
+            buffer.mark(&window_mark(id)).unwrap_or(0)
+        };
+        Some(WindowView {
+            buffer_id,
+            buffer,
+            cursor: cursor.min(buffer.len()),
+            scroll,
+            hscroll,
+        })
+    }
+
+    /// Sets where window `id` is scrolled to, as drawing worked out.
+    pub fn set_window_scroll(&mut self, id: usize, scroll: usize, hscroll: usize) {
+        if id == self.current_window {
+            self.scroll = scroll;
+            self.hscroll = hscroll;
+        } else if let Some(w) = self.windows.get_mut(&id) {
+            w.scroll = scroll;
+            w.hscroll = hscroll;
+        }
+    }
+
     /// Ids of all buffers, in the order they were made.
     pub fn buffer_ids(&self) -> Vec<usize> {
         let mut ids: Vec<usize> = self.parked.keys().copied().collect();

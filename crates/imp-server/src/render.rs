@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
 use unicode_width::UnicodeWidthChar;
 
-use crate::editor::{window_mark, Editor, Layer, PopupLine};
+use crate::editor::{Editor, Layer, PopupLine, WindowView};
 use crate::layout::Rect;
 
 /// How the gutter shows line numbers, set from Scheme (the `number` and
@@ -45,13 +45,7 @@ pub fn frame(e: &mut Editor) -> Frame {
     // Parse what changed in every buffer on screen before drawing.
     let shown: Vec<usize> = screen
         .iter()
-        .map(|(id, _)| {
-            if *id == e.current_window {
-                e.current
-            } else {
-                e.windows[id].buffer
-            }
-        })
+        .filter_map(|(id, _)| e.window_view(*id).map(|v| v.buffer_id))
         .collect();
     for id in shown {
         e.update_syntax(id);
@@ -64,7 +58,7 @@ pub fn frame(e: &mut Editor) -> Frame {
     let mut scrolls = Vec::new();
     let mut windows: Vec<WindowBlock> = Vec::new();
     for (id, rect) in &screen {
-        let focused = *id == e.current_window;
+        let focused = *id == e.current_window();
         let mut drawn = draw_window(e, *id, *rect, focused, rect.x + rect.w < width);
         if let Some(mut block) = drawn.block.take() {
             // Only the focused window shows the cursor.
@@ -84,13 +78,7 @@ pub fn frame(e: &mut Editor) -> Frame {
         scrolls.push((*id, drawn.scroll, drawn.hscroll));
     }
     for (id, scroll, hscroll) in scrolls {
-        if id == e.current_window {
-            e.scroll = scroll;
-            e.hscroll = hscroll;
-        } else if let Some(w) = e.windows.get_mut(&id) {
-            w.scroll = scroll;
-            w.hscroll = hscroll;
-        }
+        e.set_window_scroll(id, scroll, hscroll);
     }
 
     let separator = e.face("separator");
@@ -662,19 +650,13 @@ struct View<'a> {
 }
 
 fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> DrawnWindow {
-    let (buffer_id, mut scroll, mut hscroll) = if focused {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
-    let cursor = if focused {
-        e.cursor
-    } else {
-        buffer.mark(&window_mark(id)).unwrap_or(0)
-    }
-    .min(buffer.len());
+    let WindowView {
+        buffer_id,
+        buffer,
+        cursor,
+        mut scroll,
+        mut hscroll,
+    } = e.window_view(id).expect("a window on screen");
     let footer = e.footer_rows(buffer_id, rect.h);
     let text_rows = rect.h.saturating_sub(1 + footer).max(1);
     let folds = Folds::of(e, buffer_id);
@@ -792,7 +774,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer,
         buffer_id,
         syntax: syntax.unwrap_or_default(),
-        current_buffer: buffer_id == e.current,
+        current_buffer: buffer_id == e.current(),
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: shown_signs(e, buffer_id),
         fold_starts: shown_fold_starts(e, buffer_id),
@@ -1610,7 +1592,7 @@ fn char_styles(
 /// the syntax face, then each highlight over it, as `char_styles` paints
 /// them. For describe-face.
 pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
-    let buffer = e.buffer_by_id(e.current).unwrap_or(&e.buffer);
+    let buffer = e.buffer();
     let rope = buffer.rope();
     let offset = offset.min(rope.len_chars());
     let line = rope.char_to_line(offset);
@@ -1618,7 +1600,7 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     let text = rope.line(line).to_string();
     let text = text.trim_end_matches(['\n', '\r']);
     let mut faces = Vec::new();
-    if let Some(syntax) = e.syntax.get(&e.current) {
+    if let Some(syntax) = e.syntax.get(&e.current()) {
         let bytes = rope.char_to_byte(start)..rope.char_to_byte(start + text.chars().count() + 1);
         let face = syntax
             .highlights(rope, bytes)
@@ -1629,7 +1611,7 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     }
     let buffer_layers = e
         .buffer_layers
-        .get(&e.current)
+        .get(&e.current())
         .map_or(&[][..], Vec::as_slice);
     let col = offset - start;
     for layer in e.layers.iter().chain(buffer_layers) {
@@ -1710,7 +1692,7 @@ fn printable(text: &str) -> Cow<'_, str> {
 /// The display column of char column `col` on `line` of the current
 /// buffer (tabs and wide chars counted).
 pub fn display_col(e: &Editor, line: usize, col: usize) -> usize {
-    let cells = layout_line(&e.buffer.line_text(line), e.tab_width);
+    let cells = layout_line(&e.buffer().line_text(line), e.tab_width);
     cells
         .get(col)
         .map_or_else(|| cells.last().map_or(0, |c| c.x + c.w), |c| c.x)
@@ -1719,7 +1701,7 @@ pub fn display_col(e: &Editor, line: usize, col: usize) -> usize {
 /// The char column on `line` that covers display column `x`, or the end
 /// of the line.
 pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
-    let cells = layout_line(&e.buffer.line_text(line), e.tab_width);
+    let cells = layout_line(&e.buffer().line_text(line), e.tab_width);
     cells
         .iter()
         .position(|c| x < c.x + c.w.max(1))
@@ -1733,12 +1715,9 @@ pub fn fold_column_at(e: &Editor, x: usize, y: usize) -> Option<usize> {
         .window_rects()
         .into_iter()
         .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
-    let buffer_id = if id == e.current_window {
-        e.current
-    } else {
-        e.windows[&id].buffer
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let WindowView {
+        buffer_id, buffer, ..
+    } = e.window_view(id)?;
     let starts = shown_fold_starts(e, buffer_id)?;
     let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
     let text = rect.x + indent + gutter;
@@ -1765,16 +1744,16 @@ pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usiz
         .window_rects()
         .into_iter()
         .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y + 1 < r.y + r.h)?;
-    let (buffer_id, scroll, hscroll) = if id == e.current_window {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
+    let WindowView {
+        buffer_id,
+        buffer,
+        scroll,
+        hscroll,
+        ..
+    } = e.window_view(id)?;
     if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
         return None;
     }
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
     let left = rect.x + indent + gutter;
     (x >= left).then(|| (id, scroll + y - rect.y, x - left + hscroll))
@@ -1783,13 +1762,10 @@ pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usiz
 /// The rows and columns of text window `id` shows, or `None` if there is
 /// no such window.
 pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
-    let buffer_id = if id == e.current_window {
-        e.current
-    } else {
-        e.windows.get(&id)?.buffer
-    };
+    let WindowView {
+        buffer_id, buffer, ..
+    } = e.window_view(id)?;
     let rect = e.window_rects().into_iter().find(|(w, _)| *w == id)?.1;
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let rows = rect
         .h
         .saturating_sub(1 + e.footer_rows(buffer_id, rect.h))
@@ -1798,8 +1774,8 @@ pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
 }
 
 pub fn window_text_width(e: &Editor) -> usize {
-    let rect = e.window_rect(e.current_window);
-    text_area(e, e.current, &e.buffer, rect.w).2
+    let rect = e.window_rect(e.current_window());
+    text_area(e, e.current(), e.buffer(), rect.w).2
 }
 
 /// Display width of a string.
@@ -2081,13 +2057,15 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
     }
-    let footer_buffer = if id == e.current_window {
-        e.current
-    } else {
-        e.windows[&id].buffer
-    };
+    let WindowView {
+        buffer_id,
+        buffer,
+        cursor,
+        scroll,
+        hscroll,
+    } = e.window_view(id)?;
     // A click on the footer does nothing.
-    if y + 1 + e.footer_rows(footer_buffer, rect.h) >= rect.y + rect.h {
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
         return None;
     }
     // Where in the cell: exactly, or its middle.
@@ -2095,23 +2073,9 @@ pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<
         .mouse_fine
         .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
         .unwrap_or((x as f32 + 0.5, y as f32 + 0.5));
-    let (buffer_id, scroll, hscroll) = if id == e.current_window {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
     let dx = (fx - (rect.x + indent + gutter) as f32).max(0.0);
-    let cursor_line = buffer.offset_to_line(
-        if id == e.current_window {
-            e.cursor
-        } else {
-            buffer.mark(&window_mark(id)).unwrap_or(0)
-        }
-        .min(buffer.len()),
-    );
+    let cursor_line = buffer.offset_to_line(cursor);
     // How far down the window, in rows of one cell.
     let mut down = fy - rect.y as f32;
     let folds = Folds::of(e, buffer_id);
