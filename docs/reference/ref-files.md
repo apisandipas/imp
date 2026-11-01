@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/files]]"
 frozen:
-  docs/specs/files.md: b08542837535
+  docs/specs/files.md: b452a5d99077
 ---
 # Files
 
@@ -10,7 +10,7 @@ imp saves your files safely, keeps their line endings and encoding, and notices 
 
 ## Saving
 
-`:w` saves the buffer. imp writes the new text to a temporary file beside yours, then puts it in place. A crash never leaves half a file, and the file keeps its permissions.
+`:w` saves the buffer. imp writes the new text to a temporary file beside yours, then puts it in place. A crash never leaves half a file, and the file keeps its permissions and, when you are allowed to keep it, its owner. The temporary file is never readable by anyone who can't read yours, and in a directory others can write to, a symlink someone plants beside your file can't redirect the save or the backup.
 
 Turn on `backup` to keep the previous version of a file as `FILE~` each time you save:
 

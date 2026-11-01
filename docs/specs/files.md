@@ -7,7 +7,7 @@ anchors: [crates/imp-core/src/fileio.rs, crates/imp-server/src/files.rs, runtime
 
 ## Behaviour
 
-- **Saves are atomic**: a temporary file beside the target, then a rename, keeping its permissions. `backup` keeps `FILE~`.
+- **Saves are atomic**: a temporary file beside the target, then a rename, keeping its permissions and, where allowed, its owner. The temporary file has the target's permissions from the start and an unguessable name; neither it nor `FILE~` follows a symlink planted at its name. `backup` keeps `FILE~`.
 - **Formats**: CRLF line endings are detected and written back (`fileformat`); a UTF-8 BOM is kept; invalid UTF-8 opens as Latin-1 and is written back as Latin-1.
 - **Outside changes**: checked on a timer and when entering a buffer. An unmodified buffer reloads (`autoread`); a modified one gets a warning, and `:w` refuses to overwrite until `:w!`.
 - **Autosave**: modified buffers are copied every `autosave-interval` seconds into the state directory; `:recover` restores one.
