@@ -3167,10 +3167,11 @@
          [dir (if slash (substring typed 0 (+ slash 1)) "")]
          [prefix (substring typed (string-length dir) (string-length typed))]
          ;; From a terminal, relative to its directory.
-         [listing (directory-entries (if (equal? dir "")
-                                         (or (buffer-local 'term-dir) (current-dir))
-                                         (expand-path (from-terminal-directory dir))))])
-    (if (string? listing)
+         [listing (with-handler (lambda (e) #f)
+                                (directory-entries (if (equal? dir "")
+                                                       (or (buffer-local 'term-dir) (current-dir))
+                                                       (expand-path (from-terminal-directory dir)))))])
+    (if (not listing)
         '()
         (map (lambda (e) (string-append dir (car e) (if (cadr e) "/" "")))
              (filter (lambda (e)
@@ -3604,11 +3605,6 @@
           void)
         (set-status! (string-append name " takes no range")))))
 
-(define (error-message e)
-  "The message of a caught error, without the space Steel puts in front."
-  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
-    (substring m (skip-spaces m 0) (string-length m))))
-
 (define (mark-line c)
   "The line of mark `c`, for ex addresses like 'a."
   (let ([m (mark-get (if (equal? c #\`) "'" (string c)))]) (and m (offset->line m))))
@@ -3687,8 +3683,10 @@
     [else
      (run-hooks 'before-save)
      (set-backup! (option 'backup))
-     (and (save!)
-          (begin (run-hooks 'after-save) #t))]))
+     (let ([failed (error-text save!)])
+       (if failed
+           (begin (set-status! failed) #f)
+           (begin (run-hooks 'after-save) #t)))]))
 
 (define (write-buffer! ex)
   ":w writes the buffer; :w FILE writes a copy (or names the buffer, if it
@@ -3905,9 +3903,9 @@
    Returns the buffer id, or #f after saying why on the status line. The
    buffer-open hooks run the first time a buffer is shown."
   (*leave-popup-window!*)
-  (let ([r (buffer-open! (expand-path path))])
-    (if (string? r)
-        (begin (set-status! r) #f)
+  (let ([r (with-handler (lambda (e) (set-status! (error-message e)) #f) (buffer-open! (expand-path path)))])
+    (if (not r)
+        #f
         (begin
           (record-jump!)
           (let ([new? (not (buffer-seen? r))])

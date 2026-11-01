@@ -101,16 +101,17 @@ pub(super) fn register(engine: &mut Engine) {
         editor::with(|e| e.switch_to(clamp(id)))
     });
     // The id of the buffer visiting `path`, opening the file if no buffer
-    // does yet (a missing file opens empty). Errors come back as a string.
+    // does yet (a missing file opens empty). A file that can't be read is
+    // an error.
     engine.register_fn("buffer-open!", |path: String| {
         editor::with(|e| {
             let path = PathBuf::from(&path);
             if let Some(id) = e.find_file_buffer(&path) {
-                return SteelVal::IntV(id as isize);
+                return Ok(id as isize);
             }
             match imp_core::Buffer::open(&path) {
-                Ok(buffer) => SteelVal::IntV(e.add_buffer(buffer) as isize),
-                Err(err) => SteelVal::StringV(format!("{}: {err}", path.display()).into()),
+                Ok(buffer) => Ok(e.add_buffer(buffer) as isize),
+                Err(err) => Err(fail(format!("{}: {err}", path.display()))),
             }
         })
     });
@@ -267,12 +268,10 @@ pub(super) fn register(engine: &mut Engine) {
         })
     });
     engine.register_fn("save!", || {
-        editor::with(|e| match e.buffer_mut().save() {
-            Ok(()) => true,
-            Err(err) => {
-                e.status = format!("save failed: {err}");
-                false
-            }
+        editor::with(|e| {
+            e.buffer_mut()
+                .save()
+                .map_err(|err| fail(format!("save failed: {err}")))
         })
     });
 

@@ -5,7 +5,7 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
@@ -24,18 +24,18 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("timer-done!", |id: isize, repeat: bool| {
         editor::with(|e| e.background.timer_fired(clamp(id) as u64, repeat))
     });
-    // The job's id, or an error message. Input #f keeps stdin open.
+    // The job's id. Input #f keeps stdin open.
     engine.register_fn("job-start!", |command: String, input: SteelVal| {
         let input = match &input {
             SteelVal::StringV(s) => Some(s.to_string()),
             _ => None,
         };
-        editor::with(
-            |e| match e.background.start_job(&command, input.as_deref()) {
-                Ok(id) => SteelVal::IntV(id as isize),
-                Err(err) => SteelVal::StringV(err.into()),
-            },
-        )
+        editor::with(|e| {
+            e.background
+                .start_job(&command, input.as_deref())
+                .map(|id| id as isize)
+                .map_err(fail)
+        })
     });
     engine.register_fn("job-send!", |id: isize, text: String| {
         editor::with(|e| e.background.send_to_job(clamp(id) as u64, &text))
@@ -47,19 +47,23 @@ pub(super) fn register(engine: &mut Engine) {
         editor::with(|e| e.background.kill_job(clamp(id) as u64))
     });
 
-    // Unix sockets (events.rs): a listener id, or the error as a string.
+    // Unix sockets (events.rs): a listener id.
     engine.register_fn("socket-listen!", |path: String| {
-        editor::with(|e| match e.background.listen(Path::new(&path)) {
-            Ok(id) => SteelVal::IntV(id as isize),
-            Err(err) => SteelVal::StringV(err.into()),
+        editor::with(|e| {
+            e.background
+                .listen(Path::new(&path))
+                .map(|id| id as isize)
+                .map_err(fail)
         })
     });
 
-    // A connection id, or the error as a string.
+    // A connection id.
     engine.register_fn("socket-connect!", |path: String| {
-        editor::with(|e| match e.background.connect(Path::new(&path)) {
-            Ok(id) => SteelVal::IntV(id as isize),
-            Err(err) => SteelVal::StringV(err.into()),
+        editor::with(|e| {
+            e.background
+                .connect(Path::new(&path))
+                .map(|id| id as isize)
+                .map_err(fail)
         })
     });
     engine.register_fn("socket-stop!", |id: isize| {

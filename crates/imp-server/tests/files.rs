@@ -127,3 +127,36 @@ fn saves_are_atomic_and_keep_symlinks() {
         .file_type()
         .is_symlink());
 }
+
+#[test]
+fn file_errors_show_their_message() {
+    let mut s = server("text\n");
+    // A primitive's error raises with its message as written, unquoted.
+    assert_eq!(
+        s.eval("(error-text (lambda () (read-file \"/nonexistent/imp\")))")
+            .unwrap(),
+        "\"/nonexistent/imp: No such file or directory (os error 2)\""
+    );
+    assert_eq!(s.eval("(error-text (lambda () 1))").unwrap(), "#false");
+    // A file that can't be read doesn't open, and says why.
+    let dir = temp_path("unreadable-dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.display().to_string();
+    assert_eq!(
+        s.eval(&format!("(open-file-buffer! {path:?})")).unwrap(),
+        "#false"
+    );
+    assert!(s.status().starts_with(&path), "{}", s.status());
+    assert_eq!(s.text(), "text\n");
+    // A save that fails says so, and the buffer stays modified.
+    let file = temp_path("not-a-dir.txt");
+    std::fs::write(&file, "").unwrap();
+    s.eval(&format!(
+        "(set-buffer-path! {:?})",
+        file.join("x").display().to_string()
+    ))
+    .unwrap();
+    type_keys(&mut s, "x:w<ret>");
+    assert!(s.status().starts_with("save failed: "), "{}", s.status());
+    assert_eq!(s.eval("(buffer-modified?)").unwrap(), "#true");
+}

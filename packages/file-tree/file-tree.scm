@@ -127,9 +127,9 @@
   "The entries of `dir` the tree shows, as (name directory? ignored?):
    directories first, then files, each alphabetical, without dotfiles
    and ignored files unless the options say to show them."
-  (let ([entries (directory-entries dir)])
-    (if (string? entries)
-        (begin (message entries) '())
+  (let ([entries (with-handler (lambda (e) (message (error-message e)) #f) (directory-entries dir))])
+    (if (not entries)
+        '()
         (let* ([ignored (directory-ignored dir)]
                [shown (filter (lambda (e)
                                 (and (or (option 'file-tree-show-hidden) (not (starts-with? (car e) ".")))
@@ -515,12 +515,11 @@
   (let* ([path (child-path dir (file-tree-strip-slash name))]
          [folder? (ends-with? name "/")]
          [r (cond [(file-exists? path) (string-append (file-tree-relative path) " already exists")]
-                  [folder? (make-directory! path)]
-                  [else (let ([made (make-directory! (directory-of path))])
-                          (if (string? made)
-                              made
-                              (with-handler (lambda (e) (error-message e)) (write-text-file! path "") #t)))])])
-    (if (string? r)
+                  [folder? (error-text (lambda () (make-directory! path)))]
+                  [else (error-text (lambda ()
+                                      (make-directory! (directory-of path))
+                                      (write-text-file! path "")))])])
+    (if r
         (message r)
         (begin (file-tree-go-to! path)
                (message (string-append "added " (file-tree-relative path) (if folder? "/" "")))))))
@@ -557,9 +556,10 @@
   "Renames or moves `from` to `text`, a path relative to its root,
    making the folders it needs."
   (let* ([to (child-path (file-tree-root-of from) (file-tree-strip-slash text))]
-         [made (make-directory! (directory-of to))]
-         [r (if (string? made) made (rename-file! from to))])
-    (if (string? r)
+         [r (error-text (lambda ()
+                          (make-directory! (directory-of to))
+                          (rename-file! from to)))])
+    (if r
         (message r)
         (begin (file-tree-move-paths! from to)
                (file-tree-go-to! to)
@@ -582,8 +582,8 @@
         (let ([rel (file-tree-relative (car row))])
           (confirm! (string-append "Delete " rel (if (cadr row) "/ and everything in it?" "?"))
                     (lambda ()
-                      (let ([r (delete-path! (car row))])
-                        (if (string? r)
+                      (let ([r (error-text (lambda () (delete-path! (car row))))])
+                        (if r
                             (message r)
                             (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
 

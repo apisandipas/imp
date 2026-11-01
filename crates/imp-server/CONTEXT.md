@@ -22,6 +22,8 @@ The editor. It owns all state; clients only send input and draw frames ([[0004-c
 
 All positions are char offsets; integers are `isize` and negatives clamp. Primitives cover buffers, changes and undo, files and processes, marks, search, windows and layout, UI (status, popups, command line, signs, margins, faces, highlight layers), background timers and jobs, tree-sitter, JSON and LSP framing, sockets, and the mouse. Help doesn't cover primitives; their arguments are in `api/`, where each is registered. A fallible primitive returns `Result<_, SteelErr>`, its error made with `fail` (`api/mod.rs`), so Scheme raises it with the message as written; an `Err(String)` would raise it Debug-quoted, quotes and all.
 
+Fallible primitives return `Result`: one that can fail raises, and never returns its error as a value in place of its result (an id or a message) or drops it (#f). Scheme that wants to show the error catches it: `(with-handler (lambda (e) (message (error-message e)) #f) (buffer-open! path))`, or `error-text` for one called for its effect. A question whose answer is an error message (`parse-error`, `pattern-error`) isn't a failure.
+
 ## Rendering notes
 
 - Text heights: a face can say `height=1.3`. For a client that draws heights, each window is laid out by line height (`line_scale`) and sent as a block; popups opening at the cursor go on the grid row its row ends in. `tests/heights.rs` covers it.

@@ -180,9 +180,9 @@
           (let ([taken (lsp-take-message *dap-input*)])
             (when taken
               (set! *dap-input* (cadr taken))
-              (when (car taken)
-                (with-handler (lambda (e) (message (string-append "debug: " (error-message e))))
-                              (dap-dispatch! (car taken))))
+              ;; A message that isn't JSON is reported and stepped past.
+              (with-handler (lambda (e) (message (string-append "debug: " (error-message e))))
+                            (dap-dispatch! (json-decode (car taken))))
               (loop)))))))
 
 (define (dap-dispatch! msg)

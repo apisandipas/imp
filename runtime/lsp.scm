@@ -937,7 +937,7 @@
   "Applies TextEdits to the file at `uri`, opening it if needed."
   (let* ([path (uri->path uri)]
          [id (and path (or (buffer-for-path path)
-                           (let ([r (buffer-open! path)]) (if (string? r) (begin (message r) #f) r))))])
+                           (with-handler (lambda (e) (message (error-message e)) #f) (buffer-open! path))))])
     (when id
       (with-buffer id
         (lambda ()

@@ -8,26 +8,21 @@ use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
-    // Terminal buffers (term.rs). term-start! returns the terminal's id,
-    // or the error as a string.
+    // Terminal buffers (term.rs). term-start! returns the terminal's id.
     engine.register_fn(
         "term-start!",
         |command: String, cwd: String, rows: isize, cols: isize| {
-            editor::with(|e| match e.background.sender.clone() {
-                Some(sender) => {
-                    match crate::term::spawn(
-                        &command,
-                        &cwd,
-                        clamp(rows) as u16,
-                        clamp(cols) as u16,
-                        sender,
-                    ) {
-                        Ok(id) => SteelVal::IntV(id as isize),
-                        Err(err) => SteelVal::StringV(err.into()),
-                    }
-                }
-                None => SteelVal::StringV("no event loop".into()),
-            })
+            let sender = editor::with(|e| e.background.sender.clone())
+                .ok_or_else(|| fail("no event loop"))?;
+            crate::term::spawn(
+                &command,
+                &cwd,
+                clamp(rows) as u16,
+                clamp(cols) as u16,
+                sender,
+            )
+            .map(|id| id as isize)
+            .map_err(fail)
         },
     );
     engine.register_fn("term-send!", |id: isize, text: String| {

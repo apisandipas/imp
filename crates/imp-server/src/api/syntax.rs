@@ -4,11 +4,14 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel::SteelVal;
 
-use super::clamp;
+use super::{clamp, fail};
 use crate::editor;
 
 pub(super) fn register(engine: &mut Engine) {
     // Tree-sitter (syntax.rs): a language per buffer, and its tree.
+    // #t once the buffer is parsed with grammar `name`, #f if there is no
+    // such grammar; a grammar that won't load is an error. Either way
+    // short of #t, the buffer is left plain.
     engine.register_fn("set-buffer-language!", |name: String| {
         editor::with(|e| {
             let id = e.current();
@@ -16,15 +19,12 @@ pub(super) fn register(engine: &mut Engine) {
                 Ok(Some(syntax)) => {
                     e.buffer_mut().track_edits(true);
                     e.syntax.insert(id, syntax);
-                    SteelVal::BoolV(true)
+                    Ok(true)
                 }
                 other => {
                     e.buffer_mut().track_edits(false);
                     e.syntax.remove(&id);
-                    match other {
-                        Err(why) => SteelVal::StringV(why.into()),
-                        _ => SteelVal::BoolV(false),
-                    }
+                    other.map(|_| false).map_err(fail)
                 }
             }
         })

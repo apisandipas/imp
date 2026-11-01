@@ -135,6 +135,22 @@
     (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
   void)
 
+;;; Errors. A primitive that fails raises an error rather than returning
+;;; one; code that shows it catches it with with-handler.
+
+(define (error-message e)
+  "The message of a caught error, without the space Steel puts in front."
+  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
+    (let skip ([i 0])
+      (if (and (< i (string-length m)) (char-whitespace? (string-ref m i)))
+          (skip (+ i 1))
+          (substring m i (string-length m))))))
+
+(define (error-text thunk)
+  "Calls `thunk`; the message of the error it raises, or #f if none.
+   For a primitive called for its effect, whose failure is to be shown."
+  (with-handler (lambda (e) (error-message e)) (begin (thunk) #f)))
+
 ;;; Evaluating code while the editor runs
 ;;;
 ;;; Two things about Steel shape this. Re-define-ing a name that already
@@ -446,10 +462,9 @@
   "Starts `command` (run by sh). A string `input` is written to its stdin,
    which is then closed; #f leaves stdin open for job-send!. Returns the
    job id, or #f after showing why it couldn't start."
-  (let ([id (job-start! command input)])
-    (if (string? id)
-        (begin (set-status! id) #f)
-        (begin (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))) id))))
+  (let ([id (with-handler (lambda (e) (set-status! (error-message e)) #f) (job-start! command input))])
+    (when id (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))))
+    id))
 
 (define (imp-job-output id stream text)
   "Called by the server with output `text` from job `id`.
@@ -484,10 +499,9 @@
    (on-open conn) for each connection, (on-line conn line) for each
    line read, (on-close conn) when it closes. Returns the listener id,
    or #f after showing why it couldn't listen."
-  (let ([id (socket-listen! path)])
-    (if (string? id)
-        (begin (set-status! id) #f)
-        (begin (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))) id))))
+  (let ([id (with-handler (lambda (e) (set-status! (error-message e)) #f) (socket-listen! path))])
+    (when id (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))))
+    id))
 
 (define *client-sockets* (hash))  ; connection id -> (#f on-line on-close)
 
@@ -496,10 +510,9 @@
    (on-line conn line) gets each line read, (on-close conn) the end.
    Returns the connection id, or #f after showing why it couldn't
    connect."
-  (let ([conn (socket-connect! path)])
-    (if (string? conn)
-        (begin (set-status! conn) #f)
-        (begin (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))) conn))))
+  (let ([conn (with-handler (lambda (e) (set-status! (error-message e)) #f) (socket-connect! path))])
+    (when conn (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))))
+    conn))
 
 (define (socket-handlers conn)
   "The (on-open on-line on-close) procedures for connection `conn`,

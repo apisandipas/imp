@@ -32,7 +32,7 @@ Re-`define`-ing an existing global makes a new binding that code compiled earlie
 
 ## Errors
 
-- No `raise`: re-raise a caught error with `(raise-error e)`. Catch with `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a leading space (see `error-message` in `vim.scm`).
+- No `raise`: re-raise a caught error with `(raise-error e)`. Catch with `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a leading space, so use `error-message` (`core.scm`) instead; `(error-text thunk)` is the message of the error a thunk raises, or #f. imp's primitives raise when they fail, rather than returning the error.
 
 ## Builtins
 

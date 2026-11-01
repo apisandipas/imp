@@ -21,15 +21,11 @@ pub(super) fn register(engine: &mut Engine) {
             .map_err(fail)
     });
     engine.register_fn("lsp-frame", |body: String| crate::json::frame(&body));
-    // (message rest) for the first whole message in `text`, the message
-    // already decoded from JSON; or #f.
+    // (body rest) for the first whole message in `text`, its body still
+    // JSON text for json-decode, so a bad one is an error the caller sees
+    // and can step past; or #f.
     engine.register_fn("lsp-take-message", |text: String| {
-        crate::json::take_message(&text).map(|(body, rest)| {
-            let msg = serde_json::from_str::<serde_json::Value>(&body)
-                .map(crate::json::to_steel)
-                .unwrap_or(SteelVal::BoolV(false));
-            vec![msg, SteelVal::StringV(rest.into())]
-        })
+        crate::json::take_message(&text).map(|(body, rest)| vec![body, rest])
     });
     // The LSP client's hot paths (lsp.rs): server `key`'s output `text`
     // added to what it sent, and the messages now whole, decoded.

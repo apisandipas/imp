@@ -53,9 +53,9 @@
 
 (define (dired-listing dir)
   "The entries to show: (name directory?), directories first."
-  (let ([entries (directory-entries dir)])
-    (if (string? entries)
-        (begin (message entries) '())
+  (let ([entries (with-handler (lambda (e) (message (error-message e)) #f) (directory-entries dir))])
+    (if (not entries)
+        '()
         (let ([shown (filter (lambda (e) (or (option 'dired-show-hidden) (not (dired-hidden? (car e))))) entries)])
           (append (filter cadr shown) (filter (lambda (e) (not (cadr e))) shown))))))
 
@@ -351,7 +351,8 @@
 (define (dired-apply! dir changes)
   "Makes the changes; returns the problems, if any."
   (let* ([problems '()]
-         [try (lambda (r) (when (string? r) (set! problems (cons r problems))))]
+         [problem! (lambda (r) (when r (set! problems (cons r problems))))]
+         [try (lambda (thunk) (let ([r (error-text thunk)]) (problem! r) r))]
          [path (lambda (name) (child-path dir (dired-strip-slash name)))]
          [renames (filter (lambda (c) (eq? (car c) 'rename)) changes)])
     ;; Renames go through temporary names, so swapping two names works.
@@ -361,24 +362,24 @@
            [moved (let loop ([rs renames] [i 0] [acc '()])
                     (if (null? rs)
                         (reverse acc)
-                        (let ([r (rename-file! (path (cadr (car rs))) (temp i))])
-                          (try r)
-                          (loop (cdr rs) (+ i 1) (if (string? r) acc (cons (list i (car rs)) acc))))))])
+                        (let ([r (try (lambda () (rename-file! (path (cadr (car rs))) (temp i))))])
+                          (loop (cdr rs) (+ i 1) (if r acc (cons (list i (car rs)) acc))))))])
       (for-each (lambda (m)
-                  (let* ([i (car m)] [c (cadr m)] [r (rename-file! (temp i) (path (caddr c)))])
+                  (let* ([i (car m)] [c (cadr m)])
                     ;; If the new name is taken, the file keeps its old one.
-                    (when (string? r) (try r) (rename-file! (temp i) (path (cadr c))))))
+                    (when (try (lambda () (rename-file! (temp i) (path (caddr c)))))
+                      (error-text (lambda () (rename-file! (temp i) (path (cadr c))))))))
                 moved))
     (for-each (lambda (c)
                 (cond
-                  [(eq? (car c) 'delete) (try (delete-path! (path (cadr c))))]
+                  [(eq? (car c) 'delete) (try (lambda () (delete-path! (path (cadr c)))))]
                   [(eq? (car c) 'create)
                    (if (ends-with? (cadr c) "/")
-                       (try (make-directory! (path (cadr c))))
+                       (try (lambda () (make-directory! (path (cadr c)))))
                        (let ([p (path (cadr c))])
                          (if (file-exists? p)
-                             (try (string-append (cadr c) " already exists"))
-                             (try (with-handler (lambda (e) (error-message e)) (write-text-file! p "") #t)))))]
+                             (problem! (string-append (cadr c) " already exists"))
+                             (try (lambda () (write-text-file! p ""))))))]
                   [else #f]))
               changes)
     (reverse problems)))

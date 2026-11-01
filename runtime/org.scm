@@ -1302,7 +1302,7 @@
    background if none does, or #f after saying why."
   (let ([path (car *org-clock*)])
     (or (buffer-for-path path)
-        (let ([id (buffer-open! path)]) (if (string? id) (begin (message id) #f) id)))))
+        (with-handler (lambda (e) (message (error-message e)) #f) (buffer-open! path)))))
 
 (define (org-clock-elapsed)
   "The minutes the running clock has run."

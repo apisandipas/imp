@@ -59,13 +59,12 @@ pub(super) fn register(engine: &mut Engine) {
         ])
     });
     engine.register_fn("delete-file!", |path: String| {
-        std::fs::remove_file(path).is_ok()
+        std::fs::remove_file(&path).map_err(|err| fail(format!("{path}: {err}")))
     });
-    // Directories, for the file browser. The changing ones return #t, or
-    // what went wrong as a string.
+    // Directories, for the file browser.
     engine.register_fn("file-directory?", |path: String| Path::new(&path).is_dir());
     // (name directory?) for each entry of `path`, dotfiles included,
-    // sorted by name; an error string if it can't be read.
+    // sorted by name; an error if it can't be read.
     engine.register_fn(
         "directory-entries",
         |path: String| match std::fs::read_dir(&path) {
@@ -78,7 +77,7 @@ pub(super) fn register(engine: &mut Engine) {
                     })
                     .collect();
                 entries.sort();
-                SteelVal::ListV(
+                Ok(SteelVal::ListV(
                     entries
                         .into_iter()
                         .map(|(name, is_dir)| {
@@ -89,29 +88,27 @@ pub(super) fn register(engine: &mut Engine) {
                         })
                         .collect::<Vec<_>>()
                         .into(),
-                )
+                ))
             }
-            Err(err) => SteelVal::StringV(format!("{path}: {err}").into()),
+            Err(err) => Err(fail(format!("{path}: {err}"))),
         },
     );
     // The names in a directory git ignores, for the file tree.
     engine.register_fn("directory-ignored", |path: String| {
         crate::files::ignored(&path)
     });
-    let outcome = |r: std::io::Result<()>, what: &str| match r {
-        Ok(()) => SteelVal::BoolV(true),
-        Err(err) => SteelVal::StringV(format!("{what}: {err}").into()),
-    };
+    let outcome =
+        |r: std::io::Result<()>, what: &str| r.map_err(|err| fail(format!("{what}: {err}")));
     engine.register_fn("rename-file!", move |from: String, to: String| {
         if Path::new(&to).exists() {
-            return SteelVal::StringV(format!("{to} already exists").into());
+            return Err(fail(format!("{to} already exists")));
         }
         outcome(std::fs::rename(&from, &to), &from)
     });
     // Copies a file, its permissions too; refuses to overwrite one.
     engine.register_fn("copy-file!", move |from: String, to: String| {
         if Path::new(&to).exists() {
-            return SteelVal::StringV(format!("{to} already exists").into());
+            return Err(fail(format!("{to} already exists")));
         }
         outcome(std::fs::copy(&from, &to).map(|_| ()), &from)
     });
