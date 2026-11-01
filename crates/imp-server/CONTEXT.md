@@ -26,7 +26,8 @@ All positions are char offsets; integers are `isize` and negatives clamp. Primit
 
 - Text heights: a face can say `height=1.3`. For a client that draws heights, each window is laid out by line height (`line_scale`) and sent as a block; popups opening at the cursor go on the grid row its row ends in. `tests/heights.rs` covers it.
 - Side-by-side windows are `Editor::divider()` columns apart: the `window-divider-width` option (logical pixels) over the client's cell width; terminals get one column. Use `e.window_rects()`, not `layout.rects`, so the gap is counted. A wide border is blank with `│` in its middle.
-- `line_cells`, `outline_prefix` and `gutter_width` are the shared layout that drawing, wrap, scrolling and clicks all use; change them together.
+- `line_cells`, `outline_prefix` and `gutter_width` are the shared layout that drawing, wrap and scrolling use; change them together.
+- Clicks don't lay lines out: `draw_window` records each row's line and where its chars went (`DrawnText`, kept on the window), and `screen_position` and `fold_column_at` look the cell up there. A window changed since its last frame (or never drawn) is laid out afresh by `draw_window` itself, so drawing is the only layout to change.
 
 ## Limits
 
