@@ -142,6 +142,13 @@ pub(super) fn register(engine: &mut Engine) {
             .unwrap_or_else(|| ".".to_string())
     });
 
+    // This process's id, which names its crash copies (files.scm).
+    engine.register_fn("process-id", || std::process::id() as isize);
+    // Whether process `pid` is a running imp (files.rs).
+    engine.register_fn("imp-running?", |pid: isize| {
+        u32::try_from(pid).is_ok_and(crate::files::imp_running)
+    });
+
     engine.register_fn("getenv", |name: String| std::env::var(name).ok());
     engine.register_fn("imp-version", || env!("CARGO_PKG_VERSION"));
     // imp's config directory (where init.scm and packages/ live).
