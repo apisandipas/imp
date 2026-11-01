@@ -232,10 +232,6 @@
                    (let ([ra (rank (cdr a))] [rb (rank (cdr b))])
                      (or (< ra rb) (and (= ra rb) (< (car a) (car b)))))))))
 
-(define (org-pad-left text width)
-  "`text` padded with spaces on the left to `width` characters."
-  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
-
 (define (org-fit text width)
   "`text` cut to `width` characters, ending in … when it was longer, and
    padded with spaces to `width`."
@@ -409,7 +405,7 @@
                          (list (list fitted title-face)))
                      (if graph (cons (list " " #f) (org-habit-parts graph)) '())
                      (if (> tags-w 0)
-                         (list (list "  " #f) (list (org-pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
+                         (list (list "  " #f) (list (pad-left (org-agenda-tags-text e) tags-w) "org.agenda.tag"))
                          '())
                      (list (list "  " #f) (list (pad-right (list-ref e 7) cat-w) "org.agenda.category")))
              (let ([o (list-ref r 5)]) (list 'org (car e) (cadr e) (and o (cadr o)) (and o (cadr (car o)))))))]
@@ -2136,7 +2132,7 @@
          [w2 (min 50 (foldl (lambda (c m) (max m (string-length (cadr c)))) 7 cells))]
          [w3 (foldl (lambda (c m) (max m (string-length (caddr c)))) 4 cells)]
          [line (lambda (a b c kind)
-                 (list 'report (string-append (pad-right a w1) "  " (pad-right (org-fit b w2) w2) "  " (org-pad-left c w3)) kind))]
+                 (list 'report (string-append (pad-right a w1) "  " (pad-right (org-fit b w2) w2) "  " (pad-left c w3)) kind))]
          [rule (list 'report (make-string (+ w1 w2 w3 4) #\─) 'rule)])
     (append
      (list '(blank) (list 'header "Clock report" 'section)

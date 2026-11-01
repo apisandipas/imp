@@ -42,7 +42,7 @@
 (define *jump-counter* 0)      ; for naming jump marks
 (define *undo-group* #f)       ; while true, changes join one undo step
 (define *alternate-buffer* #f) ; for C-^ and :e #
-(define *insert-pending* #f)   ; C-r in insert mode waits for a register
+(define *insert-register-pending* #f) ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
 (define *last-change-count* 1)
@@ -72,7 +72,7 @@
 ;; (lambda (event arg)) told 'edit after each edit, 'close, and 'key with
 ;; each key before the line sees it, returning #t for a key it took.
 (define *cmdline-completer* #f)
-(define *history* (hash))      ; prompt -> entries, newest first
+(define *prompt-history* (hash)) ; prompt -> entries, newest first
 (define *history-index* -1)    ; -1 while editing a fresh line
 (define *history-prefix* "")   ; what <up> and <down> match against
 (define *last-search* #f)      ; the last search pattern
@@ -1834,8 +1834,9 @@
                     [n (string->number (buffer-substring start end))])
                (list (if neg? (- start 1) start) end (if neg? (- n) n) #f))))))
 
-(define (pad-left text width)
-  "`text` padded on the left with zeros to `width` chars."
+(define (pad-left-zeros text width)
+  "`text` padded on the left with zeros to `width` chars, as C-a and C-x
+   keep a hex number's width."
   (if (< (string-length text) width)
       (string-append (make-string (- width (string-length text)) #\0) text)
       text))
@@ -1856,7 +1857,7 @@
                                               [(memv (car cs) (string->list "ABCDEF")) #t]
                                               [else (loop (cdr cs))]))])
                          (string-append (substring old 0 2)
-                                        (pad-left (if upper? (string-upcase digits) digits)
+                                        (pad-left-zeros (if upper? (string-upcase digits) digits)
                                                   (- (string-length old) 2))))
                        (number->string value))])
         (begin-change!)
@@ -2893,14 +2894,14 @@
    the insert for `.` and leaves insert mode."
   (cond
     ;; C-r {register} inserts the register's text.
-    [*insert-pending*
-     (set! *insert-pending* #f)
+    [*insert-register-pending*
+     (set! *insert-register-pending* #f)
      (set! *insert-keys* (cons key *insert-keys*))
      (let* ([c (key-char key)] [reg (and c (valid-register? c) (register-get c))])
        (when reg (insert-text! (car reg))))]
     [(equal? key "C-r")
      (set! *insert-keys* (cons key *insert-keys*))
-     (set! *insert-pending* #t)]
+     (set! *insert-register-pending* #t)]
     [(member key '("<esc>" "C-c" "C-["))
      (let ([keys (reverse *insert-keys*)])
        (set! *last-inserted* (keys->text keys))
@@ -3000,7 +3001,7 @@
 
 (define (history prompt)
   "The history entries for `prompt`, newest first."
-  (or (hash-try-get *history* prompt) '()))
+  (or (hash-try-get *prompt-history* prompt) '()))
 
 (define (add-history! prompt text)
   "Adds `text` to `prompt`'s history as the newest entry.
@@ -3009,8 +3010,8 @@
   (unless (equal? text "")
     (let* ([old (filter (lambda (h) (not (equal? h text))) (history prompt))]
            [new (cons text old)])
-      (set! *history* (hash-insert *history* prompt
-                                   (if (> (length new) 200) (take new 200) new)))))
+      (set! *prompt-history* (hash-insert *prompt-history* prompt
+                                          (if (> (length new) 200) (take new 200) new)))))
   void)
 
 
@@ -4523,7 +4524,7 @@
 (define-ex! '("mes" "messages")
   (lambda (ex) (show-popup! (if (null? *messages*) (list "no messages") (reverse *messages*)))))
 
-(define (delimiter? c)
+(define (form-delimiter? c)
   "Whether `c` ends a symbol: white space, brackets, quotes, ; or ,.
    #f (past the buffer's end) counts too."
   (or (not c) (char-whitespace? c) (memv c (string->list "()[]\"';`,"))))
@@ -4538,9 +4539,9 @@
        (let ([o (find-open (if (equal? c #\)) #\( #\[) c p 1)]) (and o (list o (+ p 1))))]
       [(memv c (list #\( #\[))
        (let ([e (find-close c (if (equal? c #\() #\) #\]) (+ p 1))]) (and e (list p (+ e 1))))]
-      [(not (delimiter? c))
-       (let ([lo (let loop ([q p]) (if (and (> q 0) (not (delimiter? (buffer-char-at (- q 1))))) (loop (- q 1)) q))]
-             [hi (let loop ([q p]) (if (not (delimiter? (buffer-char-at q))) (loop (+ q 1)) q))])
+      [(not (form-delimiter? c))
+       (let ([lo (let loop ([q p]) (if (and (> q 0) (not (form-delimiter? (buffer-char-at (- q 1))))) (loop (- q 1)) q))]
+             [hi (let loop ([q p]) (if (not (form-delimiter? (buffer-char-at q))) (loop (+ q 1)) q))])
          (list lo hi))]
       [else (let ([o (find-open #\( #\) p 1)]) (and o (form-at o)))])))
 

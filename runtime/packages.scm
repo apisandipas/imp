@@ -48,12 +48,6 @@
           [(file-exists? (string-append dir "/" (car candidates))) (string-append dir "/" (car candidates))]
           [else (loop (cdr candidates))])))
 
-(define (shell-quote text)
-  "`text` quoted for the shell, in single quotes."
-  (string-append "'" (list->string (apply append (map (lambda (c) (if (equal? c #\') (string->list "'\\''") (list c)))
-                                                      (string->list text))))
-                 "'"))
-
 (define (run-or-report! command)
   "Runs a shell command, returning #t or saying what went wrong."
   (let ([r (run-shell command "")])

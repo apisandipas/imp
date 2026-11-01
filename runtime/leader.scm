@@ -144,10 +144,6 @@
              (filter (lambda (keys) (symbol? (car (hash-ref *leader-bindings* keys))))
                      (hash-keys->list *leader-bindings*)))))
 
-(define (pad-left text width)
-  "`text` padded with spaces on the left to `width` characters."
-  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
-
 (define (leader-prompt)
   "The status-line prompt for the leader keys typed so far: \"SPC f \"."
   (string-append "SPC " (apply string-append (map (lambda (k) (string-append (key-label k) " "))
