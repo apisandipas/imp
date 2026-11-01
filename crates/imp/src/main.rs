@@ -503,7 +503,14 @@ fn draw(out: &mut impl Write, frame: &Frame, rows: Option<&[u16]>) -> io::Result
                 style.bg = None;
             }
             set_style(out, style)?;
-            queue!(out, Print(&span.text))?;
+            // The server draws control chars in caret notation; should one
+            // still come (an older daemon), it mustn't reach the terminal,
+            // where it could move the cursor or set the title or clipboard.
+            if span.text.contains(char::is_control) {
+                queue!(out, Print(span.text.replace(char::is_control, "?")))?;
+            } else {
+                queue!(out, Print(&span.text))?;
+            }
         }
         queue!(out, SetAttribute(Attribute::Reset), ResetColor)?;
     }

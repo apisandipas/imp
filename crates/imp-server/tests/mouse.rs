@@ -42,6 +42,16 @@ fn a_click_moves_the_cursor() {
 }
 
 #[test]
+fn clicks_count_a_control_char_as_its_caret_notation() {
+    // "a^[bc": the ESC takes cells 1 and 2.
+    let mut s = server("a\x1bbc\n");
+    click(&mut s, 2, 0);
+    assert_eq!(s.cursor(), 1);
+    click(&mut s, 3, 0);
+    assert_eq!(s.cursor(), 2);
+}
+
+#[test]
 fn insert_mode_stays_in_insert_mode() {
     let mut s = server("hello world\nsecond line\n");
     type_keys(&mut s, "i");
