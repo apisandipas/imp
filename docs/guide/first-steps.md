@@ -9,7 +9,7 @@ tar xzf imp-*.tar.gz
 install -m 755 imp-*/imp ~/.local/bin/
 ```
 
-On macOS, clear the download quarantine first: `xattr -d com.apple.quarantine ~/.local/bin/imp`.
+On macOS, a downloaded binary is quarantined. Once it's installed, clear that before you run it: `xattr -d com.apple.quarantine ~/.local/bin/imp`.
 
 To build from source you need [Rust](https://rustup.rs) and a C compiler:
 
@@ -68,9 +68,13 @@ Press `SPC` in normal state and a menu shows what comes next. Each letter opens 
 | `SPC s` | Search: `SPC s p` searches the project |
 | `SPC g` | Git: `SPC g g` opens the git status |
 | `SPC c` | Code: language server actions |
-| `SPC o` | Org and terminals |
+| `SPC d` | Debugging |
+| `SPC o` | Org and terminals: `SPC o t` toggles a terminal, `SPC o a` the agenda |
+| `SPC a` | Claude Code: `SPC a a` opens it |
+| `SPC e` | Evaluating Scheme: `SPC e b` the buffer |
 | `SPC h` | Help |
 | `SPC t` | Toggles |
+| `SPC q` | Quit: `SPC q q` quits imp |
 
 `SPC SPC` finds a file. You don't need to learn these by heart: the menu always shows them. When you pause after `g`, `z`, `[`, `]` or `C-w`, imp shows the keys that can follow those too. See [Leader and modes](ref-leader-and-modes.md).
 
