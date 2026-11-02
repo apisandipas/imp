@@ -290,6 +290,20 @@ pub struct Layer {
     /// What this pattern's groups match (all of a match without groups)
     /// is hidden, on every line but the cursor's. Buffer layers only.
     pub conceal: Option<Regex>,
+    /// What this mask's pattern matches is drawn as its char, the text
+    /// unchanged. Buffer layers only.
+    pub mask: Option<Mask>,
+}
+
+/// A buffer layer's mask (`buffer-mask-pattern!`): what `pattern`'s
+/// groups match (all of a match without groups) is drawn as `ch`, one
+/// per cell, so the line is laid out as if plain. With `reveal`, the
+/// cursor's line is drawn plain.
+#[derive(Debug)]
+pub struct Mask {
+    pub pattern: Regex,
+    pub ch: char,
+    pub reveal: bool,
 }
 
 /// Chars `start..end` drawn with face `face`.

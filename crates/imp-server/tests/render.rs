@@ -401,3 +401,63 @@ fn end_of_line_text_isnt_drawn_on_a_closed_fold() {
     let rows = s.frame().text_rows();
     assert!(!rows[0].contains("note"), "{rows:?}");
 }
+
+fn press(s: &mut Server, keys: &[&str]) {
+    for key in keys {
+        s.handle(imp_core::ClientMsg::Key(key.to_string()));
+    }
+}
+
+#[test]
+fn masks_draw_a_char_per_cell_and_leave_the_text() {
+    // A tab one cell wide here, and a wide char two.
+    let mut s = sized("k=b\tc界\nx=yz\n", 20, 5);
+    s.eval(r#"(buffer-mask-pattern! "secret" "=\\(.\\+\\)" "*" #f)"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "k=*****", "{rows:?}");
+    assert_eq!(rows[1], "x=**", "{rows:?}");
+    // The cursor is where it would be on the plain line.
+    press(&mut s, &["$"]);
+    assert_eq!(s.frame().cursor, (5, 0));
+    assert_eq!(s.eval("(buffer-substring 0 3)").unwrap(), "\"k=b\"");
+    // A mask follows edits.
+    press(&mut s, &["j", "A", "w", "<esc>"]);
+    assert_eq!(s.frame().text_rows()[1], "x=***");
+    // "" stops it.
+    s.eval(r#"(buffer-mask-pattern! "secret" "" "*" #f)"#)
+        .unwrap();
+    assert_eq!(s.frame().text_rows()[0], "k=b c界");
+}
+
+#[test]
+fn a_revealing_mask_leaves_the_cursor_line_plain() {
+    let mut s = sized("a=one\nb=two\n", 20, 5);
+    s.eval(r##"(buffer-mask-pattern! "secret" "=\\(.\\+\\)" "#" #t)"##)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["a=one", "b=###"], "{rows:?}");
+    press(&mut s, &["j"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["a=###", "b=two"], "{rows:?}");
+}
+
+#[test]
+fn masked_lines_wrap_as_plain_ones() {
+    let mut s = sized("k=abcdefgh\n", 6, 5);
+    s.eval(r#"(set-option! 'wrap #t) (buffer-mask-pattern! "secret" "=\\(.\\+\\)" "*" #f)"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["k=****", "****"], "{rows:?}");
+}
+
+#[test]
+fn a_mask_is_one_cell_wide() {
+    let mut s = server("k=v\n");
+    for mask in ["界", ""] {
+        let err = s
+            .eval(&format!(r#"(buffer-mask-pattern! "m" "=" "{mask}" #f)"#))
+            .unwrap_err();
+        assert!(err.contains("one cell wide"), "{err}");
+    }
+}

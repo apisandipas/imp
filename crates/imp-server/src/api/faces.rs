@@ -7,8 +7,9 @@ use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
 
 use super::{clamp, fail};
-use crate::editor::{self, Highlight};
+use crate::editor::{self, Highlight, Mask};
 use crate::search;
+use unicode_width::UnicodeWidthChar;
 
 pub(super) fn register(engine: &mut Engine) {
     // Faces and highlights. Scheme decides what is highlighted; Rust draws it.
@@ -102,6 +103,31 @@ pub(super) fn register(engine: &mut Engine) {
                 Some(search::compile(&pattern).map_err(fail)?)
             };
             editor::with(|e| e.buffer_layer_mut(&layer).conceal = re);
+            Ok::<(), SteelErr>(())
+        },
+    );
+    // Draws what `pattern`'s groups match in the current buffer (all of a
+    // match without groups) as `mask`'s first char, one per cell the text
+    // takes, so the layout stays the plain line's; the text is unchanged.
+    // With `reveal`, the cursor's line is drawn plain. "" stops.
+    engine.register_fn(
+        "buffer-mask-pattern!",
+        |layer: String, pattern: String, mask: String, reveal: bool| {
+            let mask = if pattern.is_empty() {
+                None
+            } else {
+                let ch = mask
+                    .chars()
+                    .next()
+                    .filter(|c| c.width() == Some(1))
+                    .ok_or_else(|| fail("a mask is one char one cell wide"))?;
+                Some(Mask {
+                    pattern: search::compile(&pattern).map_err(fail)?,
+                    ch,
+                    reveal,
+                })
+            };
+            editor::with(|e| e.buffer_layer_mut(&layer).mask = mask);
             Ok::<(), SteelErr>(())
         },
     );
