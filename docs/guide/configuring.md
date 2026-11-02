@@ -2,7 +2,7 @@
 type: Guide
 specs: ["[[spec/live-scheme-and-help]]", "[[spec/leader-and-modes]]", "[[spec/vim]]", "[[spec/commands]]", "[[spec/look]]", "[[spec/start-screen]]"]
 frozen:
-  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/live-scheme-and-help.md: d6691aa15c7f
   docs/specs/leader-and-modes.md: 039e08ed9d0b
   docs/specs/vim.md: 4535c7be5a25
   docs/specs/commands.md: 31bb6b804788

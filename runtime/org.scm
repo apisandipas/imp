@@ -2158,8 +2158,8 @@
 (define (org-indent-follow!)
   "After a change, sets the indents of the lines it changed and the line
    after them: the rest moved with their lines (set-line-prefixes!), so
-   an edit costs the lines it touched, not the buffer. When what changed
-   isn't known (an undo), sets them all."
+   an edit costs the lines it touched, not the buffer; an undo too. When
+   what changed isn't known (a reload), sets them all."
   (let ([range (after-change-range)])
     (if range
         (org-indent-lines! (offset->line (car range))

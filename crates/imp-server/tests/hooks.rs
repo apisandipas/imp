@@ -103,9 +103,11 @@ fn after_change_reports_the_changed_range() {
     .unwrap();
     type_keys(&mut s, "Q");
     assert_eq!(s.eval("(car ranges)").unwrap(), "(0 5 7)");
-    // An undo replaces the whole text: not known.
+    // An undo is known too: from the first char it changed to the last,
+    // "b1 twoa" back to "one two" (Q made no undo point of its own).
     type_keys(&mut s, "u");
-    assert_eq!(s.eval("(car ranges)").unwrap(), "#false");
+    assert_eq!(s.eval("(car ranges)").unwrap(), "(0 7 7)");
+    assert_eq!(s.text(), "one two\nthree\n");
 }
 
 #[test]

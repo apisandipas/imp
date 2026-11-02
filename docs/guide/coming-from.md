@@ -5,7 +5,7 @@ frozen:
   docs/specs/vim.md: 4535c7be5a25
   docs/specs/emacs-state.md: b74c1fe8672a
   docs/specs/leader-and-modes.md: 039e08ed9d0b
-  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/live-scheme-and-help.md: d6691aa15c7f
   docs/specs/dired.md: a02aeaac49d8
   docs/specs/git.md: 784db8c1c823
   docs/specs/org.md: 3a958ecfb511

@@ -480,6 +480,11 @@ fn org_indent_follows_edits() {
     // Deleting a heading gives its text its parent's indent.
     type_keys(&mut s, "Gkdd");
     assert_eq!(rows(&mut s, 5)[3..], ["  more", "  two"]);
+    // Undo and redo set only the lines they changed, and the one after.
+    type_keys(&mut s, "u");
+    assert_eq!(rows(&mut s, 6)[3..], ["  more", " ** Two", "    two"]);
+    type_keys(&mut s, "<C-r>");
+    assert_eq!(rows(&mut s, 5)[3..], ["  more", "  two"]);
 }
 
 #[test]

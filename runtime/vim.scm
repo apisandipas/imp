@@ -4636,8 +4636,9 @@
 (define (after-change-range)
   "In an after-change hook, what the key changed as one (start old-end
    new-end): old-end where the changed text ended before, new-end where
-   it ends now, as Emacs's after-change-functions get. #f when that
-   isn't known (an undo, redo or reload) or outside the hook."
+   it ends now, as Emacs's after-change-functions get; an undo or redo
+   spans the first char it changed to the last. #f when that isn't
+   known (a reload) or outside the hook."
   (let ([changes (and *last-version* (equal? (car *last-version*) (current-buffer))
                       (buffer-changes-since (cdr *last-version*)))])
     (and (pair? changes) (merge-changes changes))))

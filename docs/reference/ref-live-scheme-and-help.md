@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/live-scheme-and-help]]"
 frozen:
-  docs/specs/live-scheme-and-help.md: ccb5a072e58a
+  docs/specs/live-scheme-and-help.md: d6691aa15c7f
 ---
 # Live Scheme and help
 
@@ -109,6 +109,6 @@ Advice changes what a function does without rewriting it. `advice-add!` takes th
 (start old-end new-end text start-line start-col old-end-line old-end-col)
 ```
 
-The offsets count characters, `text` is what was inserted, and the lines and columns say where the edit started and ended before it was made. The answer is `#f` when the edits aren't known: across an undo, a redo or a reload, or more than 1000 edits back.
+The offsets count characters, `text` is what was inserted, and the lines and columns say where the edit started and ended before it was made. An undo or redo (`u`, `C-r`, `g-`, `g+`) shows up as one edit, covering everything from the first character it changed to the last. The answer is `#f` when the edits aren't known: across a reload of the file, or more than 1000 edits back.
 
 In an `after-change` hook, `(after-change-range)` gives everything the last key changed as one `(start old-end new-end)`, like Emacs's `after-change-functions`. It's `#f` when that isn't known. The hook itself takes no arguments.
