@@ -383,3 +383,106 @@ fn recover_session_lists_every_orphaned_copy() {
         format!("{:?}", path.display().to_string())
     );
 }
+
+#[test]
+fn a_copy_goes_when_its_changes_are_safe() {
+    let (mut s, state) = server_with_state("cleanup-state");
+    let path = temp_path("cleanup.txt");
+    std::fs::write(&path, "saved\n").unwrap();
+    open(&mut s, &path);
+    // Saved.
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    assert_eq!(copies(&state).len(), 1);
+    type_keys(&mut s, ":w<ret>");
+    assert!(copies(&state).is_empty());
+    // Undone back to the saved text, when the next copy would be made.
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    type_keys(&mut s, "u");
+    s.eval("(autosave-all!)").unwrap();
+    assert!(copies(&state).is_empty());
+    // Thrown away with :e!.
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    type_keys(&mut s, ":e!<ret>");
+    s.eval("(autosave-check!)").unwrap();
+    assert!(copies(&state).is_empty());
+    // Killed.
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    type_keys(&mut s, ":bd!<ret>");
+    assert!(copies(&state).is_empty());
+}
+
+#[test]
+fn an_emptied_unnamed_buffer_loses_its_copy() {
+    let (mut s, state) = server_with_state("emptied-state");
+    type_keys(&mut s, ":enew<ret>ia note<esc>");
+    s.eval("(autosave-all!)").unwrap();
+    assert_eq!(copies(&state).len(), 1);
+    type_keys(&mut s, "dd");
+    s.eval("(autosave-check!)").unwrap();
+    assert!(copies(&state).is_empty());
+}
+
+#[test]
+fn qa_bang_throws_the_copies_away_but_kill_server_keeps_them() {
+    let (mut s, state) = server_with_state("quit-state");
+    let path = temp_path("quit.txt");
+    std::fs::write(&path, "saved\n").unwrap();
+    open(&mut s, &path);
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    // :kill-server doesn't ask about unsaved changes; the copy stays, to
+    // be offered once this imp is gone.
+    type_keys(&mut s, ":kill-server<ret>");
+    assert!(s.should_quit());
+    assert_eq!(copies(&state), vec![copy_name(&path)]);
+    s.clear_quit();
+    // :qa (no !) refuses and keeps it.
+    type_keys(&mut s, ":qa<ret>");
+    assert!(!s.should_quit());
+    assert_eq!(copies(&state).len(), 1);
+    type_keys(&mut s, ":qa!<ret>");
+    assert!(s.should_quit());
+    assert!(copies(&state).is_empty());
+}
+
+#[test]
+fn a_renamed_buffers_copy_follows_it() {
+    let (mut s, state) = server_with_state("rename-state");
+    let from = temp_path("before.txt");
+    let to = temp_path("after.txt");
+    let _ = std::fs::remove_file(&to);
+    std::fs::write(&from, "saved\n").unwrap();
+    open(&mut s, &from);
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    assert_eq!(copies(&state), vec![copy_name(&from)]);
+    s.eval(&format!(
+        "(begin (rename-file! {f:?} {t:?}) (buffer-renamed! {f:?} {t:?}))",
+        f = from.display().to_string(),
+        t = to.display().to_string()
+    ))
+    .unwrap();
+    assert!(copies(&state).is_empty());
+    s.eval("(autosave-all!)").unwrap();
+    assert_eq!(copies(&state), vec![copy_name(&to)]);
+}
+
+#[test]
+fn a_daemon_clients_qa_bang_keeps_the_copies() {
+    let (mut s, state) = server_with_state("daemon-quit-state");
+    let path = temp_path("daemon-quit.txt");
+    std::fs::write(&path, "saved\n").unwrap();
+    open(&mut s, &path);
+    type_keys(&mut s, "x");
+    s.eval("(autosave-all!)").unwrap();
+    // In a daemon :qa! only detaches the client: the buffers live on, and
+    // their copies stay in use.
+    s.eval("(define (daemon?) #t)").unwrap();
+    type_keys(&mut s, ":qa!<ret>");
+    assert!(s.should_quit());
+    assert_eq!(copies(&state), vec![copy_name(&path)]);
+}

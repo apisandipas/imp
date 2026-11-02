@@ -2,15 +2,11 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: 36cb67b56560
+  docs/specs/crash-recovery.md: ca211deeded4
 ---
 # Crash recovery
 
 If imp crashes, or your machine loses power, your unsaved changes aren't lost. imp keeps a private copy of every buffer you've changed, and offers it back when you open the file again.
-
-## Not yet in imp
-
-- Part of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). For now a copy is deleted only when you save.
 
 ## How your changes are kept
 

@@ -117,7 +117,3 @@ Behaviour is Scheme ([[0005-rust-owns-data-and-speed-scheme-owns-behavior]]), in
 - Autosaving terminal, REPL or package buffers, and buffers with no text.
 - Writing copies off the editor thread; a very large modified buffer costs one write per copy.
 - Windows: modes `0600`/`0700` and process checks are Unix only.
-
-## Known gaps
-
-- Partly built ([#130](https://github.com/apisandipas/imp/issues/130)). Everything above but cleanup is built: a copy is deleted only on save.

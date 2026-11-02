@@ -158,14 +158,22 @@
              [path (string-append (autosave-dir) "/" name)])
         (set-buffer-local! 'autosave-version version)
         (set-buffer-local! 'autosave-since #f)
-        (if (> (autosave-byte-length name) 255)
-            (autosave-say-once! (string-append (buffer-name) "'s path is too long to autosave"))
-            (let ([r (error-text (lambda () (write-private-file! path (buffer-substring 0 (buffer-length)))))])
-              (if r
-                  (autosave-say-once! (string-append "can't autosave " (buffer-name) ": " r))
-                  (let ([old (hash-try-get *autosave-copies* (current-buffer))])
-                    (when (and old (not (equal? old path))) (error-text (lambda () (delete-file! old))))
-                    (set! *autosave-copies* (hash-insert *autosave-copies* (current-buffer) path)))))))))
+        (cond
+          [(> (autosave-byte-length name) 255)
+           (autosave-say-once! (string-append (buffer-name) "'s path is too long to autosave"))]
+          ;; Undone back to the file's text: still modified as imp counts
+          ;; it, but nothing is at risk.
+          [(and (buffer-path)
+                (equal? (buffer-substring 0 (buffer-length))
+                        (with-handler (lambda (e) #f) (read-file (buffer-path)))))
+           (autosave-forget! (current-buffer))]
+          [else
+           (let ([r (error-text (lambda () (write-private-file! path (buffer-substring 0 (buffer-length)))))])
+             (if r
+                 (autosave-say-once! (string-append "can't autosave " (buffer-name) ": " r))
+                 (let ([old (hash-try-get *autosave-copies* (current-buffer))])
+                   (when (and old (not (equal? old path))) (error-text (lambda () (delete-file! old))))
+                   (set! *autosave-copies* (hash-insert *autosave-copies* (current-buffer) path)))))]))))
   void)
 
 (define (autosave-forget! id)
@@ -356,6 +364,20 @@
              (autosave-forget! (current-buffer))
              (set-buffer-local! 'autosave-version #f)))
 (add-hook! 'buffer-open autosave-offer!)
+;; A copy goes once the changes it protects are no longer at risk. Going
+;; back to the saved text (:e!, a reload, undo) or emptying an unnamed
+;; buffer is caught by the next autosave-check!.
+(add-hook! 'buffer-kill (lambda (id) (autosave-forget! id)))
+;; :qa! and :q! throw changes away on purpose, as Vim deletes its swap
+;; files then; vim.scm runs this only when they end imp, not when they
+;; detach a daemon client.
+(add-hook! 'quit-discarding
+           (lambda () (for-each autosave-forget! (hash-keys->list *autosave-copies*))))
+;; A renamed buffer's next copy goes under its new name.
+(add-hook! 'buffer-renamed
+           (lambda (from)
+             (autosave-forget! (current-buffer))
+             (set-buffer-local! 'autosave-version #f)))
 
 (define (recover-buffer!)
   "Puts the newest orphaned crash copy of the current buffer's file in

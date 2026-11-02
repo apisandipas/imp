@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/crash-recovery]]", "[[spec/files]]"]
 issue: https://github.com/apisandipas/imp/issues/130
 frozen:
-  docs/specs/crash-recovery.md: 36cb67b56560
+  docs/specs/crash-recovery.md: ca211deeded4
   docs/specs/files.md: f5ab70444dcc
 ---
 # Crash recovery
@@ -26,4 +26,4 @@ A copy's owner is the `#PID` in its name; a copy is in use when that PID is this
 - [x] Autosave timing and naming: copies named as the spec says (`%home%me%notes.org#4242`, `unnamed-N#PID`); the two-second check writes a changed buffer once input is `autosave-idle` seconds idle (new option, 4) or its first uncopied change is `autosave-interval` old, never rewrites an unchanged one; unnamed ordinary text buffers are copied; a name over 255 bytes or a failed write is said once per buffer. Key-driven tests; spec, files spec and both ref pages updated.
 - [x] Orphaned copies and the open prompt: when a buffer is first shown, a copy whose PID isn't alive is offered with `r`/`d`/`k` (same text deleted silently; a newer file noted; old-form names count as orphaned); `r` recovers as one undoable change and renames the copy to this process; another live imp's copy gives the "also being edited" warning once. Tests simulate a crash with a copy under a dead PID.
 - [x] `:recover` on the newest orphaned copy, `:recover FILE`, and `M-x recover-session` (a picker, newest first; unnamed copies open in a new buffer). Tests.
-- [ ] Cleanup: the copy goes on save, on going back to unmodified, on kill (and an unnamed buffer emptied), on `:qa!`/`:q!` ending a standalone imp, and moves with `rename-file`; `:kill-server` and a daemon client's `:qa!` keep copies. Tests; the ref page loses "Not yet in imp" and the spec its known gap.
+- [x] Cleanup: the copy goes on save, on going back to unmodified, on kill (and an unnamed buffer emptied), on `:qa!`/`:q!` ending a standalone imp, and moves with `rename-file`; `:kill-server` and a daemon client's `:qa!` keep copies. Tests; the ref page loses "Not yet in imp" and the spec its known gap.

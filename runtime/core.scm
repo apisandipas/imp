@@ -286,7 +286,8 @@
 ;;; init.scm), after-change, before-save, after-save, post-command,
 ;;; insert-enter, insert-leave, mode-change (Vim states), major-mode,
 ;;; buffer-enter, buffer-open, buffer-kill (with the id, before it goes),
-;;; option-change.
+;;; option-change, quit-discarding (:qa! or :q! ending a standalone imp,
+;;; its unsaved changes thrown away).
 
 (define *hooks* (hash))
 
