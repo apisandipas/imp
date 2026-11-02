@@ -194,10 +194,63 @@
            (list 'set! target (if (pair? (cddr form)) (caddr form) #f))))]
     [else form]))
 
+;;; Steel's eval can't take a dotted list as code: the reader makes
+;;; (f a . rest) a pair, and eval only converts proper lists back into
+;;; syntax ("Unable to convert from value to expression"). Source text is
+;;; parsed straight to syntax, so the runtime's own files load; only forms
+;;; that pass through read and eval, as user code here does, hit it. So
+;;; before eval, a rest argument is spelled without a dot: the lambda takes
+;;; all its arguments as one list and spreads them over the original
+;;; parameters, the rest as a list.
+
+(define (dotted-parameters params)
+  "For a parameter list with a rest argument, (a b . rest), the proper
+   list (a b rest); #f for a proper list or a lone symbol."
+  (and (pair? params) (not (list? params))
+       (let loop ([p params] [names '()])
+         (if (pair? p)
+             (loop (cdr p) (cons (car p) names))
+             (reverse (cons p names))))))
+
+(define (spread-rest-arguments proc count args)
+  "Calls `proc` with the first `count` of `args` and a list of the others,
+   as a function with a rest argument after `count` parameters is called.
+   What without-dotted-parameters makes a dotted lambda call."
+  (when (< (length args) count)
+    (error (string-append "expected at least " (number->string count)
+                          " arguments, got " (number->string (length args)))))
+  (let loop ([n count] [args args] [firsts '()])
+    (if (= n 0)
+        (apply proc (reverse (cons args firsts)))
+        (loop (- n 1) (cdr args) (cons (car args) firsts)))))
+
+(define (without-dotted-parameters form)
+  "`form` with every rest argument written without a dot, so eval can
+   take it. (define (f a . rest) ...) becomes (define f (lambda ...)),
+   and (lambda (a . rest) body ...) a lambda over one list of arguments
+   that spread-rest-arguments hands on to (lambda (a rest) body ...).
+   Quoted data and macros are left alone."
+  (cond
+    [(not (list? form)) form]
+    [(null? form) form]
+    [(member (car form) '(quote quasiquote define-syntax syntax-rules)) form]
+    [(and (eq? (car form) 'define) (pair? (cdr form)) (pair? (cadr form))
+          (symbol? (car (cadr form))) (not (list? (cadr form))))
+     (without-dotted-parameters
+      (list 'define (car (cadr form)) (cons 'lambda (cons (cdr (cadr form)) (cddr form)))))]
+    [(and (eq? (car form) 'lambda) (pair? (cdr form)) (dotted-parameters (cadr form)))
+     => (lambda (params)
+          (list 'lambda '%imp-rest-arguments
+                (list 'spread-rest-arguments
+                      (cons 'lambda (cons params (map without-dotted-parameters (cddr form))))
+                      (- (length params) 1)
+                      '%imp-rest-arguments)))]
+    [else (map without-dotted-parameters form)]))
+
 (define (unit-forms form)
   "The forms to evaluate for `form`: itself (rewritten), and for a new
    definition a set! that keeps it redefinable."
-  (let ([rewritten (redefinition form)])
+  (let ([rewritten (redefinition (without-dotted-parameters form))])
     (if (define-target rewritten)
         (list rewritten (list 'set! (define-target rewritten) (define-target rewritten)))
         (list rewritten))))
