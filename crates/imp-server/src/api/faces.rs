@@ -79,6 +79,10 @@ pub(super) fn register(engine: &mut Engine) {
             })
         },
     );
+    // Paints what `pattern`'s groups match in face `face` (all of a match
+    // without groups), as `buffer-conceal-pattern!` hides; it follows
+    // edits. A global pattern (`highlight-pattern!`, the search) paints
+    // whole matches, as Vim's hlsearch.
     engine.register_fn(
         "buffer-highlight-pattern!",
         |layer: String, pattern: String, face: String| {

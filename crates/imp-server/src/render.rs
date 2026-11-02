@@ -44,13 +44,15 @@ pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
     let screen = e.window_rects();
-    // Parse what changed in every buffer on screen before drawing.
+    // Parse what changed in every buffer on screen before drawing, and
+    // move its line prefixes with its edits.
     let shown: Vec<usize> = screen
         .iter()
         .filter_map(|(id, _)| e.window_view(*id).map(|v| v.buffer_id))
         .collect();
     for id in shown {
         e.update_syntax(id);
+        e.sync_line_prefixes(id);
     }
 
     // Draw each window; scroll positions are worked out on the way and
@@ -619,7 +621,8 @@ struct DrawnRow {
     /// one cell; its text is `height` times the font's size.
     top: f32,
     height: f32,
-    /// The outline indent before its text, in cells of the font's size.
+    /// Its line's indent before its text (`line_prefix`), in cells of the
+    /// font's size.
     prefix: usize,
     /// Its run of `DrawnText::chars`, left to right. A closed fold's row
     /// has none.
@@ -758,9 +761,9 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
     // without.
     let cursor_cells = layout_line(&buffer.line_text(cursor_line), e.tab_width);
-    // The cursor line's outline indent, its size, and the width left
+    // The cursor line's indent, its size, and the width left
     // beside the indent in cells of that size.
-    let cursor_prefix = outline_prefix(e, buffer_id, buffer, cursor_line);
+    let cursor_prefix = line_prefix(e, buffer_id, cursor_line);
     let cursor_scale = scale_of(cursor_line);
     let cursor_width = scaled_width(text_width.saturating_sub(cursor_prefix), cursor_scale);
     let (cursor_row, cursor_x) = if folded {
@@ -795,7 +798,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                         prev != cursor_line,
                     ),
                     scaled_width(
-                        text_width.saturating_sub(outline_prefix(e, buffer_id, buffer, prev)),
+                        text_width.saturating_sub(line_prefix(e, buffer_id, prev)),
                         scale,
                     ),
                     e.linebreak,
@@ -1061,21 +1064,37 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
 fn concealed(layers: &[Layer], text: &str) -> Option<Vec<bool>> {
     let mut hidden: Option<Vec<bool>> = None;
     for re in layers.iter().filter_map(|l| l.conceal.as_ref()) {
-        for caps in re.captures_iter(text) {
-            let groups: Vec<_> = if caps.len() > 1 {
-                caps.iter().skip(1).flatten().collect()
-            } else {
-                caps.get(0).into_iter().collect()
-            };
-            for m in groups.into_iter().filter(|m| !m.is_empty()) {
-                let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
-                h[from..to].fill(true);
-            }
+        for m in pattern_spans(re, text, true)
+            .into_iter()
+            .filter(|m| !m.is_empty())
+        {
+            let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
+            let from = text[..m.start].chars().count();
+            let to = from + text[m].chars().count();
+            h[from..to].fill(true);
         }
     }
     hidden
+}
+
+/// The byte ranges of `text` that pattern `re` applies to. With `groups`
+/// (a buffer's own patterns, highlight or conceal) that is each match's
+/// groups, or the whole match when it has none, so a pattern can paint
+/// part of what it matches (`^\(\*\+\)\* `, all of a heading's stars but
+/// the last); without, whole matches, as Vim's hlsearch.
+fn pattern_spans(re: &regex::Regex, text: &str, groups: bool) -> Vec<Range<usize>> {
+    if !groups || re.captures_len() == 1 {
+        return re.find_iter(text).map(|m| m.range()).collect();
+    }
+    re.captures_iter(text)
+        .flat_map(|caps| {
+            caps.iter()
+                .skip(1)
+                .flatten()
+                .map(|m| m.range())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Line text `text` laid out as drawn: without the chars the `layers`'
@@ -1102,49 +1121,13 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
         .collect()
 }
 
-/// The level of the outline heading on `line` (how many stars before a
-/// space), or None.
-fn heading_level(buffer: &Buffer, line: usize) -> Option<usize> {
-    let mut stars = 0;
-    for c in buffer.rope().line(line).chars() {
-        match c {
-            '*' => stars += 1,
-            ' ' if stars > 0 => return Some(stars),
-            _ => return None,
-        }
-    }
-    None
-}
-
-/// The blank columns drawn before `line` when its buffer is indented by
-/// outline level, as Org's org-indent-mode does: with `p` columns a
-/// level, text under a level-L heading gets L*p, so it lines up under the
-/// heading's title, and the heading (L-1)*(p-1), its leading stars but
-/// the last drawn blank (`outline_hidden_stars`). 0 when not indented.
-fn outline_prefix(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
-    let Some(&p) = e.outline_indents.get(&buffer_id) else {
-        return 0;
-    };
-    if line >= buffer.line_count() {
-        return 0;
-    }
-    if let Some(level) = heading_level(buffer, line) {
-        return (level - 1) * (p - 1);
-    }
-    // The heading above, not looking back without end.
-    (line.saturating_sub(5000)..line)
-        .rev()
-        .find_map(|l| heading_level(buffer, l))
-        .map_or(0, |level| level * p)
-}
-
-/// How many of `line`'s leading stars are drawn blank when indented by
-/// outline level: all of a heading's but the last.
-fn outline_hidden_stars(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
-    if !e.outline_indents.contains_key(&buffer_id) {
-        return 0;
-    }
-    heading_level(buffer, line).map_or(0, |level| level - 1)
+/// The blank cells drawn before `line`'s text (`set-line-prefixes!`):
+/// the entry for it or the nearest line above that has one, 0 for none.
+fn line_prefix(e: &Editor, buffer_id: usize, line: usize) -> usize {
+    e.line_prefixes
+        .get(&buffer_id)
+        .and_then(|indents| indents.cells.range(..=line).next_back())
+        .map_or(0, |(_, &cells)| cells)
 }
 
 /// Buffer `buffer_id`'s own highlight layers.
@@ -1309,12 +1292,6 @@ impl View<'_> {
                 *s = s.over(face);
             }
         }
-        for s in styles
-            .iter_mut()
-            .take(outline_hidden_stars(e, self.buffer_id, self.buffer, line))
-        {
-            *s = s.over(e.face("org.hide"));
-        }
         // All its text at the line's size.
         let height = if scale == 1.0 {
             0
@@ -1325,8 +1302,8 @@ impl View<'_> {
             s.height = height;
         }
         let eol_style = styles[styles.len() - 1];
-        // The outline indent before every row of it, and the width left.
-        let prefix = outline_prefix(e, self.buffer_id, self.buffer, line);
+        // The line's indent before every row of it, and the width left.
+        let prefix = line_prefix(e, self.buffer_id, line);
         let width = scaled_width(self.text_width.saturating_sub(prefix), scale);
 
         let mut rows: Vec<Row> = Vec::new();
@@ -1669,7 +1646,8 @@ fn gutter_text(
 /// plus one more entry for its line break. Global highlight ranges are
 /// offsets into the current buffer, so they only apply to windows showing
 /// it; global patterns (search) apply everywhere. A buffer's own layers
-/// apply wherever it is shown.
+/// apply wherever it is shown, and their patterns paint their groups
+/// (`pattern_spans`).
 fn char_styles(
     e: &Editor,
     start: usize,
@@ -1701,9 +1679,9 @@ fn char_styles(
     let layers = e
         .layers
         .iter()
-        .map(|l| (l, current_buffer))
-        .chain(buffer_layers.iter().map(|l| (l, true)));
-    for (layer, ranges_apply) in layers {
+        .map(|l| (l, current_buffer, false))
+        .chain(buffer_layers.iter().map(|l| (l, true, true)));
+    for (layer, ranges_apply, own) in layers {
         if ranges_apply {
             for h in &layer.ranges {
                 if h.end <= start || h.start >= end {
@@ -1719,9 +1697,9 @@ fn char_styles(
         }
         if let Some((re, face)) = &layer.pattern {
             let face = e.face(face);
-            for m in re.find_iter(text) {
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
+            for m in pattern_spans(re, text, own) {
+                let from = text[..m.start].chars().count();
+                let to = from + text[m].chars().count();
                 for style in &mut styles[from..to] {
                     *style = face.over(*style);
                 }
@@ -1757,16 +1735,21 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
         .get(&e.current())
         .map_or(&[][..], Vec::as_slice);
     let col = offset - start;
-    for layer in e.layers.iter().chain(buffer_layers) {
+    let layers = e
+        .layers
+        .iter()
+        .map(|l| (l, false))
+        .chain(buffer_layers.iter().map(|l| (l, true)));
+    for (layer, own) in layers {
         for h in &layer.ranges {
             if h.start <= offset && offset < h.end {
                 faces.push(h.face.clone());
             }
         }
         if let Some((re, face)) = &layer.pattern {
-            let hit = re.find_iter(text).any(|m| {
-                let from = text[..m.start()].chars().count();
-                from <= col && col < from + m.as_str().chars().count()
+            let hit = pattern_spans(re, text, own).into_iter().any(|m| {
+                let from = text[..m.start].chars().count();
+                from <= col && col < from + text[m].chars().count()
             });
             if hit {
                 faces.push(face.clone());
