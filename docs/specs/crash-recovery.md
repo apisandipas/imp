@@ -3,7 +3,7 @@ type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/130
 summary: "Unsaved changes survive a crash: modified buffers are copied to private autosave files a few seconds after typing stops, and reopening the file offers them back, as Vim's swap files and Emacs' auto-save do."
-anchors: [runtime/files.scm]
+anchors: [runtime/files.scm, crates/imp-server/tests/crash_recovery.rs]
 ---
 # Crash recovery
 

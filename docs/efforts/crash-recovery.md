@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/crash-recovery]]", "[[spec/files]]"]
 issue: https://github.com/apisandipas/imp/issues/130
 frozen:
@@ -27,3 +27,9 @@ A copy's owner is the `#PID` in its name; a copy is in use when that PID is this
 - [x] Orphaned copies and the open prompt: when a buffer is first shown, a copy whose PID isn't alive is offered with `r`/`d`/`k` (same text deleted silently; a newer file noted; old-form names count as orphaned); `r` recovers as one undoable change and renames the copy to this process; another live imp's copy gives the "also being edited" warning once. Tests simulate a crash with a copy under a dead PID.
 - [x] `:recover` on the newest orphaned copy, `:recover FILE`, and `M-x recover-session` (a picker, newest first; unnamed copies open in a new buffer). Tests.
 - [x] Cleanup: the copy goes on save, on going back to unmodified, on kill (and an unnamed buffer emptied), on `:qa!`/`:q!` ending a standalone imp, and moves with `rename-file`; `:kill-server` and a daemon client's `:qa!` keep copies. Tests; the ref page loses "Not yet in imp" and the spec its known gap.
+
+## Notes
+
+- The spec's open points, settled in it: in a daemon `:qa!` and `:q!` only detach the client, so they delete no copies; `:kill-server` keeps discarding unsaved changes without asking, its copies making that recoverable.
+- imp's buffers stay modified after undoing back to the saved text (Vim's don't), so that case is caught when the next copy would be written: a file buffer whose text equals the file's on disk has its copy deleted instead.
+- `tests/crash_recovery.rs` simulates a crash with a copy under a pid no process can have, and fakes another running imp by redefining `copy-owner-alive?`. A real daemon isn't driven: the daemon `:qa!` test redefines `daemon?`.
