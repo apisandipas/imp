@@ -577,9 +577,10 @@ impl Editor {
 
     /// Moves buffer `id`'s line prefixes with the edits made since they
     /// were last moved, so each stays with its line and an edit costs
-    /// Scheme only the lines it changed. Across an undo, redo or reload,
-    /// which aren't known edit by edit, they stay where they are until
-    /// Scheme sets them again (`after-change-range` is #f then).
+    /// Scheme only the lines it changed. An undo or redo is logged as one
+    /// edit, so it costs no more. Across a reload, which isn't known edit
+    /// by edit, they stay where they are until Scheme sets them again
+    /// (`after-change-range` is #f then).
     pub fn sync_line_prefixes(&mut self, id: usize) {
         let (Some(indents), Some(kept)) = (self.line_prefixes.get_mut(&id), self.buffers.get(&id))
         else {
