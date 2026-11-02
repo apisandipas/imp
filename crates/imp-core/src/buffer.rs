@@ -68,7 +68,7 @@ pub struct Buffer {
     /// `changes_since`; any number of readers can each keep a version.
     changes: VecDeque<(u64, Change)>,
     /// The oldest version `changes_since` can start from: edits before it
-    /// were dropped, or an undo, redo or reload replaced the whole text.
+    /// were dropped, or a reload replaced the whole text.
     changes_from: u64,
 }
 
@@ -112,7 +112,7 @@ pub enum Edit {
         old_end: (usize, usize),
         new_end: (usize, usize),
     },
-    /// The whole text was replaced (undo, redo, reload).
+    /// The whole text was replaced (a reload).
     Reset,
 }
 
@@ -410,8 +410,9 @@ impl Buffer {
     }
 
     /// The edits made since the text was at `version`, oldest first, or
-    /// `None` when they aren't known: across an undo, redo or reload, or
-    /// more than `CHANGE_LOG` edits back.
+    /// `None` when they aren't known: across a reload, or more than
+    /// `CHANGE_LOG` edits back. An undo or redo is one edit, from the
+    /// first char it changed to the last.
     pub fn changes_since(&self, version: u64) -> Option<Vec<Change>> {
         if version < self.changes_from || version > self.version {
             return None;
@@ -630,9 +631,43 @@ impl Buffer {
     /// Puts the text and marks back as they were in state `id`. Marks the
     /// state doesn't know keep their place, clamped into the text. Returns
     /// the first char that differs.
+    ///
+    /// What changed is logged as one edit, from the first char that
+    /// differs to the last, so whatever follows edits (line prefixes, a
+    /// syntax tree, LSP) updates only that span instead of starting over.
     fn go_to_state(&mut self, id: usize) -> usize {
-        let at = first_difference(&self.states[id].text, &self.text);
-        self.text = self.states[id].text.clone();
+        let new = self.states[id].text.clone();
+        let (start_byte, old_end_byte, new_end_byte) = byte_difference(&self.text, &new);
+        let start = self.text.byte_to_char(start_byte);
+        let old_end = self.text.byte_to_char(old_end_byte);
+        let new_end = new.byte_to_char(new_end_byte);
+        // Points in the text before, as an edit is described.
+        let before = (start < old_end || start < new_end).then(|| {
+            let chars = (self.char_point(start), self.char_point(old_end));
+            let bytes = (self.point(start_byte), self.point(old_end_byte));
+            (chars, bytes)
+        });
+        self.text = new;
+        self.version += 1;
+        if let Some(((start_point, old_end_point), (start_b, old_end_b))) = before {
+            let new_end_b = self.point(new_end_byte);
+            self.record(Edit::Change {
+                start_byte,
+                old_end_byte,
+                new_end_byte,
+                start: start_b,
+                old_end: old_end_b,
+                new_end: new_end_b,
+            });
+            self.log_change(Change {
+                start,
+                old_end,
+                new_end,
+                text: self.text.slice(start..new_end).to_string(),
+                start_point,
+                old_end_point,
+            });
+        }
         for (name, &offset) in &self.states[id].marks {
             self.marks.insert(name.clone(), offset);
         }
@@ -641,11 +676,9 @@ impl Buffer {
             *m = (*m).min(len);
         }
         self.state = id;
-        self.version += 1;
-        self.record_reset();
         self.modified = self.saved != Some(id);
         self.dirty = false;
-        at
+        start
     }
 }
 
@@ -658,12 +691,81 @@ fn read_file(path: &Path) -> io::Result<(String, FileFormat)> {
     }
 }
 
-/// The char offset of the first difference between two texts.
-fn first_difference(a: &Rope, b: &Rope) -> usize {
-    a.chars()
-        .zip(b.chars())
-        .position(|(x, y)| x != y)
-        .unwrap_or(a.len_chars().min(b.len_chars()))
+/// Where `old` and `new` differ, in bytes: `start..old_end` of `old`
+/// became `start..new_end` of `new`, the text before `start` and after
+/// the ends being the same in both. All three are char boundaries.
+fn byte_difference(old: &Rope, new: &Rope) -> (usize, usize, usize) {
+    let (old_len, new_len) = (old.len_bytes(), new.len_bytes());
+    let same = common_bytes(old.chunks(), new.chunks(), false);
+    // Back to the start of the char the difference is in.
+    let start = old.char_to_byte(old.byte_to_char(same));
+    let same_end = common_bytes(
+        old.chunks_at_byte(old_len).0.reversed(),
+        new.chunks_at_byte(new_len).0.reversed(),
+        true,
+    )
+    .min(old_len.min(new_len) - start);
+    // On to the start of a char: two different chars can end in the
+    // same bytes.
+    let mut old_end = old_len - same_end;
+    while old_end < old_len && (old.byte(old_end) & 0xC0) == 0x80 {
+        old_end += 1;
+    }
+    (start, old_end, new_len - (old_len - old_end))
+}
+
+/// How many bytes two runs of chunks have in common from their start, or
+/// from their end when `backward` (the chunks then come last first). Undo
+/// states share most of their chunks with the text, and a shared chunk
+/// is the same without comparing it.
+fn common_bytes<'a>(
+    mut a: impl Iterator<Item = &'a str>,
+    mut b: impl Iterator<Item = &'a str>,
+    backward: bool,
+) -> usize {
+    let (mut x, mut y): (&[u8], &[u8]) = (&[], &[]);
+    let mut same = 0;
+    loop {
+        if x.is_empty() {
+            match a.next() {
+                Some(c) => x = c.as_bytes(),
+                None => return same,
+            }
+            continue;
+        }
+        if y.is_empty() {
+            match b.next() {
+                Some(c) => y = c.as_bytes(),
+                None => return same,
+            }
+            continue;
+        }
+        let n = x.len().min(y.len());
+        let (xs, ys) = if backward {
+            (&x[x.len() - n..], &y[y.len() - n..])
+        } else {
+            (&x[..n], &y[..n])
+        };
+        if !std::ptr::eq(xs, ys) && xs != ys {
+            let differ = if backward {
+                xs.iter()
+                    .rev()
+                    .zip(ys.iter().rev())
+                    .position(|(p, q)| p != q)
+            } else {
+                xs.iter().zip(ys).position(|(p, q)| p != q)
+            };
+            return same + differ.unwrap_or(n);
+        }
+        same += n;
+        if backward {
+            x = &x[..x.len() - n];
+            y = &y[..y.len() - n];
+        } else {
+            x = &x[n..];
+            y = &y[n..];
+        }
+    }
 }
 
 #[cfg(test)]
@@ -779,12 +881,93 @@ mod tests {
     }
 
     #[test]
-    fn changes_are_unknown_across_undo_and_far_back() {
+    fn undo_and_redo_log_what_they_changed() {
+        let mut b = Buffer::from_text("one\ntwo\nthree\n");
+        b.undo_boundary();
+        b.delete(4, 8);
+        b.insert(0, "zero\n");
+        let v = b.version();
+        // Undo puts back both edits: one change, from the first char that
+        // differs to the last.
+        assert_eq!(b.undo(), Some(0));
+        assert_eq!(
+            b.changes_since(v).unwrap(),
+            vec![Change {
+                start: 0,
+                old_end: 8,
+                new_end: 7,
+                text: "one\ntwo".into(),
+                start_point: (0, 0),
+                old_end_point: (1, 3),
+            }]
+        );
+        let v = b.version();
+        b.redo();
+        assert_eq!(
+            b.changes_since(v).unwrap(),
+            vec![Change {
+                start: 0,
+                old_end: 7,
+                new_end: 8,
+                text: "zero\none".into(),
+                start_point: (0, 0),
+                old_end_point: (1, 3),
+            }]
+        );
+    }
+
+    #[test]
+    fn undo_logs_one_line_of_a_long_text() {
+        // Many chunks, most shared with the undo state.
+        let text: String = (0..10_000).map(|i| format!("line {i}\n")).collect();
+        let mut b = Buffer::from_text(&text);
+        let at = b.line_col_to_offset(5000, 0);
+        b.undo_boundary();
+        b.delete(at, b.line_col_to_offset(5001, 0));
+        let v = b.version();
+        // "line 5001" became "line 5000\nline 5001": the change starts at
+        // the first char that differs.
+        assert_eq!(b.undo(), Some(at + 8));
+        let c = &b.changes_since(v).unwrap()[0];
+        assert_eq!((c.start, c.old_end, c.new_end), (at + 8, at + 8, at + 18));
+        assert_eq!(c.text, "0\nline 500");
+        assert_eq!(c.start_point, (5000, 8));
+        assert_eq!(b.text(), text);
+    }
+
+    #[test]
+    fn undo_logs_whole_chars() {
+        // "é" and "ü" start with the same byte; "é" and "©" end with it.
+        let mut b = Buffer::from_text("aéb");
+        b.undo_boundary();
+        b.delete(1, 2);
+        b.insert(1, "ü");
+        let v = b.version();
+        b.undo();
+        let c = &b.changes_since(v).unwrap()[0];
+        assert_eq!(
+            (c.start, c.old_end, c.new_end, c.text.as_str()),
+            (1, 2, 2, "é")
+        );
+        b.undo_boundary();
+        b.delete(1, 2);
+        b.insert(1, "©");
+        let v = b.version();
+        b.undo();
+        let c = &b.changes_since(v).unwrap()[0];
+        assert_eq!(
+            (c.start, c.old_end, c.new_end, c.text.as_str()),
+            (1, 2, 2, "é")
+        );
+    }
+
+    #[test]
+    fn changes_are_unknown_across_reload_and_far_back() {
         let mut b = Buffer::from_text("x");
         let v = b.version();
         b.undo_boundary();
         b.insert(0, "a");
-        b.undo();
+        b.record_reset();
         assert_eq!(b.changes_since(v), None);
         let after = b.version();
         b.insert(0, "b");
@@ -849,8 +1032,21 @@ mod tests {
         b.undo_boundary();
         b.insert(0, "z");
         b.undo();
-        assert_eq!(b.take_edits(), [Edit::Reset]);
+        // The undo is an edit too, so a parser can reuse its tree.
+        assert_eq!(
+            b.take_edits()[1],
+            Edit::Change {
+                start_byte: 0,
+                old_end_byte: 1,
+                new_end_byte: 0,
+                start: (0, 0),
+                old_end: (0, 1),
+                new_end: (0, 0),
+            }
+        );
         assert!(b.take_edits().is_empty());
+        b.record_reset();
+        assert_eq!(b.take_edits(), [Edit::Reset]);
     }
 
     #[test]
