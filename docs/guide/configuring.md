@@ -5,7 +5,7 @@ frozen:
   docs/specs/live-scheme-and-help.md: d6691aa15c7f
   docs/specs/leader-and-modes.md: 039e08ed9d0b
   docs/specs/vim.md: 4535c7be5a25
-  docs/specs/commands.md: 31bb6b804788
+  docs/specs/commands.md: 03eb47131286
   docs/specs/look.md: 966eea438d82
   docs/specs/start-screen.md: 3a63b6f3dc40
 ---

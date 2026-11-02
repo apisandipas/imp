@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/daemon]]"
 frozen:
-  docs/specs/daemon.md: 1ae89cf0fc57
+  docs/specs/daemon.md: 9b8eb57051c7
 ---
 # Daemon
 
@@ -29,7 +29,9 @@ A client that sends the daemon a message longer than 16 MiB is disconnected, and
 
 `:q` closes the client's current window. On its last window, it detaches the client, and the daemon keeps running with your buffers.
 
-`:kill-server` stops the daemon. It asks first if programs are running in terminals, since they stop too; `:q` only detaches, and terminals keep running for the next client.
+`:kill-server` (or `M-x kill-server`) stops the daemon, for every client. Like `:qa`, it won't while a buffer has unsaved changes: it goes to that buffer and says `unsaved changes in NAME (:kill-server! stops anyway)`. Save, or throw the changes away, and try again. With nothing unsaved, it asks first if programs are running in terminals, since they stop too; `:q` only detaches, and terminals keep running for the next client.
+
+`:kill-server!` stops the daemon straight away, asking nothing. Your unsaved changes aren't lost for good: imp keeps their [crash copies](ref-crash-recovery.md) and offers them the next time you open those files.
 
 ## Several clients
 

@@ -146,10 +146,17 @@ fn clients_share_one_editor() {
     assert!(!b.until(|_| false));
     a.keys(&["x"]);
     assert!(a.until(|f| f.text_rows()[0].trim_end() == "h!"));
-    // :kill-server stops the daemon for everyone.
-    a.keys(&[
-        ":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r", "<ret>",
-    ]);
+    // :kill-server refuses while the buffer has unsaved changes...
+    let kill = [":", "k", "i", "l", "l", "-", "s", "e", "r", "v", "e", "r"];
+    a.keys(&kill);
+    a.keys(&["<ret>"]);
+    assert!(a.until(|f| f
+        .text_rows()
+        .iter()
+        .any(|r| r.contains("unsaved changes in"))));
+    // ...and :kill-server! stops the daemon for everyone.
+    a.keys(&kill);
+    a.keys(&["!", "<ret>"]);
     assert!(!a.until(|_| false));
     std::thread::sleep(Duration::from_millis(100));
     assert!(UnixStream::connect(&socket).is_err());

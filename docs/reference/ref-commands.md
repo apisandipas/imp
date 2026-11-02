@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/commands]]"
 frozen:
-  docs/specs/commands.md: 31bb6b804788
+  docs/specs/commands.md: 03eb47131286
 ---
 # Commands
 
@@ -28,6 +28,10 @@ Many commands ask a question, such as which grammar to install or which format t
 | `:load-theme` | Asks which theme, as `M-x load-theme` does |
 
 The text answers the command's first question only. If a command asks nothing, it runs and then says `NAME takes no argument`.
+
+## Forcing with !
+
+A `!` after the name forces a command, as it forces Vim's own: `:kill-server` refuses while you have unsaved changes, and `:kill-server!` stops anyway. A command that has nothing to force ignores the `!`. From `M-x` there is no `!`.
 
 ## Counts
 

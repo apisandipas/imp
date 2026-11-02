@@ -261,17 +261,28 @@
         (filter (lambda (buf) (and (memv buf (buffer-list)) (terminal-confirm-kill? buf)))
                 (map (lambda (id) (hash-ref *terminals* id)) (hash-keys->list *terminals*)))))
 
-;; In a daemon, stops it for every client (:q only detaches one), asking
-;; first when that stops running programs.
+;; In a daemon, stops it for every client (:q only detaches one). Like
+;; :qa it refuses while buffers have unsaved changes, then asks when that
+;; stops running programs; :kill-server! does neither and keeps the crash
+;; copies, as Emacs keeps auto-save files.
 (define-command! 'kill-server
   (lambda (count)
-    "Stop the daemon, for every client attached to it. Without a daemon, quit."
-    (let ([running (*running-buffers*)])
-      (if (null? running)
-          (kill-server!)
-          (confirm! (string-append "stop the programs running in " (number->string (length running))
-                                   (if (= (length running) 1) " terminal?" " terminals?"))
-                    kill-server!)))))
+    "Stop the daemon, for every client attached to it. Without a daemon, quit.
+     Refuses while a buffer has unsaved changes, going to it, and asks
+     first when programs are running in terminals. :kill-server! stops
+     anyway, keeping the copies of unsaved buffers to recover."
+    (let ([dirty (modified-buffers)] [running (*running-buffers*)])
+      (cond
+        [(command-bang?) (kill-server!)]
+        [(pair? dirty)
+         (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty)))
+         (set-status! (string-append "unsaved changes in " (car (buffer-info (car dirty)))
+                                     " (:kill-server! stops anyway)"))]
+        [(null? running) (kill-server!)]
+        [else
+         (confirm! (string-append "stop the programs running in " (number->string (length running))
+                                  (if (= (length running) 1) " terminal?" " terminals?"))
+                   kill-server!)]))))
 
 (define (start-terminal! buf command cwd)
   "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`.

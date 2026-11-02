@@ -3581,6 +3581,13 @@
 
 (define *command-text* #f)   ; text after :NAME while NAME runs, or #f
 (define *command-text-read* #f)
+(define *command-bang* #f)   ; whether :NAME! ran the running command
+
+(define (command-bang?)
+  "Whether the running command was run as :NAME!, with ! after its name.
+   False from M-x or a key. A command reads it to be forced, as ! forces
+   an ex command: :kill-server! stops despite unsaved changes."
+  *command-bang*)
 
 (define (command-argument)
   "The text typed after the command's name at the : line (:org-export html
@@ -3602,6 +3609,7 @@
         (begin
           (set! *command-text* (if (equal? text "") #f text))
           (set! *command-text-read* #f)
+          (set! *command-bang* (ex-bang? ex))
           (with-handler (lambda (e) (set-status! (error-message e)))
                         (begin
                           (run-command (string->symbol name)
@@ -3613,6 +3621,7 @@
                                        (cmdline-key! "<ret>"))
                                 (set-status! (string-append name " takes no argument"))))))
           (set! *command-text* #f)
+          (set! *command-bang* #f)
           void)
         (set-status! (string-append name " takes no range")))))
 
