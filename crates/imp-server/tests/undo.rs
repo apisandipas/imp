@@ -94,7 +94,6 @@ fn dot_repeat_of_a_delete_is_one_undo_step() {
 }
 
 #[test]
-#[ignore = "imp makes each change in a replayed macro its own undo step; Vim makes the whole @q one"]
 fn a_macro_is_one_undo_step() {
     let mut s = server("x\n");
     type_keys(&mut s, "qqA1<esc>A2<esc>A3<esc>q");
@@ -108,6 +107,80 @@ fn a_macro_is_one_undo_step() {
     // The changes typed while recording were steps of their own.
     type_keys(&mut s, "uu");
     assert_eq!(line(&s), "x12");
+}
+
+#[test]
+fn at_at_and_a_counted_macro_are_one_undo_step_each() {
+    let mut s = server("x\n");
+    type_keys(&mut s, "qqA1<esc>A2<esc>A3<esc>q@q");
+    let seen: Vec<String> = ["@@", "u", "3@q", "u", "u"]
+        .iter()
+        .map(|keys| {
+            type_keys(&mut s, keys);
+            line(&s)
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            "x123123123",
+            "x123123",
+            "x123123123123123",
+            "x123123",
+            "x123"
+        ]
+    );
+}
+
+/// Sets register q to `keys`, as a recorded macro holds them.
+fn set_macro(s: &mut imp_server::Server, keys: &str) {
+    s.eval(&format!("(register-set! #\\q {keys:?} #f 'macro)"))
+        .unwrap();
+}
+
+/// Undo is kept per buffer: in Vim 9.2 a macro's changes in another buffer
+/// are one step there, and each return to a buffer starts a step in it.
+#[test]
+fn a_macro_that_switches_buffers_makes_a_step_per_visit() {
+    let a = temp_path("undo-macro-a.txt");
+    let b = temp_path("undo-macro-b.txt");
+    std::fs::write(&a, "x\n").unwrap();
+    std::fs::write(&b, "y\n").unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>A0<esc>", a.display()));
+    set_macro(
+        &mut s,
+        &format!(
+            "A1<esc>:e {}<ret>A2<esc>A3<esc>:e {}<ret>A4<esc>",
+            b.display(),
+            a.display()
+        ),
+    );
+    let eb = format!(":e {}<ret>", b.display());
+    let ea = format!(":e {}<ret>", a.display());
+    let seen = modified_after(&mut s, &["@q", "u", &eb, "u", &ea, "u"]);
+    assert_eq!(
+        seen,
+        ["x014 mod", "x01 mod", "y23 mod", "y nomod", "x01 mod", "x0 mod"]
+    );
+}
+
+/// A save inside a macro, checked against Vim 9.2: saved at its end, undo
+/// and redo cross the saved text; saved in its middle, no step holds it.
+#[test]
+fn a_save_inside_a_macro() {
+    for (keys, expected) in [
+        ("A1<esc>:w<ret>", ["x1 nomod", "x mod", "x1 nomod"]),
+        ("A1<esc>:w<ret>A2<esc>", ["x12 mod", "x mod", "x12 mod"]),
+    ] {
+        let path = temp_path("undo-macro-save.txt");
+        std::fs::write(&path, "x\n").unwrap();
+        let mut s = server("");
+        type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+        set_macro(&mut s, keys);
+        let seen = modified_after(&mut s, &["@q", "u", "<C-r>"]);
+        assert_eq!(seen, expected, "{keys}");
+    }
 }
 
 #[test]
