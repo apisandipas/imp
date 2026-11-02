@@ -148,7 +148,11 @@ fn kill_server_asks_about_changes_before_terminals() {
     type_keys(&mut s, "ichanged<esc>");
     // Unsaved changes refuse; nothing is asked about the terminal.
     type_keys(&mut s, ":kill-server<ret>");
-    assert!(s.status().starts_with("unsaved changes in "), "{}", s.status());
+    assert!(
+        s.status().starts_with("unsaved changes in "),
+        "{}",
+        s.status()
+    );
     assert!(!s.should_quit());
     // ! stops at once, asking nothing.
     type_keys(&mut s, ":kill-server!<ret>");
