@@ -44,10 +44,10 @@ GUIDE_PAGES = [
 # exactly one group, or the build fails, so a new spec can't go missing.
 GROUPS = [
     ("Editing", ["vim", "emacs-state", "auto-pairs", "move-lines", "leader-and-modes", "commands", "mouse", "posframe",
-                 "look", "modus-themes", "olivetti", "start-screen", "command-line"]),
+                 "look", "modus-themes", "olivetti", "nerd-icons", "start-screen", "command-line"]),
     ("Files and windows", ["files", "crash-recovery", "cloak", "buffers-and-windows", "projects", "go-to-file", "dired", "file-tree", "folding", "terminals"]),
     ("Code", ["completion", "completion-by-use", "completion-at-point", "lsp", "tree-sitter", "dap"]),
-    ("Git and Org", ["git", "git-blame", "git-gutter", "org", "org-agenda", "org-export"]),
+    ("Git and Org", ["git", "git-blame", "git-gutter", "org", "org-agenda", "org-babel", "org-export"]),
     ("Extending imp", ["live-scheme-and-help", "packages", "overlays", "kdl-config", "wasm-plugins",
                        "daemon", "shared-buffers", "claude", "mcp", "showkeys"]),
 ]
