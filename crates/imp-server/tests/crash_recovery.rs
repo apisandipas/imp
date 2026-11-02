@@ -435,12 +435,33 @@ fn qa_bang_throws_the_copies_away_but_kill_server_keeps_them() {
     open(&mut s, &path);
     type_keys(&mut s, "x");
     s.eval("(autosave-all!)").unwrap();
-    // :kill-server doesn't ask about unsaved changes; the copy stays, to
-    // be offered once this imp is gone.
-    type_keys(&mut s, ":kill-server<ret>");
-    assert!(s.should_quit());
+    // :kill-server refuses while there are unsaved changes, going to the
+    // buffer, as :qa does.
+    s.eval("(set! daemon? (lambda () #t))").unwrap();
+    type_keys(&mut s, ":enew<ret>:kill-server<ret>");
+    assert!(!s.should_quit());
+    assert_eq!(
+        s.status(),
+        format!(
+            "unsaved changes in {} (:kill-server! stops anyway)",
+            path.display()
+        )
+    );
+    assert_eq!(
+        s.eval("(buffer-path)").unwrap(),
+        format!("{:?}", path.display().to_string())
+    );
+    // From M-x too.
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "kill-server<ret>");
+    assert!(!s.should_quit());
+    // :kill-server! stops anyway; the copy stays, to be offered once this
+    // imp is gone.
+    type_keys(&mut s, ":kill-server!<ret>");
+    assert!(s.should_quit() && s.kill_requested());
     assert_eq!(copies(&state), vec![copy_name(&path)]);
     s.clear_quit();
+    s.eval("(set! daemon? (lambda () #f))").unwrap();
     // :qa (no !) refuses and keeps it.
     type_keys(&mut s, ":qa<ret>");
     assert!(!s.should_quit());
@@ -448,6 +469,20 @@ fn qa_bang_throws_the_copies_away_but_kill_server_keeps_them() {
     type_keys(&mut s, ":qa!<ret>");
     assert!(s.should_quit());
     assert!(copies(&state).is_empty());
+}
+
+#[test]
+fn only_a_bang_reaches_a_command() {
+    let mut s = server("");
+    s.eval("(define-command! 'bang-test (lambda (n) \"Says whether ! was given.\" (set-status! (if (command-bang?) \"bang\" \"plain\"))))")
+        .unwrap();
+    type_keys(&mut s, ":bang-test!<ret>");
+    assert_eq!(s.status(), "bang");
+    type_keys(&mut s, ":bang-test<ret>");
+    assert_eq!(s.status(), "plain");
+    s.keys(&["M-x"]);
+    type_keys(&mut s, "bang-test<ret>");
+    assert_eq!(s.status(), "plain");
 }
 
 #[test]

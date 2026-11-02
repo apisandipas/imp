@@ -18,7 +18,8 @@ Buffers that survive closing the window, as with `emacs --daemon` ([[0004-client
 - Two clients showing the same buffer each keep their own cursor in it; an edit through one moves the other's cursor with the text.
 - A new client shows the files it was given (`imp --connect FILE`), else the buffer the most recently active client was on, in one window.
 - A buffer deleted while another client's window shows it is replaced there by another buffer, as in a window of the same client.
-- `:q` closes the client's current window; on its last window it detaches the client, and the daemon keeps running. `:kill-server` stops it.
+- `:q` closes the client's current window; on its last window it detaches the client, and the daemon keeps running. `:kill-server` (or `M-x kill-server`) stops it, for every client.
+- `:kill-server` refuses while any buffer has unsaved changes, as `:qa` does and as Emacs' `save-buffers-kill-emacs` asks first: it goes to the first such buffer and says `unsaved changes in NAME (:kill-server! stops anyway)`. With none, it asks `stop the programs running in N terminals? (y or n)` if programs are running in terminals ([[spec/terminals]]), since they stop too; unsaved changes are checked first, so a refusal never follows a yes. `:kill-server!` stops at once, asking nothing, as `:qa!` quits; the copies of unsaved buffers are kept, so they can be recovered ([[spec/crash-recovery]]). Without a daemon, `:kill-server` quits imp the same way.
 - Remote: `imp --bridge` relays stdio to the local daemon, so `imp --connect --via 'ssh host imp --bridge'` runs a client here against a daemon there. The relay passes each read on at once.
 
 ## Known gaps

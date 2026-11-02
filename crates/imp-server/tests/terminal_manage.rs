@@ -140,6 +140,21 @@ fn in_a_daemon_q_detaches_and_kill_server_asks() {
     assert!(s.should_quit() && s.kill_requested());
 }
 
+#[test]
+fn kill_server_asks_about_changes_before_terminals() {
+    let (mut s, file, _) = with_terminal("cat");
+    s.eval(&format!("(go-to-buffer! {file})")).unwrap();
+    s.eval("(set! daemon? (lambda () #t))").unwrap();
+    type_keys(&mut s, "ichanged<esc>");
+    // Unsaved changes refuse; nothing is asked about the terminal.
+    type_keys(&mut s, ":kill-server<ret>");
+    assert!(s.status().starts_with("unsaved changes in "), "{}", s.status());
+    assert!(!s.should_quit());
+    // ! stops at once, asking nothing.
+    type_keys(&mut s, ":kill-server!<ret>");
+    assert!(s.should_quit() && s.kill_requested(), "{}", s.status());
+}
+
 fn rows(s: &mut imp_server::Server) -> Vec<String> {
     s.frame()
         .text_rows()

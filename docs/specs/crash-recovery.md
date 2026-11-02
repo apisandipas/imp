@@ -82,7 +82,7 @@ A copy goes as soon as the changes it protects are no longer at risk:
 
 In a daemon, `:qa!` and `:q!` detach the client as `:q` does and end nothing, so they delete no copies: the daemon still has the buffers, and their copies stay in use until the buffers are saved or killed. Only throwing changes away *and* ending the process deletes them.
 
-Ending without throwing changes away keeps the copies of buffers that still have unsaved changes, as Emacs keeps auto-save files: `:kill-server`, the daemon stopped by a signal, or a terminal closed under a standalone imp. Their copies are orphaned once the process is gone and are offered at the next open. `:kill-server` discards unsaved changes without asking, as it always has; its copies make that recoverable. A daemon client detaching (`:q` on its last window) changes nothing: the daemon still runs and its copies stay in use.
+Ending without throwing changes away keeps the copies of buffers that still have unsaved changes, as Emacs keeps auto-save files: `:kill-server!`, the daemon stopped by a signal, or a terminal closed under a standalone imp. Their copies are orphaned once the process is gone and are offered at the next open. `:kill-server` refuses while buffers have unsaved changes ([[spec/daemon]]); `:kill-server!` stops anyway, and unlike `:qa!` keeps their copies, so a daemon stopped for every client by one of them loses nothing for good. A daemon client detaching (`:q` on its last window) changes nothing: the daemon still runs and its copies stay in use.
 
 ### Daemon
 
