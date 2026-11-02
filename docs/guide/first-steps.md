@@ -4,7 +4,7 @@ specs: ["[[spec/command-line]]", "[[spec/start-screen]]", "[[spec/vim]]", "[[spe
 frozen:
   docs/specs/command-line.md: 552dffb88851
   docs/specs/start-screen.md: 3a63b6f3dc40
-  docs/specs/vim.md: c6050f5ee416
+  docs/specs/vim.md: 4535c7be5a25
   docs/specs/emacs-state.md: b74c1fe8672a
   docs/specs/leader-and-modes.md: 039e08ed9d0b
   docs/specs/commands.md: 31bb6b804788
