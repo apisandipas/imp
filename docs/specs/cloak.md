@@ -2,6 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/152
+anchors: [packages/cloak/cloak.scm, crates/imp-server/tests/cloak.rs]
 summary: "The cloak package draws the values in .env and similar files as a row of mask characters, so they aren't shown to someone watching your screen, while the text itself stays as it is."
 ---
 # Cloak
@@ -25,7 +26,7 @@ A bundled package, after Emacs's [cloak-mode](https://github.com/erickgnavar/clo
 ### The package
 
 - `cloak-mode` is a minor mode of the buffer. `M-x cloak-mode` and `SPC t c` turn it on and off in the current buffer.
-- Loading the package turns `cloak-mode` on in every buffer already open, and in every buffer that opens later or is renamed (`:w NAME`, `:saveas`), whose file name matches one of `cloak-file-patterns`. The patterns are globs matched against the file's name without its directory: `*` matches any run of chars and `?` any one. The default, `(".env" ".env.*" "*.env" ".envrc")`, covers `.env`, `.env.local`, `.env.production`, `prod.env` and direnv's `.envrc`; `env.txt` and `.environment` don't match.
+- Loading the package turns `cloak-mode` on in every buffer already open, and in every buffer that opens later or is renamed with `M-x rename-file`, whose file name matches one of `cloak-file-patterns`. The patterns are globs matched against the file's name without its directory: `*` matches any run of chars and `?` any one. The default, `(".env" ".env.*" "*.env" ".envrc")`, covers `.env`, `.env.local`, `.env.production`, `prod.env` and direnv's `.envrc`; `env.txt` and `.environment` don't match.
 - While it is on, what `cloak-pattern`'s groups match is masked with `cloak-mask-char`. The default pattern, `=\(.\+\)`, masks everything after the first `=` on a line: `API_KEY=sk-123` is drawn `API_KEY=******`, `export TOKEN="abc"` as `export TOKEN=*****`. A line with no `=` is drawn plain, and a comment with a `=` in it is masked too.
 - With `cloak-reveal-cursor-line` on (off by default), the cursor's line is drawn plain, as cloak.nvim's `cloak_reveal_cursor_line`.
 - `M-x cloak-reveal-line` shows the cursor's line plain until the cursor leaves that line or the buffer, then masks it again, for a quick look at one value (cloak.nvim's `CloakPreviewLine`). With `cloak-mode` off it says `cloak-mode is off`.
@@ -63,4 +64,5 @@ Places that still show a cloaked buffer's real text, because they show text the 
 - `:marks`, `:print` (and `:g` with `p`, `:number`), which print a line's text.
 - `M-x search-project` results and `git` output popups (a diff or blame of an env file) show the file's lines from disk or git.
 - A terminal buffer running `cat .env`, and tools that read the buffer for an agent (MCP, `claude`).
+- A new buffer first saved under a matching name (`:w .env`) isn't cloaked until it is opened again or `cloak-mode` is turned on.
 - A value continued over several lines (a quoted multi-line value) is masked only on its first line by the default pattern.

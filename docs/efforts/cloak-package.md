@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/cloak]]"]
 issue: https://github.com/apisandipas/imp/issues/152
 frozen:
-  docs/specs/cloak.md: 518f8370cdeb
+  docs/specs/cloak.md: 2f3ffb4d8cb4
 ---
 # Cloak package
 
@@ -16,4 +16,4 @@ Two small core pieces the package can't do without ([[decision/0011-non-essentia
 
 - [x] Core mask: `buffer-mask-pattern!` on buffer layers, drawn one mask char per cell in `render.rs`, plain on the cursor's line when asked; with render tests (wide chars, tabs, wrap, cursor position, reveal, "" stops).
 - [x] Core `completion-words` local option: the words source and the search prompt's word completion skip buffers that turn it off; with completion tests and the completion-at-point spec and page.
-- [ ] The cloak package: `cloak-mode`, `SPC t c`, `cloak-file-patterns` globs on open and rename, `cloak-pattern`, `cloak-mask-char`, `cloak-reveal-cursor-line`, `cloak-reveal-line`, option changes applied at once, `completion-words` off while on; key-driven tests (masked frame, saving and yanking real text, peek, completion); the reference page, `packages/CONTEXT.md`, `PACKAGES` and the README's package list.
+- [x] The cloak package: `cloak-mode`, `SPC t c`, `cloak-file-patterns` globs on open and rename, `cloak-pattern`, `cloak-mask-char`, `cloak-reveal-cursor-line`, `cloak-reveal-line`, option changes applied at once, `completion-words` off while on; key-driven tests (masked frame, saving and yanking real text, peek, completion); the reference page, `packages/CONTEXT.md`, `PACKAGES` and the README's package list.
