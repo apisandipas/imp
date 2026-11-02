@@ -126,9 +126,11 @@ pub struct Editor {
     /// a one-cell change column between its line numbers and its fold
     /// column, marks or not (git-gutter; see lore:decision/0016).
     pub change_marks: HashMap<usize, BTreeMap<usize, (String, String)>>,
-    /// Buffers drawn indented by outline level (org-indent): buffer ->
-    /// columns per level. See `render::outline_prefix`.
-    pub outline_indents: HashMap<usize, usize>,
+    /// Blank cells drawn before lines' text, by buffer id: line -> cells,
+    /// for that line and the lines after it up to the next entry (Emacs's
+    /// line-prefix and wrap-prefix; Org's org-indent sets them). See
+    /// `render::line_indent`.
+    pub line_indents: HashMap<usize, BTreeMap<usize, usize>>,
     /// Display-only text before lines, by buffer id: line -> (text,
     /// face) parts. It takes a column as wide as the widest, after the
     /// line numbers, and can't be edited (the file browser's details).
@@ -518,7 +520,7 @@ impl Editor {
         self.sign_columns.remove(&id);
         self.buffer_line_numbers.remove(&id);
         self.change_marks.remove(&id);
-        self.outline_indents.remove(&id);
+        self.line_indents.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
         self.status_values.remove(&id);

@@ -2098,9 +2098,49 @@
     (org-set-indent! (option 'org-indent))))
 
 (define (org-set-indent! on?)
-  "Draws this buffer indented by outline level when `on?`, else as written."
+  "Draws this buffer indented by outline level when `on?`, else as written:
+   each section's text lines up under its heading's title, and a
+   heading's leading stars but the last are drawn blank (org.hide)."
   (set-buffer-local! 'org-indented on?)
-  (set-outline-indent! (if on? (max 1 (option 'org-indent-per-level)) 0)))
+  (if on?
+      (begin
+        (buffer-highlight-pattern! "org-hide" "^\\(\\*\\+\\)\\* " "org.hide")
+        (org-show-indent!))
+      (begin
+        (buffer-highlight-clear! "org-hide")
+        (set-line-indents! '()))))
+
+(define (org-heading-levels)
+  "Each heading in the buffer, top to bottom, as (line . level). Found
+   with search-all, as reading every line in Scheme is slow on a long
+   file."
+  (map (lambda (at) (let ([line (offset->line at)]) (cons line (org-level line))))
+       (search-all "^\\*\\+ " (+ (buffer-length) 1))))
+
+(define (org-indents headings)
+  "The line indents (for set-line-indents!) that draw `headings`, (line
+   . level) pairs, as org-indent-mode does. With p columns a level
+   (org-indent-per-level), a level-L heading gets (L-1)*(p-1), which
+   with its stars but the last drawn blank puts its last star under its
+   parent's title, and the text under it L*p, under its own title."
+  (let ([p (max 1 (option 'org-indent-per-level))])
+    (let loop ([hs headings] [acc '()])
+      (if (null? hs)
+          (reverse acc)
+          (let ([line (car (car hs))] [level (cdr (car hs))])
+            (loop (cdr hs)
+                  (cons (list (+ line 1) (* level p))
+                        (cons (list line (* (- level 1) (- p 1))) acc))))))))
+
+(define (org-show-indent!)
+  "Sets this buffer's line indents from its headings, for org-indent."
+  (set-line-indents! (org-indents (org-heading-levels))))
+
+;; Edits move headings, so the indents follow them.
+(add-hook! 'after-change
+  (lambda ()
+    (when (and (eq? (major-mode) 'org-mode) (buffer-local 'org-indented))
+      (org-show-indent!))))
 
 (define-command! 'org-indent-mode
   (lambda (count)

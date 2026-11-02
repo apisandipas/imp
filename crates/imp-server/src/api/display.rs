@@ -1,5 +1,6 @@
 //! What is drawn beside and around a buffer's text: folds, signs, change
-//! marks, margins, line-end text, footers and the body width.
+//! marks, margins, line indents, line-end text, footers and the body
+//! width.
 
 use steel::steel_vm::engine::Engine;
 use steel::steel_vm::register_fn::RegisterFn;
@@ -150,6 +151,26 @@ pub(super) fn register(engine: &mut Engine) {
                 e.margins.remove(&id);
             } else {
                 e.margins.insert(id, map);
+            }
+        })
+    });
+
+    // Blank cells before lines of the current buffer's text, on every row
+    // they wrap to (Emacs's line-prefix and wrap-prefix): a list of (line
+    // cells), each for that line and the lines after it up to the next
+    // one's, so a run of lines takes one entry. Display only; a later
+    // entry for a line wins, and the empty list removes them.
+    engine.register_fn("set-line-indents!", |indents: Vec<Vec<isize>>| {
+        let map: std::collections::BTreeMap<usize, usize> = indents
+            .iter()
+            .filter_map(|entry| Some((clamp(*entry.first()?), clamp(*entry.get(1)?))))
+            .collect();
+        editor::with(|e| {
+            let id = e.current();
+            if map.is_empty() {
+                e.line_indents.remove(&id);
+            } else {
+                e.line_indents.insert(id, map);
             }
         })
     });
