@@ -2056,12 +2056,13 @@
 
 (define (org-keyword-pattern keywords)
   "A pattern matching any of `keywords` right after a heading's stars.
-   Characters special in a pattern are escaped."
+   Characters special in a pattern are escaped. It is all one group, as
+   a buffer's highlight pattern paints only its groups."
   (let ([escape (lambda (k)
                   (apply string-append
                          (map (lambda (c) (if (member c '(#\\ #\. #\* #\[ #\] #\~ #\^ #\$ #\/)) (string #\\ c) (string c)))
                               (string->list k))))])
-    (string-append "^\\*\\+ \\(" (string-join (map escape keywords) "\\|") "\\)\\>")))
+    (string-append "\\(^\\*\\+ \\(" (string-join (map escape keywords) "\\|") "\\)\\)\\>")))
 
 (define-major-mode! 'org-mode 'text-mode '("org")
   (lambda ()
@@ -2088,10 +2089,10 @@
                     (list "org-date" "[<[]\\d\\{4}-\\d\\d-\\d\\d[^]>]*[]>]" "org.date")
                     (list "org-box" "\\[[ X-]\\]" "org.checkbox")
                     (list "org-priority" "\\[#[A-Z]\\]" "org.priority")
-                    (list "org-cookie" "\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]" "org.checkbox")
+                    (list "org-cookie" "\\(\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]\\)" "org.checkbox")
                     (list "org-code" "=[^= ][^=]*=" "org.code")
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
-                    (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))
+                    (list "org-link" "\\(\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]\\)" "org.link")))
     (org-show-links! (not (option 'org-link-descriptive)))
     (org-close-drawers! 0 (last-line))
     (org-set-indent! (option 'org-indent))))

@@ -24,6 +24,6 @@ Measured with `examples/bench.rs`, which gains Org cases: a 100,000-line Org fil
 ## Tasks
 
 - [x] The bench times commands on a 100,000-line Org file with org-indent, headings dense and sparse; the numbers before the change go in the PR.
-- [ ] A buffer layer's highlight pattern paints its groups' matches, or the whole match without groups, with a test; Org's patterns paint as before.
+- [x] A buffer layer's highlight pattern paints its groups' matches, or the whole match without groups, with a test; Org's patterns paint as before.
 - [ ] `set-line-indents!` (in `api/display.rs`) sets the current buffer's line indents, and drawing, wrap, scrolling and clicks use them, with a render test; `org.scm` sets the indents and the hidden-star pattern itself, and `set-outline-indent!`, `Editor::outline_indents`, `heading_level`, `outline_prefix` and `outline_hidden_stars` are gone. The org-indent test and the indented-section click test pass unchanged.
 - [ ] Org sets the indents again after a change only when headings or the line count changed, with a test that typing a heading or a new line updates the indent; the bench's numbers after go in the PR, and `crates/imp-server/CONTEXT.md` names the shared layout as it now is.

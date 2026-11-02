@@ -1061,21 +1061,37 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
 fn concealed(layers: &[Layer], text: &str) -> Option<Vec<bool>> {
     let mut hidden: Option<Vec<bool>> = None;
     for re in layers.iter().filter_map(|l| l.conceal.as_ref()) {
-        for caps in re.captures_iter(text) {
-            let groups: Vec<_> = if caps.len() > 1 {
-                caps.iter().skip(1).flatten().collect()
-            } else {
-                caps.get(0).into_iter().collect()
-            };
-            for m in groups.into_iter().filter(|m| !m.is_empty()) {
-                let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
-                h[from..to].fill(true);
-            }
+        for m in pattern_spans(re, text, true)
+            .into_iter()
+            .filter(|m| !m.is_empty())
+        {
+            let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
+            let from = text[..m.start].chars().count();
+            let to = from + text[m].chars().count();
+            h[from..to].fill(true);
         }
     }
     hidden
+}
+
+/// The byte ranges of `text` that pattern `re` applies to. With `groups`
+/// (a buffer's own patterns, highlight or conceal) that is each match's
+/// groups, or the whole match when it has none, so a pattern can paint
+/// part of what it matches (`^\(\*\+\)\* `, all of a heading's stars but
+/// the last); without, whole matches, as Vim's hlsearch.
+fn pattern_spans(re: &regex::Regex, text: &str, groups: bool) -> Vec<Range<usize>> {
+    if !groups || re.captures_len() == 1 {
+        return re.find_iter(text).map(|m| m.range()).collect();
+    }
+    re.captures_iter(text)
+        .flat_map(|caps| {
+            caps.iter()
+                .skip(1)
+                .flatten()
+                .map(|m| m.range())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Line text `text` laid out as drawn: without the chars the `layers`'
@@ -1669,7 +1685,8 @@ fn gutter_text(
 /// plus one more entry for its line break. Global highlight ranges are
 /// offsets into the current buffer, so they only apply to windows showing
 /// it; global patterns (search) apply everywhere. A buffer's own layers
-/// apply wherever it is shown.
+/// apply wherever it is shown, and their patterns paint their groups
+/// (`pattern_spans`).
 fn char_styles(
     e: &Editor,
     start: usize,
@@ -1701,9 +1718,9 @@ fn char_styles(
     let layers = e
         .layers
         .iter()
-        .map(|l| (l, current_buffer))
-        .chain(buffer_layers.iter().map(|l| (l, true)));
-    for (layer, ranges_apply) in layers {
+        .map(|l| (l, current_buffer, false))
+        .chain(buffer_layers.iter().map(|l| (l, true, true)));
+    for (layer, ranges_apply, own) in layers {
         if ranges_apply {
             for h in &layer.ranges {
                 if h.end <= start || h.start >= end {
@@ -1719,9 +1736,9 @@ fn char_styles(
         }
         if let Some((re, face)) = &layer.pattern {
             let face = e.face(face);
-            for m in re.find_iter(text) {
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
+            for m in pattern_spans(re, text, own) {
+                let from = text[..m.start].chars().count();
+                let to = from + text[m].chars().count();
                 for style in &mut styles[from..to] {
                     *style = face.over(*style);
                 }
@@ -1757,16 +1774,21 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
         .get(&e.current())
         .map_or(&[][..], Vec::as_slice);
     let col = offset - start;
-    for layer in e.layers.iter().chain(buffer_layers) {
+    let layers = e
+        .layers
+        .iter()
+        .map(|l| (l, false))
+        .chain(buffer_layers.iter().map(|l| (l, true)));
+    for (layer, own) in layers {
         for h in &layer.ranges {
             if h.start <= offset && offset < h.end {
                 faces.push(h.face.clone());
             }
         }
         if let Some((re, face)) = &layer.pattern {
-            let hit = re.find_iter(text).any(|m| {
-                let from = text[..m.start()].chars().count();
-                from <= col && col < from + m.as_str().chars().count()
+            let hit = pattern_spans(re, text, own).into_iter().any(|m| {
+                let from = text[..m.start].chars().count();
+                from <= col && col < from + text[m].chars().count()
             });
             if hit {
                 faces.push(face.clone());
