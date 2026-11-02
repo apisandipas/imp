@@ -2056,12 +2056,13 @@
 
 (define (org-keyword-pattern keywords)
   "A pattern matching any of `keywords` right after a heading's stars.
-   Characters special in a pattern are escaped."
+   Characters special in a pattern are escaped. It is all one group, as
+   a buffer's highlight pattern paints only its groups."
   (let ([escape (lambda (k)
                   (apply string-append
                          (map (lambda (c) (if (member c '(#\\ #\. #\* #\[ #\] #\~ #\^ #\$ #\/)) (string #\\ c) (string c)))
                               (string->list k))))])
-    (string-append "^\\*\\+ \\(" (string-join (map escape keywords) "\\|") "\\)\\>")))
+    (string-append "\\(^\\*\\+ \\(" (string-join (map escape keywords) "\\|") "\\)\\)\\>")))
 
 (define-major-mode! 'org-mode 'text-mode '("org")
   (lambda ()
@@ -2088,18 +2089,88 @@
                     (list "org-date" "[<[]\\d\\{4}-\\d\\d-\\d\\d[^]>]*[]>]" "org.date")
                     (list "org-box" "\\[[ X-]\\]" "org.checkbox")
                     (list "org-priority" "\\[#[A-Z]\\]" "org.priority")
-                    (list "org-cookie" "\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]" "org.checkbox")
+                    (list "org-cookie" "\\(\\[\\d\\+\\(/\\d\\+\\)\\?%\\?\\]\\)" "org.checkbox")
                     (list "org-code" "=[^= ][^=]*=" "org.code")
                     (list "org-verbatim" "[~][^~ ][^~]*[~]" "org.code")
-                    (list "org-link" "\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]" "org.link")))
+                    (list "org-link" "\\(\\[\\[[^\\]]*\\]\\(\\[[^\\]]*\\]\\)\\?\\]\\)" "org.link")))
     (org-show-links! (not (option 'org-link-descriptive)))
     (org-close-drawers! 0 (last-line))
     (org-set-indent! (option 'org-indent))))
 
 (define (org-set-indent! on?)
-  "Draws this buffer indented by outline level when `on?`, else as written."
+  "Draws this buffer indented by outline level when `on?`, else as written:
+   each section's text lines up under its heading's title, and a
+   heading's leading stars but the last are drawn blank (org.hide)."
   (set-buffer-local! 'org-indented on?)
-  (set-outline-indent! (if on? (max 1 (option 'org-indent-per-level)) 0)))
+  (if on?
+      (begin
+        (buffer-highlight-pattern! "org-hide" "^\\(\\*\\+\\)\\* " "org.hide")
+        (org-show-indent!))
+      (begin
+        (buffer-highlight-clear! "org-hide")
+        (set-line-prefixes! '()))))
+
+(define (org-indents)
+  "The line prefixes (for set-line-prefixes!) that draw this buffer as
+   org-indent-mode does. With p columns a level (org-indent-per-level),
+   a level-L heading gets (L-1)*(p-1), which with its stars but the last
+   drawn blank puts its last star under its parent's title, and the
+   text under it L*p, under its own title. The headings are found with
+   search-all and their stars counted from there, as reading every line
+   in Scheme is slow on a long file."
+  (let ([p (max 1 (option 'org-indent-per-level))])
+    (let loop ([ats (search-all "^\\*\\+ " (+ (buffer-length) 1))] [acc '()])
+      (if (null? ats)
+          ;; In order, so a heading's own entry wins over the one the
+          ;; heading just above it gives its next line.
+          (reverse acc)
+          (let* ([at (car ats)]
+                 [line (offset->line at)]
+                 [level (let count ([i at]) (if (equal? (buffer-char-at i) #\*) (count (+ i 1)) (- i at)))])
+            (loop (cdr ats)
+                  (cons (list (+ line 1) (* level p))
+                        (cons (list line (* (- level 1) (- p 1))) acc))))))))
+
+(define (org-show-indent!)
+  "Sets all of this buffer's line prefixes from its headings, for
+   org-indent."
+  (set-line-prefixes! (org-indents)))
+
+(define (org-indent-lines! first last)
+  "Sets the line prefixes of lines `first` to `last` from the headings
+   among them, as org-indents does, carrying on from the line above,
+   whose indent is right. An entry only where a line's indent differs
+   from the line above's, as the rest follow it."
+  (let* ([p (max 1 (option 'org-indent-per-level))]
+         [above (and (> first 0) (org-level (- first 1)))]
+         ;; The indent of the section text the lines start in.
+         [body (cond [(= first 0) 0] [above (* above p)] [else (line-prefix-width (- first 1))])])
+    (let loop ([line first] [body body] [shown #f] [acc '()])
+      (if (> line last)
+          (put-line-prefixes! first last acc)
+          (let* ([level (org-level line)]
+                 [cells (if level (* (- level 1) (- p 1)) body)])
+            (loop (+ line 1)
+                  (if level (* level p) body)
+                  cells
+                  (if (equal? cells shown) acc (cons (list line cells) acc))))))))
+
+(define (org-indent-follow!)
+  "After a change, sets the indents of the lines it changed and the line
+   after them: the rest moved with their lines (set-line-prefixes!), so
+   an edit costs the lines it touched, not the buffer. When what changed
+   isn't known (an undo), sets them all."
+  (let ([range (after-change-range)])
+    (if range
+        (org-indent-lines! (offset->line (car range))
+                           (min (+ (offset->line (caddr range)) 1) (max 0 (- (buffer-line-count) 1))))
+        (org-show-indent!))))
+
+;; Edits move headings, so the indents follow them.
+(add-hook! 'after-change
+  (lambda ()
+    (when (and (eq? (major-mode) 'org-mode) (buffer-local 'org-indented))
+      (org-indent-follow!))))
 
 (define-command! 'org-indent-mode
   (lambda (count)

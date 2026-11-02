@@ -447,6 +447,42 @@ fn org_indent_draws_sections_under_their_headings() {
 }
 
 #[test]
+fn org_indent_follows_edits() {
+    let mut s = server("* One\nText\n");
+    s.eval("(set-option! 'org-indent #t) (set-major-mode! 'org-mode)")
+        .unwrap();
+    let rows = |s: &mut imp_server::Server, n: usize| -> Vec<String> {
+        s.frame().text_rows()[..n]
+            .iter()
+            .map(|r| r.trim_end().to_string())
+            .collect()
+    };
+    // A new line under the heading is indented with its section.
+    type_keys(&mut s, "jomore<esc>");
+    assert_eq!(rows(&mut s, 3), ["* One", "  Text", "  more"]);
+    // Typing a heading on a line, without changing the line count,
+    // indents the lines under it by its level.
+    type_keys(&mut s, "0i** <esc>");
+    assert_eq!(rows(&mut s, 3), ["* One", "  Text", " ** more"]);
+    type_keys(&mut s, "otail<esc>");
+    assert_eq!(rows(&mut s, 4)[3], "    tail");
+    // A heading's stars but the last are drawn in org.hide.
+    assert!(s.eval("(faces-at 11)").unwrap().contains("org.hide"));
+    assert!(!s.eval("(faces-at 12)").unwrap().contains("org.hide"));
+    // Undo puts it back.
+    type_keys(&mut s, "uu");
+    assert_eq!(rows(&mut s, 3), ["* One", "  Text", "  more"]);
+    // Lines added above move the indents below with their lines.
+    type_keys(&mut s, "Go** Two<esc>otwo<esc>");
+    assert_eq!(rows(&mut s, 5)[3..], [" ** Two", "    two"]);
+    type_keys(&mut s, "ggjOnew<esc>");
+    assert_eq!(rows(&mut s, 6)[4..], [" ** Two", "    two"]);
+    // Deleting a heading gives its text its parent's indent.
+    type_keys(&mut s, "Gkdd");
+    assert_eq!(rows(&mut s, 5)[3..], ["  more", "  two"]);
+}
+
+#[test]
 fn heading_heights_come_from_the_option() {
     let mut s = server("* One\n** Two\nText\n");
     s.eval("(set-major-mode! 'org-mode)").unwrap();
