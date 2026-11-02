@@ -61,6 +61,8 @@
      ;; The text and the frame around it
      (list "normal" (string-append "fg=" (c 'fg) " bg=" (c 'bg)))
      (list "nontext" (fg 'border))
+     ;; Control chars in buffer text, drawn in caret notation (^G, <9b>)
+     (list "special-char" (fg 'cyan))
      (list "line-number" (fg 'dim))
      (list "line-number-current" (fg 'yellow "bold"))
      (list "cursorline" (string-append "bg=" (c 'bg-hl)))

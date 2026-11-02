@@ -1676,6 +1676,15 @@ fn char_styles(
             }
         }
     }
+    // Control chars, drawn in caret notation, over their syntax face so
+    // they stand out from text that really reads `^G` (Vim's SpecialKey),
+    // and under the highlights, so a selection or match still shows.
+    let special = e.face("special-char");
+    for (i, ch) in text.chars().enumerate() {
+        if special_char(ch) {
+            styles[i] = special.over(styles[i]);
+        }
+    }
     let layers = e
         .layers
         .iter()
@@ -1710,8 +1719,8 @@ fn char_styles(
 }
 
 /// The faces drawn at char `offset` of the current buffer, bottom first:
-/// the syntax face, then each highlight over it, as `char_styles` paints
-/// them. For describe-face.
+/// the syntax face, `special-char` on a control char, then each
+/// highlight over it, as `char_styles` paints them. For describe-face.
 pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     let buffer = e.buffer();
     let rope = buffer.rope();
@@ -1729,6 +1738,9 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
             .filter(|(s, t, _)| *s <= offset && offset < *t)
             .find_map(|(_, _, names)| names.iter().find(|f| e.faces.contains_key(*f)));
         faces.extend(face.cloned());
+    }
+    if text.chars().nth(offset - start).is_some_and(special_char) {
+        faces.push("special-char".to_string());
     }
     let buffer_layers = e
         .buffer_layers
@@ -1783,6 +1795,13 @@ fn caret(ch: char) -> Option<String> {
         c @ 0x80..=0x9f => Some(format!("<{c:02x}>")),
         _ => None,
     }
+}
+
+/// Whether buffer text draws `ch` in caret notation, and so in the
+/// `special-char` face: a control char other than a tab, which is laid
+/// out as blanks.
+fn special_char(ch: char) -> bool {
+    ch != '\t' && caret(ch).is_some()
 }
 
 /// The cells `ch` takes as drawn: wide chars two, combining marks none,

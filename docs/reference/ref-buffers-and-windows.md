@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/buffers-and-windows]]"
 frozen:
-  docs/specs/buffers-and-windows.md: bc8c82b25ab1
+  docs/specs/buffers-and-windows.md: 76dc5e32ba7a
 ---
 # Buffers and windows
 
@@ -73,6 +73,8 @@ Long lines wrap onto the next row, as in Vim. Turn on `linebreak` to wrap betwee
 Wide characters take two cells, and combining marks take none.
 
 Control characters show as Vim shows them, so a file can't send escape codes to your terminal: ESC is `^[`, BEL `^G`, DEL `^?`, and the C1 codes their number in hex, like `<9b>`. Each is still one character: `l` steps over `^[` in one go. The same goes for text in the status line, messages and popups.
+
+In a buffer they're drawn in the `special-char` face, like Vim's `SpecialKey`, so a real `^G` stands out from the two characters `^` and `G`. Syntax colors don't hide it; a selection or search match still shows over it. Change its color with `(set-face! "special-char" "fg=#ff8800")`.
 
 A buffer that sets `number` or `relativenumber` with `:setlocal` keeps its own line numbers, even while you work in another window. Special buffers such as the file tree and terminals turn them off this way.
 

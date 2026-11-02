@@ -329,6 +329,8 @@
    ;; hl-line, fringe, vertical-border, region, isearch, lazy-highlight
    (list "normal" 'fg-main 'bg-main "" #f)
    (list "nontext" 'border #f "" #f)
+   ;; escape-glyph: control chars in caret notation
+   (list "special-char" 'keybind #f "" 'bold)
    (list "line-number" 'fg-line-number-inactive 'bg-line-number-inactive "" #f)
    (list "line-number-current" 'fg-line-number-active 'bg-line-number-active "bold" #f)
    (list "cursorline" #f 'bg-hl-line "" #f)

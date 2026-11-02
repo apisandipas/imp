@@ -44,6 +44,7 @@ fn vivendi_s_code_and_frame_are_modus_s_colors() {
         ("line-number-current", "fg=#ffffff bg=#535353 bold"),
         ("search-current", "fg=#ffffff bg=#7a6100"),
         ("separator", "fg=#646464"),
+        ("special-char", "fg=#00bcff"),
     ] {
         assert_eq!(spec(&mut s, face), want, "{face}");
     }
@@ -66,6 +67,7 @@ fn operandi_s_code_and_frame_are_modus_s_colors() {
         ("cursorline", "bg=#dae5ec"),
         ("line-number-current", "fg=#000000 bg=#c4c4c4 bold"),
         ("search-current", "fg=#000000 bg=#f3d000"),
+        ("special-char", "fg=#0000b0"),
     ] {
         assert_eq!(spec(&mut s, face), want, "{face}");
     }
