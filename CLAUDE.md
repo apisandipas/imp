@@ -9,5 +9,6 @@ in `docs/specs`, and the rules for each directory in its `CONTEXT.md`.
 Work is tracked in GitHub Issues.
 
 Work happens on a `type/slug` branch from `develop`, merged back with
-`--no-ff`; `main` changes only for releases and website updates. Before
-committing, run `tools/check.sh` (tests, clippy, fmt) and `lore check`.
+`--no-ff`; `main` changes only for releases and website updates. Run
+`lore check` and the affected tests before each commit, and the full
+`tools/check.sh` (tests, clippy, fmt) once before pushing a branch.
