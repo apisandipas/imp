@@ -108,8 +108,9 @@ fn autosave_and_recover() {
     type_keys(&mut s, ":bd!<ret>");
     open(&mut s, &path);
     assert_eq!(s.text(), "saved\n");
-    assert!(s.status().contains(":recover"), "{}", s.status());
-    type_keys(&mut s, ":recover<ret>");
+    assert!(s.status().contains("from a crash"), "{}", s.status());
+    // Kept for later, then taken with :recover.
+    type_keys(&mut s, "k:recover<ret>");
     assert_eq!(s.text(), "savedunsaved\n");
 }
 

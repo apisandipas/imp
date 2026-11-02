@@ -249,24 +249,113 @@
    those whose imp is gone."
   (filter (lambda (c) (not (copy-owner-alive? (cadr c)))) (autosave-copies base)))
 
+(define (autosave-buffer-label)
+  "The current buffer as recovery messages name it: its file's name, or
+   the buffer's name if it has no file."
+  (if (buffer-path) (file-name-of (buffer-path)) (buffer-name)))
+
+(define (autosave-adopt! copy)
+  "Makes orphaned crash copy `copy` this imp's copy of the current
+   buffer, whose text it now holds: renamed to this process's name, so a
+   second crash before the next autosave still has it."
+  (let ([mine (string-append (autosave-dir) "/" (autosave-name (autosave-buffer-base)))])
+    (autosave-forget! (current-buffer))
+    (unless (equal? (car copy) mine)
+      (error-text (lambda () (rename-file! (car copy) mine))))
+    (set! *autosave-copies* (hash-insert *autosave-copies* (current-buffer) mine))
+    (set-buffer-local! 'autosave-version (buffer-version))
+    (set-buffer-local! 'autosave-since #f))
+  void)
+
 (define (autosave-recover! copy)
   "Puts crash copy `copy`'s text in the current buffer as one change,
-   which u undoes. Its file stays modified until :w."
+   which u undoes, and makes the copy this imp's. The buffer stays
+   modified until :w."
   (let ([text (with-handler (lambda (e) (message (error-message e)) #f) (read-file (car copy)))])
     (when text
+      (overlay-close! 'recover)
       (begin-change!)
       (replace-range! 0 (buffer-length) text)
       (set-cursor! 0)
-      (message (string-append "recovered " (buffer-name) "; :w to keep it")))))
+      (normal-clamp!)
+      (autosave-adopt! copy)
+      (message (string-append "recovered " (autosave-buffer-label) "; :w to keep it"))))
+  void)
+
+(define (autosave-lines-differing a b)
+  "How many lines differ between texts `a` and `b`: those of either
+   that the other lacks, the larger count, so one line inserted at the
+   top counts as one."
+  (let* ([counts (foldl (lambda (line h) (hash-insert h line (+ 1 (or (hash-try-get h line) 0))))
+                        (hash) (text-lines b))]
+         [left (foldl (lambda (line acc)
+                        (let ([h (car acc)] [n (or (hash-try-get (car acc) line) 0)])
+                          (if (> n 0)
+                              (cons (hash-insert h line (- n 1)) (cdr acc))
+                              (cons h (+ 1 (cdr acc))))))
+                      (cons counts 0) (text-lines a))]
+         [unmatched (foldl + 0 (hash-values->list (car left)))])
+    (max (cdr left) unmatched)))
+
+(define (autosave-clock ms)
+  "The local time of day `ms` (milliseconds since 1970) falls at, as
+   14:02."
+  (let ([s (number->string (quotient ms 1000))])
+    (with-handler (lambda (e) "?")
+      (trim (cadr (run-shell (string-append "date -d @" s " +%H:%M 2>/dev/null || date -r " s " +%H:%M") ""))))))
+
+(define (autosave-ask! id copy text)
+  "Asks what to do with orphaned crash copy `copy` of buffer `id`'s
+   file, whose text is `text`: r recovers it, d deletes it, and k or any
+   other key leaves both for later."
+  (let* ([n (autosave-lines-differing text (buffer-substring 0 (buffer-length)))]
+         [file-time (and (buffer-path) (file-mtime (buffer-path)))]
+         [newer? (and file-time (> file-time (caddr copy)))]
+         [keys (list (list (list "r" "which-key.key") (list " recover   " #f)
+                           (list "d" "which-key.key") (list " delete the copy   " #f)
+                           (list "k" "which-key.key") (list " keep it for later" #f)))])
+    (overlay-open! 'recover
+                   (if newer? (cons (list (list "the file was changed after this copy" #f)) keys) keys)
+                   'keys (lambda (key)
+                           (overlay-close! 'recover)
+                           (cond [(equal? key "r") (with-buffer id (lambda () (autosave-recover! copy)))]
+                                 [(equal? key "d")
+                                  (error-text (lambda () (delete-file! (car copy))))
+                                  (message "deleted the crash copy")]
+                                 [else #t])
+                           #t)
+                   'on-close (lambda () (message "")))
+    (message (string-append (autosave-buffer-label) " has unsaved changes from a crash, saved "
+                            (autosave-clock (caddr copy)) " (" (number->string n)
+                            (if (= n 1) " line differs)" " lines differ)")))
+    void))
+
+(define (autosave-offer!)
+  "Run when a file's buffer is first shown: warns if another running
+   imp has a copy of the file, and offers its newest orphaned copy back.
+   A copy whose text is the file's is deleted without a word."
+  (when (buffer-path)
+    (let* ([copies (autosave-copies (autosave-base (buffer-path)))]
+           [others (filter (lambda (c) (and (cadr c) (not (= (cadr c) (process-id)))
+                                            (copy-owner-alive? (cadr c))))
+                           copies)]
+           [orphans (filter (lambda (c) (not (copy-owner-alive? (cadr c)))) copies)])
+      (when (pair? others)
+        (message (string-append (autosave-buffer-label) " is also being edited in imp "
+                                (number->string (cadr (car others))))))
+      (when (pair? orphans)
+        (let ([text (with-handler (lambda (e) #f) (read-file (car (car orphans))))])
+          (cond [(not text) #f]
+                [(equal? text (buffer-substring 0 (buffer-length)))
+                 (error-text (lambda () (delete-file! (car (car orphans)))))]
+                [else (autosave-ask! (current-buffer) (car orphans) text)])))))
+  void)
 
 (add-hook! 'after-save
            (lambda ()
              (autosave-forget! (current-buffer))
              (set-buffer-local! 'autosave-version #f)))
-(add-hook! 'buffer-open
-           (lambda ()
-             (when (and (buffer-path) (pair? (autosave-orphans (autosave-base (buffer-path)))))
-               (message (string-append (buffer-name) " has unsaved changes from a crash: :recover to restore them")))))
+(add-hook! 'buffer-open autosave-offer!)
 
 (define-ex! '("rec" "recover")
   (lambda (ex)

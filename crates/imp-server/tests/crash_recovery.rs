@@ -190,3 +190,137 @@ fn a_path_too_long_to_name_a_copy_is_said_once() {
     );
     assert!(copies(&state).is_empty());
 }
+
+/// A pid no process can have (Linux's highest is 2^22): the imp that
+/// wrote a copy under it has crashed.
+const DEAD: u32 = 999_999_999;
+
+/// Leaves a copy of `path` holding `text` as a crashed imp (pid `pid`)
+/// would have, in `state`.
+fn leave_copy(state: &std::path::Path, path: &std::path::Path, pid: u32, text: &str) {
+    let dir = state.join("autosave");
+    std::fs::create_dir_all(&dir).unwrap();
+    let name = path.display().to_string().replace('/', "%");
+    std::fs::write(dir.join(format!("{name}#{pid}")), text).unwrap();
+}
+
+#[test]
+fn opening_a_file_offers_its_crash_copy() {
+    let (mut s, state) = server_with_state("offer-state");
+    let path = temp_path("offered.txt");
+    std::fs::write(&path, "one\ntwo\n").unwrap();
+    leave_copy(&state, &path, DEAD, "one\ntwo\nthree\n");
+    open(&mut s, &path);
+    // Asked, not yet changed.
+    assert_eq!(s.text(), "one\ntwo\n");
+    let status = s.status();
+    assert!(
+        status.contains("offered.txt has unsaved changes from a crash, saved ")
+            && status.ends_with("(1 line differs)"),
+        "{status}"
+    );
+    let rows = s.frame().text_rows().join("\n");
+    assert!(
+        rows.contains("r recover   d delete the copy   k keep it for later"),
+        "{rows}"
+    );
+    type_keys(&mut s, "r");
+    assert_eq!(s.text(), "one\ntwo\nthree\n");
+    assert!(
+        s.status().contains("recovered offered.txt; :w to keep it"),
+        "{}",
+        s.status()
+    );
+    assert_eq!(s.eval("(buffer-modified?)").unwrap(), "#true");
+    // The copy is this imp's now, so a second crash still has it.
+    assert_eq!(copies(&state), vec![copy_name(&path)]);
+    // One change: u takes it back.
+    type_keys(&mut s, "u");
+    assert_eq!(s.text(), "one\ntwo\n");
+}
+
+#[test]
+fn d_deletes_the_copy_and_k_keeps_it() {
+    let (mut s, state) = server_with_state("dk-state");
+    let path = temp_path("dk.txt");
+    std::fs::write(&path, "file\n").unwrap();
+    leave_copy(&state, &path, DEAD, "copy\n");
+    open(&mut s, &path);
+    type_keys(&mut s, "k");
+    assert_eq!(s.text(), "file\n");
+    assert_eq!(copies(&state).len(), 1);
+    // Kept for later: :recover takes it now.
+    type_keys(&mut s, ":recover<ret>");
+    assert_eq!(s.text(), "copy\n");
+    // Another file, its copy deleted.
+    let other = temp_path("dk2.txt");
+    std::fs::write(&other, "file\n").unwrap();
+    leave_copy(&state, &other, DEAD, "copy\n");
+    open(&mut s, &other);
+    type_keys(&mut s, "d");
+    assert_eq!(s.text(), "file\n");
+    assert_eq!(copies(&state), vec![copy_name(&path)]);
+}
+
+#[test]
+fn a_copy_that_matches_the_file_goes_quietly() {
+    let (mut s, state) = server_with_state("same-state");
+    let path = temp_path("same.txt");
+    std::fs::write(&path, "same\n").unwrap();
+    leave_copy(&state, &path, DEAD, "same\n");
+    open(&mut s, &path);
+    assert!(!s.status().contains("crash"), "{}", s.status());
+    assert!(copies(&state).is_empty());
+}
+
+#[test]
+fn an_older_imps_copy_without_a_pid_is_orphaned() {
+    let (mut s, state) = server_with_state("old-state");
+    let path = temp_path("old.txt");
+    std::fs::write(&path, "file\n").unwrap();
+    let dir = state.join("autosave");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(path.display().to_string().replace('/', "%")),
+        "copy\n",
+    )
+    .unwrap();
+    open(&mut s, &path);
+    assert!(s.status().contains("from a crash"), "{}", s.status());
+}
+
+#[test]
+fn a_file_newer_than_its_copy_says_so() {
+    let (mut s, state) = server_with_state("newer-state");
+    let path = temp_path("newer.txt");
+    leave_copy(&state, &path, DEAD, "copy\n");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(&path, "file\n").unwrap();
+    open(&mut s, &path);
+    let rows = s.frame().text_rows().join("\n");
+    assert!(
+        rows.contains("the file was changed after this copy"),
+        "{rows}"
+    );
+}
+
+#[test]
+fn a_copy_held_by_a_running_imp_is_only_warned_about() {
+    let (mut s, state) = server_with_state("live-state");
+    let path = temp_path("live.txt");
+    std::fs::write(&path, "file\n").unwrap();
+    leave_copy(&state, &path, 4242, "theirs\n");
+    // Pretend imp 4242 runs.
+    s.eval("(define (copy-owner-alive? pid) (and pid (or (= pid 4242) (= pid (process-id)))))")
+        .unwrap();
+    open(&mut s, &path);
+    assert!(
+        s.status()
+            .contains("live.txt is also being edited in imp 4242"),
+        "{}",
+        s.status()
+    );
+    type_keys(&mut s, "x");
+    assert_eq!(s.text(), "ile\n");
+    assert_eq!(copies(&state).len(), 1);
+}

@@ -120,4 +120,4 @@ Behaviour is Scheme ([[0005-rust-owns-data-and-speed-scheme-owns-behavior]]), in
 
 ## Known gaps
 
-- Partly built ([#130](https://github.com/apisandipas/imp/issues/130)). Copies are written, named and timed as above, but an orphaned copy is offered by a message (`:recover` to restore it) rather than the prompt; `:recover FILE` and `recover-session` are missing; a copy is deleted only on save, and recovering doesn't make the copy this imp's.
+- Partly built ([#130](https://github.com/apisandipas/imp/issues/130)). Copies are written, named, timed and offered as above, but `:recover FILE` and `recover-session` are missing, and a copy is deleted only on save.
