@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/vim]]"
 frozen:
-  docs/specs/vim.md: c6050f5ee416
+  docs/specs/vim.md: 4535c7be5a25
 ---
 # Vim
 
@@ -119,7 +119,7 @@ To make plain `y` and `p` use the system clipboard, `:set clipboard=unnamedplus`
 
 ## Macros
 
-`qa` starts recording into register `a` and `q` stops. `@a` plays it, `@@` plays the last one again, and `@:` repeats the last command line. A key that fails stops the macro.
+`qa` starts recording into register `a` and `q` stops. `@a` plays it, `@@` plays the last one again, and `@:` repeats the last command line. A key that fails stops the macro. `u` undoes everything one playback did, count included, in one go. If the macro moves between buffers, each buffer keeps its own undo: every stretch the macro spent in a buffer is one step there.
 
 ## Marks and jumps
 

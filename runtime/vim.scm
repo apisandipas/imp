@@ -40,7 +40,9 @@
 (define *jumps* '())           ; mark names of jump list entries, oldest first
 (define *jump-index* 0)        ; where C-o and C-i are in *jumps*
 (define *jump-counter* 0)      ; for naming jump marks
-(define *undo-group* #f)       ; while true, changes join one undo step
+;; While a group of changes runs as one undo step, the buffer its latest
+;; change was in (see with-undo-group); #f otherwise.
+(define *undo-group* #f)
 (define *alternate-buffer* #f) ; for C-^ and :e #
 (define *insert-register-pending* #f) ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
@@ -971,12 +973,15 @@
   (not (member key '("y" "zf"))))
 
 (define (with-undo-group thunk)
-  "Runs `thunk` with all its changes in one undo step."
+  "Runs `thunk` with all its changes in one undo step.
+   Undo is kept per buffer, so changes it makes in another buffer are a
+   step there, and each return to a buffer starts a new step in it, as a
+   Vim macro that switches buffers does."
   (if *undo-group*
       (thunk)
       (begin
         (undo-boundary!)
-        (set! *undo-group* #t)
+        (set! *undo-group* (current-buffer))
         (let ([result (with-handler (lambda (e) (set! *undo-group* #f) (raise-error e)) (thunk))])
           (set! *undo-group* #f)
           result))))
@@ -984,7 +989,9 @@
 (define (begin-change!)
   "Every change starts here: it makes an undo point, and remembers the
    line's text for U when the change is on a new line."
-  (unless *undo-group* (undo-boundary!))
+  (unless (equal? *undo-group* (current-buffer))
+    (undo-boundary!)
+    (when *undo-group* (set! *undo-group* (current-buffer))))
   (mark-set! "." (cursor))
   (unless (equal? *u-line* (current-line))
     (set! *u-line* (current-line))
@@ -2109,10 +2116,14 @@
            (set! *last-macro* c)
            (if reg
                (let ([keys (string->keys (car reg))])
-                 (let loop ([i 0])
-                   (when (and (< i count) (not *command-failed*))
-                     (play-keys! keys)
-                     (loop (+ i 1))))
+                 ;; The whole replay, count included, is one undo step,
+                 ;; as in Vim: the inserts it replays end without one.
+                 (with-undo-group
+                  (lambda ()
+                    (let loop ([i 0])
+                      (when (and (< i count) (not *command-failed*))
+                        (play-keys! keys)
+                        (loop (+ i 1))))))
                  (set! *command-failed* #f))
                (set-status! (string-append "nothing in register " (string c)))))]))))
 
