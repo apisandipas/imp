@@ -12,7 +12,7 @@ Re-`define`-ing an existing global makes a new binding that code compiled earlie
 
 - A runtime file can't call a function first defined in a later file (each file is its own unit), and `eval` of a form that references a global not yet defined fails; user code gets placeholders for those.
 - Two files that define the same name each keep their own binding at startup, but re-evaluating the earlier file's definition (`eval-defun`, `:source`) `set!`s the later file's binding, so the later file's callers get the earlier meaning. Give each top-level name one file (`runtime/CONTEXT.md`).
-- Redefining a function with a rest argument (`(define (f a . rest) ...)`) through `imp-eval-string` fails: "Unable to convert from value to expression".
+- `eval` can't take a dotted list as code ("Unable to convert from value to expression"), and `read` makes `(f a . rest)` one. `imp-eval-string` respells rest arguments without the dot (`without-dotted-parameters`), but a quoted dotted literal (`'(a . b)`) in evaluated code still fails: write `(cons 'a 'b)`. Runtime files are parsed from text, so neither applies there.
 - Defining a name the prelude already has (`take`, `log`) fails once it is `set!` ("cannot mutate module-required identifier"). Check new runtime names against the prelude; `crates/imp-server/examples/` is the place for scratch tools. `trim` and `char-digit?` are prelude names.
 
 ## Order

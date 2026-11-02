@@ -142,6 +142,32 @@ fn user_functions_stay_redefinable() {
 }
 
 #[test]
+fn functions_with_rest_arguments_can_be_redefined() {
+    let mut s = server("");
+    // The reader makes (rest-of a . rest) a dotted pair, which Steel's eval
+    // can't take as code; the first define is new, the second a set!.
+    s.eval("(define (rest-of a . rest) rest) (define (call-rest) (rest-of 1 2 3))")
+        .unwrap();
+    s.eval("(define (rest-of a . rest) (cons a rest))").unwrap();
+    assert_eq!(s.eval("(call-rest)").unwrap(), "(1 2 3)");
+    // Only a rest argument.
+    s.eval("(define (all-of . xs) xs)").unwrap();
+    s.eval("(define (all-of . xs) (length xs))").unwrap();
+    assert_eq!(s.eval("(all-of 1 2)").unwrap(), "2");
+}
+
+#[test]
+fn reloading_a_file_with_rest_arguments() {
+    let path = temp_path("rest.scm");
+    std::fs::write(&path, "(define (rest-file a . rest) (list a rest))\n").unwrap();
+    let mut s = server("");
+    let load = format!("(imp-load-file {:?})", path.display().to_string());
+    s.eval(&load).unwrap();
+    s.eval(&load).unwrap();
+    assert_eq!(s.eval("(rest-file 1 2)").unwrap(), "(1 (2))");
+}
+
+#[test]
 fn names_defined_later_are_allowed() {
     let mut s = server("");
     // later-fn doesn't exist when this is compiled...
