@@ -122,3 +122,65 @@ fn an_insert_that_accepts_a_completion_is_one_undo_step() {
     type_keys(&mut s, "<C-r>");
     assert_eq!(line(&s), "foobar foobar");
 }
+
+// The modified flag follows the undo tree as in Vim: reaching the state
+// last written, or the text as opened, clears it, and leaving it sets it
+// again. Each sequence was checked against Vim 9.2 (`&modified` after
+// each step).
+
+/// Types each of `steps` in turn, giving after each the first line and
+/// whether the buffer is modified.
+fn modified_after(s: &mut imp_server::Server, steps: &[&str]) -> Vec<String> {
+    steps
+        .iter()
+        .map(|keys| {
+            type_keys(s, keys);
+            let modified = s.eval("(buffer-modified?)").unwrap() == "#true";
+            format!("{} {}", line(s), if modified { "mod" } else { "nomod" })
+        })
+        .collect()
+}
+
+#[test]
+fn undo_back_to_the_saved_text_clears_modified() {
+    let path = temp_path("undo-saved.txt");
+    std::fs::write(&path, "x\n").unwrap();
+    let mut s = server("");
+    type_keys(&mut s, &format!(":e {}<ret>", path.display()));
+    let seen = modified_after(
+        &mut s,
+        &[
+            "A1<esc>", "u", "<C-r>", ":w<ret>", "A2<esc>", "u", "u", "<C-r>", "<C-r>",
+        ],
+    );
+    assert_eq!(
+        seen,
+        [
+            "x1 mod", "x nomod", "x1 mod", "x1 nomod", "x12 mod", "x1 nomod", "x mod", "x1 nomod",
+            "x12 mod",
+        ]
+    );
+}
+
+#[test]
+fn saving_in_the_middle_of_the_history_moves_the_saved_state() {
+    let path = temp_path("undo-middle.txt");
+    std::fs::write(&path, "x\n").unwrap();
+    let mut s = server("");
+    type_keys(
+        &mut s,
+        &format!(":e {}<ret>A1<esc>A2<esc>uu:w<ret>", path.display()),
+    );
+    let seen = modified_after(&mut s, &["<C-r>", "u", "A3<esc>", "u", "g+", "g-"]);
+    assert_eq!(
+        seen,
+        ["x1 mod", "x nomod", "x3 mod", "x nomod", "x1 mod", "x nomod"]
+    );
+}
+
+#[test]
+fn editing_back_to_the_saved_text_by_hand_stays_modified() {
+    let mut s = server("x\n");
+    let seen = modified_after(&mut s, &["A1<esc>", "x"]);
+    assert_eq!(seen, ["x1 mod", "x mod"]);
+}

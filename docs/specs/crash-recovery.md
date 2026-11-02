@@ -75,7 +75,7 @@ A panic in the editor, a `kill -9`, an out-of-memory kill or a power cut all end
 A copy goes as soon as the changes it protects are no longer at risk:
 
 - after the buffer is saved (`:w`, `:wa`, `SPC f s`);
-- when the buffer becomes unmodified another way: `:e!`, a reload after an outside change, or undoing back to the saved text (at the next autosave check);
+- when the buffer becomes unmodified another way: `:e!`, a reload after an outside change, or undo or redo reaching the saved text (at the next autosave check);
 - when the buffer is killed (`:bd!`, a buffer killed with its changes thrown away), and for an unnamed buffer when it is killed or emptied;
 - when `:qa!`, or `:q!` on the last window of a standalone imp, ends imp: they throw changes away on purpose, as Vim deletes its swap files then (a daemon client's `:q!` only detaches it, below);
 - when a renamed buffer's file moves (`rename-file`), the old copy is deleted and the next copy is written under the new name.

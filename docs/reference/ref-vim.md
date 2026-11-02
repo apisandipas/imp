@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/vim]]"
 frozen:
-  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/vim.md: c6050f5ee416
 ---
 # Vim
 
@@ -94,6 +94,8 @@ Undo is a tree, as in Vim. If you undo and then make a change, the old changes a
 | `g-` / `g+` | Step back or forward through every state in the order you made them, across branches |
 
 All of them take a count. `:undolist` lists the end of each branch: its change number, how many changes deep it is, and how long ago you made it.
+
+Undoing (or redoing) back to the text you last saved clears the buffer's modified mark, so `:q` works without `!`; moving away from it sets the mark again. Typing the same text back by hand still counts as a change.
 
 ## Searching
 

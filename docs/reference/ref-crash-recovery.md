@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: ca211deeded4
+  docs/specs/crash-recovery.md: 63a83bfb0e32
 ---
 # Crash recovery
 
@@ -56,7 +56,7 @@ If another imp is running with the same file open, imp tells you once and opens 
 A copy is deleted once your changes are safe or you've thrown them away:
 
 - when you save the buffer;
-- when the buffer goes back to the saved text, with `:e!`, a reload, or undo;
+- when the buffer goes back to the saved text, with `:e!`, a reload, or undo or redo;
 - when you kill the buffer, or quit with `:qa!`.
 
 Quitting any other way keeps the copies of buffers you haven't saved, and imp offers them the next time you open those files. Detaching from the daemon with `:q`, or with `:qa!`, keeps everything as it is: the daemon still has your buffers. `:kill-server` doesn't ask about unsaved changes, but their copies are kept, so you can recover them.

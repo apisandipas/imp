@@ -396,11 +396,12 @@ fn a_copy_goes_when_its_changes_are_safe() {
     assert_eq!(copies(&state).len(), 1);
     type_keys(&mut s, ":w<ret>");
     assert!(copies(&state).is_empty());
-    // Undone back to the saved text, when the next copy would be made.
+    // Undone back to the saved text, which clears the modified flag.
     type_keys(&mut s, "x");
     s.eval("(autosave-all!)").unwrap();
+    assert_eq!(copies(&state).len(), 1);
     type_keys(&mut s, "u");
-    s.eval("(autosave-all!)").unwrap();
+    s.eval("(autosave-check!)").unwrap();
     assert!(copies(&state).is_empty());
     // Thrown away with :e!.
     type_keys(&mut s, "x");
