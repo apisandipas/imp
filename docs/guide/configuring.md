@@ -4,7 +4,7 @@ specs: ["[[spec/live-scheme-and-help]]", "[[spec/leader-and-modes]]", "[[spec/vi
 frozen:
   docs/specs/live-scheme-and-help.md: ccb5a072e58a
   docs/specs/leader-and-modes.md: 039e08ed9d0b
-  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/vim.md: c6050f5ee416
   docs/specs/commands.md: 31bb6b804788
   docs/specs/look.md: 966eea438d82
   docs/specs/start-screen.md: 3a63b6f3dc40

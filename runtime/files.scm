@@ -161,12 +161,6 @@
         (cond
           [(> (autosave-byte-length name) 255)
            (autosave-say-once! (string-append (buffer-name) "'s path is too long to autosave"))]
-          ;; Undone back to the file's text: still modified as imp counts
-          ;; it, but nothing is at risk.
-          [(and (buffer-path)
-                (equal? (buffer-substring 0 (buffer-length))
-                        (with-handler (lambda (e) #f) (read-file (buffer-path)))))
-           (autosave-forget! (current-buffer))]
           [else
            (let ([r (error-text (lambda () (write-private-file! path (buffer-substring 0 (buffer-length)))))])
              (if r
@@ -365,8 +359,9 @@
              (set-buffer-local! 'autosave-version #f)))
 (add-hook! 'buffer-open autosave-offer!)
 ;; A copy goes once the changes it protects are no longer at risk. Going
-;; back to the saved text (:e!, a reload, undo) or emptying an unnamed
-;; buffer is caught by the next autosave-check!.
+;; back to the saved text (:e!, a reload, undo or redo reaching it, which
+;; clear the modified flag) or emptying an unnamed buffer is caught by the
+;; next autosave-check!.
 (add-hook! 'buffer-kill (lambda (id) (autosave-forget! id)))
 ;; :qa! and :q! throw changes away on purpose, as Vim deletes its swap
 ;; files then; vim.scm runs this only when they end imp, not when they

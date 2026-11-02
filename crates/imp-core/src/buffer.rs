@@ -29,6 +29,15 @@ pub struct Buffer {
     /// Whether the text changed since the last undo point, so a boundary
     /// knows whether to record one without comparing ropes.
     dirty: bool,
+    /// The undo state whose text was last written (or read), so undo and
+    /// redo reaching it clear `modified` and leaving it sets it, as in
+    /// Vim. `None` when no state holds that text.
+    saved: Option<usize>,
+    /// The version the text was at when last written or read. A save
+    /// made with changes since the last undo point leaves no state
+    /// holding the saved text yet; the next undo point takes `saved` if
+    /// nothing changed in between.
+    saved_version: Option<u64>,
     /// Named positions that move with the text around them. Vim's marks,
     /// the jump list and anything else Scheme wants kept in place.
     marks: HashMap<String, usize>,
@@ -111,6 +120,9 @@ impl Buffer {
     pub fn from_text(text: &str) -> Self {
         Self {
             text: Rope::from_str(text),
+            // The first undo point holds the starting text, which counts
+            // as saved: undoing back to it clears `modified`, as in Vim.
+            saved_version: Some(0),
             ..Self::default()
         }
     }
@@ -124,6 +136,7 @@ impl Buffer {
             path: Some(path.to_path_buf()),
             format,
             disk: fileio::stamp(path),
+            saved_version: Some(0),
             ..Self::default()
         })
     }
@@ -136,7 +149,7 @@ impl Buffer {
             .ok_or_else(|| io::Error::other("buffer has no file name"))?;
         let bytes = fileio::encode(&self.text.to_string(), self.format)?;
         fileio::write_atomic(&path, &bytes, self.backup)?;
-        self.modified = false;
+        self.mark_saved();
         self.disk = fileio::stamp(&path);
         Ok(())
     }
@@ -154,8 +167,11 @@ impl Buffer {
     pub fn set_format(&mut self, format: FileFormat) {
         if format != self.format {
             self.format = format;
-            // Saving would now write different bytes.
+            // Saving would now write different bytes, whatever undo does
+            // to the text.
             self.modified = true;
+            self.saved = None;
+            self.saved_version = None;
         }
     }
 
@@ -211,7 +227,7 @@ impl Buffer {
         self.version += 1;
         self.record_reset();
         self.dirty = true;
-        self.modified = false;
+        self.mark_saved();
         Ok(())
     }
 
@@ -221,7 +237,16 @@ impl Buffer {
 
     /// Marks the text as matching what is on disk, as after a save.
     pub fn set_unmodified(&mut self) {
+        self.mark_saved();
+    }
+
+    /// Records the text as it is now as the saved text: unmodified, and
+    /// the state undo and redo clear `modified` at. Changes since the last
+    /// undo point aren't a state yet; `undo_boundary` makes them one.
+    fn mark_saved(&mut self) {
         self.modified = false;
+        self.saved_version = Some(self.version);
+        self.saved = (!self.dirty && !self.states.is_empty()).then_some(self.state);
     }
 
     pub fn version(&self) -> u64 {
@@ -535,6 +560,9 @@ impl Buffer {
             if let Some(p) = parent {
                 self.states[p].last_child = Some(id);
             }
+            if self.saved_version == Some(self.version) {
+                self.saved = Some(id);
+            }
             self.state = id;
             self.dirty = false;
         }
@@ -615,7 +643,7 @@ impl Buffer {
         self.state = id;
         self.version += 1;
         self.record_reset();
-        self.modified = true;
+        self.modified = self.saved != Some(id);
         self.dirty = false;
         at
     }
@@ -867,6 +895,38 @@ mod tests {
         assert_eq!(b.text(), "llo");
         assert_eq!(b.undo(), Some(0));
         assert_eq!(b.undo(), None);
+    }
+
+    #[test]
+    fn modified_follows_the_saved_state() {
+        let mut b = Buffer::from_text("a");
+        change(&mut b, "b");
+        // Marked saved with the change not yet an undo point: the next
+        // one (here, the one undo makes) becomes the saved state.
+        b.set_unmodified();
+        b.undo();
+        assert!(b.is_modified());
+        b.redo();
+        assert!(!b.is_modified());
+        // A change made after the save but before the undo point isn't
+        // the saved text.
+        change(&mut b, "c");
+        b.set_unmodified();
+        b.insert(b.len(), "d");
+        b.undo();
+        assert_eq!(b.text(), "ab");
+        b.redo();
+        assert_eq!(b.text(), "abcd");
+        assert!(b.is_modified());
+        // A new line ending makes every state differ from the file.
+        b.set_unmodified();
+        b.set_format(FileFormat {
+            crlf: true,
+            ..FileFormat::default()
+        });
+        b.undo();
+        b.redo();
+        assert!(b.is_modified());
     }
 
     #[test]
