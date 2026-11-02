@@ -140,6 +140,8 @@
 
 ;;; The status line
 
+;; Put the file's icon before its name and the git branch on the right of
+;; the status line. Read when the package loads.
 (define-option! 'nerd-icons-statusline #t '())
 
 (define (nerd-statusline format)

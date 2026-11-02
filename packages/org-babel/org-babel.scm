@@ -25,6 +25,7 @@
 ;;;
 ;;; org-babel-confirm (on by default, as in Org) asks before each run.
 
+;; Ask before running a source block, as Org does.
 (define-option! 'org-babel-confirm #t '())
 ;; (language command): the shell command that runs code given on stdin.
 (define-option! 'org-babel-interpreters

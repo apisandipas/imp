@@ -60,6 +60,43 @@ pub fn from_line<'a, T: Deserialize<'a>>(line: &'a str) -> Result<T, String> {
     serde_json::from_str(line).map_err(|e| e.to_string())
 }
 
+/// The longest line a client may send the daemon: room for a big paste,
+/// but a peer that never sends a line break can't grow the reader's
+/// buffer without bound.
+pub const MAX_CLIENT_LINE: usize = 16 << 20;
+
+/// The longest line a client takes from the server: a whole frame at the
+/// largest size the daemon draws (`MAX_SIZE`).
+pub const MAX_SERVER_LINE: usize = 256 << 20;
+
+/// The most columns or rows the daemon draws a frame at, whatever size a
+/// client says it is.
+pub const MAX_SIZE: u16 = 4096;
+
+/// The lines of `reader` without their line breaks, as `BufRead::lines`
+/// up to its first error gives them, but ending, as at a disconnect, at a
+/// line longer than `max` bytes or one that isn't UTF-8.
+pub fn read_lines(reader: impl std::io::Read, max: usize) -> impl Iterator<Item = String> {
+    use std::io::{BufRead, Read};
+    let mut reader = std::io::BufReader::new(reader);
+    std::iter::from_fn(move || {
+        let mut line = Vec::new();
+        let n = (&mut reader)
+            .take(max as u64 + 1)
+            .read_until(b'\n', &mut line)
+            .ok()?;
+        if line.last() == Some(&b'\n') {
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+        } else if n == 0 || n > max {
+            return None;
+        }
+        String::from_utf8(line).ok()
+    })
+}
+
 /// Server -> client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ServerMsg {
@@ -370,6 +407,20 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_lines_stops_at_a_line_too_long() {
+        let lines: Vec<String> = read_lines(&b"one\r\ntwo\n"[..], 8).collect();
+        assert_eq!(lines, ["one", "two"]);
+        // The last line needs no break.
+        let lines: Vec<String> = read_lines(&b"one\nlast"[..], 8).collect();
+        assert_eq!(lines, ["one", "last"]);
+        // Eight bytes and a break fit; nine end the reading there.
+        let lines: Vec<String> = read_lines(&b"12345678\n123456789\nmore\n"[..], 8).collect();
+        assert_eq!(lines, ["12345678"]);
+        let lines: Vec<String> = read_lines(&b"ok\n\xff\nmore\n"[..], 8).collect();
+        assert_eq!(lines, ["ok"]);
+    }
 
     #[test]
     fn messages_round_trip_as_lines() {

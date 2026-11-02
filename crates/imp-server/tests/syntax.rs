@@ -45,6 +45,23 @@ fn a_more_specific_capture_of_the_same_text_wins() {
 }
 
 #[test]
+fn a_control_char_in_highlighted_code_keeps_the_special_char_face() {
+    // Syntax colors the string, but its BEL is still drawn apart.
+    let mut s = server("");
+    s.eval(r#"(set-face! "special-char" "fg=#0000ff")"#)
+        .unwrap();
+    open(&mut s, "bel.rs", "fn f() { \"a\x07b\"; }\n");
+    let row = &s.frame().rows[0];
+    let caret = row
+        .iter()
+        .find(|sp| sp.text == "^G")
+        .expect("^G is its own span");
+    assert_eq!(caret.style.fg, Some(Color::Rgb(0, 0, 0xff)));
+    let string = row.iter().find(|sp| sp.text.contains("\"a")).unwrap();
+    assert_eq!(string.style.fg, Some(Color::Rgb(0x98, 0xc3, 0x79)));
+}
+
+#[test]
 fn a_narrower_capture_wins_over_the_one_around_it() {
     // The Rust query lists strings before escapes; the escape inside a
     // string still wins.

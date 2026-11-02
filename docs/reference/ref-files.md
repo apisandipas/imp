@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/files]]"
 frozen:
-  docs/specs/files.md: b08542837535
+  docs/specs/files.md: a9c0029e83b6
 ---
 # Files
 
@@ -10,7 +10,7 @@ imp saves your files safely, keeps their line endings and encoding, and notices 
 
 ## Saving
 
-`:w` saves the buffer. imp writes the new text to a temporary file beside yours, then puts it in place. A crash never leaves half a file, and the file keeps its permissions.
+`:w` saves the buffer. imp writes the new text to a temporary file beside yours, then puts it in place. A crash never leaves half a file, and the file keeps its permissions and, when you are allowed to keep it, its owner. The temporary file is never readable by anyone who can't read yours, and in a directory others can write to, a symlink someone plants beside your file can't redirect the save or the backup.
 
 Turn on `backup` to keep the previous version of a file as `FILE~` each time you save:
 
@@ -24,6 +24,8 @@ imp keeps a file the way it found it. A file with Windows (CRLF) line endings is
 
 A file that isn't valid UTF-8 opens as Latin-1 and is saved as Latin-1. To change a file's line endings, set `fileformat` and save: `:set ff=unix` or `:set ff=dos`.
 
+As in Vim, only a newline ends a line (or CRLF, in a Windows file). A carriage return anywhere else stays in its line, shown as `^M`, and is saved as it was. Form feeds and Unicode line separators stay inside their lines too.
+
 ## When a file changes on disk
 
 imp checks your files every few seconds, and when you switch to a buffer. If another program changed a file and you haven't touched its buffer, the buffer reloads. Turn off `autoread` to stop that.
@@ -32,7 +34,7 @@ If you have changed the buffer too, imp warns you instead. `:w` then refuses to 
 
 ## Autosave and recovery
 
-Every `autosave-interval` seconds, imp copies each buffer with unsaved changes into its state directory. If imp or your machine crashes, open the file again. When the autosaved copy is newer, imp says so; `:recover` puts it in the buffer, and `:w` keeps it.
+A few seconds after you stop typing, imp copies each buffer with unsaved changes into its state directory, where only you can read it. If imp or your machine crashes, open the file again and imp offers the copy back. [Crash recovery](ref-crash-recovery.md) has the details.
 
 ## Deleting, renaming and copying files
 
@@ -58,5 +60,6 @@ Copying leaves the buffer on the original file. Binary files copy whole, and the
 |---|---|---|
 | `autoread` | `#t` | Reload a file changed on disk when its buffer has no changes |
 | `backup` | `#f` | Keep the previous version as `FILE~` on each save |
-| `autosave-interval` | `30` | Seconds between autosaves |
+| `autosave-idle` | `4` | Seconds without typing before changed buffers are copied |
+| `autosave-interval` | `30` | Most seconds a change waits to be copied while you keep typing; `0` turns copies off |
 | `state-directory` | `""` | Where autosaves and recent files go; empty means `$XDG_STATE_HOME/imp` |

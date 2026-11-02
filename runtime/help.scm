@@ -44,8 +44,8 @@
           (if line (list (car names) line) (loop (cdr names)))))))
 
 (define (defines-name? line name)
-  "Does `line` define `name` with define, define-command!, define-option!
-   or define-syntax?"
+  "Does `line` define `name` with define, define-command!, define-syntax
+   or one of the define-...-option! forms?"
   (equal? (defined-name line) name))
 
 (define (find-definition-site name)
@@ -92,7 +92,7 @@
           [(equal? c #\;) (skip-blank lines (cons (+ (car pos) 1) 0))]
           [else pos])))
 
-(define (delimiter? c)
+(define (source-delimiter? c)
   "Whether `c` ends a symbol: whitespace, a bracket, a quote, a ; or
    the end of the source (#f)."
   (or (not c) (char-whitespace? c) (memv c '(#\( #\) #\[ #\] #\" #\;))))
@@ -126,16 +126,16 @@
       [(and (equal? c #\#) (equal? (source-char lines (source-next lines pos)) #\\))
        ;; A character: #\( is one, so step over the char before the name.
        (let loop ([pos (source-next lines (source-next lines (source-next lines pos)))])
-         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))]
+         (if (source-delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))]
       [else
        (let loop ([pos pos])
-         (if (delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))])))
+         (if (source-delimiter? (source-char lines pos)) pos (loop (source-next lines pos))))])))
 
 (define (token-at lines pos)
   "The symbol at `pos`, or \"\"."
   (let loop ([p pos] [acc '()])
     (let ([c (source-char lines p)])
-      (if (delimiter? c) (list->string (reverse acc)) (loop (source-next lines p) (cons c acc))))))
+      (if (source-delimiter? c) (list->string (reverse acc)) (loop (source-next lines p) (cons c acc))))))
 
 (define (body-docstring lines pos)
   "The docstring at `pos`, the start of a body, or #f: a string literal
@@ -274,7 +274,7 @@
        (show-popup! (cons (string-append name " is a command, defined without a source line.")
                           (let ([doc (hash-try-get *command-docs* name)]) (if doc (list "" doc) '()))))]
       [(bound? (string->symbol name))
-       (show-popup! (list (string-append name " is built into Steel or Rust; see crates/imp-server/src/api.rs.")))]
+       (show-popup! (list (string-append name " is built into Steel or Rust; see crates/imp-server/src/api/.")))]
       [else (message (string-append "no definition of " name))])))
 
 (define (describe-option name)
@@ -296,7 +296,8 @@
 
 (define (defined-name line)
   "The name a line defines, if it starts a definition."
-  (let loop ([prefixes '("(define (" "(define-command! '" "(define-option! '" "(define-syntax " "(define ")])
+  (let loop ([prefixes '("(define (" "(define-command! '" "(define-option! '" "(define-computed-option! '"
+                         "(define-appearance-option! '" "(define-syntax " "(define ")])
     (cond
       [(null? prefixes) #f]
       [(starts-with? line (car prefixes))

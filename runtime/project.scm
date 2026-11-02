@@ -13,7 +13,11 @@
 ;;;
 ;;; Search uses grepprg; empty means rg if it's installed, else grep -rnI.
 
+;; Files or directories whose presence makes a directory a project root,
+;; tried in order.
 (define-option! 'project-markers '(".git" ".hg" ".jj" ".project") '())
+;; The command :grep and project search run, with the pattern added;
+;; empty uses rg, or grep -rnI without it.
 (define-option! 'grepprg "" '())
 
 (define (project-root-of dir)

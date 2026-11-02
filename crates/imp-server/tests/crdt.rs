@@ -10,8 +10,12 @@ use common::*;
 fn without_the_feature_it_says_so() {
     let mut s = server("text\n");
     assert_eq!(s.eval("(crdt-available?)").unwrap(), "#false");
-    let err = s.eval("(crdt-share! (current-buffer))").unwrap_err();
-    assert!(err.contains("without the crdt feature"), "{err}");
+    // The error raises with its message as written, unquoted.
+    assert_eq!(
+        s.eval("(error-text (lambda () (crdt-share! (current-buffer))))")
+            .unwrap(),
+        "\"imp was built without the crdt feature\""
+    );
     feed(&mut s, ":share<ret>");
     assert!(status_row_or_message(&mut s).contains("without the crdt feature"));
 }
@@ -122,8 +126,14 @@ mod shared {
     #[test]
     fn bad_input_is_an_error() {
         let mut s = server("x\n");
-        let err = s.eval("(crdt-sync! (current-buffer))").unwrap_err();
-        assert!(err.contains("isn't shared"), "{err}");
+        assert_eq!(
+            s.eval("(error-text (lambda () (crdt-sync! (current-buffer))))")
+                .unwrap(),
+            format!(
+                "\"buffer {} isn't shared\"",
+                s.eval("(current-buffer)").unwrap()
+            )
+        );
         s.eval("(crdt-share! (current-buffer))").unwrap();
         let err = s
             .eval("(crdt-apply! (current-buffer) \"not base64!\")")

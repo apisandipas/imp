@@ -44,7 +44,7 @@ Press `?` in the tree to see its keys in a popup at the bottom of the screen. Pr
 
 ## Icons
 
-With the [nerd-icons](ref-packages.md) package loaded, each entry has an icon before its name: the file's type, or a folder, open or shut. Your font needs Nerd Font icons.
+With the [nerd-icons](ref-nerd-icons.md) package loaded, each entry has an icon before its name: the file's type, or a folder, open or shut. Your font needs Nerd Font icons.
 
 ## Git status
 

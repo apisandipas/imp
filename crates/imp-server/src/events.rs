@@ -6,7 +6,7 @@
 //! server's channel; the server hands each to Scheme on its own thread.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -15,7 +15,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use imp_core::{ClientMsg, ServerMsg};
+use imp_core::{protocol, ClientMsg, ServerMsg};
 
 /// Everything the server's loop reacts to.
 #[derive(Debug)]
@@ -62,6 +62,10 @@ pub struct Background {
 
 /// Connection ids, unique across listeners (accept threads hand them out).
 static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
+/// The longest line a socket connection (`:share`, `:join`, MCP) may send;
+/// a longer one closes it. Room for a whole buffer's state in one message.
+const MAX_SOCKET_LINE: usize = 64 << 20;
 
 impl Background {
     fn id(&mut self) -> u64 {
@@ -206,7 +210,7 @@ impl Background {
                 }
                 let sender = sender.clone();
                 std::thread::spawn(move || {
-                    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                    for line in protocol::read_lines(stream, MAX_SOCKET_LINE) {
                         if sender.send(Event::SocketLine(conn, line)).is_err() {
                             return;
                         }
@@ -238,7 +242,7 @@ impl Background {
         let conn = NEXT_CONNECTION.fetch_add(1, Ordering::SeqCst);
         self.connections.insert(conn, stream);
         std::thread::spawn(move || {
-            for line in BufReader::new(read_half).lines().map_while(Result::ok) {
+            for line in protocol::read_lines(read_half, MAX_SOCKET_LINE) {
                 if sender.send(Event::SocketLine(conn, line)).is_err() {
                     return;
                 }

@@ -11,12 +11,21 @@
 ;;; after showkeys-timeout seconds without a key. Keys a paste or a macro
 ;;; replays don't come through imp-handle-key, so only keys pressed show.
 
+;; How many keys the box shows.
 (define-option! 'showkeys-max 3 '())
-(define-option! 'showkeys-timeout 3 '())  ; seconds
+;; Seconds with no key before the box hides.
+(define-option! 'showkeys-timeout 3 '())
+;; Where the box goes: bottom-right, bottom-left, bottom-center,
+;; top-right, top-left or top-center.
 (define-option! 'showkeys-position 'bottom-right '())
-(define-option! 'showkeys-count #f '())  ; a repeated key once, as "j ×4"
-(define-option! 'showkeys-excluded-states '() '())  ; e.g. '(insert)
-(define-option! 'showkeys-format '() '())  ; (key text) lists, as '(("<esc>" "⎋"))
+;; Show a key pressed again right after itself once, with a count, as
+;; "j ×4".
+(define-option! 'showkeys-count #f '())
+;; States whose keys aren't shown: '(insert) hides what is typed.
+(define-option! 'showkeys-excluded-states '() '())
+;; How keys are shown, as (key text) lists that replace imp's names for
+;; them: '(("<esc>" "⎋")).
+(define-option! 'showkeys-format '() '())
 
 ;; Whether it's on; the keys shown, newest first, each (name count); and
 ;; the timer that hides them.

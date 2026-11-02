@@ -78,6 +78,37 @@ fn sized(text: &str, width: u16, height: u16) -> Server {
 }
 
 #[test]
+fn line_prefixes_indent_a_run_of_lines_on_every_row() {
+    let mut s = sized("top\nabcdefghijklmnop\nnext\nback\n", 12, 8);
+    // Lines 1 and 2 two cells in, line 3 on back at the edge.
+    s.eval("(set-line-prefixes! '((1 2) (3 0)))").unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(
+        rows[..5],
+        ["top", "  abcdefghij", "  klmnop", "  next", "back"],
+        "{rows:?}"
+    );
+    // The cursor sits on its char, past the indent.
+    s.keys(&["j", "l"]);
+    assert_eq!(s.frame().cursor, (3, 1));
+    // They move with their lines: a line added above, one deleted below.
+    s.keys(&["g", "g", "O", "x", "<esc>", "G", "k", "d", "d"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(
+        rows[..5],
+        ["x", "top", "  abcdefghij", "  klmnop", "back"],
+        "{rows:?}"
+    );
+    assert_eq!(s.eval("(line-prefix-width 2)").unwrap(), "2");
+    s.keys(&["u", "g", "g", "d", "d"]);
+    // The empty list removes them; the text is as it was.
+    s.eval("(set-line-prefixes! '())").unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[1..4], ["abcdefghijkl", "mnop", "next"], "{rows:?}");
+    assert!(s.text().starts_with("top\nabcdefghijklmnop\n"));
+}
+
+#[test]
 fn line_numbers() {
     let mut s = sized("a\nb\nc\n", 20, 5);
     s.eval("(set-option! 'number #t)").unwrap();
@@ -188,6 +219,91 @@ fn wide_chars_take_two_cells() {
     assert_eq!(s.frame().cursor, (6, 0));
 }
 
+/// Whether any span of `s`'s frame would send a control char.
+fn sends_control_chars(s: &mut Server) -> bool {
+    s.frame()
+        .rows
+        .iter()
+        .flatten()
+        .any(|span| span.text.contains(char::is_control))
+}
+
+#[test]
+fn control_chars_show_in_caret_notation() {
+    // ESC, BEL, a C1 char and DEL, drawn as Vim draws them.
+    let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);
+    assert_eq!(s.frame().text_rows()[0], "a^[b^Gc<9b>d^?");
+    assert!(!sends_control_chars(&mut s));
+    // A lone CR too, inside its line (#155).
+    let mut s = sized("a\rb\n", 30, 4);
+    assert_eq!(s.frame().text_rows()[0], "a^Mb");
+    assert!(!sends_control_chars(&mut s));
+}
+
+#[test]
+fn control_chars_are_drawn_in_the_special_char_face() {
+    // As Vim's SpecialKey: the caret notation stands out from text that
+    // really reads ^G; a tab, laid out as blanks, doesn't take it.
+    let mut s = sized("a\x07^G\tb\u{9b}\n", 30, 4);
+    s.eval(r#"(set-face! "special-char" "fg=blue")"#).unwrap();
+    let blue = Style {
+        fg: Some(Color::Indexed(4)),
+        ..Style::default()
+    };
+    let row = &s.frame().rows[0];
+    let face_of = |text: &str| row.iter().find(|sp| sp.text == text).map(|sp| sp.style);
+    assert_eq!(face_of("^G"), Some(blue), "{row:?}");
+    assert_eq!(face_of("<9b>"), Some(blue), "{row:?}");
+    assert!(row
+        .iter()
+        .any(|sp| sp.text.starts_with("^G ") && sp.style == Style::default()));
+    // A highlight goes over it: a search match still shows.
+    s.eval(r#"(set-face! "m" "bg=red") (highlight-add! "search" 1 2 "m")"#)
+        .unwrap();
+    let row = &s.frame().rows[0];
+    let caret = row.iter().find(|sp| sp.text == "^G").unwrap();
+    assert_eq!(
+        (caret.style.fg, caret.style.bg),
+        (Some(Color::Indexed(4)), Some(Color::Indexed(1)))
+    );
+    assert_eq!(s.eval("(faces-at 1)").unwrap(), "(\"special-char\" \"m\")");
+}
+
+#[test]
+fn the_cursor_steps_over_a_control_char_whole() {
+    // As in Vim: one char each, the cursor on the first of its cells.
+    let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);
+    let mut at = Vec::new();
+    for _ in 0..7 {
+        at.push(s.frame().cursor.0);
+        s.keys(&["l"]);
+    }
+    assert_eq!(at, [0, 1, 3, 4, 6, 7, 11]);
+    s.keys(&["$"]);
+    assert_eq!((s.cursor(), s.frame().cursor), (7, (12, 0)));
+}
+
+#[test]
+fn control_chars_wrap_whole() {
+    let mut s = sized("aaa\x1b\n", 4, 5);
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "aaa");
+    assert_eq!(rows[1], "^[");
+}
+
+#[test]
+fn messages_and_the_status_line_send_no_control_chars() {
+    let mut s = sized("x\n", 40, 4);
+    s.eval(r#"(set-status! (string-append "a" (string (integer->char 27)) "]0;pwned" (string (integer->char 7))))"#)
+        .unwrap();
+    s.eval(r#"(set-statusline! (string-append "b" (string (integer->char 155)) "c") "")"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[3], "a^[]0;pwned^G");
+    assert!(rows[2].starts_with("b<9b>c"), "{:?}", rows[2]);
+    assert!(!sends_control_chars(&mut s));
+}
+
 #[test]
 fn wide_chars_wrap_whole() {
     let mut s = sized("aaaa日\n", 5, 5);
@@ -284,4 +400,64 @@ fn end_of_line_text_isnt_drawn_on_a_closed_fold() {
     }
     let rows = s.frame().text_rows();
     assert!(!rows[0].contains("note"), "{rows:?}");
+}
+
+fn press(s: &mut Server, keys: &[&str]) {
+    for key in keys {
+        s.handle(imp_core::ClientMsg::Key(key.to_string()));
+    }
+}
+
+#[test]
+fn masks_draw_a_char_per_cell_and_leave_the_text() {
+    // A tab one cell wide here, and a wide char two.
+    let mut s = sized("k=b\tc界\nx=yz\n", 20, 5);
+    s.eval(r#"(buffer-mask-pattern! "secret" "=\\(.\\+\\)" "*" #f)"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(rows[0], "k=*****", "{rows:?}");
+    assert_eq!(rows[1], "x=**", "{rows:?}");
+    // The cursor is where it would be on the plain line.
+    press(&mut s, &["$"]);
+    assert_eq!(s.frame().cursor, (5, 0));
+    assert_eq!(s.eval("(buffer-substring 0 3)").unwrap(), "\"k=b\"");
+    // A mask follows edits.
+    press(&mut s, &["j", "A", "w", "<esc>"]);
+    assert_eq!(s.frame().text_rows()[1], "x=***");
+    // "" stops it.
+    s.eval(r#"(buffer-mask-pattern! "secret" "" "*" #f)"#)
+        .unwrap();
+    assert_eq!(s.frame().text_rows()[0], "k=b c界");
+}
+
+#[test]
+fn a_revealing_mask_leaves_the_cursor_line_plain() {
+    let mut s = sized("a=one\nb=two\n", 20, 5);
+    s.eval(r##"(buffer-mask-pattern! "secret" "=\\(.\\+\\)" "#" #t)"##)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["a=one", "b=###"], "{rows:?}");
+    press(&mut s, &["j"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["a=###", "b=two"], "{rows:?}");
+}
+
+#[test]
+fn masked_lines_wrap_as_plain_ones() {
+    let mut s = sized("k=abcdefgh\n", 6, 5);
+    s.eval(r#"(set-option! 'wrap #t) (buffer-mask-pattern! "secret" "=\\(.\\+\\)" "*" #f)"#)
+        .unwrap();
+    let rows = s.frame().text_rows();
+    assert_eq!(&rows[..2], ["k=****", "****"], "{rows:?}");
+}
+
+#[test]
+fn a_mask_is_one_cell_wide() {
+    let mut s = server("k=v\n");
+    for mask in ["界", ""] {
+        let err = s
+            .eval(&format!(r#"(buffer-mask-pattern! "m" "=" "{mask}" #f)"#))
+            .unwrap_err();
+        assert!(err.contains("one cell wide"), "{err}");
+    }
 }

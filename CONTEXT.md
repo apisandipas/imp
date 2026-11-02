@@ -7,13 +7,14 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 ## Layout
 
 - `crates/imp-core`: shared types and the client/server protocol.
-- `crates/imp-server`: the editor: state, the event loop, rendering, and the Rust/Scheme boundary (`api.rs`).
+- `crates/imp-server`: the editor: state, the event loop, rendering, and the Rust/Scheme boundary (`src/api/`).
 - `crates/imp`: the `imp` binary (package `imp-editor`) and the terminal client.
 - `crates/imp-gui`: the window client.
 - `runtime/`: the editor itself, in Steel Scheme, loaded at startup.
 - `packages/`: opt-in packages that ship with imp.
-- `docs/`: lore notes: `decisions/`, `specs/`, `efforts/`. `.lore/WORKFLOW.md` is the process.
+- `docs/`: lore notes: `decisions/`, `specs/`, `efforts/`. `.lore/WORKFLOW.md` is the process. The user docs the website builds (`tools/site-docs.py`): `guide/`, written by hand, and `reference/`, a page per spec. `docs/steel.md`: Steel Scheme's gotchas.
 - `tools/`: checks and scripts for driving the real binary.
+- `vendor/`: patched copies of dependencies (steel-parser), not imp's code.
 - `examples/`: a starter `init.scm`, a `config.kdl`, a WASM plugin.
 
 ## Working on it
@@ -21,14 +22,14 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 ```sh
 nix develop            # sets IMP_RUNTIME=$PWD/runtime, so Scheme edits need only a restart
 cargo run -- FILE
-tools/check.sh         # tests, clippy, fmt: gate every commit on it
+tools/check.sh         # tests, clippy, fmt: run before pushing a branch
 ```
 
 Without Nix: install Rust (rustup) and a C compiler, export `IMP_RUNTIME=$PWD/runtime` yourself, and install `rg` for project search. `make` lists every build, install and test target; it uses plain cargo, and runs it inside `nix develop` when Nix is installed. Installs must work for people without Nix: keep the README leading with the binaries and `make install`.
 
 ## Rules
 
-- New editing behavior goes in Scheme. Add a primitive to `crates/imp-server/src/api.rs` only when Scheme can't do it or measures too slow (`cargo run --release -p imp-server --example bench`); keep primitives small and general.
+- New editing behavior goes in Scheme. Add a primitive to `crates/imp-server/src/api/` only when Scheme can't do it or measures too slow (`cargo run --release -p imp-server --example bench`); keep primitives small and general.
 - Match real Vim. Test Vim behavior by feeding keys and asserting text and cursor, compared against Vim or Neovim: Vim users leave the moment their habits break.
 - Every function and command in `runtime/` and `packages/` has an Emacs-style docstring; variables and options get a comment above.
 - What isn't essential to editing is an opt-in package ([[0011-non-essential-features-are-opt-in-packages]]).

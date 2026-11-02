@@ -269,14 +269,18 @@
    (overline-heading-6 unspecified) (overline-heading-7 unspecified)
    (overline-heading-8 unspecified)))
 
-;; As in Emacs: bold keywords, builtins, types, labels and modules; italic
-;; comments and docstrings. Both off.
+;; Bold keywords, builtins, types, labels and modules, as in Emacs. Off.
 (define-option! 'modus-themes-bold-constructs #f '())
+;; Italic comments and docstrings, as in Emacs. Off.
 (define-option! 'modus-themes-italic-constructs #f '())
 ;; Palette overrides, lists of (name value): value is a color or another
 ;; name. The per-theme lists win over the common one.
 (define-option! 'modus-themes-common-palette-overrides '() '())
+;; Palette overrides for Modus Vivendi only, as (name value) lists; they
+;; win over the common ones.
 (define-option! 'modus-vivendi-palette-overrides '() '())
+;; Palette overrides for Modus Operandi only, as (name value) lists; they
+;; win over the common ones.
 (define-option! 'modus-operandi-palette-overrides '() '())
 
 (define (modus-entry name lists)
@@ -325,6 +329,8 @@
    ;; hl-line, fringe, vertical-border, region, isearch, lazy-highlight
    (list "normal" 'fg-main 'bg-main "" #f)
    (list "nontext" 'border #f "" #f)
+   ;; escape-glyph: control chars in caret notation
+   (list "special-char" 'keybind #f "" 'bold)
    (list "line-number" 'fg-line-number-inactive 'bg-line-number-inactive "" #f)
    (list "line-number-current" 'fg-line-number-active 'bg-line-number-active "bold" #f)
    (list "cursorline" #f 'bg-hl-line "" #f)

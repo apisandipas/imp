@@ -23,7 +23,10 @@
 ;;; completion source after file paths, so C-n, C-x C-o and completion as
 ;;; you type (lsp-auto-complete) ask it.
 
+;; Start language servers for the buffers that have one; off, none starts.
 (define-option! 'lsp #t '())
+;; Ask the language server for completions as you type, not only on
+;; request.
 (define-option! 'lsp-auto-complete #t '())
 ;; Milliseconds of quiet before changes are sent (completion-delay is
 ;; complete.scm's, before completing).
@@ -105,12 +108,6 @@
   (let ([s (lsp-state key)])
     (when s (set! *lsp-servers* (hash-insert *lsp-servers* key (hash-insert s field value)))))
   void)
-
-(define (shell-quote text)
-  "`text` in single quotes, safe to put in a shell command."
-  (string-append "'" (apply string-append (map (lambda (c) (if (equal? c #\') "'\\''" (string c)))
-                                               (string->list text)))
-                 "'"))
 
 (define (lsp-dirname path)
   "The directory part of `path`, without a trailing slash (\"/\" at the top)."
@@ -274,13 +271,19 @@
 (define (lsp-output! key text stream)
   "Handles output from server `key`'s job on `stream`.
    stdout carries LSP messages, dispatched as each completes; anything
-   else (stderr) goes to the lsp-log."
+   else (stderr) goes to the lsp-log. A message that isn't JSON is shown
+   and logged, and the rest go on."
   (if (not (equal? stream "stdout"))
       (lsp-log! text)
       ;; Rust collects the output into messages (lsp-read-messages).
       (for-each (lambda (msg)
-                  (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
-                                (lsp-dispatch! key msg)))
+                  (let ([bad (hash-try-get msg "imp-error")])
+                    (if bad
+                        (begin
+                          (lsp-log! (string-append key " sent a bad message (" bad "): " (hash-ref msg "body")))
+                          (message (string-append "lsp: " key " sent a bad message (" bad ")")))
+                        (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
+                                      (lsp-dispatch! key msg)))))
                 (lsp-read-messages (lsp-stream key) text))))
 
 (define (lsp-dispatch! key msg)
@@ -940,7 +943,7 @@
   "Applies TextEdits to the file at `uri`, opening it if needed."
   (let* ([path (uri->path uri)]
          [id (and path (or (buffer-for-path path)
-                           (let ([r (buffer-open! path)]) (if (string? r) (begin (message r) #f) r))))])
+                           (with-handler (lambda (e) (message (error-message e)) #f) (buffer-open! path))))])
     (when id
       (with-buffer id
         (lambda ()

@@ -40,9 +40,11 @@
 (define *jumps* '())           ; mark names of jump list entries, oldest first
 (define *jump-index* 0)        ; where C-o and C-i are in *jumps*
 (define *jump-counter* 0)      ; for naming jump marks
-(define *undo-group* #f)       ; while true, changes join one undo step
+;; While a group of changes runs as one undo step, the buffer its latest
+;; change was in (see with-undo-group); #f otherwise.
+(define *undo-group* #f)
 (define *alternate-buffer* #f) ; for C-^ and :e #
-(define *insert-pending* #f)   ; C-r in insert mode waits for a register
+(define *insert-register-pending* #f) ; C-r in insert mode waits for a register
 (define *cmdline-pending* #f)  ; and on the command line
 (define *last-change* #f)      ; (lambda (count) ...) repeated by `.`
 (define *last-change-count* 1)
@@ -72,7 +74,7 @@
 ;; (lambda (event arg)) told 'edit after each edit, 'close, and 'key with
 ;; each key before the line sees it, returning #t for a key it took.
 (define *cmdline-completer* #f)
-(define *history* (hash))      ; prompt -> entries, newest first
+(define *prompt-history* (hash)) ; prompt -> entries, newest first
 (define *history-index* -1)    ; -1 while editing a fresh line
 (define *history-prefix* "")   ; what <up> and <down> match against
 (define *last-search* #f)      ; the last search pattern
@@ -971,12 +973,15 @@
   (not (member key '("y" "zf"))))
 
 (define (with-undo-group thunk)
-  "Runs `thunk` with all its changes in one undo step."
+  "Runs `thunk` with all its changes in one undo step.
+   Undo is kept per buffer, so changes it makes in another buffer are a
+   step there, and each return to a buffer starts a new step in it, as a
+   Vim macro that switches buffers does."
   (if *undo-group*
       (thunk)
       (begin
         (undo-boundary!)
-        (set! *undo-group* #t)
+        (set! *undo-group* (current-buffer))
         (let ([result (with-handler (lambda (e) (set! *undo-group* #f) (raise-error e)) (thunk))])
           (set! *undo-group* #f)
           result))))
@@ -984,7 +989,9 @@
 (define (begin-change!)
   "Every change starts here: it makes an undo point, and remembers the
    line's text for U when the change is on a new line."
-  (unless *undo-group* (undo-boundary!))
+  (unless (equal? *undo-group* (current-buffer))
+    (undo-boundary!)
+    (when *undo-group* (set! *undo-group* (current-buffer))))
   (mark-set! "." (cursor))
   (unless (equal? *u-line* (current-line))
     (set! *u-line* (current-line))
@@ -1834,8 +1841,9 @@
                     [n (string->number (buffer-substring start end))])
                (list (if neg? (- start 1) start) end (if neg? (- n) n) #f))))))
 
-(define (pad-left text width)
-  "`text` padded on the left with zeros to `width` chars."
+(define (pad-left-zeros text width)
+  "`text` padded on the left with zeros to `width` chars, as C-a and C-x
+   keep a hex number's width."
   (if (< (string-length text) width)
       (string-append (make-string (- width (string-length text)) #\0) text)
       text))
@@ -1856,7 +1864,7 @@
                                               [(memv (car cs) (string->list "ABCDEF")) #t]
                                               [else (loop (cdr cs))]))])
                          (string-append (substring old 0 2)
-                                        (pad-left (if upper? (string-upcase digits) digits)
+                                        (pad-left-zeros (if upper? (string-upcase digits) digits)
                                                   (- (string-length old) 2))))
                        (number->string value))])
         (begin-change!)
@@ -2108,10 +2116,14 @@
            (set! *last-macro* c)
            (if reg
                (let ([keys (string->keys (car reg))])
-                 (let loop ([i 0])
-                   (when (and (< i count) (not *command-failed*))
-                     (play-keys! keys)
-                     (loop (+ i 1))))
+                 ;; The whole replay, count included, is one undo step,
+                 ;; as in Vim: the inserts it replays end without one.
+                 (with-undo-group
+                  (lambda ()
+                    (let loop ([i 0])
+                      (when (and (< i count) (not *command-failed*))
+                        (play-keys! keys)
+                        (loop (+ i 1))))))
                  (set! *command-failed* #f))
                (set-status! (string-append "nothing in register " (string c)))))]))))
 
@@ -2564,7 +2576,10 @@
 ;; indented one shiftwidth more, and <ret> between a pair of brackets puts
 ;; the closing one on its own line. Modes set which brackets count.
 (define-option! 'smartindent #f '(si))
+;; The opening brackets smartindent indents after.
 (define-option! 'indent-open "{[(" '())
+;; The closing brackets smartindent dedents when typed first on a line,
+;; and moves to a line of their own on <ret> between a pair.
 (define-option! 'indent-close "}])" '())
 
 (define (char-before-cursor-on-line)
@@ -2627,6 +2642,8 @@
 ;; (docs/specs/auto-pairs.md). auto-pairs-chars lists each opener and its
 ;; closer, a quote being its own; modes set it locally.
 (define-option! 'auto-pairs #t '())
+;; Each opener followed by its closer, a quote being its own; major modes
+;; set it locally.
 (define-option! 'auto-pairs-chars "()[]{}\"\"''``" '())
 
 (define (pair-partner c)
@@ -2893,14 +2910,14 @@
    the insert for `.` and leaves insert mode."
   (cond
     ;; C-r {register} inserts the register's text.
-    [*insert-pending*
-     (set! *insert-pending* #f)
+    [*insert-register-pending*
+     (set! *insert-register-pending* #f)
      (set! *insert-keys* (cons key *insert-keys*))
      (let* ([c (key-char key)] [reg (and c (valid-register? c) (register-get c))])
        (when reg (insert-text! (car reg))))]
     [(equal? key "C-r")
      (set! *insert-keys* (cons key *insert-keys*))
-     (set! *insert-pending* #t)]
+     (set! *insert-register-pending* #t)]
     [(member key '("<esc>" "C-c" "C-["))
      (let ([keys (reverse *insert-keys*)])
        (set! *last-inserted* (keys->text keys))
@@ -3000,7 +3017,7 @@
 
 (define (history prompt)
   "The history entries for `prompt`, newest first."
-  (or (hash-try-get *history* prompt) '()))
+  (or (hash-try-get *prompt-history* prompt) '()))
 
 (define (add-history! prompt text)
   "Adds `text` to `prompt`'s history as the newest entry.
@@ -3009,8 +3026,8 @@
   (unless (equal? text "")
     (let* ([old (filter (lambda (h) (not (equal? h text))) (history prompt))]
            [new (cons text old)])
-      (set! *history* (hash-insert *history* prompt
-                                   (if (> (length new) 200) (take new 200) new)))))
+      (set! *prompt-history* (hash-insert *prompt-history* prompt
+                                          (if (> (length new) 200) (take new 200) new)))))
   void)
 
 
@@ -3161,10 +3178,11 @@
          [dir (if slash (substring typed 0 (+ slash 1)) "")]
          [prefix (substring typed (string-length dir) (string-length typed))]
          ;; From a terminal, relative to its directory.
-         [listing (directory-entries (if (equal? dir "")
-                                         (or (buffer-local 'term-dir) (current-dir))
-                                         (expand-path (from-terminal-directory dir))))])
-    (if (string? listing)
+         [listing (with-handler (lambda (e) #f)
+                                (directory-entries (if (equal? dir "")
+                                                       (or (buffer-local 'term-dir) (current-dir))
+                                                       (expand-path (from-terminal-directory dir)))))])
+    (if (not listing)
         '()
         (map (lambda (e) (string-append dir (car e) (if (cadr e) "/" "")))
              (filter (lambda (e)
@@ -3563,6 +3581,13 @@
 
 (define *command-text* #f)   ; text after :NAME while NAME runs, or #f
 (define *command-text-read* #f)
+(define *command-bang* #f)   ; whether :NAME! ran the running command
+
+(define (command-bang?)
+  "Whether the running command was run as :NAME!, with ! after its name.
+   False from M-x or a key. A command reads it to be forced, as ! forces
+   an ex command: :kill-server! stops despite unsaved changes."
+  *command-bang*)
 
 (define (command-argument)
   "The text typed after the command's name at the : line (:org-export html
@@ -3584,6 +3609,7 @@
         (begin
           (set! *command-text* (if (equal? text "") #f text))
           (set! *command-text-read* #f)
+          (set! *command-bang* (ex-bang? ex))
           (with-handler (lambda (e) (set-status! (error-message e)))
                         (begin
                           (run-command (string->symbol name)
@@ -3595,13 +3621,9 @@
                                        (cmdline-key! "<ret>"))
                                 (set-status! (string-append name " takes no argument"))))))
           (set! *command-text* #f)
+          (set! *command-bang* #f)
           void)
         (set-status! (string-append name " takes no range")))))
-
-(define (error-message e)
-  "The message of a caught error, without the space Steel puts in front."
-  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
-    (substring m (skip-spaces m 0) (string-length m))))
 
 (define (mark-line c)
   "The line of mark `c`, for ex addresses like 'a."
@@ -3681,8 +3703,10 @@
     [else
      (run-hooks 'before-save)
      (set-backup! (option 'backup))
-     (and (save!)
-          (begin (run-hooks 'after-save) #t))]))
+     (let ([failed (error-text save!)])
+       (if failed
+           (begin (set-status! failed) #f)
+           (begin (run-hooks 'after-save) #t)))]))
 
 (define (write-buffer! ex)
   ":w writes the buffer; :w FILE writes a copy (or names the buffer, if it
@@ -3724,14 +3748,15 @@
 (define (quit-if-saved! ex)
   "Quits unless some buffer has unsaved changes or a running program (or
    ! was given). In a daemon quitting only detaches, so programs keep
-   running and don't count."
+   running and don't count. With ! standalone, the quit-discarding hook
+   runs first: the changes are thrown away on purpose."
   (let ([dirty (modified-buffers)]
         [running (if (daemon?) '() (*running-buffers*))]
         [stop (lambda (id what)
                 (set-status! (string-append what (car (buffer-info id)) " (add ! to override)"))
                 (unless (= id (current-buffer)) (go-to-buffer! id)))])
     (cond
-      [(ex-bang? ex) (quit!)]
+      [(ex-bang? ex) (unless (daemon?) (run-hooks 'quit-discarding)) (quit!)]
       [(pair? dirty) (stop (car dirty) "unsaved changes in ")]
       [(pair? running) (stop (car running) "a program is running in ")]
       [else (quit!)])))
@@ -3899,9 +3924,9 @@
    Returns the buffer id, or #f after saying why on the status line. The
    buffer-open hooks run the first time a buffer is shown."
   (*leave-popup-window!*)
-  (let ([r (buffer-open! (expand-path path))])
-    (if (string? r)
-        (begin (set-status! r) #f)
+  (let ([r (with-handler (lambda (e) (set-status! (error-message e)) #f) (buffer-open! (expand-path path)))])
+    (if (not r)
+        #f
         (begin
           (record-jump!)
           (let ([new? (not (buffer-seen? r))])
@@ -4084,7 +4109,9 @@
 ;;; these are Vim's commands for it. A new split shows the same buffer and
 ;;; is focused; it goes above or to the left unless splitbelow/splitright.
 
+;; A horizontal split puts the new window below, not above.
 (define-option! 'splitbelow #f '(sb))
+;; A vertical split puts the new window on the right, not the left.
 (define-option! 'splitright #f '(spr))
 
 (define (leave-pending-states!)
@@ -4523,7 +4550,7 @@
 (define-ex! '("mes" "messages")
   (lambda (ex) (show-popup! (if (null? *messages*) (list "no messages") (reverse *messages*)))))
 
-(define (delimiter? c)
+(define (form-delimiter? c)
   "Whether `c` ends a symbol: white space, brackets, quotes, ; or ,.
    #f (past the buffer's end) counts too."
   (or (not c) (char-whitespace? c) (memv c (string->list "()[]\"';`,"))))
@@ -4538,9 +4565,9 @@
        (let ([o (find-open (if (equal? c #\)) #\( #\[) c p 1)]) (and o (list o (+ p 1))))]
       [(memv c (list #\( #\[))
        (let ([e (find-close c (if (equal? c #\() #\) #\]) (+ p 1))]) (and e (list p (+ e 1))))]
-      [(not (delimiter? c))
-       (let ([lo (let loop ([q p]) (if (and (> q 0) (not (delimiter? (buffer-char-at (- q 1))))) (loop (- q 1)) q))]
-             [hi (let loop ([q p]) (if (not (delimiter? (buffer-char-at q))) (loop (+ q 1)) q))])
+      [(not (form-delimiter? c))
+       (let ([lo (let loop ([q p]) (if (and (> q 0) (not (form-delimiter? (buffer-char-at (- q 1))))) (loop (- q 1)) q))]
+             [hi (let loop ([q p]) (if (not (form-delimiter? (buffer-char-at q))) (loop (+ q 1)) q))])
          (list lo hi))]
       [else (let ([o (find-open #\( #\) p 1)]) (and o (form-at o)))])))
 
@@ -4618,8 +4645,9 @@
 (define (after-change-range)
   "In an after-change hook, what the key changed as one (start old-end
    new-end): old-end where the changed text ended before, new-end where
-   it ends now, as Emacs's after-change-functions get. #f when that
-   isn't known (an undo, redo or reload) or outside the hook."
+   it ends now, as Emacs's after-change-functions get; an undo or redo
+   spans the first char it changed to the last. #f when that isn't
+   known (a reload) or outside the hook."
   (let ([changes (and *last-version* (equal? (car *last-version*) (current-buffer))
                       (buffer-changes-since (cdr *last-version*)))])
     (and (pair? changes) (merge-changes changes))))

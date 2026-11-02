@@ -9,24 +9,9 @@
 //! eating the editor.
 //!
 //! Without the feature the primitives still exist and say so, so runtime
-//! files load either way.
+//! files load either way. The primitives are in api/wasm.rs.
 
-use steel::steel_vm::engine::Engine;
-use steel::steel_vm::register_fn::RegisterFn;
-
-pub fn register(engine: &mut Engine) {
-    engine.register_fn("wasm-load", |path: String| imp::load(&path));
-    engine.register_fn("wasm-call", |plugin: isize, name: String, input: String| {
-        imp::call(plugin, &name, &input)
-    });
-    engine.register_fn("wasm-exports", |plugin: isize| imp::exports(plugin));
-    engine.register_fn("wasm-log", imp::log_lines);
-    // How much work (roughly, instructions) one call may do.
-    engine.register_fn("wasm-set-fuel!", |fuel: isize| {
-        imp::set_fuel(fuel.max(1) as u64)
-    });
-    engine.register_fn("wasm-available?", || cfg!(feature = "wasm"));
-}
+pub use imp::{call, exports, load, log_lines, set_fuel};
 
 #[cfg(not(feature = "wasm"))]
 mod imp {
@@ -253,10 +238,13 @@ mod imp {
             .map_err(|e| format!("imp_alloc gave a bad pointer: {e}"))?;
         let packed = func.call(&mut *store, (ptr, len)).map_err(trap)? as u64;
         let (out_ptr, out_len) = ((packed >> 32) as usize, (packed & 0xffff_ffff) as usize);
-        let mut out = vec![0; out_len];
-        memory
-            .read(&*store, out_ptr, &mut out)
-            .map_err(|e| format!("{name} returned a bad string: {e}"))?;
-        String::from_utf8(out).map_err(|_| format!("{name} returned invalid UTF-8").into())
+        // Slice the plugin's memory rather than allocate `out_len` first: a
+        // length up to 4 GiB that the plugin doesn't have would otherwise
+        // allocate past its memory limit before the bounds were checked.
+        let out = out_ptr
+            .checked_add(out_len)
+            .and_then(|end| memory.data(&*store).get(out_ptr..end))
+            .ok_or_else(|| format!("{name} returned a bad string: out of bounds"))?;
+        String::from_utf8(out.to_vec()).map_err(|_| format!("{name} returned invalid UTF-8").into())
     }
 }

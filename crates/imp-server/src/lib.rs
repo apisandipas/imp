@@ -110,6 +110,7 @@ const RUNTIME: &[(&str, &str)] = &[
 /// like the runtime; with `IMP_RUNTIME` set they're read from the
 /// `packages` directory beside it instead.
 pub(crate) const PACKAGES: &[(&str, &str)] = &[
+    ("cloak", include_str!("../../../packages/cloak/cloak.scm")),
     (
         "file-tree",
         include_str!("../../../packages/file-tree/file-tree.scm"),
@@ -189,14 +190,10 @@ pub struct Server {
 
 impl Server {
     pub fn new(buffer: Buffer, options: Options) -> Result<Self, String> {
-        let mut ed = Editor {
-            buffer,
-            width: 80,
-            height: 24,
-            tab_width: 8,
-            ..Editor::default()
-        };
-        ed.init_windows();
+        let mut ed = Editor::new(buffer);
+        ed.width = 80;
+        ed.height = 24;
+        ed.tab_width = 8;
         let (sender, events) = mpsc::channel();
         ed.background.sender = Some(sender.clone());
         editor::install(ed);
@@ -365,6 +362,12 @@ impl Server {
     }
 
     pub fn handle(&mut self, msg: ClientMsg) {
+        if matches!(
+            msg,
+            ClientMsg::Key(_) | ClientMsg::Paste(_) | ClientMsg::Mouse { .. }
+        ) {
+            editor::with(|e| e.last_input = Some(std::time::Instant::now()));
+        }
         match msg {
             ClientMsg::Open(paths) => {
                 let list = paths
@@ -503,11 +506,11 @@ impl Server {
     }
 
     pub fn text(&self) -> String {
-        editor::with(|e| e.buffer.text())
+        editor::with(|e| e.buffer().text())
     }
 
     pub fn cursor(&self) -> usize {
-        editor::with(|e| e.cursor)
+        editor::with(|e| e.cursor())
     }
 
     pub fn status(&self) -> String {

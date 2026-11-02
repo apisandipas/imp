@@ -166,6 +166,8 @@ pub fn defined_name(line: &str) -> Option<&str> {
         "(define (",
         "(define-command! '",
         "(define-option! '",
+        "(define-computed-option! '",
+        "(define-appearance-option! '",
         "(define-syntax ",
         "(define ",
     ] {
@@ -284,6 +286,11 @@ mod tests {
     fn names() {
         assert_eq!(defined_name("(define (a b) c)"), Some("a"));
         assert_eq!(defined_name("(define-option! 'wrap #f '())"), Some("wrap"));
+        assert_eq!(defined_name("(define-computed-option! 'ff '()"), Some("ff"));
+        assert_eq!(
+            defined_name("(define-appearance-option! 'font \"\""),
+            Some("font")
+        );
         assert_eq!(defined_name("(define-key! 'normal"), None);
         assert_eq!(defined_name("(define x)"), Some("x"));
     }

@@ -9,55 +9,9 @@
 //!
 //! Updates and states travel as base64, so they fit on one line of a
 //! socket. Without the feature the primitives still exist and say so.
+//! The primitives are in api/crdt.rs.
 
-use steel::steel_vm::engine::Engine;
-use steel::steel_vm::register_fn::RegisterFn;
-
-use crate::editor;
-
-pub fn register(engine: &mut Engine) {
-    // Starts mirroring buffer BUF; its text so far is the first change.
-    engine.register_fn("crdt-share!", |buf: isize| {
-        let buf = buf.max(0) as usize;
-        let text = editor::with(|e| e.buffer_by_id(buf).map(|b| b.text()))
-            .ok_or_else(|| format!("no buffer {buf}"))?;
-        imp::share(buf, &text)
-    });
-    engine.register_fn("crdt-unshare!", |buf: isize| {
-        imp::unshare(buf.max(0) as usize)
-    });
-    engine.register_fn(
-        "crdt-shared?",
-        |buf: isize| imp::shared(buf.max(0) as usize),
-    );
-    // The update since the last sync, or #f if nothing changed.
-    engine.register_fn("crdt-sync!", |buf: isize| {
-        let buf = buf.max(0) as usize;
-        let text = editor::with(|e| e.buffer_by_id(buf).map(|b| b.text()))
-            .ok_or_else(|| format!("no buffer {buf}"))?;
-        imp::sync(buf, &text)
-    });
-    // Applies a remote update to buffer BUF.
-    engine.register_fn("crdt-apply!", |buf: isize, update: String| {
-        let buf = buf.max(0) as usize;
-        let text = editor::with(|e| e.buffer_by_id(buf).map(|b| b.text()))
-            .ok_or_else(|| format!("no buffer {buf}"))?;
-        let edits = imp::apply(buf, &text, &update)?;
-        editor::with(|e| {
-            if let Some((buffer, cursor)) = e.buffer_and_cursor_mut(buf) {
-                apply_edits(buffer, cursor, &edits);
-            }
-        });
-        Ok::<_, String>(())
-    });
-    // What this side has, for a peer to send what it lacks.
-    engine.register_fn("crdt-state", |buf: isize| imp::state(buf.max(0) as usize));
-    // Everything a peer with STATE ("" for nothing) lacks, as an update.
-    engine.register_fn("crdt-diff", |buf: isize, state: String| {
-        imp::diff(buf.max(0) as usize, &state)
-    });
-    engine.register_fn("crdt-available?", || cfg!(feature = "crdt"));
-}
+pub use imp::{apply, diff, share, shared, state, sync, unshare};
 
 /// A change to the mirror's text, in bytes: delete `delete` bytes at
 /// `at`, then insert `insert` there.
@@ -71,7 +25,7 @@ pub struct Edit {
 /// Applies edits in order; each one's offset counts the ones before it.
 /// The cursor moves with text changed before it, and stays put for text
 /// inserted right at it.
-fn apply_edits(buffer: &mut imp_core::Buffer, cursor: &mut usize, edits: &[Edit]) {
+pub fn apply_edits(buffer: &mut imp_core::Buffer, cursor: &mut usize, edits: &[Edit]) {
     if edits.is_empty() {
         return;
     }

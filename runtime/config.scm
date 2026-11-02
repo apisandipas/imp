@@ -92,7 +92,7 @@
   (with-handler
    (lambda (e)
      (set! *config-problems*
-           (cons (string-append "line " (number->string (kdl-line n)) ": " (trim (to-string (error-object-message e))))
+           (cons (string-append "line " (number->string (kdl-line n)) ": " (error-message e))
                  *config-problems*)))
    (thunk)))
 
@@ -102,7 +102,7 @@
   "Loads a KDL config; returns its problems, each \"line N: what\"."
   (set! *config-problems* '())
   (with-handler
-   (lambda (e) (set! *config-problems* (list (trim (to-string (error-object-message e))))))
+   (lambda (e) (set! *config-problems* (list (error-message e))))
    (for-each (lambda (n) (config-guard n (lambda () (config-node! n)))) (kdl-parse text)))
   (reverse *config-problems*))
 

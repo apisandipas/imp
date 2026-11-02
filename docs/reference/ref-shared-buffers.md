@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/shared-buffers]]"
 frozen:
-  docs/specs/shared-buffers.md: edc911376d67
+  docs/specs/shared-buffers.md: 42534f57ec33
 ---
 # Shared buffers
 
@@ -24,3 +24,5 @@ Share a buffer, and other editors can join it and edit it with you. Everyone's c
 The editor that shares the buffer passes changes between everyone who joined. Each side sends its changes after every command, and every 200 ms.
 
 Changes from others arrive as ordinary edits. Marks, your cursor and syntax highlighting follow them. Whatever way you edit, your changes are shared.
+
+A name is shared on a socket in imp's private socket directory. A name with a slash in it is a socket path instead, so `:join /some/path.sock` joins whatever editor answers there. Join only people you trust: whatever they send becomes the buffer's text, unchecked, and anything they change while you're joined changes yours.

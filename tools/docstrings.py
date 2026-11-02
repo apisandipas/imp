@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Docstrings for runtime/*.scm: list what lacks one, and insert them.
 
-  tools/docstrings.py missing [FILE...]       definitions without a docstring
+  tools/docstrings.py missing [FILE...]       definitions without a docstring,
+                                              and options without a comment
   tools/docstrings.py convert [FILE...]       turn the ;; comment above each
                                               function into its docstring
   tools/docstrings.py insert FILE DOCS.json   add docstrings from {name: text}
@@ -9,7 +10,10 @@
 A docstring goes first in the body of (define (name ...) ...) or in the
 lambda of (define-command! 'name (lambda (count) ...)), continuation lines
 lined up under its first character (help.scm strips that indentation).
-Written for imp's runtime, not as a general Scheme reader.
+An option, made with define-option! or another define-...-option! form,
+has no body: its documentation is the ;; comment right above it, which
+describe-option shows. Written for imp's runtime, not as a general
+Scheme reader.
 """
 
 import json
@@ -232,8 +236,24 @@ def convert(text):
     return "\n".join(l for i, l in enumerate(lines) if i not in drop)
 
 
+OPTION = re.compile(r"^\(define-[a-z-]*option! '([^\s()]+)", re.M)
+
+
+def undocumented_options(text):
+    """(line, name) of each option with no ; comment on the line above."""
+    lines = text.split("\n")
+    found = []
+    for m in OPTION.finditer(text):
+        n = text.count("\n", 0, m.start())
+        if n == 0 or not lines[n - 1].startswith(";"):
+            found.append((n + 1, m.group(1)))
+    return found
+
+
 def files(args):
-    return [Path(a) for a in args] or sorted(Path("runtime").glob("*.scm"))
+    return [Path(a) for a in args] or sorted(
+        list(Path("runtime").glob("*.scm")) + list(Path("packages").glob("*/*.scm"))
+    )
 
 
 def main():
@@ -244,6 +264,8 @@ def main():
             for d in definitions(text):
                 if not d.docstring(text):
                     print(f"{f}:{text.count(chr(10), 0, d.start) + 1}: {d.name}")
+            for line, name in undocumented_options(text):
+                print(f"{f}:{line}: option {name}")
     elif cmd == "convert":
         for f in files(args):
             f.write_text(convert(f.read_text()))

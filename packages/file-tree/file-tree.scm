@@ -37,11 +37,19 @@
 ;;; the others and closes through popup handling, while the tree stays put
 ;;; beside them.
 
+;; Columns the tree's window takes, down the left of the frame.
 (define-option! 'file-tree-width 30 '())
-(define-option! 'file-tree-show-hidden #f '())   ; dotfiles
-(define-option! 'file-tree-show-ignored #f '())  ; files git ignores
+;; Whether the tree starts out showing dotfiles; H shows or hides them.
+(define-option! 'file-tree-show-hidden #f '())
+;; Whether the tree starts out showing files git ignores; I shows or hides
+;; them.
+(define-option! 'file-tree-show-ignored #f '())
+;; Open the tree beside the first window when imp starts, the cursor left
+;; in that window.
 (define-option! 'file-tree-open-at-start #f '())
-(define-option! 'file-tree-follow #t '())  ; reveal the current buffer's file
+;; Switching to a buffer whose file is under a root moves the tree's
+;; cursor to it, opening the folders on the way.
+(define-option! 'file-tree-follow #t '())
 
 (define *file-tree-buffer-name* "*file-tree*")
 
@@ -105,10 +113,6 @@
           (loop (+ n 1))
           (buffer-new! name)))))
 
-(define (file-tree-join dir name)
-  "The path of `name` in directory `dir`."
-  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
-
 (define (file-tree-root-for)
   "The root a tree opened now shows: the current buffer's project root,
    else the working directory."
@@ -123,9 +127,9 @@
   "The entries of `dir` the tree shows, as (name directory? ignored?):
    directories first, then files, each alphabetical, without dotfiles
    and ignored files unless the options say to show them."
-  (let ([entries (directory-entries dir)])
-    (if (string? entries)
-        (begin (message entries) '())
+  (let ([entries (with-handler (lambda (e) (message (error-message e)) #f) (directory-entries dir))])
+    (if (not entries)
+        '()
         (let* ([ignored (directory-ignored dir)]
                [shown (filter (lambda (e)
                                 (and (or (option 'file-tree-show-hidden) (not (starts-with? (car e) ".")))
@@ -144,7 +148,7 @@
    in an `ignored` folder is ignored too."
   (apply append
          (map (lambda (e)
-                (let* ([path (file-tree-join dir (car e))]
+                (let* ([path (child-path dir (car e))]
                        [gone (or ignored (caddr e))]
                        [row (list path (cadr e) depth root gone)])
                   (if (and (cadr e) (file-tree-expanded? path))
@@ -268,7 +272,7 @@
                [name (and letter (substring line 3 (string-length line)))]
                ;; A rename reads "old -> new": the new name is the one shown.
                [name (and name (let ([parts (split-many name " -> ")]) (if (> (length parts) 1) (last parts) name)))]
-               [path (and name (file-tree-strip-slash (file-tree-join top (file-tree-unquote name))))])
+               [path (and name (file-tree-strip-slash (child-path top (file-tree-unquote name))))])
           (if (and path (starts-with? path (string-append root "/")))
               (loop (cdr lines)
                     (hash-insert letters path letter)
@@ -508,15 +512,14 @@
 (define (file-tree-add! dir name)
   "Makes `name` in folder `dir`: a folder if it ends in /, else an empty
    file, with any folders it needs on the way."
-  (let* ([path (file-tree-join dir (file-tree-strip-slash name))]
+  (let* ([path (child-path dir (file-tree-strip-slash name))]
          [folder? (ends-with? name "/")]
          [r (cond [(file-exists? path) (string-append (file-tree-relative path) " already exists")]
-                  [folder? (make-directory! path)]
-                  [else (let ([made (make-directory! (directory-of path))])
-                          (if (string? made)
-                              made
-                              (with-handler (lambda (e) (error-message e)) (write-text-file! path "") #t)))])])
-    (if (string? r)
+                  [folder? (error-text (lambda () (make-directory! path)))]
+                  [else (error-text (lambda ()
+                                      (make-directory! (directory-of path))
+                                      (write-text-file! path "")))])])
+    (if r
         (message r)
         (begin (file-tree-go-to! path)
                (message (string-append "added " (file-tree-relative path) (if folder? "/" "")))))))
@@ -552,10 +555,11 @@
 (define (file-tree-rename! from text)
   "Renames or moves `from` to `text`, a path relative to its root,
    making the folders it needs."
-  (let* ([to (file-tree-join (file-tree-root-of from) (file-tree-strip-slash text))]
-         [made (make-directory! (directory-of to))]
-         [r (if (string? made) made (rename-file! from to))])
-    (if (string? r)
+  (let* ([to (child-path (file-tree-root-of from) (file-tree-strip-slash text))]
+         [r (error-text (lambda ()
+                          (make-directory! (directory-of to))
+                          (rename-file! from to)))])
+    (if r
         (message r)
         (begin (file-tree-move-paths! from to)
                (file-tree-go-to! to)
@@ -578,8 +582,8 @@
         (let ([rel (file-tree-relative (car row))])
           (confirm! (string-append "Delete " rel (if (cadr row) "/ and everything in it?" "?"))
                     (lambda ()
-                      (let ([r (delete-path! (car row))])
-                        (if (string? r)
+                      (let ([r (error-text (lambda () (delete-path! (car row))))])
+                        (if r
                             (message r)
                             (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
 

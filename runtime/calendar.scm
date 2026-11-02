@@ -79,10 +79,6 @@
   "Whether `a` is before `b`."
   (< (date->days a) (date->days b)))
 
-(define (two-digits n)
-  "`n` as at least two digits: 7 -> \"07\"."
-  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
-
 (define (date->string date)
   "`date` as YYYY-MM-DD."
   (string-append (number->string (car date)) "-" (two-digits (cadr date)) "-" (two-digits (caddr date))))

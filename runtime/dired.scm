@@ -20,7 +20,10 @@
 ;;; accident; they follow their entry as lines move. ( hides or shows them
 ;;; (the dired-details option).
 
+;; Whether the browser lists dotfiles; g. shows or hides them.
 (define-option! 'dired-show-hidden #f '())
+;; Whether each entry's permissions, size and time show in the margin;
+;; ( shows or hides them.
 (define-option! 'dired-details #t '())
 ;; Going to another directory replaces the browser buffer, as Emacs's
 ;; dired-kill-when-opening-new-dired-buffer.
@@ -39,10 +42,6 @@
   "The directory the current browser buffer lists."
   (buffer-local 'dired-dir))
 
-(define (dired-join dir name)
-  "The path of `name` in directory `dir`."
-  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
-
 (define (dired-strip-slash name)
   "`name` without the trailing slash that marks a directory.
    A lone \"/\" stays as it is."
@@ -54,9 +53,9 @@
 
 (define (dired-listing dir)
   "The entries to show: (name directory?), directories first."
-  (let ([entries (directory-entries dir)])
-    (if (string? entries)
-        (begin (message entries) '())
+  (let ([entries (with-handler (lambda (e) (message (error-message e)) #f) (directory-entries dir))])
+    (if (not entries)
+        '()
         (let ([shown (filter (lambda (e) (or (option 'dired-show-hidden) (not (dired-hidden? (car e))))) entries)])
           (append (filter cadr shown) (filter (lambda (e) (not (cadr e))) shown))))))
 
@@ -92,10 +91,6 @@
     (list (+ yoe (* era 400) (if (<= month 2) 1 0)) month day)))
 
 (define *month-names* (vector "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
-
-(define (two-digits n)
-  "`n` as at least two digits, with a leading zero."
-  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
 
 (define (format-file-time seconds now offset)
   "`seconds` (since the epoch, UTC) as ls shows it, 12 columns: \"Oct 19 14:02\"
@@ -142,7 +137,7 @@
   (let* ([clock (clock-now)] [now (car clock)] [offset (cadr clock)])
     (set-buffer-local! 'dired-details
       (foldl (lambda (e h)
-               (let ([info (file-info (dired-join dir (cadr e)))])
+               (let ([info (file-info (child-path dir (cadr e)))])
                  (if info
                      (hash-insert h (car e)
                                   (list (list (string-append (car info) " ") "dired.permissions")
@@ -232,7 +227,7 @@
 (define (dired-entry-path line)
   "The full path that `line` of the listing names, or #f for a blank one."
   (let ([name (trim (line-text line))])
-    (and (not (equal? name "")) (dired-join (dired-dir) (dired-strip-slash name)))))
+    (and (not (equal? name "")) (child-path (dired-dir) (dired-strip-slash name)))))
 
 (define (dired-visit!)
   "<ret>: opens the entry at the cursor, a directory in the browser.
@@ -356,8 +351,9 @@
 (define (dired-apply! dir changes)
   "Makes the changes; returns the problems, if any."
   (let* ([problems '()]
-         [try (lambda (r) (when (string? r) (set! problems (cons r problems))))]
-         [path (lambda (name) (dired-join dir (dired-strip-slash name)))]
+         [problem! (lambda (r) (when r (set! problems (cons r problems))))]
+         [try (lambda (thunk) (let ([r (error-text thunk)]) (problem! r) r))]
+         [path (lambda (name) (child-path dir (dired-strip-slash name)))]
          [renames (filter (lambda (c) (eq? (car c) 'rename)) changes)])
     ;; Renames go through temporary names, so swapping two names works.
     ;; An entry whose first step fails is left alone after that: its one
@@ -366,24 +362,24 @@
            [moved (let loop ([rs renames] [i 0] [acc '()])
                     (if (null? rs)
                         (reverse acc)
-                        (let ([r (rename-file! (path (cadr (car rs))) (temp i))])
-                          (try r)
-                          (loop (cdr rs) (+ i 1) (if (string? r) acc (cons (list i (car rs)) acc))))))])
+                        (let ([r (try (lambda () (rename-file! (path (cadr (car rs))) (temp i))))])
+                          (loop (cdr rs) (+ i 1) (if r acc (cons (list i (car rs)) acc))))))])
       (for-each (lambda (m)
-                  (let* ([i (car m)] [c (cadr m)] [r (rename-file! (temp i) (path (caddr c)))])
+                  (let* ([i (car m)] [c (cadr m)])
                     ;; If the new name is taken, the file keeps its old one.
-                    (when (string? r) (try r) (rename-file! (temp i) (path (cadr c))))))
+                    (when (try (lambda () (rename-file! (temp i) (path (caddr c)))))
+                      (error-text (lambda () (rename-file! (temp i) (path (cadr c))))))))
                 moved))
     (for-each (lambda (c)
                 (cond
-                  [(eq? (car c) 'delete) (try (delete-path! (path (cadr c))))]
+                  [(eq? (car c) 'delete) (try (lambda () (delete-path! (path (cadr c)))))]
                   [(eq? (car c) 'create)
                    (if (ends-with? (cadr c) "/")
-                       (try (make-directory! (path (cadr c))))
+                       (try (lambda () (make-directory! (path (cadr c)))))
                        (let ([p (path (cadr c))])
                          (if (file-exists? p)
-                             (try (string-append (cadr c) " already exists"))
-                             (try (with-handler (lambda (e) (error-message e)) (write-text-file! p "") #t)))))]
+                             (problem! (string-append (cadr c) " already exists"))
+                             (try (lambda () (write-text-file! p ""))))))]
                   [else #f]))
               changes)
     (reverse problems)))

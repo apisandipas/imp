@@ -49,7 +49,10 @@
 ;;;            (begin (done (cursor) (list (completion-candidate "🙂"))) #t)))
 ;;;     'priority 10)
 
+;; Whether the menu opens by itself as you type in insert state.
 (define-option! 'completion-auto #t '())
+;; How many characters of a word to type before the menu opens by itself
+;; (a source can ask for another number).
 (define-option! 'completion-auto-min 3 '())
 ;; Milliseconds of quiet before the menu opens by itself; 0 opens it
 ;; as soon as the key is drawn, as blink.cmp and nvim-cmp's local
@@ -63,6 +66,10 @@
 (define-option! 'completion-menu-columns '(icon label detail) '())
 ;; Where the words source looks: all (every file buffer) or current.
 (define-option! 'completion-words-scope 'all '())
+;; Whether completion offers this buffer's words. A buffer that sets it
+;; off locally (cloak-mode) keeps its words out of the words source in
+;; every buffer, and out of the search prompt's word completion.
+(define-option! 'completion-words #t '())
 ;; Characters besides letters, digits and _ that words are made of here
 ;; (Scheme buffers set their own, for names like set-option!).
 (define-option! 'completion-word-chars "" '())
@@ -173,14 +180,23 @@
    of completion-word-chars."
   (or (char-word? c) (string-contains? (option 'completion-word-chars) (string c))))
 
+(define (words-offered? id)
+  "Whether completion may offer buffer `id`'s words: not when it turned
+   completion-words off for itself."
+  (let ([locals (or (hash-try-get *buffer-locals* id) (hash))]
+        [key (list 'option 'completion-words)])
+    (if (hash-contains? locals key) (hash-ref locals key) (hash-ref *options* 'completion-words))))
+
 (define (word-buffers)
   "The buffers the words source reads, current first: with
-   completion-words-scope all, then every other file buffer."
+   completion-words-scope all, then every other file buffer. Buffers
+   with completion-words off are left out."
   (let ([here (current-buffer)])
-    (cons here
-          (if (eq? (option 'completion-words-scope) 'all)
-              (filter (lambda (id) (and (not (= id here)) (cadr (buffer-info id)))) (buffer-list))
-              '()))))
+    (filter words-offered?
+            (cons here
+                  (if (eq? (option 'completion-words-scope) 'all)
+                      (filter (lambda (id) (and (not (= id here)) (cadr (buffer-info id)))) (buffer-list))
+                      '())))))
 
 (define-completion-source! 'words
   (lambda (manual? done)
@@ -200,7 +216,7 @@
       (and (path-like? typed)
            (let* ([slash (last-slash typed)]
                   [dir (if slash (substring typed 0 (+ slash 1)) "./")]
-                  [entries (directory-entries (completion-dir dir))])
+                  [entries (with-handler (lambda (e) #f) (directory-entries (completion-dir dir)))])
              (and (list? entries)
                   (begin
                     (done (+ start (if slash (+ slash 1) 0))
@@ -684,7 +700,9 @@
 ;;; the one chosen and closes it, C-e puts back what was typed. With
 ;;; cmdline-completion off, <tab> is Vim's wildmenu instead.
 
+;; Complete on the : line with the menu; off, <tab> is Vim's wildmenu.
 (define-option! 'cmdline-completion #t '())
+;; Open the : line's menu by itself as you type, not only on <tab>.
 (define-option! 'cmdline-completion-auto #t '())
 
 (define *cmd-open* #f)
@@ -717,7 +735,9 @@
      (let* ([start (let loop ([i (string-length text)])
                      (if (and (> i 0) (char-word? (string-ref text (- i 1)))) (loop (- i 1)) i))]
             [word (substring text start (string-length text))]
-            [words (if (equal? word "") '() (buffer-words (list (current-buffer)) word "" (- -1 (cursor)) 200))])
+            [words (if (or (equal? word "") (not (words-offered? (current-buffer))))
+                       '()
+                       (buffer-words (list (current-buffer)) word "" (- -1 (cursor)) 200))])
        (and (pair? words) (list start words (map (lambda (w) "") words))))]
     [else #f]))
 

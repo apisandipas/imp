@@ -101,6 +101,40 @@ mod permission_tests {
     }
 }
 
+/// Whether process `pid` is running and is imp, so a crash copy it
+/// wrote is still in use. On Linux by its name in /proc, so a reused pid
+/// that isn't imp doesn't count; elsewhere on Unix only whether it runs.
+/// Where neither can be asked, false: a copy offered twice is better
+/// than one never offered.
+pub fn imp_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string(format!("/proc/{pid}/comm"))
+            .map(|name| {
+                let name = name.trim_end();
+                name == "imp" || name.starts_with("imp-")
+            })
+            .unwrap_or(false)
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else {
+            return false;
+        };
+        // Signal 0 only asks; EPERM means it runs as someone else.
+        // SAFETY: kill with signal 0 sends nothing.
+        unsafe { libc::kill(pid, 0) == 0 }
+        || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 #[cfg(test)]
 mod ignored_tests {
     #[test]

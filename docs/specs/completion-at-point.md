@@ -13,10 +13,11 @@ Completion while typing, after nvim-cmp, and snippets.
 - It opens as you type in `completion-auto-modes` (prog-mode) after `completion-auto-min` characters, and on request.
 - The hot paths are Rust: a per-buffer word index (nearest the cursor first) and a candidate store that each key filters and ranks, returning the top 200.
 - The command line (`:`, `/`, `?`) has its own menu through `*cmdline-completer*` and a second store.
+- A buffer with `completion-words` off (set locally, as cloak-mode does, [[spec/cloak]]) keeps its words out of the words source in every buffer, itself included, and out of the `/` and `?` prompts' word completion while it is current.
 - Snippets use LSP/VS Code syntax: `<tab>` and `<s-tab>` move between stops, a selected placeholder is replaced by typing, choices use the menu. LSP snippet items expand on accept.
 
 ## Keys and options
 
 - `C-x C-o`, `C-n`, `C-p` in insert mode.
-- `completion-keys` (`vim`, `tab` or `enter`), `completion-menu-columns`, `completion-words-scope`, `completion-auto-modes`, `completion-auto-min`, `cmdline-completion`.
+- `completion-keys` (`vim`, `tab` or `enter`), `completion-menu-columns`, `completion-words-scope`, `completion-words`, `completion-auto-modes`, `completion-auto-min`, `cmdline-completion`.
 - `(define-completion-source! name (lambda (manual? done) ...) 'priority N 'min-length N 'auto PRED 'exclusive #t)`, `(set-completion-sources! mode groups)`, `define-snippet!`, `load-snippets!`.

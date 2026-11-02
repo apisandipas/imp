@@ -102,6 +102,27 @@ fn words_come_from_other_buffers_when_asked() {
 }
 
 #[test]
+fn a_buffer_can_keep_its_words_out_of_completion() {
+    let (mut s, dir) = project("complete-words-off", "a.txt", "elegant\n");
+    std::fs::write(dir.join("b.txt"), "elephantine\n").unwrap();
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("b.txt").display()));
+    s.eval("(set-local-option! 'completion-words #f)").unwrap();
+    // Not in another buffer...
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("a.txt").display()));
+    type_keys(&mut s, "Goele");
+    s.keys(&["C-n"]);
+    assert_eq!(menu(&mut s), ["elegant"]);
+    type_keys(&mut s, "<C-e><esc>");
+    // ...nor in itself, nor at its search prompt.
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("b.txt").display()));
+    type_keys(&mut s, "Goele");
+    s.keys(&["C-n"]);
+    assert!(!menu(&mut s).contains(&"elephantine".to_string()));
+    type_keys(&mut s, "<C-e><esc>/elep");
+    assert!(cmd_menu(&mut s).is_empty(), "{:?}", cmd_menu(&mut s));
+}
+
+#[test]
 fn completion_opens_as_you_type_in_code_but_not_prose() {
     let (mut s, _) = project("complete-auto", "main.rs", "fn frobnicate() {}\n");
     type_keys(&mut s, "Gofro");

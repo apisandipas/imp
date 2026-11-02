@@ -11,6 +11,8 @@ Found so far while writing imp in Steel ([[0002-steel-scheme-as-the-extension-la
 Re-`define`-ing an existing global makes a new binding that code compiled earlier never sees; `set!` changes the binding everyone uses. Within one compilation unit (one `run`, one file), a call to a function never `set!` in that unit is compiled as a direct call that later `set!`s can't reach. Hence the `(set! name name)` markers the server appends to runtime files, and the `define`-to-`set!` rewrite in `imp-eval-string`. A function passed as a value at load time (`(word-motion next-word-start ...)`) is still captured: call it by name inside a lambda where redefinition matters.
 
 - A runtime file can't call a function first defined in a later file (each file is its own unit), and `eval` of a form that references a global not yet defined fails; user code gets placeholders for those.
+- Two files that define the same name each keep their own binding at startup, but re-evaluating the earlier file's definition (`eval-defun`, `:source`) `set!`s the later file's binding, so the later file's callers get the earlier meaning. Give each top-level name one file (`runtime/CONTEXT.md`).
+- `eval` can't take a dotted list as code ("Unable to convert from value to expression"), and `read` makes `(f a . rest)` one. `imp-eval-string` respells rest arguments without the dot (`without-dotted-parameters`), but a quoted dotted literal (`'(a . b)`) in evaluated code still fails: write `(cons 'a 'b)`. Runtime files are parsed from text, so neither applies there.
 - Defining a name the prelude already has (`take`, `log`) fails once it is `set!` ("cannot mutate module-required identifier"). Check new runtime names against the prelude; `crates/imp-server/examples/` is the place for scratch tools. `trim` and `char-digit?` are prelude names.
 
 ## Order
@@ -30,7 +32,7 @@ Re-`define`-ing an existing global makes a new binding that code compiled earlie
 
 ## Errors
 
-- No `raise`: re-raise a caught error with `(raise-error e)`. Catch with `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a leading space (see `error-message` in `vim.scm`).
+- No `raise`: re-raise a caught error with `(raise-error e)`. Catch with `(with-handler (lambda (e) ...) expr)`; `(error-object-message e)` has a leading space, so use `error-message` (`core.scm`) instead; `(error-text thunk)` is the message of the error a thunk raises, or #f. imp's primitives raise when they fail, rather than returning the error.
 
 ## Builtins
 

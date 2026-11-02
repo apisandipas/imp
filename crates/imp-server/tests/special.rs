@@ -56,6 +56,32 @@ fn special_buffers() {
 }
 
 #[test]
+fn a_buffer_pattern_paints_its_groups() {
+    let mut s = server("** Two\nhalf\n");
+    s.eval(r#"(set-face! "thing" "fg=red")"#).unwrap();
+    // All of the stars but the last: its group, not the whole match.
+    s.eval(r#"(buffer-highlight-pattern! "p" "^\\(\\*\\+\\)\\* " "thing")"#)
+        .unwrap();
+    assert_eq!(s.eval("(faces-at 0)").unwrap(), "(\"thing\")");
+    assert_eq!(s.eval("(faces-at 1)").unwrap(), "()");
+    let rows = s.frame().rows;
+    let red: Vec<_> = rows[0]
+        .iter()
+        .filter(|sp| sp.style.fg.is_some())
+        .map(|sp| sp.text.as_str())
+        .collect();
+    assert_eq!(red, ["*"], "{:?}", rows[0]);
+    // Without groups, the whole match; a global pattern, the whole match
+    // whatever its groups, as Vim's hlsearch.
+    s.eval(r#"(buffer-highlight-pattern! "p" "ha" "thing")"#)
+        .unwrap();
+    assert_eq!(s.eval("(faces-at 8)").unwrap(), "(\"thing\")");
+    s.eval(r#"(buffer-highlight-clear! "p") (highlight-pattern! "g" "h\\(a\\)" "thing")"#)
+        .unwrap();
+    assert_eq!(s.eval("(faces-at 7)").unwrap(), "(\"thing\")");
+}
+
+#[test]
 fn buffer_highlights_follow_their_buffer() {
     let mut s = server("alpha\n");
     s.eval(r#"(set-face! "thing" "fg=red")"#).unwrap();

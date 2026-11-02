@@ -1,6 +1,6 @@
 ;;; core.scm -- the editor-wide pieces every mode builds on.
 ;;;
-;;; The Rust side only provides primitives (see crates/imp-server/src/api.rs):
+;;; The Rust side only provides primitives (see crates/imp-server/src/api/):
 ;;; buffer access, the cursor, the status line. Keymaps, modes and commands
 ;;; are all defined here and in the files loaded after this one, and any of
 ;;; them can be redefined from ~/.config/imp/init.scm.
@@ -135,6 +135,22 @@
     (set! *messages* (cons text (if (> (length *messages*) 199) (reverse (cdr (reverse *messages*))) *messages*))))
   void)
 
+;;; Errors. A primitive that fails raises an error rather than returning
+;;; one; code that shows it catches it with with-handler.
+
+(define (error-message e)
+  "The message of a caught error, without the space Steel puts in front."
+  (let* ([m (error-object-message e)] [m (if (string? m) m (to-string m))])
+    (let skip ([i 0])
+      (if (and (< i (string-length m)) (char-whitespace? (string-ref m i)))
+          (skip (+ i 1))
+          (substring m i (string-length m))))))
+
+(define (error-text thunk)
+  "Calls `thunk`; the message of the error it raises, or #f if none.
+   For a primitive called for its effect, whose failure is to be shown."
+  (with-handler (lambda (e) (error-message e)) (begin (thunk) #f)))
+
 ;;; Evaluating code while the editor runs
 ;;;
 ;;; Two things about Steel shape this. Re-define-ing a name that already
@@ -178,10 +194,63 @@
            (list 'set! target (if (pair? (cddr form)) (caddr form) #f))))]
     [else form]))
 
+;;; Steel's eval can't take a dotted list as code: the reader makes
+;;; (f a . rest) a pair, and eval only converts proper lists back into
+;;; syntax ("Unable to convert from value to expression"). Source text is
+;;; parsed straight to syntax, so the runtime's own files load; only forms
+;;; that pass through read and eval, as user code here does, hit it. So
+;;; before eval, a rest argument is spelled without a dot: the lambda takes
+;;; all its arguments as one list and spreads them over the original
+;;; parameters, the rest as a list.
+
+(define (dotted-parameters params)
+  "For a parameter list with a rest argument, (a b . rest), the proper
+   list (a b rest); #f for a proper list or a lone symbol."
+  (and (pair? params) (not (list? params))
+       (let loop ([p params] [names '()])
+         (if (pair? p)
+             (loop (cdr p) (cons (car p) names))
+             (reverse (cons p names))))))
+
+(define (spread-rest-arguments proc count args)
+  "Calls `proc` with the first `count` of `args` and a list of the others,
+   as a function with a rest argument after `count` parameters is called.
+   What without-dotted-parameters makes a dotted lambda call."
+  (when (< (length args) count)
+    (error (string-append "expected at least " (number->string count)
+                          " arguments, got " (number->string (length args)))))
+  (let loop ([n count] [args args] [firsts '()])
+    (if (= n 0)
+        (apply proc (reverse (cons args firsts)))
+        (loop (- n 1) (cdr args) (cons (car args) firsts)))))
+
+(define (without-dotted-parameters form)
+  "`form` with every rest argument written without a dot, so eval can
+   take it. (define (f a . rest) ...) becomes (define f (lambda ...)),
+   and (lambda (a . rest) body ...) a lambda over one list of arguments
+   that spread-rest-arguments hands on to (lambda (a rest) body ...).
+   Quoted data and macros are left alone."
+  (cond
+    [(not (list? form)) form]
+    [(null? form) form]
+    [(member (car form) '(quote quasiquote define-syntax syntax-rules)) form]
+    [(and (eq? (car form) 'define) (pair? (cdr form)) (pair? (cadr form))
+          (symbol? (car (cadr form))) (not (list? (cadr form))))
+     (without-dotted-parameters
+      (list 'define (car (cadr form)) (cons 'lambda (cons (cdr (cadr form)) (cddr form)))))]
+    [(and (eq? (car form) 'lambda) (pair? (cdr form)) (dotted-parameters (cadr form)))
+     => (lambda (params)
+          (list 'lambda '%imp-rest-arguments
+                (list 'spread-rest-arguments
+                      (cons 'lambda (cons params (map without-dotted-parameters (cddr form))))
+                      (- (length params) 1)
+                      '%imp-rest-arguments)))]
+    [else (map without-dotted-parameters form)]))
+
 (define (unit-forms form)
   "The forms to evaluate for `form`: itself (rewritten), and for a new
    definition a set! that keeps it redefinable."
-  (let ([rewritten (redefinition form)])
+  (let ([rewritten (redefinition (without-dotted-parameters form))])
     (if (define-target rewritten)
         (list rewritten (list 'set! (define-target rewritten) (define-target rewritten)))
         (list rewritten))))
@@ -270,7 +339,8 @@
 ;;; init.scm), after-change, before-save, after-save, post-command,
 ;;; insert-enter, insert-leave, mode-change (Vim states), major-mode,
 ;;; buffer-enter, buffer-open, buffer-kill (with the id, before it goes),
-;;; option-change.
+;;; option-change, quit-discarding (:qa! or :q! ending a standalone imp,
+;;; its unsaved changes thrown away).
 
 (define *hooks* (hash))
 
@@ -446,10 +516,9 @@
   "Starts `command` (run by sh). A string `input` is written to its stdin,
    which is then closed; #f leaves stdin open for job-send!. Returns the
    job id, or #f after showing why it couldn't start."
-  (let ([id (job-start! command input)])
-    (if (string? id)
-        (begin (set-status! id) #f)
-        (begin (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))) id))))
+  (let ([id (with-handler (lambda (e) (set-status! (error-message e)) #f) (job-start! command input))])
+    (when id (set! *jobs* (hash-insert *jobs* id (list on-output on-exit))))
+    id))
 
 (define (imp-job-output id stream text)
   "Called by the server with output `text` from job `id`.
@@ -484,10 +553,9 @@
    (on-open conn) for each connection, (on-line conn line) for each
    line read, (on-close conn) when it closes. Returns the listener id,
    or #f after showing why it couldn't listen."
-  (let ([id (socket-listen! path)])
-    (if (string? id)
-        (begin (set-status! id) #f)
-        (begin (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))) id))))
+  (let ([id (with-handler (lambda (e) (set-status! (error-message e)) #f) (socket-listen! path))])
+    (when id (set! *listeners* (hash-insert *listeners* id (list on-open on-line on-close))))
+    id))
 
 (define *client-sockets* (hash))  ; connection id -> (#f on-line on-close)
 
@@ -496,10 +564,9 @@
    (on-line conn line) gets each line read, (on-close conn) the end.
    Returns the connection id, or #f after showing why it couldn't
    connect."
-  (let ([conn (socket-connect! path)])
-    (if (string? conn)
-        (begin (set-status! conn) #f)
-        (begin (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))) conn))))
+  (let ([conn (with-handler (lambda (e) (set-status! (error-message e)) #f) (socket-connect! path))])
+    (when conn (set! *client-sockets* (hash-insert *client-sockets* conn (list #f on-line on-close))))
+    conn))
 
 (define (socket-handlers conn)
   "The (on-open on-line on-close) procedures for connection `conn`,
@@ -679,12 +746,19 @@
   (set! *option-watchers* (hash-insert *option-watchers* (known-option-name name) proc))
   (proc (option name)))
 
+;; Columns a tab character takes on screen.
 (define-option! 'tabstop 4 '(ts))
+;; Columns one level of indent takes: what >>, << and smartindent add.
 (define-option! 'shiftwidth 4 '(sw))
+;; Indent with spaces rather than tab characters.
 (define-option! 'expandtab #t '(et))
+;; A new line starts with the indent of the line before it.
 (define-option! 'autoindent #t '(ai))
+;; Searches wrap around the end of the buffer to its start, and back.
 (define-option! 'wrapscan #t '(ws))
+;; Highlight every match of the last search, until :noh.
 (define-option! 'hlsearch #t '(hls))
+;; Show where the pattern matches while it is typed.
 (define-option! 'incsearch #t '(is))
 ;; "unnamedplus" makes the unnamed register the system clipboard.
 (define-option! 'clipboard "" '(cb))
@@ -692,7 +766,10 @@
 
 ;; Line numbers: number, relativenumber, or both for hybrid (as in Vim).
 (define-option! 'number #f '(nu))
+;; Line numbers counted from the cursor's line; with number on too, the
+;; cursor's line shows its own.
 (define-option! 'relativenumber #f '(rnu))
+;; Highlight the line the cursor is on.
 (define-option! 'cursorline #f '(cul))
 ;; Long lines continue on the next screen rows; off, they scroll sideways.
 (define-option! 'wrap #t '())
@@ -796,6 +873,31 @@
       (if (and (< p end) (char-whitespace? (buffer-char-at p)))
           (loop (+ p 1))
           p))))
+
+;;; Small helpers shared by the runtime and packages
+;;;
+;;; Each top-level name belongs to one file: re-evaluating a file's
+;;; definitions set!s the one binding every file sees, so a helper two
+;;; files define for themselves would take one file's meaning in both.
+;;; Helpers more than one file needs live here, loaded first.
+
+(define (pad-left text width)
+  "`text` padded with spaces on the left to `width` characters."
+  (if (< (string-length text) width) (string-append (make-string (- width (string-length text)) #\space) text) text))
+
+(define (two-digits n)
+  "`n` as at least two digits, with a leading zero: 7 -> \"07\"."
+  (if (< n 10) (string-append "0" (number->string n)) (number->string n)))
+
+(define (shell-quote text)
+  "`text` in single quotes, safe to put in a shell command."
+  (string-append "'" (apply string-append (map (lambda (c) (if (equal? c #\') "'\\''" (string c)))
+                                               (string->list text)))
+                 "'"))
+
+(define (child-path dir name)
+  "The path of `name` in directory `dir`."
+  (if (equal? dir "/") (string-append "/" name) (string-append dir "/" name)))
 
 ;;; Entry points called by the server
 

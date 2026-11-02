@@ -5,15 +5,9 @@
 //! `(name (arg ...) ((key value) ...) (child ...) line)`, with strings,
 //! integers, floats, booleans and the symbol `null` as values. A document
 //! that doesn't parse is an error naming the line. Without the feature
-//! the primitive still exists and says so.
+//! the primitive still exists and says so. The primitives are in api/kdl.rs.
 
-use steel::steel_vm::engine::Engine;
-use steel::steel_vm::register_fn::RegisterFn;
-
-pub fn register(engine: &mut Engine) {
-    engine.register_fn("kdl-parse", |text: String| imp::parse(&text));
-    engine.register_fn("kdl-available?", || cfg!(feature = "kdl"));
-}
+pub use imp::parse;
 
 #[cfg(not(feature = "kdl"))]
 mod imp {

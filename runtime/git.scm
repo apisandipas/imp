@@ -17,6 +17,7 @@
 ;;; ZQ or C-c C-k cancels.
 ;;; :git ARGS runs any git command and shows what it printed.
 
+;; How many recent commits the status buffer lists.
 (define-option! 'git-recent-commits 10 '())
 ;; Whether the status buffer shows its main keys at the bottom of its window.
 (define-option! 'git-status-hints #t '())
@@ -373,7 +374,10 @@
       [(not item) (message "nothing to discard here")]
       [(and (eq? (car item) 'file) (eq? (cadr item) 'untracked))
        (confirm! (string-append "Delete " (caddr item) "?")
-                 (lambda () (delete-file! (string-append root "/" (caddr item))) (git-refresh!)))]
+                 (lambda ()
+                   (let ([r (error-text (lambda () (delete-file! (string-append root "/" (caddr item)))))])
+                     (git-refresh!)
+                     (when r (message r)))))]
       [(and (eq? (car item) 'file) (eq? (cadr item) 'unstaged))
        (confirm! (string-append "Discard changes to " (caddr item) "?")
                  (lambda () (git-do! root (string-append "restore -- " (shell-quote (caddr item)))) (git-refresh!)))]

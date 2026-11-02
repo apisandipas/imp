@@ -261,17 +261,28 @@
         (filter (lambda (buf) (and (memv buf (buffer-list)) (terminal-confirm-kill? buf)))
                 (map (lambda (id) (hash-ref *terminals* id)) (hash-keys->list *terminals*)))))
 
-;; In a daemon, stops it for every client (:q only detaches one), asking
-;; first when that stops running programs.
+;; In a daemon, stops it for every client (:q only detaches one). Like
+;; :qa it refuses while buffers have unsaved changes, then asks when that
+;; stops running programs; :kill-server! does neither and keeps the crash
+;; copies, as Emacs keeps auto-save files.
 (define-command! 'kill-server
   (lambda (count)
-    "Stop the daemon, for every client attached to it. Without a daemon, quit."
-    (let ([running (*running-buffers*)])
-      (if (null? running)
-          (kill-server!)
-          (confirm! (string-append "stop the programs running in " (number->string (length running))
-                                   (if (= (length running) 1) " terminal?" " terminals?"))
-                    kill-server!)))))
+    "Stop the daemon, for every client attached to it. Without a daemon, quit.
+     Refuses while a buffer has unsaved changes, going to it, and asks
+     first when programs are running in terminals. :kill-server! stops
+     anyway, keeping the copies of unsaved buffers to recover."
+    (let ([dirty (modified-buffers)] [running (*running-buffers*)])
+      (cond
+        [(command-bang?) (kill-server!)]
+        [(pair? dirty)
+         (unless (= (car dirty) (current-buffer)) (go-to-buffer! (car dirty)))
+         (set-status! (string-append "unsaved changes in " (car (buffer-info (car dirty)))
+                                     " (:kill-server! stops anyway)"))]
+        [(null? running) (kill-server!)]
+        [else
+         (confirm! (string-append "stop the programs running in " (number->string (length running))
+                                  (if (= (length running) 1) " terminal?" " terminals?"))
+                   kill-server!)]))))
 
 (define (start-terminal! buf command cwd)
   "Runs `command` (your shell if \"\") in `cwd`, in buffer `buf`.
@@ -279,9 +290,10 @@
    Returns the terminal's id, or #f after saying why it couldn't start
    (and killing `buf`)."
   (set-major-mode! 'term-mode)
-  (let ([id (term-start! command cwd (window-height) (window-text-width))])
-    (if (string? id)
-        (begin (message id) (buffer-kill! buf) #f)
+  (let ([id (with-handler (lambda (e) (message (error-message e)) #f)
+                          (term-start! command cwd (window-height) (window-text-width)))])
+    (if (not id)
+        (begin (buffer-kill! buf) #f)
         (begin
           (set-buffer-local! 'term-id id)
           (set-buffer-local! 'term-command command)
@@ -513,6 +525,7 @@
 ;;; It goes as a paste and then runs: <ret> follows it unless
 ;;; terminal-send-enter is off. You stay in your buffer.
 
+;; Press <ret> after text sent to the terminal, so it runs.
 (define-option! 'terminal-send-enter #t '())
 (define terminal-ready-ms 100)   ; how often to look for a new shell's prompt
 (define terminal-ready-tries 50) ; and how many times, before giving up

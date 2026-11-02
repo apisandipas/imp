@@ -85,6 +85,41 @@ fn help_for_options_and_ex_commands() {
 }
 
 #[test]
+fn describe_option_shows_the_comment_above() {
+    let mut s = server("");
+    s.set_size(120, 30);
+    let describe = |s: &mut imp_server::Server, name: &str| {
+        s.eval(&format!("(describe-option {name:?})")).unwrap();
+        let text = popup_text(s);
+        type_keys(s, "<esc>");
+        text
+    };
+    // Options that had no comment until #136.
+    let text = describe(&mut s, "ts");
+    assert!(text.contains("tabstop = 4"), "{text}");
+    assert!(
+        text.contains("Columns a tab character takes on screen."),
+        "{text}"
+    );
+    assert!(!text.contains("Not documented."), "{text}");
+    let text = describe(&mut s, "mouse-scroll");
+    assert!(
+        text.contains("Lines the scroll wheel moves a window by."),
+        "{text}"
+    );
+    // Options made with define-computed-option! and
+    // define-appearance-option! are found too.
+    let text = describe(&mut s, "ff");
+    assert!(text.contains("fileformat = unix"), "{text}");
+    assert!(text.contains("The current buffer's line endings"), "{text}");
+    let text = describe(&mut s, "background-opacity");
+    assert!(
+        text.contains("How opaque the window's background is"),
+        "{text}"
+    );
+}
+
+#[test]
 fn apropos_lists_matching_names() {
     let mut s = server("");
     type_keys(&mut s, ":apropos paragraph<ret>");
@@ -201,8 +236,10 @@ fn docstrings_document_functions_and_commands() {
 }
 
 /// Every function in the runtime and the packages that come with imp, and
-/// every command defined with a lambda, has a docstring (help.scm's header has the convention). Variables and
-/// options are documented by comments, which this doesn't check.
+/// every command defined with a lambda, has a docstring (help.scm's header
+/// has the convention); every option has a comment right above it, which
+/// describe-option shows. Variables are documented by comments too, which
+/// this doesn't check.
 #[test]
 fn the_runtime_is_documented() {
     let mut s = server("");
@@ -232,6 +269,28 @@ fn the_runtime_is_documented() {
         )
         .unwrap();
     assert_eq!(missing, "()", "definitions without a docstring");
+    // An option has no body, so the comment above is its documentation
+    // (help.scm's defined-name knows these forms).
+    let missing = s
+        .eval(
+            r#"(apply append
+                 (map (lambda (src)
+                        (let loop ([lines (source-lines src)] [above ""] [i 1] [acc '()])
+                          (if (null? lines)
+                              (reverse acc)
+                              (let* ([line (car lines)]
+                                     [name (defined-name line)]
+                                     [option? (list-find (lambda (p) (starts-with? line p))
+                                                         '("(define-option! '" "(define-computed-option! '"
+                                                           "(define-appearance-option! '"))])
+                                (loop (cdr lines) line (+ i 1)
+                                      (if (and option? (not (starts-with? above ";")))
+                                          (cons (string-append src ":" (number->string i) " " name) acc)
+                                          acc))))))
+                      (filter (lambda (n) (or (starts-with? n "runtime/") (starts-with? n "packages/"))) (source-names))))"#,
+        )
+        .unwrap();
+    assert_eq!(missing, "()", "options without a comment above");
 }
 
 #[test]

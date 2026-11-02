@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 1762ab3f61ad
+  docs/specs/look.md: 5f0cc2cbffc2
 ---
 # Look
 
@@ -34,6 +34,8 @@ A theme can start from another one and change only some colors. Give it a name, 
 Every color imp draws comes from a face: one for comments, one for the status line, and so on. The `normal` face is the text color and background, under everything else.
 
 Press `SPC h F` to see the faces under the cursor. `M-x list-faces` lists every face with a sample.
+
+Control characters in a buffer, drawn as `^G` or `<9b>`, have their own face, `special-char`. Every bundled theme gives it a color apart from the text: cyan in imp's own themes, and in the Modus themes the color Emacs gives them (`escape-glyph`).
 
 Change one face with `set-face!`:
 
@@ -84,7 +86,7 @@ In the window client you can set the font, the space around the text, and how se
 (set-option! 'background-opacity 0.9)
 ```
 
-`--font` and `--font-size` on the command line win over these options.
+`--font` and `--font-size` on the command line win over these options, and `--scale` makes the text larger on HiDPI screens; see [Command line](ref-command-line.md).
 
 In a terminal, set `terminal-background` to `#f` to leave the theme's background unpainted. The terminal's own background shows through instead.
 

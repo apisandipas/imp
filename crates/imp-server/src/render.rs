@@ -4,12 +4,15 @@
 //! bottom row, the message line or the command line being typed. Windows
 //! side by side are separated by a border column.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
+use std::rc::Rc;
 
 use imp_core::{BlockRow, Buffer, Frame, Row, Span, Style, WindowBlock};
 use unicode_width::UnicodeWidthChar;
 
-use crate::editor::{window_mark, Editor, Layer, PopupLine};
+use crate::editor::{Editor, Layer, PopupLine, WindowView};
 use crate::layout::Rect;
 
 /// How the gutter shows line numbers, set from Scheme (the `number` and
@@ -41,19 +44,15 @@ pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
     let screen = e.window_rects();
-    // Parse what changed in every buffer on screen before drawing.
+    // Parse what changed in every buffer on screen before drawing, and
+    // move its line prefixes with its edits.
     let shown: Vec<usize> = screen
         .iter()
-        .map(|(id, _)| {
-            if *id == e.current_window {
-                e.current
-            } else {
-                e.windows[id].buffer
-            }
-        })
+        .filter_map(|(id, _)| e.window_view(*id).map(|v| v.buffer_id))
         .collect();
     for id in shown {
         e.update_syntax(id);
+        e.sync_line_prefixes(id);
     }
 
     // Draw each window; scroll positions are worked out on the way and
@@ -63,7 +62,7 @@ pub fn frame(e: &mut Editor) -> Frame {
     let mut scrolls = Vec::new();
     let mut windows: Vec<WindowBlock> = Vec::new();
     for (id, rect) in &screen {
-        let focused = *id == e.current_window;
+        let focused = *id == e.current_window();
         let mut drawn = draw_window(e, *id, *rect, focused, rect.x + rect.w < width);
         if let Some(mut block) = drawn.block.take() {
             // Only the focused window shows the cursor.
@@ -80,16 +79,11 @@ pub fn frame(e: &mut Editor) -> Frame {
         if focused {
             cursor = drawn.cursor;
         }
-        scrolls.push((*id, drawn.scroll, drawn.hscroll));
+        scrolls.push((*id, drawn.scroll, drawn.hscroll, drawn.text));
     }
-    for (id, scroll, hscroll) in scrolls {
-        if id == e.current_window {
-            e.scroll = scroll;
-            e.hscroll = hscroll;
-        } else if let Some(w) = e.windows.get_mut(&id) {
-            w.scroll = scroll;
-            w.hscroll = hscroll;
-        }
+    for (id, scroll, hscroll, text) in scrolls {
+        e.set_window_scroll(id, scroll, hscroll);
+        e.set_window_drawn(id, text);
     }
 
     let separator = e.face("separator");
@@ -142,13 +136,17 @@ pub fn frame(e: &mut Editor) -> Frame {
             cursor = boxed.expect("checked");
         }
         Some((text, col)) => {
+            let (text, col) = drawn_input(text, *col);
             // Keep the cursor's end of a long command line in view.
             let skip = (col + 1).saturating_sub(width);
-            let shown: String = text.chars().skip(skip).take(width).collect();
-            rows.push(vec![Span::new(shown, Style::default())]);
+            let drawn: String = text.chars().skip(skip).take(width).collect();
+            rows.push(vec![Span::new(drawn, Style::default())]);
             cursor = ((col - skip).min(width - 1), height - 1);
         }
-        None => rows.push(vec![Span::new(clip(&e.status, width), Style::default())]),
+        None => rows.push(vec![Span::new(
+            printable(&clip(&e.status, width)),
+            Style::default(),
+        )]),
     }
 
     // A client that draws one size gets no heights.
@@ -445,6 +443,7 @@ fn center_popup(
     let x = width.saturating_sub(inner + 2) / 2;
     // Keep the cursor's end of a long input in view.
     let header = e.cmdline.as_ref().map(|(text, col)| {
+        let (text, col) = drawn_input(text, *col);
         let room = inner.saturating_sub(2);
         let skip = (col + 1).saturating_sub(room);
         let shown: String = text.chars().skip(skip).take(room).collect();
@@ -540,7 +539,7 @@ fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
     let mut at = 0;
     for span in row {
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if at + w <= x {
                 push(&mut out, &ch.to_string(), span.style);
             } else if at < x {
@@ -565,7 +564,7 @@ fn splice(row: &Row, x: usize, insert: Row, width: usize) -> Row {
     let mut at = 0;
     for span in row {
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if at >= end {
                 push(&mut out, &ch.to_string(), span.style);
             } else if at + w > end {
@@ -585,6 +584,87 @@ struct DrawnWindow {
     /// Its text, for a client that draws heights; `rows` then leaves it
     /// blank.
     block: Option<WindowBlock>,
+    /// Where its text went, for clicks.
+    text: DrawnText,
+}
+
+/// Where a frame drew a window's text: what clicks look up, so they land
+/// where the text was drawn without laying it out again. Kept with its
+/// window (`Editor::window_drawn`) until the next frame.
+#[derive(Debug)]
+pub struct DrawnText {
+    /// What it was drawn from; a click on a window that has changed since
+    /// (another buffer, an edit, a scroll, a resize) lays it out afresh.
+    buffer_id: usize,
+    version: u64,
+    rect: Rect,
+    scroll: usize,
+    hscroll: usize,
+    /// Cells before the text: the olivetti indent and the gutter.
+    left: usize,
+    rows: Vec<DrawnRow>,
+    /// Every row's chars, one run after another, in one allocation.
+    chars: Vec<DrawnChar>,
+    /// The first line not drawn, for a click below the last row.
+    after: usize,
+}
+
+/// One drawn row of text.
+#[derive(Debug)]
+struct DrawnRow {
+    /// Its buffer line, or None past the buffer's end.
+    line: Option<usize>,
+    /// Whether it is its line's first row (the one with the gutter's
+    /// number and chevron).
+    first: bool,
+    /// How far down the window it starts and how tall it is, in rows of
+    /// one cell; its text is `height` times the font's size.
+    top: f32,
+    height: f32,
+    /// Its line's indent before its text (`line_prefix`), in cells of the
+    /// font's size.
+    prefix: usize,
+    /// Its run of `DrawnText::chars`, left to right. A closed fold's row
+    /// has none.
+    chars: Range<usize>,
+    /// The char column a click past its last char gives: the next row's
+    /// first, or the line's end.
+    end: usize,
+}
+
+/// A drawn char: its column in its line, and the cells it starts at and
+/// takes from the row's left edge, in cells of the row's size. A wide
+/// char cut by `hscroll` keeps only its cells inside the window.
+#[derive(Debug)]
+struct DrawnChar {
+    col: u32,
+    x: u16,
+    w: u16,
+}
+
+impl DrawnChar {
+    fn new(col: usize, x: usize, w: usize) -> DrawnChar {
+        DrawnChar {
+            col: col.min(u32::MAX as usize) as u32,
+            x: x.min(u16::MAX as usize) as u16,
+            w: w.min(u16::MAX as usize) as u16,
+        }
+    }
+}
+
+impl DrawnRow {
+    /// A row with no chars, where a click gives the line's start.
+    fn blank(line: Option<usize>, top: f32, height: f32) -> DrawnRow {
+        DrawnRow {
+            line,
+            first: true,
+            top,
+            height,
+            prefix: 0,
+            chars: 0..0,
+            end: 0,
+        }
+    }
 }
 
 /// A buffer's closed folds: (first, last) lines, sorted, not nested. A
@@ -656,19 +736,13 @@ struct View<'a> {
 }
 
 fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> DrawnWindow {
-    let (buffer_id, mut scroll, mut hscroll) = if focused {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
-    let cursor = if focused {
-        e.cursor
-    } else {
-        buffer.mark(&window_mark(id)).unwrap_or(0)
-    }
-    .min(buffer.len());
+    let WindowView {
+        buffer_id,
+        buffer,
+        cursor,
+        mut scroll,
+        mut hscroll,
+    } = e.window_view(id).expect("a window on screen");
     let footer = e.footer_rows(buffer_id, rect.h);
     let text_rows = rect.h.saturating_sub(1 + footer).max(1);
     let folds = Folds::of(e, buffer_id);
@@ -687,9 +761,9 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     // Where the cursor is within its line: (row, x) with wrap, (0, x)
     // without.
     let cursor_cells = layout_line(&buffer.line_text(cursor_line), e.tab_width);
-    // The cursor line's outline indent, its size, and the width left
+    // The cursor line's indent, its size, and the width left
     // beside the indent in cells of that size.
-    let cursor_prefix = outline_prefix(e, buffer_id, buffer, cursor_line);
+    let cursor_prefix = line_prefix(e, buffer_id, cursor_line);
     let cursor_scale = scale_of(cursor_line);
     let cursor_width = scaled_width(text_width.saturating_sub(cursor_prefix), cursor_scale);
     let (cursor_row, cursor_x) = if folded {
@@ -724,7 +798,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                         prev != cursor_line,
                     ),
                     scaled_width(
-                        text_width.saturating_sub(outline_prefix(e, buffer_id, buffer, prev)),
+                        text_width.saturating_sub(line_prefix(e, buffer_id, prev)),
                         scale,
                     ),
                     e.linebreak,
@@ -786,7 +860,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         buffer,
         buffer_id,
         syntax: syntax.unwrap_or_default(),
-        current_buffer: buffer_id == e.current,
+        current_buffer: buffer_id == e.current(),
         buffer_layers: e.buffer_layers.get(&buffer_id).map_or(&[], Vec::as_slice),
         signs: shown_signs(e, buffer_id),
         fold_starts: shown_fold_starts(e, buffer_id),
@@ -804,6 +878,9 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     };
     // The text rows, each with its height, until the window is full.
     let mut out: Vec<(Row, f32)> = Vec::with_capacity(rect.h);
+    // And where each one's text went.
+    let mut drawn: Vec<DrawnRow> = Vec::with_capacity(rect.h);
+    let mut chars: Vec<DrawnChar> = Vec::new();
     let mut used = 0.0;
     // Where the cursor is: its row in `out`, and how far across in cells.
     let mut cursor_at = (0, 0.0);
@@ -815,6 +892,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 break;
             }
             out.push((vec![Span::new("~", e.face("nontext"))], 1.0));
+            drawn.push(DrawnRow::blank(None, used, 1.0));
             used += 1.0;
             continue;
         }
@@ -825,9 +903,10 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 break;
             }
             let mut row = view
-                .line_rows(first, scale)
+                .line_rows(first, scale, &mut Vec::new())
                 .into_iter()
                 .next()
+                .map(|(row, _)| row)
                 .unwrap_or_default();
             let note = format!(" ··· {} lines", last - first + 1);
             let used_cells: f32 = row
@@ -841,6 +920,8 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 cursor_at = (out.len(), left);
             }
             out.push((row, scale));
+            // A click anywhere on it goes to its start.
+            drawn.push(DrawnRow::blank(Some(first), used, scale));
             used += scale;
             line = last + 1;
             continue;
@@ -849,7 +930,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         if used + scale > room {
             break;
         }
-        let line_rows = view.line_rows(line, scale);
+        let line_rows = view.line_rows(line, scale, &mut chars);
         if line == cursor_line {
             let x = cursor_x.saturating_sub(hscroll).min(cursor_width - 1);
             cursor_at = (
@@ -857,9 +938,11 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                 left + x as f32 * scale,
             );
         }
-        for row in line_rows {
+        for (row, mut at) in line_rows {
             if used + scale <= room {
                 out.push((row, scale));
+                at.top = used;
+                drawn.push(at);
                 used += scale;
             }
         }
@@ -924,6 +1007,17 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
         scroll,
         hscroll,
         block,
+        text: DrawnText {
+            buffer_id,
+            version: buffer.version(),
+            rect,
+            scroll,
+            hscroll,
+            left: indent + gutter,
+            rows: drawn,
+            chars,
+            after: line,
+        },
     }
 }
 
@@ -956,7 +1050,7 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
             let w = if ch == '\t' {
                 tab_width - x % tab_width
             } else {
-                ch.width().unwrap_or(0)
+                char_width(ch)
             };
             let cell = Cell { index, ch, x, w };
             x += w;
@@ -970,21 +1064,60 @@ fn layout_line(text: &str, tab_width: usize) -> Vec<Cell> {
 fn concealed(layers: &[Layer], text: &str) -> Option<Vec<bool>> {
     let mut hidden: Option<Vec<bool>> = None;
     for re in layers.iter().filter_map(|l| l.conceal.as_ref()) {
-        for caps in re.captures_iter(text) {
-            let groups: Vec<_> = if caps.len() > 1 {
-                caps.iter().skip(1).flatten().collect()
-            } else {
-                caps.get(0).into_iter().collect()
-            };
-            for m in groups.into_iter().filter(|m| !m.is_empty()) {
-                let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
-                h[from..to].fill(true);
-            }
+        for m in pattern_spans(re, text, true)
+            .into_iter()
+            .filter(|m| !m.is_empty())
+        {
+            let h = hidden.get_or_insert_with(|| vec![false; text.chars().count()]);
+            let from = text[..m.start].chars().count();
+            let to = from + text[m].chars().count();
+            h[from..to].fill(true);
         }
     }
     hidden
+}
+
+/// The mask char each char of `text` is drawn as, by the `layers`' masks
+/// (`buffer-mask-pattern!`), or None when nothing on it is masked. On the
+/// cursor's line (`cursor_line`) a mask that reveals it masks nothing.
+fn masked(layers: &[Layer], text: &str, cursor_line: bool) -> Option<Vec<Option<char>>> {
+    let mut masks: Option<Vec<Option<char>>> = None;
+    for mask in layers
+        .iter()
+        .filter_map(|l| l.mask.as_ref())
+        .filter(|m| !(cursor_line && m.reveal))
+    {
+        for m in pattern_spans(&mask.pattern, text, true)
+            .into_iter()
+            .filter(|m| !m.is_empty())
+        {
+            let at = masks.get_or_insert_with(|| vec![None; text.chars().count()]);
+            let from = text[..m.start].chars().count();
+            let to = from + text[m].chars().count();
+            at[from..to].fill(Some(mask.ch));
+        }
+    }
+    masks
+}
+
+/// The byte ranges of `text` that pattern `re` applies to. With `groups`
+/// (a buffer's own patterns, highlight or conceal) that is each match's
+/// groups, or the whole match when it has none, so a pattern can paint
+/// part of what it matches (`^\(\*\+\)\* `, all of a heading's stars but
+/// the last); without, whole matches, as Vim's hlsearch.
+fn pattern_spans(re: &regex::Regex, text: &str, groups: bool) -> Vec<Range<usize>> {
+    if !groups || re.captures_len() == 1 {
+        return re.find_iter(text).map(|m| m.range()).collect();
+    }
+    re.captures_iter(text)
+        .flat_map(|caps| {
+            caps.iter()
+                .skip(1)
+                .flatten()
+                .map(|m| m.range())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Line text `text` laid out as drawn: without the chars the `layers`'
@@ -1002,7 +1135,7 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
             let w = if ch == '\t' {
                 tab_width - x % tab_width
             } else {
-                ch.width().unwrap_or(0)
+                char_width(ch)
             };
             let cell = Cell { index, ch, x, w };
             x += w;
@@ -1011,49 +1144,13 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
         .collect()
 }
 
-/// The level of the outline heading on `line` (how many stars before a
-/// space), or None.
-fn heading_level(buffer: &Buffer, line: usize) -> Option<usize> {
-    let mut stars = 0;
-    for c in buffer.rope().line(line).chars() {
-        match c {
-            '*' => stars += 1,
-            ' ' if stars > 0 => return Some(stars),
-            _ => return None,
-        }
-    }
-    None
-}
-
-/// The blank columns drawn before `line` when its buffer is indented by
-/// outline level, as Org's org-indent-mode does: with `p` columns a
-/// level, text under a level-L heading gets L*p, so it lines up under the
-/// heading's title, and the heading (L-1)*(p-1), its leading stars but
-/// the last drawn blank (`outline_hidden_stars`). 0 when not indented.
-fn outline_prefix(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
-    let Some(&p) = e.outline_indents.get(&buffer_id) else {
-        return 0;
-    };
-    if line >= buffer.line_count() {
-        return 0;
-    }
-    if let Some(level) = heading_level(buffer, line) {
-        return (level - 1) * (p - 1);
-    }
-    // The heading above, not looking back without end.
-    (line.saturating_sub(5000)..line)
-        .rev()
-        .find_map(|l| heading_level(buffer, l))
-        .map_or(0, |level| level * p)
-}
-
-/// How many of `line`'s leading stars are drawn blank when indented by
-/// outline level: all of a heading's but the last.
-fn outline_hidden_stars(e: &Editor, buffer_id: usize, buffer: &Buffer, line: usize) -> usize {
-    if !e.outline_indents.contains_key(&buffer_id) {
-        return 0;
-    }
-    heading_level(buffer, line).map_or(0, |level| level - 1)
+/// The blank cells drawn before `line`'s text (`set-line-prefixes!`):
+/// the entry for it or the nearest line above that has one, 0 for none.
+fn line_prefix(e: &Editor, buffer_id: usize, line: usize) -> usize {
+    e.line_prefixes
+        .get(&buffer_id)
+        .and_then(|indents| indents.cells.range(..=line).next_back())
+        .map_or(0, |(_, &cells)| cells)
 }
 
 /// Buffer `buffer_id`'s own highlight layers.
@@ -1184,10 +1281,16 @@ fn cursor_position(
 }
 
 impl View<'_> {
-    /// The screen rows for buffer line `line`, with its gutter. Its text
-    /// is drawn `scale` times the font's size (see `line_scale`), so it
-    /// has that many times fewer cells across.
-    fn line_rows(&self, line: usize, scale: f32) -> Vec<Row> {
+    /// The screen rows for buffer line `line`, with its gutter, each with
+    /// where its chars went, which are added to `chars`. Its text is drawn
+    /// `scale` times the font's size (see `line_scale`), so it has that
+    /// many times fewer cells across.
+    fn line_rows(
+        &self,
+        line: usize,
+        scale: f32,
+        chars: &mut Vec<DrawnChar>,
+    ) -> Vec<(Row, DrawnRow)> {
         let e = self.e;
         let start = self.buffer.line_col_to_offset(line, 0);
         let text = self.buffer.line_text(line);
@@ -1197,6 +1300,8 @@ impl View<'_> {
             self.buffer_layers,
             line != self.cursor_line,
         );
+        let masks = masked(self.buffer_layers, &text, line == self.cursor_line);
+        let masks = masks.as_deref();
         let mut styles = char_styles(
             e,
             start,
@@ -1212,12 +1317,6 @@ impl View<'_> {
                 *s = s.over(face);
             }
         }
-        for s in styles
-            .iter_mut()
-            .take(outline_hidden_stars(e, self.buffer_id, self.buffer, line))
-        {
-            *s = s.over(e.face("org.hide"));
-        }
         // All its text at the line's size.
         let height = if scale == 1.0 {
             0
@@ -1228,17 +1327,33 @@ impl View<'_> {
             s.height = height;
         }
         let eol_style = styles[styles.len() - 1];
-        // The outline indent before every row of it, and the width left.
-        let prefix = outline_prefix(e, self.buffer_id, self.buffer, line);
+        // The line's indent before every row of it, and the width left.
+        let prefix = line_prefix(e, self.buffer_id, line);
         let width = scaled_width(self.text_width.saturating_sub(prefix), scale);
 
         let mut rows: Vec<Row> = Vec::new();
+        // Each row's chars, and the column a click past them gives.
+        let line_end = text.chars().count();
+        let mut drawn: Vec<(Range<usize>, usize)> = Vec::new();
         if e.wrap {
             let at = wrapped(&cells, width, e.linebreak);
             let count = at.last().map_or(1, |(r, _)| r + 1);
             rows.resize(count, Vec::new());
-            for (cell, &(r, _)) in cells.iter().zip(&at) {
-                push_cell(&mut rows[r], cell, cell.w, &styles);
+            drawn.resize(count, (chars.len()..chars.len(), line_end));
+            // A row's chars follow the row before's.
+            for (cell, &(r, x)) in cells.iter().zip(&at) {
+                push_cell(&mut rows[r], cell, cell.w, &styles, masks);
+                if drawn[r].0.is_empty() {
+                    drawn[r].0 = chars.len()..chars.len();
+                }
+                chars.push(DrawnChar::new(cell.index, x, cell.w));
+                drawn[r].0.end = chars.len();
+            }
+            // Past a row's end is the next row's first char.
+            for r in 1..count {
+                if !drawn[r].0.is_empty() {
+                    drawn[r - 1].1 = chars[drawn[r].0.start].col as usize;
+                }
             }
             let end = at.last().map_or(0, |&(_, x)| x) + cells.last().map_or(0, |c| c.w);
             if eol_style != Style::default() && end < width {
@@ -1254,23 +1369,31 @@ impl View<'_> {
         } else {
             let (left, right) = (self.hscroll, self.hscroll + width);
             let mut row: Row = Vec::new();
+            let start = chars.len();
+            let mut end = line_end;
             let mut x_end = 0;
-            for cell in &cells {
+            for (i, cell) in cells.iter().enumerate() {
                 x_end = cell.x + cell.w;
+                if cell.x + cell.w.max(1) > left {
+                    let x = cell.x.max(left);
+                    chars.push(DrawnChar::new(cell.index, x - left, x_end.max(x) - x));
+                }
                 // The cells of this char inside the window.
                 let visible = (cell.x.max(left)..x_end.min(right)).len();
                 if cell.w == 0 && cell.x >= left && cell.x < right {
-                    push_cell(&mut row, cell, 0, &styles);
+                    push_cell(&mut row, cell, 0, &styles, masks);
                 } else if visible == cell.w {
-                    push_cell(&mut row, cell, visible, &styles);
+                    push_cell(&mut row, cell, visible, &styles, masks);
                 } else if visible > 0 {
                     // A wide char cut by the window's edge.
                     push(&mut row, &" ".repeat(visible), styles[cell.index]);
                 }
                 if x_end >= right {
+                    end = cells.get(i + 1).map_or(line_end, |c| c.index);
                     break;
                 }
             }
+            drawn.push((start..chars.len(), end));
             if eol_style != Style::default() && x_end >= left && x_end < right {
                 push(&mut row, " ", eol_style);
             }
@@ -1286,8 +1409,9 @@ impl View<'_> {
             e.face("line-number")
         };
         rows.into_iter()
+            .zip(drawn)
             .enumerate()
-            .map(|(i, text_row)| {
+            .map(|(i, (text_row, (run, end)))| {
                 let mut row = Vec::new();
                 if self.indent > 0 {
                     row.push(Span::new(" ".repeat(self.indent), Style::default()));
@@ -1297,7 +1421,7 @@ impl View<'_> {
                     numbers -= SIGN_WIDTH;
                     match signs.get(&line).filter(|_| i == 0) {
                         Some((text, face)) => {
-                            let text: String = text.chars().take(SIGN_WIDTH).collect();
+                            let text: String = printable(text).chars().take(SIGN_WIDTH).collect();
                             let pad = SIGN_WIDTH.saturating_sub(text_width(&text));
                             row.push(Span::new(
                                 format!("{text}{}", " ".repeat(pad)),
@@ -1346,7 +1470,7 @@ impl View<'_> {
                 if let Some(changes) = self.changes {
                     match changes.get(&line).filter(|_| i == 0) {
                         Some((text, face)) => {
-                            let text: String = text.chars().take(CHANGE_WIDTH).collect();
+                            let text: String = printable(text).chars().take(CHANGE_WIDTH).collect();
                             let pad = CHANGE_WIDTH.saturating_sub(text_width(&text));
                             row.push(Span::new(
                                 format!("{text}{}", " ".repeat(pad)),
@@ -1378,7 +1502,16 @@ impl View<'_> {
                         e.face("cursorline"),
                     );
                 }
-                row
+                let drawn = DrawnRow {
+                    line: Some(line),
+                    first: i == 0,
+                    top: 0.0,
+                    height: scale,
+                    prefix,
+                    chars: run,
+                    end,
+                };
+                (row, drawn)
             })
             .collect()
     }
@@ -1414,8 +1547,18 @@ impl View<'_> {
     }
 }
 
-fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
-    let text = if cell.ch == '\t' {
+/// Draws `cell` on `row` in `shown` cells. A masked char (`masks`) is its
+/// mask char once per cell, so it takes the cells its text would.
+fn push_cell(
+    row: &mut Row,
+    cell: &Cell,
+    shown: usize,
+    styles: &[Style],
+    masks: Option<&[Option<char>]>,
+) {
+    let text = if let Some(mask) = masks.and_then(|m| m[cell.index]) {
+        mask.to_string().repeat(shown)
+    } else if cell.ch == '\t' {
         " ".repeat(shown)
     } else {
         cell.ch.to_string()
@@ -1538,7 +1681,8 @@ fn gutter_text(
 /// plus one more entry for its line break. Global highlight ranges are
 /// offsets into the current buffer, so they only apply to windows showing
 /// it; global patterns (search) apply everywhere. A buffer's own layers
-/// apply wherever it is shown.
+/// apply wherever it is shown, and their patterns paint their groups
+/// (`pattern_spans`).
 fn char_styles(
     e: &Editor,
     start: usize,
@@ -1567,12 +1711,21 @@ fn char_styles(
             }
         }
     }
+    // Control chars, drawn in caret notation, over their syntax face so
+    // they stand out from text that really reads `^G` (Vim's SpecialKey),
+    // and under the highlights, so a selection or match still shows.
+    let special = e.face("special-char");
+    for (i, ch) in text.chars().enumerate() {
+        if special_char(ch) {
+            styles[i] = special.over(styles[i]);
+        }
+    }
     let layers = e
         .layers
         .iter()
-        .map(|l| (l, current_buffer))
-        .chain(buffer_layers.iter().map(|l| (l, true)));
-    for (layer, ranges_apply) in layers {
+        .map(|l| (l, current_buffer, false))
+        .chain(buffer_layers.iter().map(|l| (l, true, true)));
+    for (layer, ranges_apply, own) in layers {
         if ranges_apply {
             for h in &layer.ranges {
                 if h.end <= start || h.start >= end {
@@ -1588,9 +1741,9 @@ fn char_styles(
         }
         if let Some((re, face)) = &layer.pattern {
             let face = e.face(face);
-            for m in re.find_iter(text) {
-                let from = text[..m.start()].chars().count();
-                let to = from + m.as_str().chars().count();
+            for m in pattern_spans(re, text, own) {
+                let from = text[..m.start].chars().count();
+                let to = from + text[m].chars().count();
                 for style in &mut styles[from..to] {
                     *style = face.over(*style);
                 }
@@ -1601,18 +1754,18 @@ fn char_styles(
 }
 
 /// The faces drawn at char `offset` of the current buffer, bottom first:
-/// the syntax face, then each highlight over it, as `char_styles` paints
-/// them. For describe-face.
+/// the syntax face, `special-char` on a control char, then each
+/// highlight over it, as `char_styles` paints them. For describe-face.
 pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
-    let buffer = e.buffer_by_id(e.current).unwrap_or(&e.buffer);
+    let buffer = e.buffer();
     let rope = buffer.rope();
     let offset = offset.min(rope.len_chars());
     let line = rope.char_to_line(offset);
     let start = rope.line_to_char(line);
     let text = rope.line(line).to_string();
-    let text = text.trim_end_matches(['\n', '\r']);
+    let text = text.strip_suffix('\n').unwrap_or(&text);
     let mut faces = Vec::new();
-    if let Some(syntax) = e.syntax.get(&e.current) {
+    if let Some(syntax) = e.syntax.get(&e.current()) {
         let bytes = rope.char_to_byte(start)..rope.char_to_byte(start + text.chars().count() + 1);
         let face = syntax
             .highlights(rope, bytes)
@@ -1621,21 +1774,29 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
             .find_map(|(_, _, names)| names.iter().find(|f| e.faces.contains_key(*f)));
         faces.extend(face.cloned());
     }
+    if text.chars().nth(offset - start).is_some_and(special_char) {
+        faces.push("special-char".to_string());
+    }
     let buffer_layers = e
         .buffer_layers
-        .get(&e.current)
+        .get(&e.current())
         .map_or(&[][..], Vec::as_slice);
     let col = offset - start;
-    for layer in e.layers.iter().chain(buffer_layers) {
+    let layers = e
+        .layers
+        .iter()
+        .map(|l| (l, false))
+        .chain(buffer_layers.iter().map(|l| (l, true)));
+    for (layer, own) in layers {
         for h in &layer.ranges {
             if h.start <= offset && offset < h.end {
                 faces.push(h.face.clone());
             }
         }
         if let Some((re, face)) = &layer.pattern {
-            let hit = re.find_iter(text).any(|m| {
-                let from = text[..m.start()].chars().count();
-                from <= col && col < from + m.as_str().chars().count()
+            let hit = pattern_spans(re, text, own).into_iter().any(|m| {
+                let from = text[..m.start].chars().count();
+                from <= col && col < from + text[m].chars().count()
             });
             if hit {
                 faces.push(face.clone());
@@ -1645,18 +1806,73 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     faces
 }
 
-/// Appends text to a row, merging it into the last span if the style matches.
+/// Appends text to a row, merging it into the last span if the style
+/// matches. Control chars go in in `caret` notation, so none reaches a
+/// terminal, where they could move its cursor or set its title or
+/// clipboard.
 fn push(row: &mut Row, text: &str, style: Style) {
+    let text = printable(text);
     match row.last_mut() {
-        Some(last) if last.style == style => last.text.push_str(text),
+        Some(last) if last.style == style => last.text.push_str(&text),
         _ => row.push(Span::new(text, style)),
     }
+}
+
+/// How control char `ch` is drawn, as Vim draws it: C0 and DEL in caret
+/// notation (`^[`, `^G`, `^?`), C1 as its code in hex (`<9b>`). None for
+/// any other char. A tab counts: buffer text lays its tabs out before
+/// they get here, and a tab anywhere else would jump the terminal's
+/// cursor.
+fn caret(ch: char) -> Option<String> {
+    match ch as u32 {
+        c @ 0..=0x1f => Some(format!("^{}", char::from(c as u8 + 0x40))),
+        0x7f => Some("^?".into()),
+        c @ 0x80..=0x9f => Some(format!("<{c:02x}>")),
+        _ => None,
+    }
+}
+
+/// Whether buffer text draws `ch` in caret notation, and so in the
+/// `special-char` face: a control char other than a tab, which is laid
+/// out as blanks.
+fn special_char(ch: char) -> bool {
+    ch != '\t' && caret(ch).is_some()
+}
+
+/// The cells `ch` takes as drawn: wide chars two, combining marks none,
+/// control chars their `caret` notation's.
+fn char_width(ch: char) -> usize {
+    match caret(ch) {
+        Some(shown) => shown.len(),
+        None => ch.width().unwrap_or(0),
+    }
+}
+
+/// Command line `text` as drawn, its control chars in `caret` notation,
+/// and where char `col` of it is drawn.
+fn drawn_input(text: &str, col: usize) -> (String, usize) {
+    let before: String = text.chars().take(col).collect();
+    (
+        printable(text).into_owned(),
+        printable(&before).chars().count(),
+    )
+}
+
+/// `text` as drawn: its control chars in `caret` notation.
+fn printable(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| caret(c).is_some()) {
+        return text.into();
+    }
+    text.chars()
+        .map(|c| caret(c).unwrap_or_else(|| c.to_string()))
+        .collect::<String>()
+        .into()
 }
 
 /// The display column of char column `col` on `line` of the current
 /// buffer (tabs and wide chars counted).
 pub fn display_col(e: &Editor, line: usize, col: usize) -> usize {
-    let cells = layout_line(&e.buffer.line_text(line), e.tab_width);
+    let cells = layout_line(&e.buffer().line_text(line), e.tab_width);
     cells
         .get(col)
         .map_or_else(|| cells.last().map_or(0, |c| c.x + c.w), |c| c.x)
@@ -1665,7 +1881,7 @@ pub fn display_col(e: &Editor, line: usize, col: usize) -> usize {
 /// The char column on `line` that covers display column `x`, or the end
 /// of the line.
 pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
-    let cells = layout_line(&e.buffer.line_text(line), e.tab_width);
+    let cells = layout_line(&e.buffer().line_text(line), e.tab_width);
     cells
         .iter()
         .position(|c| x < c.x + c.w.max(1))
@@ -1675,52 +1891,90 @@ pub fn col_at_display(e: &Editor, line: usize, x: usize) -> usize {
 /// The line whose chevron is at screen cell (`x`, `y`): a fold's first
 /// line, on its first row, in the fold column of the window there.
 pub fn fold_column_at(e: &Editor, x: usize, y: usize) -> Option<usize> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
-    let buffer_id = if id == e.current_window {
-        e.current
-    } else {
-        e.windows[&id].buffer
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
+    let (id, rect) = window_at(e, x, y)?;
+    let buffer_id = e.window_view(id)?.buffer_id;
     let starts = shown_fold_starts(e, buffer_id)?;
-    let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
-    let text = rect.x + indent + gutter;
+    // Not on the status line or the footer.
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
+        return None;
+    }
+    let drawn = drawn_text(e, id, rect);
+    let text = rect.x + drawn.left;
     if x >= text || x + FOLD_WIDTH < text {
         return None;
     }
-    let line_at = |y| match screen_position(e, x, y) {
-        Some((_, Some(at))) => Some(buffer.offset_to_line(at.min(buffer.len()))),
-        _ => None,
-    };
-    let line = line_at(y)?;
+    let row = drawn.row_at(fine(e, x, y).1 - rect.y as f32)?;
     // A wrapped line's later rows have no chevron.
-    let first_row = y == rect.y || line_at(y - 1) != Some(line);
-    (first_row && starts.contains_key(&line)).then_some(line)
+    let line = row.line.filter(|_| row.first)?;
+    starts.contains_key(&line).then_some(line)
 }
 
-/// Columns for text in the current window: its width less the gutter.
+/// The window at screen cell (`x`, `y`), and where it is.
+fn window_at(e: &Editor, x: usize, y: usize) -> Option<(usize, Rect)> {
+    e.window_rects()
+        .into_iter()
+        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+}
+
+/// Where in screen cell (`x`, `y`) the mouse is, in cells: exactly, when
+/// its client sent where, or the cell's middle.
+fn fine(e: &Editor, x: usize, y: usize) -> (f32, f32) {
+    e.mouse_fine
+        .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
+        .unwrap_or((x as f32 + 0.5, y as f32 + 0.5))
+}
+
+/// Where window `id`, at `rect`, drew its text: in the last frame, or
+/// laid out afresh, as the next frame would draw it, when the window has
+/// changed since or hasn't been drawn yet.
+fn drawn_text(e: &Editor, id: usize, rect: Rect) -> Rc<DrawnText> {
+    let view = e.window_view(id).expect("a window on screen");
+    match e.window_drawn(id) {
+        Some(d)
+            if d.buffer_id == view.buffer_id
+                && d.version == view.buffer.version()
+                && d.rect == rect
+                && d.scroll == view.scroll
+                && d.hscroll == view.hscroll =>
+        {
+            d
+        }
+        _ => Rc::new(draw_window(e, id, rect, id == e.current_window(), false).text),
+    }
+}
+
+impl DrawnText {
+    /// The row `down` rows of one cell below the window's top, or None
+    /// below the last.
+    fn row_at(&self, down: f32) -> Option<&DrawnRow> {
+        self.rows.iter().find(|r| down < r.top + r.height)
+    }
+
+    /// The char column under `across` cells (of its size) into `row`.
+    fn col_at(&self, row: &DrawnRow, across: usize) -> usize {
+        self.chars[row.chars.clone()]
+            .iter()
+            .find(|c| across < c.x as usize + (c.w as usize).max(1))
+            .map_or(row.end, |c| c.col as usize)
+    }
+}
+
 /// The text cell at screen cell (`x`, `y`) as (window, line, column),
 /// counting lines from the window's first and ignoring folds and wrapping
 /// (for terminals, which have neither). `None` off a window's text, as on
 /// its status line or gutter.
 pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usize)> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y + 1 < r.y + r.h)?;
-    let (buffer_id, scroll, hscroll) = if id == e.current_window {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
+    let (id, rect) = window_at(e, x, y).filter(|(_, r)| y + 1 < r.y + r.h)?;
+    let WindowView {
+        buffer_id,
+        buffer,
+        scroll,
+        hscroll,
+        ..
+    } = e.window_view(id)?;
     if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
         return None;
     }
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let (indent, gutter, _) = text_area(e, buffer_id, buffer, rect.w);
     let left = rect.x + indent + gutter;
     (x >= left).then(|| (id, scroll + y - rect.y, x - left + hscroll))
@@ -1729,13 +1983,10 @@ pub fn window_cell(e: &Editor, x: usize, y: usize) -> Option<(usize, usize, usiz
 /// The rows and columns of text window `id` shows, or `None` if there is
 /// no such window.
 pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
-    let buffer_id = if id == e.current_window {
-        e.current
-    } else {
-        e.windows.get(&id)?.buffer
-    };
+    let WindowView {
+        buffer_id, buffer, ..
+    } = e.window_view(id)?;
     let rect = e.window_rects().into_iter().find(|(w, _)| *w == id)?.1;
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
     let rows = rect
         .h
         .saturating_sub(1 + e.footer_rows(buffer_id, rect.h))
@@ -1743,14 +1994,15 @@ pub fn window_text_size(e: &Editor, id: usize) -> Option<(usize, usize)> {
     Some((rows, text_area(e, buffer_id, buffer, rect.w).2))
 }
 
+/// Columns for text in the current window: its width less the gutter.
 pub fn window_text_width(e: &Editor) -> usize {
-    let rect = e.window_rect(e.current_window);
-    text_area(e, e.current, &e.buffer, rect.w).2
+    let rect = e.window_rect(e.current_window());
+    text_area(e, e.current(), e.buffer(), rect.w).2
 }
 
 /// Display width of a string.
 fn text_width(text: &str) -> usize {
-    text.chars().map(|c| c.width().unwrap_or(0)).sum()
+    text.chars().map(char_width).sum()
 }
 
 /// `text` cut to `width` display cells.
@@ -1758,7 +2010,7 @@ fn clip(text: &str, width: usize) -> String {
     let mut used = 0;
     text.chars()
         .take_while(|c| {
-            used += c.width().unwrap_or(0);
+            used += char_width(*c);
             used <= width
         })
         .collect()
@@ -1864,7 +2116,7 @@ fn trim_start(name: &str, cells: usize) -> String {
     let mut start = name.len();
     let mut used = 0;
     for (i, ch) in name.char_indices().rev() {
-        let w = ch.width().unwrap_or(0);
+        let w = char_width(ch);
         if used + w > keep {
             break;
         }
@@ -1882,7 +2134,7 @@ fn clip_row_end(row: &Row, width: usize) -> Row {
     for span in row {
         let mut text = String::new();
         for ch in span.text.chars() {
-            let w = ch.width().unwrap_or(0);
+            let w = char_width(ch);
             if skip >= w && skip > 0 {
                 skip -= w;
             } else if skip > 0 {
@@ -2015,109 +2267,42 @@ fn clip_row(row: &Row, width: usize) -> Row {
 
 /// What is at screen cell (`x`, `y`): the window there, and the buffer
 /// offset under the cell, or `None` on its status line; nothing at all on
-/// its footer. Clicking past a
-/// line's end gives the end of that screen row. Uses the scroll positions
-/// of the last frame drawn, and the mouse's exact position when its client
-/// sent one (rows of other heights).
+/// its footer. Clicking past a line's end gives the end of that screen
+/// row. Looks the cell up where the last frame drew the window's text
+/// (`drawn_text`), with the mouse's exact position when its client sent
+/// one (rows of other heights).
 pub fn screen_position(e: &Editor, x: usize, y: usize) -> Option<(usize, Option<usize>)> {
-    let (id, rect) = e
-        .window_rects()
-        .into_iter()
-        .find(|(_, r)| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)?;
+    let (id, rect) = window_at(e, x, y)?;
     if y + 1 == rect.y + rect.h {
         return Some((id, None));
     }
-    let footer_buffer = if id == e.current_window {
-        e.current
-    } else {
-        e.windows[&id].buffer
-    };
+    let WindowView {
+        buffer_id, buffer, ..
+    } = e.window_view(id)?;
     // A click on the footer does nothing.
-    if y + 1 + e.footer_rows(footer_buffer, rect.h) >= rect.y + rect.h {
+    if y + 1 + e.footer_rows(buffer_id, rect.h) >= rect.y + rect.h {
         return None;
     }
-    // Where in the cell: exactly, or its middle.
-    let (fx, fy) = e
-        .mouse_fine
-        .filter(|&(fx, fy)| fx as usize == x && fy as usize == y)
-        .unwrap_or((x as f32 + 0.5, y as f32 + 0.5));
-    let (buffer_id, scroll, hscroll) = if id == e.current_window {
-        (e.current, e.scroll, e.hscroll)
-    } else {
-        let w = &e.windows[&id];
-        (w.buffer, w.scroll, w.hscroll)
-    };
-    let buffer = e.buffer_by_id(buffer_id).unwrap_or(&e.buffer);
-    let (indent, gutter, width) = text_area(e, buffer_id, buffer, rect.w);
-    let dx = (fx - (rect.x + indent + gutter) as f32).max(0.0);
-    let cursor_line = buffer.offset_to_line(
-        if id == e.current_window {
-            e.cursor
+    let (fx, fy) = fine(e, x, y);
+    let drawn = drawn_text(e, id, rect);
+    let Some(row) = drawn.row_at(fy - rect.y as f32) else {
+        // Below the last row, where the next line didn't fit: that line.
+        let at = if drawn.after < buffer.line_count() {
+            buffer.line_col_to_offset(drawn.after, 0)
         } else {
-            buffer.mark(&window_mark(id)).unwrap_or(0)
-        }
-        .min(buffer.len()),
-    );
-    // How far down the window, in rows of one cell.
-    let mut down = fy - rect.y as f32;
-    let folds = Folds::of(e, buffer_id);
-    let mut line = folds.shown(scroll);
-    while line < buffer.line_count() {
-        let start = buffer.line_col_to_offset(line, 0);
-        if let Some((first, last)) = folds.at(line) {
-            let scale = line_scale(e, buffer_id, buffer, first);
-            if down < scale {
-                return Some((id, Some(start)));
-            }
-            down -= scale;
-            line = last + 1;
-            continue;
-        }
-        let scale = line_scale(e, buffer_id, buffer, line);
-        let prefix = outline_prefix(e, buffer_id, buffer, line);
-        // The column across the line's text, in cells of its size.
-        let across = ((dx - prefix as f32).max(0.0) / scale) as usize;
-        let width = scaled_width(width.saturating_sub(prefix), scale);
-        let text = buffer.line_text(line);
-        let cells = line_cells(
-            &text,
-            e.tab_width,
-            layers_of(e, buffer_id),
-            line != cursor_line,
-        );
-        // A cell's char column, or the line's end past the last cell.
-        let end = text.chars().count();
-        let col_of = |i: usize| cells.get(i).map_or(end, |c| c.index);
-        let rows = if e.wrap {
-            line_rows(&cells, width, e.linebreak)
-        } else {
-            1
+            buffer.len()
         };
-        if down < rows as f32 * scale {
-            let row = ((down / scale) as usize).min(rows - 1);
-            if !e.wrap {
-                let at = across + hscroll;
-                let col = col_of(
-                    cells
-                        .iter()
-                        .position(|c| at < c.x + c.w.max(1))
-                        .unwrap_or(cells.len()),
-                );
-                return Some((id, Some(start + col)));
-            }
-            let at = wrapped(&cells, width, e.linebreak);
-            // The cell under the click, or the last one on that row.
-            let on_row: Vec<usize> = (0..cells.len()).filter(|&i| at[i].0 == row).collect();
-            let col = on_row
-                .iter()
-                .copied()
-                .find(|&i| across < at[i].1 + cells[i].w.max(1))
-                .or_else(|| on_row.last().map(|&i| i + 1).filter(|&i| i < cells.len()))
-                .unwrap_or(cells.len());
-            return Some((id, Some(start + col_of(col))));
-        }
-        down -= rows as f32 * scale;
-        line += 1;
-    }
-    Some((id, Some(buffer.len())))
+        return Some((id, Some(at)));
+    };
+    // Past the buffer's end: its end.
+    let Some(line) = row.line else {
+        return Some((id, Some(buffer.len())));
+    };
+    // How far across the line's text, in cells of its size.
+    let dx = (fx - (rect.x + drawn.left) as f32).max(0.0);
+    let across = ((dx - row.prefix as f32).max(0.0) / row.height) as usize;
+    Some((
+        id,
+        Some(buffer.line_col_to_offset(line, 0) + drawn.col_at(row, across)),
+    ))
 }

@@ -6,7 +6,9 @@
 ;;; A, o and O go to the unnamed buffer to type in, n to an empty one. M-x start-screen shows it again; set
 ;;; 'start-screen to #f to begin in the empty buffer instead.
 
+;; Show the start screen when imp starts without a file.
 (define-option! 'start-screen #t '())
+;; How many recent files are remembered.
 (define-option! 'recent-files-max 100 '())
 
 ;;; Recent files
@@ -68,9 +70,14 @@
 
 (define-major-mode! 'start-mode 'special-mode '() #f)
 
+;; The start screen's sections, in order: actions, recent-files,
+;; projects, or one made with define-start-section!.
 (define-option! 'start-sections '(actions) '())
+;; How many recent files the start screen lists, at most 9.
 (define-option! 'start-recent-files 9 '())
+;; How many projects the start screen lists, at most 5.
 (define-option! 'start-projects 5 '())
+;; The lines drawn above the start screen's actions.
 (define-option! 'start-banner
   '("██ ███    ███ ██████ "
     "██ ████  ████ ██   ██"

@@ -11,7 +11,8 @@
 ;;;
 ;;; M-x posframe-mode turns it off and on again.
 
-(define-option! 'posframe-width 60 '())  ; percent of the screen's width
+;; How wide the box is, in percent of the screen's width.
+(define-option! 'posframe-width 60 '())
 
 (define *posframe-on* #f)
 

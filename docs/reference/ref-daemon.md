@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/daemon]]"
 frozen:
-  docs/specs/daemon.md: 52dfa8b283fe
+  docs/specs/daemon.md: 9b8eb57051c7
 ---
 # Daemon
 
@@ -21,13 +21,17 @@ imp --connect notes.org    # a client: attach and open notes.org
 
 `imp --connect` with no files shows the buffer the most recently active client was on. Either way, a new client starts with one window.
 
-The daemon listens on `$XDG_RUNTIME_DIR/imp/default.sock`. To run more than one, give each a name with `--name`, or a socket path with `--socket`, and pass the same to `--connect`.
+The daemon listens on `$XDG_RUNTIME_DIR/imp/default.sock`. To run more than one, give each a name with `--name`, or a socket path with `--socket`, and pass the same to `--connect`. A name is just a name, such as `work`, and becomes `work.sock` in the same directory; one with a `/` or `..` in it is refused, so use `--socket` to put a socket anywhere else.
+
+A client that sends the daemon a message longer than 16 MiB is disconnected, and a client's size counts as at most 4096 columns by 4096 rows, so a misbehaving client can't make the daemon run out of memory.
 
 ## Leaving and stopping
 
 `:q` closes the client's current window. On its last window, it detaches the client, and the daemon keeps running with your buffers.
 
-`:kill-server` stops the daemon. It asks first if programs are running in terminals, since they stop too; `:q` only detaches, and terminals keep running for the next client.
+`:kill-server` (or `M-x kill-server`) stops the daemon, for every client. Like `:qa`, it won't while a buffer has unsaved changes: it goes to that buffer and says `unsaved changes in NAME (:kill-server! stops anyway)`. Save, or throw the changes away, and try again. With nothing unsaved, it asks first if programs are running in terminals, since they stop too; `:q` only detaches, and terminals keep running for the next client.
+
+`:kill-server!` stops the daemon straight away, asking nothing. Your unsaved changes aren't lost for good: imp keeps their [crash copies](ref-crash-recovery.md) and offers them the next time you open those files.
 
 ## Several clients
 

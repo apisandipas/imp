@@ -1,3 +1,9 @@
+---
+type: Guide
+specs: ["[[spec/user-docs]]"]
+frozen:
+  docs/specs/user-docs.md: 2011097486f5
+---
 # imp docs
 
 imp is a text editor with Vim's keys and Emacs's depth. Almost all of it is written in Scheme, and you can change any part of it while it runs.

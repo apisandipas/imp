@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/vim]]"
 frozen:
-  docs/specs/vim.md: 51ce58e56b12
+  docs/specs/vim.md: 4535c7be5a25
 ---
 # Vim
 
@@ -95,6 +95,8 @@ Undo is a tree, as in Vim. If you undo and then make a change, the old changes a
 
 All of them take a count. `:undolist` lists the end of each branch: its change number, how many changes deep it is, and how long ago you made it.
 
+Undoing (or redoing) back to the text you last saved clears the buffer's modified mark, so `:q` works without `!`; moving away from it sets the mark again. Typing the same text back by hand still counts as a change.
+
 ## Searching
 
 `/` searches forward and `?` back, highlighting matches as you type. `:noh` clears the highlight. A search works as a motion too, so `d/foo` deletes up to the next `foo`.
@@ -117,7 +119,7 @@ To make plain `y` and `p` use the system clipboard, `:set clipboard=unnamedplus`
 
 ## Macros
 
-`qa` starts recording into register `a` and `q` stops. `@a` plays it, `@@` plays the last one again, and `@:` repeats the last command line. A key that fails stops the macro.
+`qa` starts recording into register `a` and `q` stops. `@a` plays it, `@@` plays the last one again, and `@:` repeats the last command line. A key that fails stops the macro. `u` undoes everything one playback did, count included, in one go. If the macro moves between buffers, each buffer keeps its own undo: every stretch the macro spent in a buffer is one step there.
 
 ## Marks and jumps
 

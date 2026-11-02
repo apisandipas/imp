@@ -1,3 +1,21 @@
+---
+type: Guide
+specs: ["[[spec/packages]]", "[[spec/olivetti]]", "[[spec/posframe]]", "[[spec/move-lines]]", "[[spec/nerd-icons]]", "[[spec/org-babel]]", "[[spec/showkeys]]", "[[spec/file-tree]]", "[[spec/git-blame]]", "[[spec/git-gutter]]", "[[spec/modus-themes]]", "[[spec/org-export]]", "[[spec/cloak]]"]
+frozen:
+  docs/specs/packages.md: e9a16175b04a
+  docs/specs/olivetti.md: 5b1ed15a4236
+  docs/specs/posframe.md: 9dd5f8aa7b18
+  docs/specs/move-lines.md: d4c34470f45d
+  docs/specs/nerd-icons.md: 5b1d62bdf17a
+  docs/specs/org-babel.md: 0f2ad79678a0
+  docs/specs/showkeys.md: 8d44499288a6
+  docs/specs/file-tree.md: 93c6d2be9759
+  docs/specs/git-blame.md: d6706377c008
+  docs/specs/git-gutter.md: 50690fac14f4
+  docs/specs/modus-themes.md: 2f7f2ca55f07
+  docs/specs/org-export.md: d011ff8473b5
+  docs/specs/cloak.md: 2f3ffb4d8cb4
+---
 # Packages
 
 A package is a Scheme file that adds to imp. Some come with imp but stay off until you ask for them. You can also load packages from a git repository, or write your own.
@@ -15,12 +33,13 @@ Turn one on with `use-package!` in your `init.scm`:
 | `olivetti` | A centred column of text, for writing |
 | `posframe` | `M-x`, find-file and other menus in a box in the middle of the screen |
 | `move-lines` | `J` and `K` move the lines selected with `V` |
-| `org-babel` | `C-c C-c` runs the code in Org source blocks |
-| `nerd-icons` | Icons in the status line, menus, the file browser and the file tree (needs a Nerd Font) |
+| `org-babel` | `C-c C-c` runs the code in Org source blocks; see [Org babel](ref-org-babel.md) |
+| `nerd-icons` | Icons in the status line, menus, the file browser and the file tree (needs a Nerd Font); see [Nerd icons](ref-nerd-icons.md) |
 | `file-tree` | The project's folders as a tree down the left, `SPC t e`; see [File tree](ref-file-tree.md) |
 | `git-blame` | The current line's last commit, shown after the line |
 | `git-gutter` | A coloured bar beside each changed line; see [Git gutter](ref-git-gutter.md) |
 | `org-export` | Export Org files to HTML, PDF and more; see [Org export](ref-org-export.md) |
+| `cloak` | Values in `.env` files drawn as `*****` while the text stays as it is; see [Cloak](ref-cloak.md) |
 | `modus-themes` | The Modus Vivendi and Modus Operandi themes from Emacs; see [Modus themes](ref-modus-themes.md) |
 
 `M-x list-packages` lists what's loaded and what else comes with imp.
