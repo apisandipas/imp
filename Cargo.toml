@@ -1,8 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/imp-core", "crates/imp-server", "crates/imp", "crates/imp-gui"]
-# Built on its own, for wasm32-unknown-unknown.
-exclude = ["examples/wasm-plugin"]
+# Built on its own, for wasm32-unknown-unknown. vendor/ holds patched
+# copies of dependencies, not our crates: they aren't linted or tested here.
+exclude = ["examples/wasm-plugin", "vendor/steel-parser"]
 
 [workspace.package]
 version = "0.1.0-alpha.9"
@@ -50,6 +51,11 @@ kdl = { version = "6", default-features = false, features = ["span"] }
 vt100 = "0.17"
 portable-pty = "0.9"
 libc = "0.2"
+
+# steel-parser 0.8.3 with its number interner's race fixed (#98); drop it
+# once a Steel release fixes the race (see vendor/CONTEXT.md).
+[patch.crates-io]
+steel-parser = { path = "vendor/steel-parser" }
 
 # Steel's prelude takes ~1s to load in a debug build, and every test starts a
 # server. Optimizing dependencies (not our own crates) keeps tests fast while

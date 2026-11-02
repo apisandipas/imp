@@ -14,6 +14,7 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 - `packages/`: opt-in packages that ship with imp.
 - `docs/`: lore notes: `decisions/`, `specs/`, `efforts/`. `.lore/WORKFLOW.md` is the process. The user docs the website builds (`tools/site-docs.py`): `guide/`, written by hand, and `reference/`, a page per spec. `docs/steel.md`: Steel Scheme's gotchas.
 - `tools/`: checks and scripts for driving the real binary.
+- `vendor/`: patched copies of dependencies (steel-parser), not imp's code.
 - `examples/`: a starter `init.scm`, a `config.kdl`, a WASM plugin.
 
 ## Working on it
