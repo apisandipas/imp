@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/buffers-and-windows]]", "[[spec/look]]"]
 issue: https://github.com/apisandipas/imp/issues/156
 frozen:
