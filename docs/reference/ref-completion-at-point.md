@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/completion-at-point]]"
 frozen:
-  docs/specs/completion-at-point.md: 7a992144e52e
+  docs/specs/completion-at-point.md: 01fcb0d00f15
 ---
 # Completion while typing
 
@@ -109,4 +109,5 @@ After the procedure come settings: `'priority N` ranks it among equally good mat
 | `completion-auto-min` | `3` | Characters of a word to type before the menu opens by itself |
 | `completion-menu-columns` | `'(icon label detail)` | What each row shows, from `icon`, `label`, `detail` and `source` |
 | `completion-words-scope` | `'all` | Where words come from: `'all` your file buffers, or `'current` |
+| `completion-words` | `#t` | Whether this buffer's words are offered at all; set it off with `set-local-option!` to keep a buffer's words out of every menu, as cloak-mode does for `.env` files |
 | `cmdline-completion` | `#t` | The menu on the command line |

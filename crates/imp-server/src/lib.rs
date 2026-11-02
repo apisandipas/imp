@@ -110,6 +110,7 @@ const RUNTIME: &[(&str, &str)] = &[
 /// like the runtime; with `IMP_RUNTIME` set they're read from the
 /// `packages` directory beside it instead.
 pub(crate) const PACKAGES: &[(&str, &str)] = &[
+    ("cloak", include_str!("../../../packages/cloak/cloak.scm")),
     (
         "file-tree",
         include_str!("../../../packages/file-tree/file-tree.scm"),

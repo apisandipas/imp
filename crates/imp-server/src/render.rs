@@ -1077,6 +1077,29 @@ fn concealed(layers: &[Layer], text: &str) -> Option<Vec<bool>> {
     hidden
 }
 
+/// The mask char each char of `text` is drawn as, by the `layers`' masks
+/// (`buffer-mask-pattern!`), or None when nothing on it is masked. On the
+/// cursor's line (`cursor_line`) a mask that reveals it masks nothing.
+fn masked(layers: &[Layer], text: &str, cursor_line: bool) -> Option<Vec<Option<char>>> {
+    let mut masks: Option<Vec<Option<char>>> = None;
+    for mask in layers
+        .iter()
+        .filter_map(|l| l.mask.as_ref())
+        .filter(|m| !(cursor_line && m.reveal))
+    {
+        for m in pattern_spans(&mask.pattern, text, true)
+            .into_iter()
+            .filter(|m| !m.is_empty())
+        {
+            let at = masks.get_or_insert_with(|| vec![None; text.chars().count()]);
+            let from = text[..m.start].chars().count();
+            let to = from + text[m].chars().count();
+            at[from..to].fill(Some(mask.ch));
+        }
+    }
+    masks
+}
+
 /// The byte ranges of `text` that pattern `re` applies to. With `groups`
 /// (a buffer's own patterns, highlight or conceal) that is each match's
 /// groups, or the whole match when it has none, so a pattern can paint
@@ -1277,6 +1300,8 @@ impl View<'_> {
             self.buffer_layers,
             line != self.cursor_line,
         );
+        let masks = masked(self.buffer_layers, &text, line == self.cursor_line);
+        let masks = masks.as_deref();
         let mut styles = char_styles(
             e,
             start,
@@ -1317,7 +1342,7 @@ impl View<'_> {
             drawn.resize(count, (chars.len()..chars.len(), line_end));
             // A row's chars follow the row before's.
             for (cell, &(r, x)) in cells.iter().zip(&at) {
-                push_cell(&mut rows[r], cell, cell.w, &styles);
+                push_cell(&mut rows[r], cell, cell.w, &styles, masks);
                 if drawn[r].0.is_empty() {
                     drawn[r].0 = chars.len()..chars.len();
                 }
@@ -1356,9 +1381,9 @@ impl View<'_> {
                 // The cells of this char inside the window.
                 let visible = (cell.x.max(left)..x_end.min(right)).len();
                 if cell.w == 0 && cell.x >= left && cell.x < right {
-                    push_cell(&mut row, cell, 0, &styles);
+                    push_cell(&mut row, cell, 0, &styles, masks);
                 } else if visible == cell.w {
-                    push_cell(&mut row, cell, visible, &styles);
+                    push_cell(&mut row, cell, visible, &styles, masks);
                 } else if visible > 0 {
                     // A wide char cut by the window's edge.
                     push(&mut row, &" ".repeat(visible), styles[cell.index]);
@@ -1522,8 +1547,18 @@ impl View<'_> {
     }
 }
 
-fn push_cell(row: &mut Row, cell: &Cell, shown: usize, styles: &[Style]) {
-    let text = if cell.ch == '\t' {
+/// Draws `cell` on `row` in `shown` cells. A masked char (`masks`) is its
+/// mask char once per cell, so it takes the cells its text would.
+fn push_cell(
+    row: &mut Row,
+    cell: &Cell,
+    shown: usize,
+    styles: &[Style],
+    masks: Option<&[Option<char>]>,
+) {
+    let text = if let Some(mask) = masks.and_then(|m| m[cell.index]) {
+        mask.to_string().repeat(shown)
+    } else if cell.ch == '\t' {
         " ".repeat(shown)
     } else {
         cell.ch.to_string()
