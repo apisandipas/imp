@@ -271,13 +271,19 @@
 (define (lsp-output! key text stream)
   "Handles output from server `key`'s job on `stream`.
    stdout carries LSP messages, dispatched as each completes; anything
-   else (stderr) goes to the lsp-log."
+   else (stderr) goes to the lsp-log. A message that isn't JSON is shown
+   and logged, and the rest go on."
   (if (not (equal? stream "stdout"))
       (lsp-log! text)
       ;; Rust collects the output into messages (lsp-read-messages).
       (for-each (lambda (msg)
-                  (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
-                                (lsp-dispatch! key msg)))
+                  (let ([bad (hash-try-get msg "imp-error")])
+                    (if bad
+                        (begin
+                          (lsp-log! (string-append key " sent a bad message (" bad "): " (hash-ref msg "body")))
+                          (message (string-append "lsp: " key " sent a bad message (" bad ")")))
+                        (with-handler (lambda (e) (message (string-append "lsp: " (error-message e))))
+                                      (lsp-dispatch! key msg)))))
                 (lsp-read-messages (lsp-stream key) text))))
 
 (define (lsp-dispatch! key msg)

@@ -9,24 +9,9 @@
 //! eating the editor.
 //!
 //! Without the feature the primitives still exist and say so, so runtime
-//! files load either way.
+//! files load either way. The primitives are in api/wasm.rs.
 
-use steel::steel_vm::engine::Engine;
-use steel::steel_vm::register_fn::RegisterFn;
-
-pub fn register(engine: &mut Engine) {
-    engine.register_fn("wasm-load", |path: String| imp::load(&path));
-    engine.register_fn("wasm-call", |plugin: isize, name: String, input: String| {
-        imp::call(plugin, &name, &input)
-    });
-    engine.register_fn("wasm-exports", |plugin: isize| imp::exports(plugin));
-    engine.register_fn("wasm-log", imp::log_lines);
-    // How much work (roughly, instructions) one call may do.
-    engine.register_fn("wasm-set-fuel!", |fuel: isize| {
-        imp::set_fuel(fuel.max(1) as u64)
-    });
-    engine.register_fn("wasm-available?", || cfg!(feature = "wasm"));
-}
+pub use imp::{call, exports, load, log_lines, set_fuel};
 
 #[cfg(not(feature = "wasm"))]
 mod imp {

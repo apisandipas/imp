@@ -151,7 +151,8 @@ fn hash(pairs: Vec<(&str, SteelVal)>) -> SteelVal {
 /// the messages now whole, decoded. The reply to an expected completion
 /// request has as its result a hash of "imp-completion" (a handle for
 /// lsp-completion-candidates) and "isIncomplete"; one no longer wanted,
-/// null.
+/// null. A message that doesn't decode comes as a hash of "imp-error"
+/// (what was wrong) and "body" (the message).
 pub fn read_messages(key: &str, text: &str) -> Vec<SteelVal> {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
@@ -162,9 +163,14 @@ pub fn read_messages(key: &str, text: &str) -> Vec<SteelVal> {
         while let Some((start, end)) = message_bounds(&input[used..]) {
             let body = &input[used + start..used + end];
             used += end;
-            if let Some(msg) = state.decode(key, body) {
-                out.push(msg);
-            }
+            // A message that isn't JSON is handed on as an error, so the
+            // client reports it and goes on with the rest.
+            out.push(state.decode(key, body).unwrap_or_else(|e| {
+                hash(vec![
+                    ("imp-error", SteelVal::StringV(e.to_string().into())),
+                    ("body", SteelVal::StringV(body.into())),
+                ])
+            }));
         }
         input.drain(..used);
         state.input.insert(key.to_string(), input);
@@ -173,8 +179,8 @@ pub fn read_messages(key: &str, text: &str) -> Vec<SteelVal> {
 }
 
 impl State {
-    fn decode(&mut self, key: &str, body: &str) -> Option<SteelVal> {
-        let peek: Peek = serde_json::from_str(body).ok()?;
+    fn decode(&mut self, key: &str, body: &str) -> Result<SteelVal, serde_json::Error> {
+        let peek: Peek = serde_json::from_str(body)?;
         let id = peek
             .id
             .as_ref()
@@ -182,16 +188,16 @@ impl State {
             .filter(|_| peek.method.is_none());
         let wanted = id.and_then(|id| self.expected.remove(&(key.to_string(), id)));
         let (Some(id), Some(wanted)) = (id, wanted) else {
-            return serde_json::from_str::<Value>(body).ok().map(to_steel);
+            return serde_json::from_str::<Value>(body).map(to_steel);
         };
         let id_val = SteelVal::IntV(id as isize);
         let null = || SteelVal::SymbolV("null".into());
         if !wanted {
-            return Some(hash(vec![("id", id_val), ("result", null())]));
+            return Ok(hash(vec![("id", id_val), ("result", null())]));
         }
-        let msg: ReplyMsg = serde_json::from_str(body).ok()?;
+        let msg: ReplyMsg = serde_json::from_str(body)?;
         if let Some(error) = msg.error {
-            return Some(hash(vec![("id", id_val), ("error", to_steel(error))]));
+            return Ok(hash(vec![("id", id_val), ("error", to_steel(error))]));
         }
         let result = msg.result.map(RawValue::get).unwrap_or("null").trim_start();
         let (incomplete, raws) = if result.starts_with('[') {
@@ -200,7 +206,7 @@ impl State {
                 serde_json::from_str::<Vec<&RawValue>>(result).unwrap_or_default(),
             )
         } else if result.starts_with('{') {
-            let list: CompletionList = serde_json::from_str(result).ok()?;
+            let list: CompletionList = serde_json::from_str(result)?;
             (list.incomplete, list.items)
         } else {
             (false, Vec::new())
@@ -212,7 +218,7 @@ impl State {
         while self.replies.len() > KEPT {
             self.replies.pop_front();
         }
-        Some(hash(vec![
+        Ok(hash(vec![
             ("id", id_val),
             (
                 "result",
@@ -412,5 +418,19 @@ mod tests {
         drop_completion("test", 5);
         let msgs = read_messages("test", &crate::json::frame(&body.replace(":3,", ":5,")));
         assert!(!format!("{}", msgs[0]).contains("imp-completion"));
+    }
+
+    #[test]
+    fn a_bad_message_is_an_error_beside_the_good_ones() {
+        let text = format!(
+            "{}{}",
+            crate::json::frame("[oops"),
+            crate::json::frame("{\"id\":1,\"result\":null}")
+        );
+        let msgs = read_messages("bad", &text);
+        assert_eq!(msgs.len(), 2);
+        let bad = format!("{}", msgs[0]);
+        assert!(bad.contains("imp-error") && bad.contains("[oops"), "{bad}");
+        assert!(!format!("{}", msgs[1]).contains("imp-error"));
     }
 }

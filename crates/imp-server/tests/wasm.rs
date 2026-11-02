@@ -10,8 +10,12 @@ use common::*;
 fn without_the_feature_it_says_so() {
     let mut s = server("text\n");
     assert_eq!(s.eval("(wasm-available?)").unwrap(), "#false");
-    let err = s.eval(r#"(wasm-load "x.wasm")"#).unwrap_err();
-    assert!(err.contains("without the wasm feature"), "{err}");
+    // The error raises with its message as written, unquoted.
+    assert_eq!(
+        s.eval(r#"(error-text (lambda () (wasm-load "x.wasm")))"#)
+            .unwrap(),
+        "\"imp was built without the wasm feature\""
+    );
     feed(&mut s, ":wasm<ret>");
     assert!(s
         .frame()
