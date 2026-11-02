@@ -78,10 +78,10 @@ fn sized(text: &str, width: u16, height: u16) -> Server {
 }
 
 #[test]
-fn line_indents_indent_a_run_of_lines_on_every_row() {
+fn line_prefixes_indent_a_run_of_lines_on_every_row() {
     let mut s = sized("top\nabcdefghijklmnop\nnext\nback\n", 12, 8);
     // Lines 1 and 2 two cells in, line 3 on back at the edge.
-    s.eval("(set-line-indents! '((1 2) (3 0)))").unwrap();
+    s.eval("(set-line-prefixes! '((1 2) (3 0)))").unwrap();
     let rows = s.frame().text_rows();
     assert_eq!(
         rows[..5],
@@ -91,8 +91,18 @@ fn line_indents_indent_a_run_of_lines_on_every_row() {
     // The cursor sits on its char, past the indent.
     s.keys(&["j", "l"]);
     assert_eq!(s.frame().cursor, (3, 1));
+    // They move with their lines: a line added above, one deleted below.
+    s.keys(&["g", "g", "O", "x", "<esc>", "G", "k", "d", "d"]);
+    let rows = s.frame().text_rows();
+    assert_eq!(
+        rows[..5],
+        ["x", "top", "  abcdefghij", "  klmnop", "back"],
+        "{rows:?}"
+    );
+    assert_eq!(s.eval("(line-prefix-width 2)").unwrap(), "2");
+    s.keys(&["u", "g", "g", "d", "d"]);
     // The empty list removes them; the text is as it was.
-    s.eval("(set-line-indents! '())").unwrap();
+    s.eval("(set-line-prefixes! '())").unwrap();
     let rows = s.frame().text_rows();
     assert_eq!(rows[1..4], ["abcdefghijkl", "mnop", "next"], "{rows:?}");
     assert!(s.text().starts_with("top\nabcdefghijklmnop\n"));

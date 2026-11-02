@@ -1,5 +1,5 @@
 //! What is drawn beside and around a buffer's text: folds, signs, change
-//! marks, margins, line indents, line-end text, footers and the body
+//! marks, margins, line prefixes, line-end text, footers and the body
 //! width.
 
 use steel::steel_vm::engine::Engine;
@@ -158,20 +158,59 @@ pub(super) fn register(engine: &mut Engine) {
     // Blank cells before lines of the current buffer's text, on every row
     // they wrap to (Emacs's line-prefix and wrap-prefix): a list of (line
     // cells), each for that line and the lines after it up to the next
-    // one's, so a run of lines takes one entry. Display only; a later
-    // entry for a line wins, and the empty list removes them.
-    engine.register_fn("set-line-indents!", |indents: Vec<Vec<isize>>| {
-        let map: std::collections::BTreeMap<usize, usize> = indents
-            .iter()
-            .filter_map(|entry| Some((clamp(*entry.first()?), clamp(*entry.get(1)?))))
-            .collect();
+    // one's, so a run of lines takes one entry. Display only; they move
+    // with their lines as the text is edited (`sync_line_prefixes`). A
+    // later entry for a line wins, and the empty list removes them.
+    engine.register_fn("set-line-prefixes!", |indents: Vec<Vec<isize>>| {
         editor::with(|e| {
             let id = e.current();
-            if map.is_empty() {
-                e.line_indents.remove(&id);
+            let version = e.buffer().version();
+            let cells = prefix_entries(&indents);
+            if cells.is_empty() {
+                e.line_prefixes.remove(&id);
             } else {
-                e.line_indents.insert(id, map);
+                e.line_prefixes
+                    .insert(id, editor::LinePrefixes { version, cells });
             }
+        })
+    });
+    // Replaces the current buffer's line prefixes from line `first` to
+    // `last` with `indents` (as for set-line-prefixes!), leaving the rest:
+    // after an edit, only the lines it changed need setting again.
+    engine.register_fn(
+        "put-line-prefixes!",
+        |first: isize, last: isize, indents: Vec<Vec<isize>>| {
+            editor::with(|e| {
+                let id = e.current();
+                e.sync_line_prefixes(id);
+                let version = e.buffer().version();
+                let line_prefixes =
+                    e.line_prefixes
+                        .entry(id)
+                        .or_insert_with(|| editor::LinePrefixes {
+                            version,
+                            cells: Default::default(),
+                        });
+                let (first, last) = (clamp(first), clamp(last));
+                line_prefixes
+                    .cells
+                    .retain(|&line, _| line < first || line > last);
+                line_prefixes.cells.extend(prefix_entries(&indents));
+            })
+        },
+    );
+    // The blank cells before line `line` of the current buffer's text.
+    engine.register_fn("line-prefix-width", |line: isize| {
+        editor::with(|e| {
+            let id = e.current();
+            e.sync_line_prefixes(id);
+            e.line_prefixes.get(&id).map_or(0, |indents| {
+                indents
+                    .cells
+                    .range(..=clamp(line))
+                    .next_back()
+                    .map_or(0, |(_, &cells)| cells as isize)
+            })
         })
     });
 
@@ -241,4 +280,13 @@ pub(super) fn register(engine: &mut Engine) {
             }
         })
     });
+}
+
+/// (line cells) entries as a line prefix map, a later one for a line
+/// winning; entries without both are skipped.
+fn prefix_entries(indents: &[Vec<isize>]) -> std::collections::BTreeMap<usize, usize> {
+    indents
+        .iter()
+        .filter_map(|entry| Some((clamp(*entry.first()?), clamp(*entry.get(1)?))))
+        .collect()
 }

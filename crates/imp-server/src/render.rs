@@ -44,13 +44,15 @@ pub fn frame(e: &mut Editor) -> Frame {
     let width = e.width.max(1) as usize;
     let height = e.height.max(2) as usize;
     let screen = e.window_rects();
-    // Parse what changed in every buffer on screen before drawing.
+    // Parse what changed in every buffer on screen before drawing, and
+    // move its line prefixes with its edits.
     let shown: Vec<usize> = screen
         .iter()
         .filter_map(|(id, _)| e.window_view(*id).map(|v| v.buffer_id))
         .collect();
     for id in shown {
         e.update_syntax(id);
+        e.sync_line_prefixes(id);
     }
 
     // Draw each window; scroll positions are worked out on the way and
@@ -619,7 +621,7 @@ struct DrawnRow {
     /// one cell; its text is `height` times the font's size.
     top: f32,
     height: f32,
-    /// Its line's indent before its text (`line_indent`), in cells of the
+    /// Its line's indent before its text (`line_prefix`), in cells of the
     /// font's size.
     prefix: usize,
     /// Its run of `DrawnText::chars`, left to right. A closed fold's row
@@ -761,7 +763,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
     let cursor_cells = layout_line(&buffer.line_text(cursor_line), e.tab_width);
     // The cursor line's indent, its size, and the width left
     // beside the indent in cells of that size.
-    let cursor_prefix = line_indent(e, buffer_id, cursor_line);
+    let cursor_prefix = line_prefix(e, buffer_id, cursor_line);
     let cursor_scale = scale_of(cursor_line);
     let cursor_width = scaled_width(text_width.saturating_sub(cursor_prefix), cursor_scale);
     let (cursor_row, cursor_x) = if folded {
@@ -796,7 +798,7 @@ fn draw_window(e: &Editor, id: usize, rect: Rect, focused: bool, pad: bool) -> D
                         prev != cursor_line,
                     ),
                     scaled_width(
-                        text_width.saturating_sub(line_indent(e, buffer_id, prev)),
+                        text_width.saturating_sub(line_prefix(e, buffer_id, prev)),
                         scale,
                     ),
                     e.linebreak,
@@ -1119,12 +1121,12 @@ fn line_cells(text: &str, tab_width: usize, layers: &[Layer], hide: bool) -> Vec
         .collect()
 }
 
-/// The blank cells drawn before `line`'s text (`set-line-indents!`):
+/// The blank cells drawn before `line`'s text (`set-line-prefixes!`):
 /// the entry for it or the nearest line above that has one, 0 for none.
-fn line_indent(e: &Editor, buffer_id: usize, line: usize) -> usize {
-    e.line_indents
+fn line_prefix(e: &Editor, buffer_id: usize, line: usize) -> usize {
+    e.line_prefixes
         .get(&buffer_id)
-        .and_then(|indents| indents.range(..=line).next_back())
+        .and_then(|indents| indents.cells.range(..=line).next_back())
         .map_or(0, |(_, &cells)| cells)
 }
 
@@ -1301,7 +1303,7 @@ impl View<'_> {
         }
         let eol_style = styles[styles.len() - 1];
         // The line's indent before every row of it, and the width left.
-        let prefix = line_indent(e, self.buffer_id, line);
+        let prefix = line_prefix(e, self.buffer_id, line);
         let width = scaled_width(self.text_width.saturating_sub(prefix), scale);
 
         let mut rows: Vec<Row> = Vec::new();

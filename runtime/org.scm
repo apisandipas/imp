@@ -2108,39 +2108,69 @@
         (org-show-indent!))
       (begin
         (buffer-highlight-clear! "org-hide")
-        (set-line-indents! '()))))
+        (set-line-prefixes! '()))))
 
-(define (org-heading-levels)
-  "Each heading in the buffer, top to bottom, as (line . level). Found
-   with search-all, as reading every line in Scheme is slow on a long
-   file."
-  (map (lambda (at) (let ([line (offset->line at)]) (cons line (org-level line))))
-       (search-all "^\\*\\+ " (+ (buffer-length) 1))))
-
-(define (org-indents headings)
-  "The line indents (for set-line-indents!) that draw `headings`, (line
-   . level) pairs, as org-indent-mode does. With p columns a level
-   (org-indent-per-level), a level-L heading gets (L-1)*(p-1), which
-   with its stars but the last drawn blank puts its last star under its
-   parent's title, and the text under it L*p, under its own title."
+(define (org-indents)
+  "The line prefixes (for set-line-prefixes!) that draw this buffer as
+   org-indent-mode does. With p columns a level (org-indent-per-level),
+   a level-L heading gets (L-1)*(p-1), which with its stars but the last
+   drawn blank puts its last star under its parent's title, and the
+   text under it L*p, under its own title. The headings are found with
+   search-all and their stars counted from there, as reading every line
+   in Scheme is slow on a long file."
   (let ([p (max 1 (option 'org-indent-per-level))])
-    (let loop ([hs headings] [acc '()])
-      (if (null? hs)
+    (let loop ([ats (search-all "^\\*\\+ " (+ (buffer-length) 1))] [acc '()])
+      (if (null? ats)
+          ;; In order, so a heading's own entry wins over the one the
+          ;; heading just above it gives its next line.
           (reverse acc)
-          (let ([line (car (car hs))] [level (cdr (car hs))])
-            (loop (cdr hs)
+          (let* ([at (car ats)]
+                 [line (offset->line at)]
+                 [level (let count ([i at]) (if (equal? (buffer-char-at i) #\*) (count (+ i 1)) (- i at)))])
+            (loop (cdr ats)
                   (cons (list (+ line 1) (* level p))
                         (cons (list line (* (- level 1) (- p 1))) acc))))))))
 
 (define (org-show-indent!)
-  "Sets this buffer's line indents from its headings, for org-indent."
-  (set-line-indents! (org-indents (org-heading-levels))))
+  "Sets all of this buffer's line prefixes from its headings, for
+   org-indent."
+  (set-line-prefixes! (org-indents)))
+
+(define (org-indent-lines! first last)
+  "Sets the line prefixes of lines `first` to `last` from the headings
+   among them, as org-indents does, carrying on from the line above,
+   whose indent is right. An entry only where a line's indent differs
+   from the line above's, as the rest follow it."
+  (let* ([p (max 1 (option 'org-indent-per-level))]
+         [above (and (> first 0) (org-level (- first 1)))]
+         ;; The indent of the section text the lines start in.
+         [body (cond [(= first 0) 0] [above (* above p)] [else (line-prefix-width (- first 1))])])
+    (let loop ([line first] [body body] [shown #f] [acc '()])
+      (if (> line last)
+          (put-line-prefixes! first last acc)
+          (let* ([level (org-level line)]
+                 [cells (if level (* (- level 1) (- p 1)) body)])
+            (loop (+ line 1)
+                  (if level (* level p) body)
+                  cells
+                  (if (equal? cells shown) acc (cons (list line cells) acc))))))))
+
+(define (org-indent-follow!)
+  "After a change, sets the indents of the lines it changed and the line
+   after them: the rest moved with their lines (set-line-prefixes!), so
+   an edit costs the lines it touched, not the buffer. When what changed
+   isn't known (an undo), sets them all."
+  (let ([range (after-change-range)])
+    (if range
+        (org-indent-lines! (offset->line (car range))
+                           (min (+ (offset->line (caddr range)) 1) (max 0 (- (buffer-line-count) 1))))
+        (org-show-indent!))))
 
 ;; Edits move headings, so the indents follow them.
 (add-hook! 'after-change
   (lambda ()
     (when (and (eq? (major-mode) 'org-mode) (buffer-local 'org-indented))
-      (org-show-indent!))))
+      (org-indent-follow!))))
 
 (define-command! 'org-indent-mode
   (lambda (count)

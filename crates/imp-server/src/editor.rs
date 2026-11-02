@@ -126,11 +126,10 @@ pub struct Editor {
     /// a one-cell change column between its line numbers and its fold
     /// column, marks or not (git-gutter; see lore:decision/0016).
     pub change_marks: HashMap<usize, BTreeMap<usize, (String, String)>>,
-    /// Blank cells drawn before lines' text, by buffer id: line -> cells,
-    /// for that line and the lines after it up to the next entry (Emacs's
+    /// Blank cells drawn before lines' text, by buffer id (Emacs's
     /// line-prefix and wrap-prefix; Org's org-indent sets them). See
-    /// `render::line_indent`.
-    pub line_indents: HashMap<usize, BTreeMap<usize, usize>>,
+    /// `render::line_prefix`.
+    pub line_prefixes: HashMap<usize, LinePrefixes>,
     /// Display-only text before lines, by buffer id: line -> (text,
     /// face) parts. It takes a column as wide as the widest, after the
     /// line numbers, and can't be edited (the file browser's details).
@@ -223,6 +222,52 @@ pub struct ClientView {
 
 /// A buffer, with where its cursor and window were when it was last
 /// left, for switching back to it.
+/// A buffer's line prefixes (`set-line-prefixes!`): line -> blank cells,
+/// each for that line and the lines after it up to the next entry, so a
+/// run of lines takes one entry; and the buffer version they were last
+/// moved to (`Editor::sync_line_prefixes`).
+#[derive(Debug, Default)]
+pub struct LinePrefixes {
+    pub version: u64,
+    pub cells: BTreeMap<usize, usize>,
+}
+
+impl LinePrefixes {
+    /// Moves the entries with edit `c` (an insert or a delete). An entry
+    /// belongs to its line's first char and goes where that char goes:
+    /// down with the lines below an insert, up with those below a delete.
+    /// It goes when its line's first char is deleted, or no longer starts
+    /// a line, and its line takes the entry of the line above.
+    fn edit(&mut self, c: &imp_core::buffer::Change) {
+        let ((first, col), (last, end_col)) = (c.start_point, c.old_end_point);
+        let added = c.text.matches('\n').count();
+        if first == last && added == 0 {
+            return;
+        }
+        for (line, cells) in self.cells.split_off(&first) {
+            let to = if line == first {
+                if col > 0 {
+                    Some(first)
+                } else {
+                    // Text put in at a line's start pushes the line down,
+                    // still a line of its own if the text ends one.
+                    (added > 0 && c.text.ends_with('\n')).then_some(first + added)
+                }
+            } else if line < last {
+                None
+            } else if line == last {
+                // A delete's last line, the rest of which joins `first`.
+                (col == 0 && end_col == 0).then_some(first)
+            } else {
+                Some(line - (last - first) + added)
+            };
+            if let Some(to) = to {
+                self.cells.insert(to, cells);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Kept {
     buffer: Buffer,
@@ -520,11 +565,31 @@ impl Editor {
         self.sign_columns.remove(&id);
         self.buffer_line_numbers.remove(&id);
         self.change_marks.remove(&id);
-        self.line_indents.remove(&id);
+        self.line_prefixes.remove(&id);
         self.margins.remove(&id);
         self.body_widths.remove(&id);
         self.status_values.remove(&id);
         true
+    }
+
+    /// Moves buffer `id`'s line prefixes with the edits made since they
+    /// were last moved, so each stays with its line and an edit costs
+    /// Scheme only the lines it changed. Across an undo, redo or reload,
+    /// which aren't known edit by edit, they stay where they are until
+    /// Scheme sets them again (`after-change-range` is #f then).
+    pub fn sync_line_prefixes(&mut self, id: usize) {
+        let (Some(indents), Some(kept)) = (self.line_prefixes.get_mut(&id), self.buffers.get(&id))
+        else {
+            return;
+        };
+        let buffer = &kept.buffer;
+        if indents.version == buffer.version() {
+            return;
+        }
+        for c in buffer.changes_since(indents.version).unwrap_or_default() {
+            indents.edit(&c);
+        }
+        indents.version = buffer.version();
     }
 
     /// Brings buffer `id`'s parse tree up to date, if it has one (see
