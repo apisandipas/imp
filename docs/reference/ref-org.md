@@ -242,7 +242,7 @@ Your notes file is `inbox.org` in `org-directory`, unless you set `org-default-n
 
 ## Running code and exporting
 
-- Running source blocks is the `org-babel` package. See [Packages](ref-packages.md).
+- Running source blocks is the `org-babel` package. See [Org babel](ref-org-babel.md).
 - Exporting to HTML, PDF and other formats is the `org-export` package. See [Org export](ref-org-export.md).
 
 ## Options
