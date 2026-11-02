@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/cloak]]"]
 issue: https://github.com/apisandipas/imp/issues/152
 frozen:
