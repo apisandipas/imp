@@ -17,8 +17,10 @@ use crate::editor::Editor;
 mod background;
 mod buffer;
 mod complete;
+mod crdt;
 mod display;
 mod faces;
+mod kdl;
 mod lsp;
 mod mouse;
 mod search;
@@ -27,6 +29,7 @@ mod syntax;
 mod system;
 mod term;
 mod ui;
+mod wasm;
 mod window;
 
 pub fn register(engine: &mut Engine) {
@@ -44,10 +47,9 @@ pub fn register(engine: &mut Engine) {
     lsp::register(engine);
     complete::register(engine);
     syntax::register(engine);
-
-    crate::wasm::register(engine);
-    crate::crdt::register(engine);
-    crate::kdl::register(engine);
+    wasm::register(engine);
+    crdt::register(engine);
+    kdl::register(engine);
 }
 
 fn clamp(n: isize) -> usize {

@@ -13,7 +13,8 @@ fn without_the_feature_it_says_so() {
     let problems = s
         .eval(r#"(apply-kdl-config! "theme \"one-dark\"")"#)
         .unwrap();
-    assert!(problems.contains("without the kdl feature"), "{problems}");
+    // The error is shown as written, unquoted.
+    assert_eq!(problems, r#"("imp was built without the kdl feature")"#);
 }
 
 #[cfg(feature = "kdl")]
@@ -32,8 +33,10 @@ mod with_kdl {
             out,
             r#"(("a" (1 2.5 "x" #true null) (("k" "v")) () 1) ("b" () () (("c" () () () 3)) 2))"#
         );
-        let err = s.eval(r#"(kdl-parse "a\nb \"unclosed")"#).unwrap_err();
-        assert!(err.contains("line 2"), "{err}");
+        let err = s
+            .eval(r#"(error-text (lambda () (kdl-parse "a\nb \"unclosed")))"#)
+            .unwrap();
+        assert!(err.starts_with("\"line 2: "), "{err}");
     }
 
     const CONFIG: &str = r#"

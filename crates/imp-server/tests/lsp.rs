@@ -529,3 +529,23 @@ fn whole_text_for_a_server_that_wants_it() {
     assert!(sent.contains(r#""contentChanges": [{"text""#));
     assert!(!sent.contains(r#""contentChanges": [{"range""#));
 }
+
+#[test]
+fn a_message_that_is_not_json_is_reported_and_the_rest_still_read() {
+    let mut s = server("");
+    // A running server as far as lsp-output! cares: one with a run.
+    s.eval(r#"(set! *lsp-servers* (hash "k" (hash 'run 1)))"#)
+        .unwrap();
+    s.eval(
+        r#"(lsp-output! "k"
+             (string-append (lsp-frame "{not json")
+                            (lsp-frame "{\"method\":\"window/logMessage\",\"params\":{\"message\":\"still here\"}}"))
+             "stdout")"#,
+    )
+    .unwrap();
+    let status = s.eval("(car *messages*)").unwrap();
+    assert!(status.contains("lsp: k sent a bad message ("), "{status}");
+    let log = s.eval("*lsp-log*").unwrap();
+    assert!(log.contains("still here"), "{log}");
+    assert!(log.contains("{not json"), "{log}");
+}

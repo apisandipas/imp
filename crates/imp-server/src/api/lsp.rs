@@ -28,7 +28,9 @@ pub(super) fn register(engine: &mut Engine) {
         crate::json::take_message(&text).map(|(body, rest)| vec![body, rest])
     });
     // The LSP client's hot paths (lsp.rs): server `key`'s output `text`
-    // added to what it sent, and the messages now whole, decoded.
+    // added to what it sent, and the messages now whole, decoded. One that
+    // isn't JSON comes as (hash "imp-error" what "body" text) rather than
+    // raising, which would lose the good messages read with it.
     engine.register_fn("lsp-read-messages", |key: String, text: String| {
         crate::lsp::read_messages(&key, &text)
     });
