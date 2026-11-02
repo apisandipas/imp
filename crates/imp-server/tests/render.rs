@@ -241,6 +241,35 @@ fn control_chars_show_in_caret_notation() {
 }
 
 #[test]
+fn control_chars_are_drawn_in_the_special_char_face() {
+    // As Vim's SpecialKey: the caret notation stands out from text that
+    // really reads ^G; a tab, laid out as blanks, doesn't take it.
+    let mut s = sized("a\x07^G\tb\u{9b}\n", 30, 4);
+    s.eval(r#"(set-face! "special-char" "fg=blue")"#).unwrap();
+    let blue = Style {
+        fg: Some(Color::Indexed(4)),
+        ..Style::default()
+    };
+    let row = &s.frame().rows[0];
+    let face_of = |text: &str| row.iter().find(|sp| sp.text == text).map(|sp| sp.style);
+    assert_eq!(face_of("^G"), Some(blue), "{row:?}");
+    assert_eq!(face_of("<9b>"), Some(blue), "{row:?}");
+    assert!(row
+        .iter()
+        .any(|sp| sp.text.starts_with("^G ") && sp.style == Style::default()));
+    // A highlight goes over it: a search match still shows.
+    s.eval(r#"(set-face! "m" "bg=red") (highlight-add! "search" 1 2 "m")"#)
+        .unwrap();
+    let row = &s.frame().rows[0];
+    let caret = row.iter().find(|sp| sp.text == "^G").unwrap();
+    assert_eq!(
+        (caret.style.fg, caret.style.bg),
+        (Some(Color::Indexed(4)), Some(Color::Indexed(1)))
+    );
+    assert_eq!(s.eval("(faces-at 1)").unwrap(), "(\"special-char\" \"m\")");
+}
+
+#[test]
 fn the_cursor_steps_over_a_control_char_whole() {
     // As in Vim: one char each, the cursor on the first of its cells.
     let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);

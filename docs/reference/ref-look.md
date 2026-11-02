@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/look]]"
 frozen:
-  docs/specs/look.md: 966eea438d82
+  docs/specs/look.md: 5f0cc2cbffc2
 ---
 # Look
 
@@ -34,6 +34,8 @@ A theme can start from another one and change only some colors. Give it a name, 
 Every color imp draws comes from a face: one for comments, one for the status line, and so on. The `normal` face is the text color and background, under everything else.
 
 Press `SPC h F` to see the faces under the cursor. `M-x list-faces` lists every face with a sample.
+
+Control characters in a buffer, drawn as `^G` or `<9b>`, have their own face, `special-char`. Every bundled theme gives it a color apart from the text: cyan in imp's own themes, and in the Modus themes the color Emacs gives them (`escape-glyph`).
 
 Change one face with `set-face!`:
 

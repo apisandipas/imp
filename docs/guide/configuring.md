@@ -6,7 +6,7 @@ frozen:
   docs/specs/leader-and-modes.md: 039e08ed9d0b
   docs/specs/vim.md: 4535c7be5a25
   docs/specs/commands.md: 03eb47131286
-  docs/specs/look.md: 966eea438d82
+  docs/specs/look.md: 5f0cc2cbffc2
   docs/specs/start-screen.md: 3a63b6f3dc40
 ---
 # Configuring init.scm
