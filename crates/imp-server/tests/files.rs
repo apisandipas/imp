@@ -94,20 +94,23 @@ fn autosave_and_recover() {
     .unwrap();
     open(&mut s, &path);
     type_keys(&mut s, "Aunsaved<esc>");
-    // File times are in milliseconds: make the copy newer.
-    std::thread::sleep(std::time::Duration::from_millis(20));
     s.eval("(autosave-all!)").unwrap();
-    // Losing the changes (as a crash would), then opening the file again,
-    // finds the copy. (One server per thread: the editor is thread-local.)
+    // A crash: the copy is left by an imp that is gone (a pid that can't
+    // run), and the buffer's changes are lost. (One server per thread:
+    // the editor is thread-local; tests/crash_recovery.rs has the rest.)
+    let name = |pid: String| format!("{}#{pid}", path.display().to_string().replace('/', "%"));
+    let copies = state.join("autosave");
+    std::fs::rename(
+        copies.join(name(std::process::id().to_string())),
+        copies.join(name("999999999".into())),
+    )
+    .unwrap();
     type_keys(&mut s, ":bd!<ret>");
     open(&mut s, &path);
     assert_eq!(s.text(), "saved\n");
     assert!(s.status().contains(":recover"), "{}", s.status());
     type_keys(&mut s, ":recover<ret>");
     assert_eq!(s.text(), "savedunsaved\n");
-    // Saving removes the copy.
-    type_keys(&mut s, ":w<ret>");
-    assert_eq!(s.eval("(recoverable?)").unwrap(), "#false");
 }
 
 #[cfg(unix)]

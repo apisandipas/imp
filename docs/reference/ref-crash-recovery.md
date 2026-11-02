@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: fca65e3437db
+  docs/specs/crash-recovery.md: 0b2c12382250
 ---
 # Crash recovery
 
@@ -10,7 +10,7 @@ If imp crashes, or your machine loses power, your unsaved changes aren't lost. i
 
 ## Not yet in imp
 
-- Most of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). Until then, imp copies changed files every `autosave-interval` seconds, doesn't copy unnamed buffers, and tells you about a copy with a message instead of asking. See [Files](ref-files.md).
+- Part of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). Copies are made as described, but imp tells you about one with a message (`:recover` to restore it) instead of asking; `:recover FILE` and `recover-session` aren't there yet; and a copy is deleted only when you save.
 
 ## How your changes are kept
 
