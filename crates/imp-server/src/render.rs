@@ -1719,7 +1719,7 @@ pub fn faces_at(e: &Editor, offset: usize) -> Vec<String> {
     let line = rope.char_to_line(offset);
     let start = rope.line_to_char(line);
     let text = rope.line(line).to_string();
-    let text = text.trim_end_matches(['\n', '\r']);
+    let text = text.strip_suffix('\n').unwrap_or(&text);
     let mut faces = Vec::new();
     if let Some(syntax) = e.syntax.get(&e.current()) {
         let bytes = rope.char_to_byte(start)..rope.char_to_byte(start + text.chars().count() + 1);

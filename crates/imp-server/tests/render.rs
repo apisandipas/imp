@@ -234,9 +234,9 @@ fn control_chars_show_in_caret_notation() {
     let mut s = sized("a\x1bb\x07c\u{9b}d\x7f\n", 30, 4);
     assert_eq!(s.frame().text_rows()[0], "a^[b^Gc<9b>d^?");
     assert!(!sends_control_chars(&mut s));
-    // A lone CR too.
+    // A lone CR too, inside its line (#155).
     let mut s = sized("a\rb\n", 30, 4);
-    assert!(s.frame().text_rows()[0].starts_with("a^M"));
+    assert_eq!(s.frame().text_rows()[0], "a^Mb");
     assert!(!sends_control_chars(&mut s));
 }
 

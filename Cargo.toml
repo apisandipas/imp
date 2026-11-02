@@ -14,7 +14,9 @@ repository = "https://github.com/apisandipas/imp"
 imp-core = { path = "crates/imp-core" }
 imp-server = { path = "crates/imp-server" }
 imp-gui = { path = "crates/imp-gui" }
-ropey = "1.6.1"
+# Only LF ends a line, as in Vim: ropey's default `unicode_lines` would
+# also end one at a lone CR, form feed, NEL and U+2028.
+ropey = { version = "1.6.1", default-features = false, features = ["simd"] }
 crossterm = "0.29.0"
 steel = { package = "steel-core", version = "0.8.3" }
 regex = "1"
