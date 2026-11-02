@@ -21,7 +21,7 @@ Repo: https://github.com/apisandipas/imp. Owner: Bryan Paronto (@apisandipas). W
 ```sh
 nix develop            # sets IMP_RUNTIME=$PWD/runtime, so Scheme edits need only a restart
 cargo run -- FILE
-tools/check.sh         # tests, clippy, fmt: gate every commit on it
+tools/check.sh         # tests, clippy, fmt: run before pushing a branch
 ```
 
 Without Nix: install Rust (rustup) and a C compiler, export `IMP_RUNTIME=$PWD/runtime` yourself, and install `rg` for project search. `make` lists every build, install and test target; it uses plain cargo, and runs it inside `nix develop` when Nix is installed. Installs must work for people without Nix: keep the README leading with the binaries and `make install`.

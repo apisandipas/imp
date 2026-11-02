@@ -41,4 +41,4 @@ When it is unclear, ask the owner. If small work grows past one commit, stop and
 - Before editing a file, run `lore context <file>` and follow the notes it lists.
 - When code follows a decision a reader might question, cite it in a comment: `; see lore:<id>` in Scheme, `// see lore:<id>` in Rust, where `<id>` is a name like `decision/0006`. Only there; don't sweep the codebase for citations.
 - If a spec changes during an Effort, `lore check` reports drift. Revisit the plan, then run `lore freeze <effort>` again.
-- Run `tools/check.sh` and `lore check` before committing.
+- Run `lore check` and the affected tests before each commit, and the full `tools/check.sh` once before pushing a branch (again only if merging `develop` brought in code changes). CI runs it on every pull request.
