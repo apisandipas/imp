@@ -42,6 +42,13 @@ pub(super) fn register(engine: &mut Engine) {
         }
         imp_core::fileio::write_atomic(path, text.as_bytes(), false).map_err(fail)
     });
+    // Writes `text` to `path` atomically for the user alone: the file
+    // 0600, its directory 0700 (tightened if it is the user's and
+    // looser). For crash copies (files.scm), which may hold secrets.
+    engine.register_fn("write-private-file!", |path: String, text: String| {
+        imp_core::fileio::write_private(Path::new(&path), text.as_bytes())
+            .map_err(|err| fail(format!("{path}: {err}")))
+    });
     // (permissions size mtime) for `path`, not following a symlink:
     // permissions as ls shows them ("drwxr-xr-x"), size in bytes, mtime
     // in seconds since the epoch. #f if it isn't there.
@@ -133,6 +140,13 @@ pub(super) fn register(engine: &mut Engine) {
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
             .map(|d| d.join("imp").display().to_string())
             .unwrap_or_else(|| ".".to_string())
+    });
+
+    // This process's id, which names its crash copies (files.scm).
+    engine.register_fn("process-id", || std::process::id() as isize);
+    // Whether process `pid` is a running imp (files.rs).
+    engine.register_fn("imp-running?", |pid: isize| {
+        u32::try_from(pid).is_ok_and(crate::files::imp_running)
     });
 
     engine.register_fn("getenv", |name: String| std::env::var(name).ok());

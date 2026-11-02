@@ -2,15 +2,11 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: 8b128ad9ed63
+  docs/specs/crash-recovery.md: ca211deeded4
 ---
 # Crash recovery
 
 If imp crashes, or your machine loses power, your unsaved changes aren't lost. imp keeps a private copy of every buffer you've changed, and offers it back when you open the file again.
-
-## Not yet in imp
-
-- Most of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). Until then, imp copies changed files every `autosave-interval` seconds, doesn't copy unnamed buffers, and tells you about a copy with a message instead of asking. See [Files](ref-files.md).
 
 ## How your changes are kept
 
@@ -63,7 +59,7 @@ A copy is deleted once your changes are safe or you've thrown them away:
 - when the buffer goes back to the saved text, with `:e!`, a reload, or undo;
 - when you kill the buffer, or quit with `:qa!`.
 
-Quitting any other way keeps the copies of buffers you haven't saved, and imp offers them the next time you open those files. Detaching from the daemon with `:q` keeps everything as it is.
+Quitting any other way keeps the copies of buffers you haven't saved, and imp offers them the next time you open those files. Detaching from the daemon with `:q`, or with `:qa!`, keeps everything as it is: the daemon still has your buffers. `:kill-server` doesn't ask about unsaved changes, but their copies are kept, so you can recover them.
 
 Only the text comes back. Your cursor, undo history and open windows don't.
 

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/files]]"
 frozen:
-  docs/specs/files.md: b452a5d99077
+  docs/specs/files.md: f5ab70444dcc
 ---
 # Files
 
@@ -32,7 +32,7 @@ If you have changed the buffer too, imp warns you instead. `:w` then refuses to 
 
 ## Autosave and recovery
 
-Every `autosave-interval` seconds, imp copies each buffer with unsaved changes into its state directory. If imp or your machine crashes, open the file again. When the autosaved copy is newer, imp says so; `:recover` puts it in the buffer, and `:w` keeps it.
+A few seconds after you stop typing, imp copies each buffer with unsaved changes into its state directory, where only you can read it. If imp or your machine crashes, open the file again and imp offers the copy back. [Crash recovery](ref-crash-recovery.md) has the details.
 
 ## Deleting, renaming and copying files
 
@@ -58,5 +58,6 @@ Copying leaves the buffer on the original file. Binary files copy whole, and the
 |---|---|---|
 | `autoread` | `#t` | Reload a file changed on disk when its buffer has no changes |
 | `backup` | `#f` | Keep the previous version as `FILE~` on each save |
-| `autosave-interval` | `30` | Seconds between autosaves |
+| `autosave-idle` | `4` | Seconds without typing before changed buffers are copied |
+| `autosave-interval` | `30` | Most seconds a change waits to be copied while you keep typing; `0` turns copies off |
 | `state-directory` | `""` | Where autosaves and recent files go; empty means `$XDG_STATE_HOME/imp` |

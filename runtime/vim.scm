@@ -3728,14 +3728,15 @@
 (define (quit-if-saved! ex)
   "Quits unless some buffer has unsaved changes or a running program (or
    ! was given). In a daemon quitting only detaches, so programs keep
-   running and don't count."
+   running and don't count. With ! standalone, the quit-discarding hook
+   runs first: the changes are thrown away on purpose."
   (let ([dirty (modified-buffers)]
         [running (if (daemon?) '() (*running-buffers*))]
         [stop (lambda (id what)
                 (set-status! (string-append what (car (buffer-info id)) " (add ! to override)"))
                 (unless (= id (current-buffer)) (go-to-buffer! id)))])
     (cond
-      [(ex-bang? ex) (quit!)]
+      [(ex-bang? ex) (unless (daemon?) (run-hooks 'quit-discarding)) (quit!)]
       [(pair? dirty) (stop (car dirty) "unsaved changes in ")]
       [(pair? running) (stop (car running) "a program is running in ")]
       [else (quit!)])))

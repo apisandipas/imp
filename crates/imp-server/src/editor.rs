@@ -111,6 +111,9 @@ pub struct Editor {
     /// The last mouse event's exact position, in cells, when its client
     /// sent one (`ClientMsg::Mouse`'s `fine`).
     pub mouse_fine: Option<(f32, f32)>,
+    /// When the last key, paste or mouse event came, from any client:
+    /// shared, as autosave waits for every client to stop typing.
+    pub last_input: Option<std::time::Instant>,
     /// Display columns between tab stops.
     pub tab_width: usize,
     /// Parse trees, by buffer id, for buffers with a language.

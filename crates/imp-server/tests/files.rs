@@ -94,20 +94,63 @@ fn autosave_and_recover() {
     .unwrap();
     open(&mut s, &path);
     type_keys(&mut s, "Aunsaved<esc>");
-    // File times are in milliseconds: make the copy newer.
-    std::thread::sleep(std::time::Duration::from_millis(20));
     s.eval("(autosave-all!)").unwrap();
-    // Losing the changes (as a crash would), then opening the file again,
-    // finds the copy. (One server per thread: the editor is thread-local.)
+    // A crash: the copy is left by an imp that is gone (a pid that can't
+    // run), and the buffer's changes are lost. (One server per thread:
+    // the editor is thread-local; tests/crash_recovery.rs has the rest.)
+    let name = |pid: String| format!("{}#{pid}", path.display().to_string().replace('/', "%"));
+    let copies = state.join("autosave");
+    std::fs::rename(
+        copies.join(name(std::process::id().to_string())),
+        copies.join(name("999999999".into())),
+    )
+    .unwrap();
     type_keys(&mut s, ":bd!<ret>");
     open(&mut s, &path);
     assert_eq!(s.text(), "saved\n");
-    assert!(s.status().contains(":recover"), "{}", s.status());
-    type_keys(&mut s, ":recover<ret>");
+    assert!(s.status().contains("from a crash"), "{}", s.status());
+    // Kept for later, then taken with :recover.
+    type_keys(&mut s, "k:recover<ret>");
     assert_eq!(s.text(), "savedunsaved\n");
-    // Saving removes the copy.
-    type_keys(&mut s, ":w<ret>");
-    assert_eq!(s.eval("(recoverable?)").unwrap(), "#false");
+}
+
+#[cfg(unix)]
+#[test]
+fn autosave_copies_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let state = temp_path("private-state");
+    let _ = std::fs::remove_dir_all(&state);
+    // A state directory left too open by an older imp is tightened.
+    std::fs::create_dir_all(state.join("autosave")).unwrap();
+    std::fs::set_permissions(
+        state.join("autosave"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let path = temp_path("shared.txt");
+    std::fs::write(&path, "public\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let mut s = server("");
+    s.eval(&format!(
+        "(set-option! 'state-directory \"{}\")",
+        state.display()
+    ))
+    .unwrap();
+    open(&mut s, &path);
+    type_keys(&mut s, "Asecret<esc>");
+    s.eval("(autosave-all!)").unwrap();
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let copies: Vec<_> = std::fs::read_dir(state.join("autosave"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(copies.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(&copies[0]).unwrap(),
+        "publicsecret\n"
+    );
+    assert_eq!(mode(&copies[0]), 0o600);
+    assert_eq!(mode(&state.join("autosave")), 0o700);
 }
 
 #[test]

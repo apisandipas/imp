@@ -3,7 +3,7 @@ type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/130
 summary: "Unsaved changes survive a crash: modified buffers are copied to private autosave files a few seconds after typing stops, and reopening the file offers them back, as Vim's swap files and Emacs' auto-save do."
-anchors: [runtime/files.scm]
+anchors: [runtime/files.scm, crates/imp-server/tests/crash_recovery.rs]
 ---
 # Crash recovery
 
@@ -80,7 +80,9 @@ A copy goes as soon as the changes it protects are no longer at risk:
 - when `:qa!`, or `:q!` on the last window of a standalone imp, ends imp: they throw changes away on purpose, as Vim deletes its swap files then (a daemon client's `:q!` only detaches it, below);
 - when a renamed buffer's file moves (`rename-file`), the old copy is deleted and the next copy is written under the new name.
 
-Ending without throwing changes away keeps the copies of buffers that still have unsaved changes, as Emacs keeps auto-save files: `:kill-server`, the daemon stopped by a signal, or a terminal closed under a standalone imp. Their copies are orphaned once the process is gone and are offered at the next open. A daemon client detaching (`:q` on its last window) changes nothing: the daemon still runs and its copies stay in use.
+In a daemon, `:qa!` and `:q!` detach the client as `:q` does and end nothing, so they delete no copies: the daemon still has the buffers, and their copies stay in use until the buffers are saved or killed. Only throwing changes away *and* ending the process deletes them.
+
+Ending without throwing changes away keeps the copies of buffers that still have unsaved changes, as Emacs keeps auto-save files: `:kill-server`, the daemon stopped by a signal, or a terminal closed under a standalone imp. Their copies are orphaned once the process is gone and are offered at the next open. `:kill-server` discards unsaved changes without asking, as it always has; its copies make that recoverable. A daemon client detaching (`:q` on its last window) changes nothing: the daemon still runs and its copies stay in use.
 
 ### Daemon
 
@@ -115,7 +117,3 @@ Behaviour is Scheme ([[0005-rust-owns-data-and-speed-scheme-owns-behavior]]), in
 - Autosaving terminal, REPL or package buffers, and buffers with no text.
 - Writing copies off the editor thread; a very large modified buffer costs one write per copy.
 - Windows: modes `0600`/`0700` and process checks are Unix only.
-
-## Known gaps
-
-- Not built yet ([#130](https://github.com/apisandipas/imp/issues/130)). Until it is, imp works as [[spec/files]] says: every modified file buffer is copied every `autosave-interval` seconds, with default permissions and no record of which imp wrote it, unnamed buffers aren't copied, and `:recover` is offered by a message rather than a prompt.

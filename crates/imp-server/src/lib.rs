@@ -361,6 +361,12 @@ impl Server {
     }
 
     pub fn handle(&mut self, msg: ClientMsg) {
+        if matches!(
+            msg,
+            ClientMsg::Key(_) | ClientMsg::Paste(_) | ClientMsg::Mouse { .. }
+        ) {
+            editor::with(|e| e.last_input = Some(std::time::Instant::now()));
+        }
         match msg {
             ClientMsg::Open(paths) => {
                 let list = paths

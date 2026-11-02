@@ -24,6 +24,14 @@ pub(super) fn register(engine: &mut Engine) {
     engine.register_fn("timer-done!", |id: isize, repeat: bool| {
         editor::with(|e| e.background.timer_fired(clamp(id) as u64, repeat))
     });
+    // Milliseconds since the last key, paste or mouse event from any
+    // client; before the first, a very long time.
+    engine.register_fn("input-idle-ms", || {
+        editor::with(|e| {
+            e.last_input
+                .map_or(isize::MAX / 2, |t| t.elapsed().as_millis() as isize)
+        })
+    });
     // The job's id. Input #f keeps stdin open.
     engine.register_fn("job-start!", |command: String, input: SteelVal| {
         let input = match &input {
