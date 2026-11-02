@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/crash-recovery]]"
 frozen:
-  docs/specs/crash-recovery.md: 9c3f8965a5f5
+  docs/specs/crash-recovery.md: 36cb67b56560
 ---
 # Crash recovery
 
@@ -10,7 +10,7 @@ If imp crashes, or your machine loses power, your unsaved changes aren't lost. i
 
 ## Not yet in imp
 
-- Part of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). `:recover FILE` and `recover-session` aren't there yet, and a copy is deleted only when you save.
+- Part of this page is still to be built ([#130](https://github.com/apisandipas/imp/issues/130)). For now a copy is deleted only when you save.
 
 ## How your changes are kept
 

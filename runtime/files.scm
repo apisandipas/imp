@@ -357,12 +357,65 @@
              (set-buffer-local! 'autosave-version #f)))
 (add-hook! 'buffer-open autosave-offer!)
 
+(define (recover-buffer!)
+  "Puts the newest orphaned crash copy of the current buffer's file in
+   the buffer, as r at the prompt does, without asking."
+  (let ([orphans (if (buffer-path) (autosave-orphans (autosave-base (buffer-path))) '())])
+    (if (null? orphans)
+        (message "no autosaved copy of this buffer")
+        (autosave-recover! (car orphans)))))
+
+;; :recover recovers the current buffer; :recover FILE opens FILE first,
+;; as Vim's does.
 (define-ex! '("rec" "recover")
   (lambda (ex)
-    (let ([orphans (if (buffer-path) (autosave-orphans (autosave-base (buffer-path))) '())])
+    (if (equal? (ex-args ex) "")
+        (recover-buffer!)
+        (when (open-file! (ex-args ex)) (recover-buffer!)))))
+
+(define (autosave-copy-file copy)
+  "The file crash copy `copy` is of, or #f for an unnamed buffer's."
+  (let ([base (cadddr copy)])
+    (and (starts-with? base "%")
+         (list->string (map (lambda (c) (if (equal? c #\%) #\/ c)) (string->list base))))))
+
+(define (recover-copy! copy)
+  "Recovers crash copy `copy`: a file's into the file's buffer, opened
+   if need be; an unnamed buffer's into a new buffer."
+  (let ([file (autosave-copy-file copy)])
+    (if file
+        (when (open-file! file) (autosave-recover! copy))
+        (begin (go-to-buffer! (buffer-new! "")) (autosave-recover! copy)))))
+
+(define-command! 'recover-session
+  (lambda (count)
+    "Pick a crash copy left by an imp that died, and recover it.
+The list is newest first, each copy with its file (or unnamed), when it
+was written and its length in lines. A file's copy goes into the file's
+buffer; an unnamed buffer's opens in a new buffer."
+    (let ([orphans (autosave-orphans #f)])
       (if (null? orphans)
-          (message "no autosaved copy of this buffer")
-          (autosave-recover! (car orphans))))))
+          (message "nothing to recover")
+          ;; Each entry: (label copy annotation), numbered so two copies
+          ;; of one file stay apart.
+          (let* ([entries (let loop ([cs orphans] [i 1] [acc '()])
+                            (if (null? cs)
+                                (reverse acc)
+                                (let* ([copy (car cs)]
+                                       [file (autosave-copy-file copy)]
+                                       [text (with-handler (lambda (e) "") (read-file (car copy)))])
+                                  (loop (cdr cs) (+ i 1)
+                                        (cons (list (string-append (number->string i) " "
+                                                                   (if file (abbreviate-path file) "unnamed"))
+                                                    copy
+                                                    (string-append (autosave-clock (caddr copy)) "  "
+                                                                   (number->string (length (text-lines text))) " lines"))
+                                              acc)))))]
+                 [entry (lambda (label) (assoc label entries))])
+            (set! *completion-ranked* #f)
+            (completing-read "Recover: " (map car entries)
+                             (lambda (label) (let ([e (entry label)]) (when e (recover-copy! (cadr e)))))
+                             (lambda (label) (let ([e (entry label)]) (and e (caddr e))))))))))
 
 ;;; Deleting, renaming and copying files (M-x delete-file, rename-file,
 ;;; copy-file). Each asks for the file, offering the current buffer's, and

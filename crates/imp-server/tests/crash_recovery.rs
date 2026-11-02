@@ -324,3 +324,62 @@ fn a_copy_held_by_a_running_imp_is_only_warned_about() {
     assert_eq!(s.text(), "ile\n");
     assert_eq!(copies(&state).len(), 1);
 }
+
+#[test]
+fn recover_file_opens_and_recovers_it() {
+    let (mut s, state) = server_with_state("recover-file-state");
+    let path = temp_path("recover-file.txt");
+    std::fs::write(&path, "file\n").unwrap();
+    // Nothing to recover in the empty buffer.
+    type_keys(&mut s, ":recover<ret>");
+    assert_eq!(s.status(), "no autosaved copy of this buffer");
+    leave_copy(&state, &path, DEAD, "copy\n");
+    type_keys(&mut s, &format!(":recover {}<ret>", path.display()));
+    assert_eq!(
+        s.eval("(buffer-path)").unwrap(),
+        format!("{:?}", path.display().to_string())
+    );
+    assert_eq!(s.text(), "copy\n");
+    assert!(s.status().contains("recovered"), "{}", s.status());
+    assert_eq!(copies(&state), vec![copy_name(&path)]);
+}
+
+#[test]
+fn recover_session_lists_every_orphaned_copy() {
+    let (mut s, state) = server_with_state("session-state");
+    s.set_size(200, 24);
+    type_keys(&mut s, ":recover-session<ret>");
+    assert_eq!(s.status(), "nothing to recover");
+    let path = temp_path("session.txt");
+    std::fs::write(&path, "file\n").unwrap();
+    leave_copy(&state, &path, DEAD, "copy\ntwo\n");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    // An unnamed buffer's, newer.
+    let dir = state.join("autosave");
+    std::fs::write(dir.join(format!("unnamed-3#{DEAD}")), "a note\n").unwrap();
+    // This imp's own copies are in use, not listed.
+    std::fs::write(
+        dir.join(format!("unnamed-9#{}", std::process::id())),
+        "mine\n",
+    )
+    .unwrap();
+    type_keys(&mut s, ":recover-session<ret>");
+    let rows = s.frame().text_rows().join("\n");
+    assert!(rows.contains("1 unnamed"), "{rows}");
+    assert!(rows.contains("2 "), "{rows}");
+    assert!(rows.contains("session.txt"), "{rows}");
+    assert!(rows.contains("2 lines"), "{rows}");
+    assert!(!rows.contains("mine"), "{rows}");
+    // The first is newest: the unnamed copy, into a new buffer.
+    type_keys(&mut s, "<ret>");
+    assert_eq!(s.text(), "a note\n");
+    assert_eq!(s.eval("(buffer-path)").unwrap(), "#false");
+    assert_eq!(s.eval("(buffer-modified?)").unwrap(), "#true");
+    // Then the file's.
+    type_keys(&mut s, ":recover-session<ret><ret>");
+    assert_eq!(s.text(), "copy\ntwo\n");
+    assert_eq!(
+        s.eval("(buffer-path)").unwrap(),
+        format!("{:?}", path.display().to_string())
+    );
+}
