@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/files]]"
 frozen:
-  docs/specs/files.md: f5ab70444dcc
+  docs/specs/files.md: a9c0029e83b6
 ---
 # Files
 
@@ -23,6 +23,8 @@ Turn on `backup` to keep the previous version of a file as `FILE~` each time you
 imp keeps a file the way it found it. A file with Windows (CRLF) line endings is written back with them, and a UTF-8 byte order mark is kept.
 
 A file that isn't valid UTF-8 opens as Latin-1 and is saved as Latin-1. To change a file's line endings, set `fileformat` and save: `:set ff=unix` or `:set ff=dos`.
+
+As in Vim, only a newline ends a line (or CRLF, in a Windows file). A carriage return anywhere else stays in its line, shown as `^M`, and is saved as it was. Form feeds and Unicode line separators stay inside their lines too.
 
 ## When a file changes on disk
 

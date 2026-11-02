@@ -509,6 +509,27 @@ fn substitute_with_line_breaks() {
 }
 
 #[test]
+fn only_lf_ends_a_line() {
+    // As in Vim: a lone CR is a char in its line, not a line break.
+    let mut s = server("a\rb\nc\n");
+    type_keys(&mut s, "$");
+    assert_eq!(s.cursor(), 2);
+    type_keys(&mut s, "j");
+    assert_eq!(s.cursor(), 4);
+    type_keys(&mut s, "kdd");
+    assert_eq!(s.text(), "c\n");
+    // A CR before an LF too, in an LF buffer: Vim shows `a^M`, and `$x`
+    // deletes the CR.
+    let mut s = server("a\r\nb\n");
+    type_keys(&mut s, "$x");
+    assert_eq!(s.text(), "a\nb\n");
+    // Form feed, NEL and U+2028 stay inside the line, as in Vim.
+    let mut s = server("a\x0cb\u{85}c\u{2028}d\nz\n");
+    type_keys(&mut s, "jdd");
+    assert_eq!(s.text(), "a\x0cb\u{85}c\u{2028}d\n");
+}
+
+#[test]
 fn ex_ranges() {
     let mut s = server("1\n2\n3\n4\n5\n");
     type_keys(&mut s, ":2,4d<ret>");

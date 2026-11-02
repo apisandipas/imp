@@ -286,21 +286,20 @@ impl Buffer {
         }
     }
 
-    /// Length of `line` in chars, not counting its line break.
+    /// Length of `line` in chars, not counting its line break. Only LF
+    /// ends a line, as in Vim: a CRLF file's CRs are gone once it's
+    /// read, so a CR left before an LF is text, drawn as `^M`.
     pub fn line_len(&self, line: usize) -> usize {
         if line >= self.text.len_lines() {
             return 0;
         }
         let slice = self.text.line(line);
         let len = slice.len_chars();
-        let mut break_len = 0;
         if len > 0 && slice.char(len - 1) == '\n' {
-            break_len = 1;
-            if len > 1 && slice.char(len - 2) == '\r' {
-                break_len = 2;
-            }
+            len - 1
+        } else {
+            len
         }
-        len - break_len
     }
 
     pub fn line_text(&self, line: usize) -> String {

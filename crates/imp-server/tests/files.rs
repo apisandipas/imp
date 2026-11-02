@@ -24,6 +24,28 @@ fn crlf_files_keep_their_line_endings() {
 }
 
 #[test]
+fn a_lone_cr_stays_in_its_line() {
+    // As in Vim: `a\rb` is one line, in an LF file and in a CRLF one, and
+    // the CR is written back as it was.
+    let path = temp_path("lone-cr.txt");
+    std::fs::write(&path, "a\rb\nc\n").unwrap();
+    let mut s = server("");
+    open(&mut s, &path);
+    assert_eq!(s.eval("(option 'fileformat)").unwrap(), "\"unix\"");
+    type_keys(&mut s, "A!<esc>:w<ret>");
+    assert_eq!(std::fs::read(&path).unwrap(), b"a\rb!\nc\n");
+
+    let path = temp_path("lone-cr-dos.txt");
+    std::fs::write(&path, "one\r\ntw\ro\r\n").unwrap();
+    let mut s = server("");
+    open(&mut s, &path);
+    assert_eq!(s.text(), "one\ntw\ro\n");
+    assert_eq!(s.eval("(option 'fileformat)").unwrap(), "\"dos\"");
+    type_keys(&mut s, "jA!<esc>:w<ret>");
+    assert_eq!(std::fs::read(&path).unwrap(), b"one\r\ntw\ro!\r\n");
+}
+
+#[test]
 fn latin1_files_round_trip() {
     let path = temp_path("latin1.txt");
     std::fs::write(&path, b"caf\xE9\n").unwrap();
