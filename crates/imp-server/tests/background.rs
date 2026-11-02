@@ -86,3 +86,17 @@ fn a_socket_that_cannot_connect_says_why() {
     let status = s.status();
     assert!(!status.is_empty() && !status.starts_with('"'), "{status}");
 }
+
+#[test]
+fn a_socket_name_stays_in_the_socket_directory() {
+    let mut s = server("");
+    let path = s.eval(r#"(socket-path "work")"#).unwrap();
+    assert!(path.ends_with("work.sock\""), "{path}");
+    for bad in ["", "../x", "a/b", "/abs", ".."] {
+        let err = s.eval(&format!("(socket-path {bad:?})")).unwrap_err();
+        assert!(
+            err.contains("socket-path") && err.contains("can't"),
+            "{bad}: {err}"
+        );
+    }
+}

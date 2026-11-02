@@ -84,7 +84,14 @@ pub(super) fn register(engine: &mut Engine) {
         editor::with(|e| e.background.close_connection(clamp(conn) as u64))
     });
     // Where a socket called `name` goes ($XDG_RUNTIME_DIR/imp/NAME.sock).
-    engine.register_fn("socket-path", |name: String| {
-        crate::daemon::socket_path(&name).display().to_string()
-    });
+    // The name is checked like `--name`, so it can't leave that directory.
+    engine.register_fn(
+        "socket-path",
+        |name: String| match crate::daemon::check_name(&name) {
+            Ok(()) => Ok(crate::daemon::socket_path(&name).display().to_string()),
+            Err(_) => Err(fail(format!(
+                "socket-path {name:?}: a name can't be empty or contain / or .."
+            ))),
+        },
+    );
 }
