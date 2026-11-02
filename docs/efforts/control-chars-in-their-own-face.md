@@ -16,4 +16,4 @@ The renderer already draws a control char in buffer text as its caret notation (
 ## Tasks
 
 - [x] Paint control chars in buffer text with `special-char` over their syntax face, list it in `describe-face`, with a render test that the caret cells carry the face, syntax or not.
-- [ ] Set `special-char` in every bundled theme: cyan from the palette in `theme.scm`, Modus's `keybind` (bold with bold constructs, as Emacs's `escape-glyph`) in modus-themes, with a test of the Modus colors; update `ref-buffers-and-windows`, `ref-look` and the configuring guide, stamped.
+- [x] Set `special-char` in every bundled theme: cyan from the palette in `theme.scm`, Modus's `keybind` (bold with bold constructs, as Emacs's `escape-glyph`) in modus-themes, with a test of the Modus colors; update `ref-buffers-and-windows`, `ref-look` and the configuring guide, stamped.
