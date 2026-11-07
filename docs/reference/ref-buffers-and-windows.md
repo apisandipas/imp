@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/buffers-and-windows]]"
 frozen:
-  docs/specs/buffers-and-windows.md: 76dc5e32ba7a
+  docs/specs/buffers-and-windows.md: 48d6a4c92e29
 ---
 # Buffers and windows
 
@@ -19,7 +19,7 @@ Each buffer keeps its own cursor and scroll position. Jumps such as `C-o` cross 
 | `:enew` | Open a new, empty buffer |
 | `:ls` | List the buffers |
 | `:b NAME` | Switch to a buffer |
-| `:bn` / `:bp` | Next or previous buffer |
+| `:bn` / `:bp` | Next or previous buffer, passing over sidebars such as the [file tree](ref-file-tree.md) |
 | `:bd` | Close the buffer |
 | `C-^` | Back to the buffer you were in before |
 | `:wa` | Save every buffer |
