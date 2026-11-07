@@ -4052,13 +4052,33 @@
         (if (memv id (buffer-list)) (go-to-buffer! id) (set-status! "no such buffer"))))))
 
 (define (buffer-step step)
-  "The buffer `step` places after (or before) the current one, wrapping."
+  "The buffer `step` places after (or before) the current one, wrapping,
+   passing over buffers whose buffer-local buffer-cycle-skip is set. The
+   current buffer when every other is passed over."
   (let* ([ids (buffer-list)] [n (length ids)]
          [i (let loop ([l ids] [i 0]) (if (= (car l) (current-buffer)) i (loop (cdr l) (+ i 1))))])
-    (list-ref ids (modulo (+ i step) n))))
+    (let loop ([k 1])
+      (if (>= k n)
+          (current-buffer)
+          (let ([id (list-ref ids (modulo (+ i (* step k)) n))])
+            (if (buffer-local-of id 'buffer-cycle-skip) (loop (+ k 1)) id))))))
 
-(define-ex! '("bn" "bnext") (lambda (ex) (go-to-buffer! (buffer-step 1))))
-(define-ex! '("bp" "bprevious" "bN" "bNext") (lambda (ex) (go-to-buffer! (buffer-step -1))))
+(define (buffer-cycle! step)
+  "Goes to the buffer `step` places on (:bn, :bp). From a buffer whose
+   buffer-local buffer-cycle-window is a procedure, switches the buffer
+   of the window it returns instead, and the cursor stays; with no such
+   window, does nothing."
+  (let ([redirect (buffer-local 'buffer-cycle-window)])
+    (if redirect
+        (let ([w (redirect)] [here (current-window)])
+          (if (and w (memv w (window-list)) (not (= w here)))
+              (begin (go-to-window! w) (go-to-buffer! (buffer-step step)) (go-to-window! here))
+              (message "no window to switch the buffer of")))
+        (go-to-buffer! (buffer-step step)))
+    void))
+
+(define-ex! '("bn" "bnext") (lambda (ex) (buffer-cycle! 1)))
+(define-ex! '("bp" "bprevious" "bN" "bNext") (lambda (ex) (buffer-cycle! -1)))
 
 (define-ex! '("bd" "bdelete" "bw" "bwipeout")
   (lambda (ex)

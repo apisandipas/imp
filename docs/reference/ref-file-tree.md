@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: 93c6d2be9759
+  docs/specs/file-tree.md: 89cc01829d44
 ---
 # File tree
 
@@ -22,7 +22,7 @@ Press `SPC t e`, or run `M-x file-tree`, to open the tree. It opens down the lef
 
 With the [daemon](ref-daemon.md), each client has its own tree, so two clients can each show a different project.
 
-The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
+The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line, in bold and blue, and a little taller than the rest in the window client. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
 
 Dotfiles, and files git ignores, aren't shown at first: `H` shows or hides dotfiles, and `I` shows or hides ignored files.
 
@@ -34,9 +34,11 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 
 - `<ret>` or `<tab>` on a folder opens it in place, its contents indented under it. Press it again to shut it.
 - `<ret>` on a file opens it in the window you opened the tree from, and moves the cursor there. The tree stays open.
-- Clicking does the same: click a folder to open or shut it, or a file to open it.
+- Clicking a folder opens or shuts it. Clicking a file opens it in the window you opened the tree from, but the cursor stays in the tree, so you can click through several files.
 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
+
+`SPC b n` and `SPC b p` (or `:bn` and `:bp`) in the tree switch the file in the window you opened it from, and the cursor stays in the tree. The tree moves to the new file, unless you've set `file-tree-follow` to `#f`. From any other window they pass over the tree, so it never shows in two windows.
 
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
 
@@ -67,9 +69,15 @@ Change the colours in `init.scm`:
 (set-face! "file-tree.modified" "fg=#e69875")
 ```
 
+The projects' names are in `file-tree.root`. To make them plain bold, the same height and colour as the rest:
+
+```scheme
+(set-face! "file-tree.root" "bold")
+```
+
 ## More than one project
 
-Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
+Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, after a blank line, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
 
 To take one out, put the cursor on its name and press `X`. The folder itself isn't touched. The first project, the one the tree opened on, always stays.
 

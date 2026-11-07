@@ -120,7 +120,8 @@
      (list "dired.permissions" (fg 'dim))
      (list "dired.size" (fg 'cyan))
      (list "dired.date" (fg 'comment))
-     ;; The file-tree package's git statuses
+     ;; The file-tree package's root lines and git statuses
+     (list "file-tree.root" (fg 'blue "bold height=1.2"))
      (list "file-tree.modified" (fg 'orange))
      (list "file-tree.added" (fg 'green))
      (list "file-tree.untracked" (fg 'green))

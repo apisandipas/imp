@@ -200,10 +200,31 @@ fn clicks_open_folders_and_files() {
         s.text(),
         format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
     );
-    // From the other window, a click on a file opens it there.
+    // From the other window, a click on a file opens it in the window
+    // the tree came from, and the cursor goes back to the tree.
     click(&mut s, 3, 2);
-    type_keys(&mut s, "<c-w>l");
+    let tree_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, "<C-w>l");
     click(&mut s, 5, 3);
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    type_keys(&mut s, "<C-w>l");
+    assert_eq!(eval(&mut s, "(current-window)"), file_window);
+    assert_eq!(s.text(), "fn main() {}\n");
+}
+
+#[test]
+fn a_click_on_a_file_keeps_the_cursor_in_the_tree() {
+    let dir = project("tree-click-stay");
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let file_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, " te");
+    let tree_window = eval(&mut s, "(current-window)");
+    click(&mut s, 3, 2); // src/
+    click(&mut s, 5, 3); // main.rs
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(eval(&mut s, "(current-line)"), "3");
+    type_keys(&mut s, "<C-w>l");
     assert_eq!(eval(&mut s, "(current-window)"), file_window);
     assert_eq!(s.text(), "fn main() {}\n");
 }
@@ -499,11 +520,11 @@ fn p_adds_roots_and_x_removes_them() {
     type_keys(&mut s, "P");
     type_keys(&mut s, &format!("{}<ret>", other.display()));
     let both = format!(
-        "{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n{second}\n  docs/\n  src/\n  A.txt\n  b.txt\n"
+        "{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n\n{second}\n  docs/\n  src/\n  A.txt\n  b.txt\n"
     );
     assert_eq!(s.text(), both);
-    // The cursor is on the new root's line.
-    assert_eq!(eval(&mut s, "(current-line)"), "5");
+    // The cursor is on the new root's line, after a blank one.
+    assert_eq!(eval(&mut s, "(current-line)"), "6");
     // Adding it again shows it once.
     type_keys(&mut s, "P");
     type_keys(&mut s, &format!("{}/<ret>", other.display()));
@@ -527,12 +548,39 @@ fn p_adds_roots_and_x_removes_them() {
         "{}",
         s.status()
     );
-    type_keys(&mut s, "6GX");
+    type_keys(&mut s, "7GX");
     assert_eq!(
         s.text(),
         format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
     );
     assert!(other.exists());
+}
+
+#[test]
+fn roots_stand_out_and_the_blank_line_between_does_nothing() {
+    let dir = project("tree-blank");
+    let other = project("tree-blank-other");
+    let mut s = with_own_state(&dir.join("b.txt"), "tree-blank");
+    type_keys(&mut s, " te");
+    // One root: its line is in file-tree.root, and there's no blank line.
+    assert_eq!(face(&mut s, &dir), "\"file-tree.root\"");
+    assert!(!s.text().contains("\n\n"), "{}", s.text());
+    type_keys(&mut s, "P");
+    type_keys(&mut s, &format!("{}<ret>", other.display()));
+    assert_eq!(face(&mut s, &other), "\"file-tree.root\"");
+    let before = s.text();
+    // On the blank line (line 6), <ret>, <tab>, a, r, D and X do nothing.
+    for keys in ["<ret>", "<tab>", "a", "r", "D", "X"] {
+        type_keys(&mut s, &format!("6G{keys}"));
+        assert_eq!(eval(&mut s, "*mode*"), "normal", "{keys}");
+        assert_eq!(s.text(), before, "{keys}");
+        assert_eq!(s.status(), "", "{keys}");
+        assert_eq!(eval(&mut s, "(length (window-list))"), "2", "{keys}");
+    }
+    // Nor does a click on it.
+    click(&mut s, 2, 6);
+    assert_eq!(s.text(), before);
+    assert_eq!(eval(&mut s, "(major-mode)"), "file-tree-mode");
 }
 
 #[test]
@@ -576,6 +624,56 @@ fn it_follows_the_current_buffer() {
     type_keys(&mut s, "<C-w>h");
     assert_eq!(eval(&mut s, "(current-line)"), "3");
     assert!(s.text().starts_with(&root));
+}
+
+#[test]
+fn buffer_cycling_leaves_the_tree_alone() {
+    let dir = project("tree-cycle");
+    std::fs::write(dir.join("A.txt"), "a\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "b\n").unwrap();
+    let mut s = visiting(&dir.join("A.txt"));
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("b.txt").display()));
+    let file_window = eval(&mut s, "(current-window)");
+    let shown = |s: &mut imp_server::Server| {
+        eval(
+            s,
+            &format!("(file-name-of (with-buffer (window-buffer {file_window}) buffer-name))"),
+        )
+    };
+    type_keys(&mut s, " te");
+    let tree_window = eval(&mut s, "(current-window)");
+    let tree = eval(&mut s, "(current-buffer)");
+    // From the tree, SPC b p and SPC b n switch the file window's buffer
+    // (A.txt comes before b.txt); the cursor stays in the tree, which
+    // follows to the file.
+    let row = |s: &mut imp_server::Server| eval(s, "(file-name-of (car (file-tree-row)))");
+    type_keys(&mut s, " bp");
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(eval(&mut s, "(current-buffer)"), tree);
+    assert_eq!(shown(&mut s), "\"A.txt\"");
+    assert_eq!(row(&mut s), "\"A.txt\"");
+    type_keys(&mut s, " bn");
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(shown(&mut s), "\"b.txt\"");
+    assert_eq!(row(&mut s), "\"b.txt\"");
+    // From the file's window, :bn and :bp never land on the tree.
+    type_keys(&mut s, "<C-w>l");
+    for keys in [":bn<ret>", ":bn<ret>", ":bn<ret>", ":bp<ret>", ":bp<ret>"] {
+        type_keys(&mut s, keys);
+        assert_ne!(eval(&mut s, "(current-buffer)"), tree, "{keys}");
+    }
+}
+
+#[test]
+fn buffer_cycling_in_a_tree_alone_does_nothing() {
+    let dir = project("tree-cycle-alone");
+    let mut s = visiting(&dir.join("b.txt"));
+    type_keys(&mut s, " te:only<ret>");
+    assert_eq!(eval(&mut s, "(length (window-list))"), "1");
+    let tree = eval(&mut s, "(current-buffer)");
+    type_keys(&mut s, ":bn<ret>");
+    assert_eq!(eval(&mut s, "(current-buffer)"), tree);
+    assert_eq!(s.status(), "no window to switch the buffer of");
 }
 
 #[test]

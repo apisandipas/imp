@@ -425,7 +425,9 @@
    (list "dired.permissions" 'fg-dim #f "" #f)
    (list "dired.size" 'fg-dim #f "" #f)
    (list "dired.date" 'date-common #f "" #f)
-   ;; The file-tree package's git statuses: as Magit's and diff-hl's
+   ;; The file-tree package's root lines, as dired's directories, and its
+   ;; git statuses, as Magit's and diff-hl's
+   (list "file-tree.root" 'accent-0 #f "bold height=1.2" #f)
    (list "file-tree.modified" 'fg-changed #f "" #f)
    (list "file-tree.added" 'fg-added #f "" #f)
    (list "file-tree.untracked" 'fg-added #f "" #f)

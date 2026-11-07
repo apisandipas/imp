@@ -2,7 +2,7 @@
 type: Spec
 status: accepted
 issue: https://github.com/apisandipas/imp/issues/55
-follow-up: https://github.com/apisandipas/imp/issues/78
+follow-up: [https://github.com/apisandipas/imp/issues/78, https://github.com/apisandipas/imp/issues/180]
 anchors: [packages/file-tree/file-tree.scm, crates/imp-server/tests/file_tree.rs]
 summary: "The file-tree package: the project's folders as an expandable tree down the left, toggled with SPC t e."
 ---
@@ -13,11 +13,12 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 ## Behaviour
 
 - `SPC t e` and `M-x file-tree` toggle the tree. It opens down the left of the frame, `file-tree-width` columns wide (30), and the cursor moves into it. Toggling it from anywhere, the tree included, closes it, and the cursor goes back to the window it came from. Each frame has at most one tree, so each client of the daemon has its own, in its own buffer.
-- The tree shows one or more roots. The first is the current buffer's project root ([[projects]]) when the tree opens, or the working directory outside a project. Each root's name is on a line of its own, and below it, its entries are indented two columns a level. Directories come first and end in `/`, then files, each group in alphabetical order.
+- The tree shows one or more roots. The first is the current buffer's project root ([[projects]]) when the tree opens, or the working directory outside a project. Each root's name is on a line of its own, in the face `file-tree.root` (bold, blue and `height=1.2` by default, so taller in the window client), and below it, its entries are indented two columns a level. Directories come first and end in `/`, then files, each group in alphabetical order. A blank line separates each root's entries from the next root's name; the cursor can sit on it, and it does nothing.
 - `P` adds another root: a project picked from the remembered projects with completion, or a directory typed in. Added roots come after the first, in the order they were added, and are remembered between sessions in imp's state directory. `X` on an added root's line removes it from the tree (the directory stays). The first root can't be removed, and a root added twice is shown once.
 - When it opens, the tree expands down to the current buffer's file and puts the cursor on it.
 - With `file-tree-follow` on (the default), switching to a buffer whose file is under one of the roots, in any window, expands the tree down to it and moves the tree's cursor to it. The cursor stays in the window you switched in. A file under no root changes nothing.
-- `<ret>` and `<tab>` on a directory expand or collapse it in place. `<ret>` on a file opens it in the window the tree was opened from, and moves the cursor there. A left click on a directory expands or collapses it, and on a file opens it as `<ret>` does; a click on a root's line or below the last entry only moves the cursor. Which directories are expanded is remembered while imp runs, so a tree that is closed and opened again looks the same.
+- `<ret>` and `<tab>` on a directory expand or collapse it in place. `<ret>` on a file opens it in the window the tree was opened from, and moves the cursor there. A left click on a directory expands or collapses it, and on a file opens it in the window the tree was opened from while the cursor stays in the tree, on that file; a click on a root's line, a blank line or below the last entry only moves the cursor. Which directories are expanded is remembered while imp runs, so a tree that is closed and opened again looks the same.
+- `next-buffer` and `previous-buffer` (`SPC b n`, `SPC b p`, `:bn`, `:bp`) run in the tree switch the buffer of the window the tree was opened from, and the cursor stays in the tree (which follows the new file when `file-tree-follow` is on). Run from any window, they skip tree buffers, so a tree never shows in a second window.
 - `a` asks for a new name inside the directory under the cursor (on a file, that file's directory). A name ending in `/` makes a directory, and missing parent directories are made too. The tree then shows it with the cursor on it.
 - `r` asks for a new path for the entry under the cursor, filled in with its current path relative to its root. It renames or moves the entry, and a buffer visiting the file follows it.
 - `D` deletes the entry under the cursor after `confirm!`. A directory is deleted with everything in it.
@@ -31,7 +32,7 @@ A bundled package ([[0011-non-essential-features-are-opt-in-packages]]): `(use-p
 
 ## Keys and options
 
-`SPC t e`, `file-tree`, and in the tree `<ret> <tab> a r D H I P X R q ?`; `file-tree-width`, `file-tree-show-hidden`, `file-tree-show-ignored`, `file-tree-open-at-start`, `file-tree-follow`; the faces `file-tree.modified`, `file-tree.added`, `file-tree.untracked`, `file-tree.conflict` and `file-tree.ignored`.
+`SPC t e`, `file-tree`, and in the tree `<ret> <tab> a r D H I P X R q ?`; `file-tree-width`, `file-tree-show-hidden`, `file-tree-show-ignored`, `file-tree-open-at-start`, `file-tree-follow`; the faces `file-tree.root`, `file-tree.modified`, `file-tree.added`, `file-tree.untracked`, `file-tree.conflict` and `file-tree.ignored`.
 
 ## Out of scope
 
