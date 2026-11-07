@@ -38,6 +38,8 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 
+`SPC b n` and `SPC b p` (or `:bn` and `:bp`) in the tree switch the file in the window you opened it from, and the cursor stays in the tree, which moves to the new file. From any other window they pass over the tree, so it never shows in two windows.
+
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
 
 Press `?` in the tree to see its keys in a popup at the bottom of the screen. Press `?` again to hide it.

@@ -395,6 +395,10 @@
   (begin
     (go-to-buffer! id)
     (unless (eq? (major-mode) 'file-tree-mode) (set-major-mode! 'file-tree-mode))
+    ;; :bn and :bp pass over the tree, and from it switch the buffer of
+    ;; the window it came from.
+    (set-buffer-local! 'buffer-cycle-skip #t)
+    (set-buffer-local! 'buffer-cycle-window (lambda () (file-tree-other-window)))
     (unless (equal? (buffer-local 'file-tree-root) root)
       (set-buffer-local! 'file-tree-root root)
       (set-cursor! 0))

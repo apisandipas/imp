@@ -627,6 +627,44 @@ fn it_follows_the_current_buffer() {
 }
 
 #[test]
+fn buffer_cycling_leaves_the_tree_alone() {
+    let dir = project("tree-cycle");
+    std::fs::write(dir.join("A.txt"), "a\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "b\n").unwrap();
+    let mut s = visiting(&dir.join("A.txt"));
+    type_keys(&mut s, &format!(":e {}<ret>", dir.join("b.txt").display()));
+    let file_window = eval(&mut s, "(current-window)");
+    let shown = |s: &mut imp_server::Server| {
+        eval(
+            s,
+            &format!("(file-name-of (with-buffer (window-buffer {file_window}) buffer-name))"),
+        )
+    };
+    type_keys(&mut s, " te");
+    let tree_window = eval(&mut s, "(current-window)");
+    let tree = eval(&mut s, "(current-buffer)");
+    // From the tree, SPC b p and SPC b n switch the file window's buffer
+    // (A.txt comes before b.txt); the cursor stays in the tree, which
+    // follows to the file.
+    let row = |s: &mut imp_server::Server| eval(s, "(file-name-of (car (file-tree-row)))");
+    type_keys(&mut s, " bp");
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(eval(&mut s, "(current-buffer)"), tree);
+    assert_eq!(shown(&mut s), "\"A.txt\"");
+    assert_eq!(row(&mut s), "\"A.txt\"");
+    type_keys(&mut s, " bn");
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(shown(&mut s), "\"b.txt\"");
+    assert_eq!(row(&mut s), "\"b.txt\"");
+    // From the file's window, :bn and :bp never land on the tree.
+    type_keys(&mut s, "<C-w>l");
+    for keys in [":bn<ret>", ":bn<ret>", ":bn<ret>", ":bp<ret>", ":bp<ret>"] {
+        type_keys(&mut s, keys);
+        assert_ne!(eval(&mut s, "(current-buffer)"), tree, "{keys}");
+    }
+}
+
+#[test]
 fn it_scrolls_to_follow_and_leaves_other_files_alone() {
     let dir = project("tree-follow-scroll");
     for i in 0..60 {
