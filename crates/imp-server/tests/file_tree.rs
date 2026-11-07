@@ -520,11 +520,11 @@ fn p_adds_roots_and_x_removes_them() {
     type_keys(&mut s, "P");
     type_keys(&mut s, &format!("{}<ret>", other.display()));
     let both = format!(
-        "{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n{second}\n  docs/\n  src/\n  A.txt\n  b.txt\n"
+        "{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n\n{second}\n  docs/\n  src/\n  A.txt\n  b.txt\n"
     );
     assert_eq!(s.text(), both);
-    // The cursor is on the new root's line.
-    assert_eq!(eval(&mut s, "(current-line)"), "5");
+    // The cursor is on the new root's line, after a blank one.
+    assert_eq!(eval(&mut s, "(current-line)"), "6");
     // Adding it again shows it once.
     type_keys(&mut s, "P");
     type_keys(&mut s, &format!("{}/<ret>", other.display()));
@@ -548,12 +548,39 @@ fn p_adds_roots_and_x_removes_them() {
         "{}",
         s.status()
     );
-    type_keys(&mut s, "6GX");
+    type_keys(&mut s, "7GX");
     assert_eq!(
         s.text(),
         format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
     );
     assert!(other.exists());
+}
+
+#[test]
+fn roots_stand_out_and_the_blank_line_between_does_nothing() {
+    let dir = project("tree-blank");
+    let other = project("tree-blank-other");
+    let mut s = with_own_state(&dir.join("b.txt"), "tree-blank");
+    type_keys(&mut s, " te");
+    // One root: its line is in file-tree.root, and there's no blank line.
+    assert_eq!(face(&mut s, &dir), "\"file-tree.root\"");
+    assert!(!s.text().contains("\n\n"), "{}", s.text());
+    type_keys(&mut s, "P");
+    type_keys(&mut s, &format!("{}<ret>", other.display()));
+    assert_eq!(face(&mut s, &other), "\"file-tree.root\"");
+    let before = s.text();
+    // On the blank line (line 6), <ret>, <tab>, a, r, D and X do nothing.
+    for keys in ["<ret>", "<tab>", "a", "r", "D", "X"] {
+        type_keys(&mut s, &format!("6G{keys}"));
+        assert_eq!(eval(&mut s, "*mode*"), "normal", "{keys}");
+        assert_eq!(s.text(), before, "{keys}");
+        assert_eq!(s.status(), "", "{keys}");
+        assert_eq!(eval(&mut s, "(length (window-list))"), "2", "{keys}");
+    }
+    // Nor does a click on it.
+    click(&mut s, 2, 6);
+    assert_eq!(s.text(), before);
+    assert_eq!(eval(&mut s, "(major-mode)"), "file-tree-mode");
 }
 
 #[test]

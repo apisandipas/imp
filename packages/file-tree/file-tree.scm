@@ -83,6 +83,9 @@
 
 ;; The folders shown open, path -> #t, kept while imp runs.
 (define *file-tree-expanded* (hash))
+;; The row of the blank line between one root's entries and the next
+;; root: depth -1, so it has no path, prefix, icon or status.
+(define *file-tree-blank-row* (list "" #f -1 #f #f))
 
 (define (file-tree-entry)
   "This frame's open tree, as (tree-window origin buffer), or #f."
@@ -203,18 +206,21 @@
 
 (define (file-tree-row-prefix row)
   "What comes before `row`'s name on its line: two columns a level, then
-   its icon and a space if it has one. A root's line has none."
-  (if (= (caddr row) 0)
+   its icon and a space if it has one. A root's line, and the blank line
+   between roots, have none."
+  (if (<= (caddr row) 0)
       ""
       (let ([icon (file-tree-row-icon row)])
         (string-append (make-string (* 2 (caddr row)) #\space) (if icon (string-append icon " ") "")))))
 
 (define (file-tree-row-text row)
-  "The line that shows `row`: a root's name, or an entry's prefix and
-   name, a directory's ending in /."
-  (if (= (caddr row) 0)
-      (file-name-of (car row))
-      (string-append (file-tree-row-prefix row) (file-name-of (car row)) (if (cadr row) "/" ""))))
+  "The line that shows `row`: a root's name, nothing for the blank line
+   between roots, or an entry's prefix and name, a directory's ending
+   in /."
+  (cond
+    [(< (caddr row) 0) ""]
+    [(= (caddr row) 0) (file-name-of (car row))]
+    [else (string-append (file-tree-row-prefix row) (file-name-of (car row)) (if (cadr row) "/" ""))]))
 
 (define (file-tree-name-col line)
   "The column where the name on `line` of the tree starts."
@@ -229,8 +235,12 @@
 (define (file-tree-render!)
   "Reads the roots' directories afresh and redraws the tree buffer (the
    current buffer), keeping the cursor on the line it was on."
-  (let* ([rows (apply append (map (lambda (root) (cons (list root #t 0 root #f) (file-tree-rows root 1 root #f)))
-                                  (file-tree-roots)))]
+  (let* ([rows (let loop ([roots (file-tree-roots)])
+                 (if (null? roots)
+                     '()
+                     (append (cons (list (car roots) #t 0 (car roots) #f) (file-tree-rows (car roots) 1 (car roots) #f))
+                             (if (null? (cdr roots)) '() (list *file-tree-blank-row*))
+                             (loop (cdr roots)))))]
          [line (current-line)])
     (set-buffer-local! 'file-tree-lines (list->vector rows))
     (set-buffer-local! 'file-tree-name-cols (list->vector (map (lambda (r) (string-length (file-tree-row-prefix r))) rows)))
@@ -331,12 +341,12 @@
 (define (file-tree-face-of path)
   "The face the tree gives `path`'s name now, or #f: for tests and
    describe."
-  (let ([line (file-tree-line-of path)])
-    (and line (file-tree-row-face (vector-ref (buffer-local 'file-tree-lines) line)))))
+  (let* ([line (file-tree-line-of path)] [row (and line (vector-ref (buffer-local 'file-tree-lines) line))])
+    (and row (if (file-tree-root-row? row) "file-tree.root" (file-tree-row-face row)))))
 
 (define (file-tree-decorate!)
-  "Puts the git status faces and letters on the tree buffer's (the
-   current buffer's) lines."
+  "Puts the root face on the roots' lines, and the git status faces and
+   letters on the entries', in the tree buffer (the current buffer)."
   (let ([lines (buffer-local 'file-tree-lines)])
     (for-each (lambda (l) (set-line-end-text! l #f "")) (or (buffer-local 'file-tree-lettered) '()))
     (buffer-highlight-clear! "file-tree-status")
@@ -347,6 +357,8 @@
                  [face (and (> (caddr row) 0) (file-tree-row-face row))]
                  [letter (and (> (caddr row) 0) (not (cadr row)) (not (list-ref row 4)) (file-tree-row-status row))]
                  [start (+ (line-start i) (file-tree-name-col i))])
+            (when (= (caddr row) 0)
+              (buffer-highlight-add! "file-tree-status" (line-start i) (+ (line-start i) (string-length (line-text i))) "file-tree.root"))
             (when face
               (buffer-highlight-add! "file-tree-status" start (+ (line-start i) (string-length (line-text i))) face))
             (when letter (set-line-end-text! i letter face))
@@ -426,9 +438,10 @@
 
 (define (file-tree-row)
   "The row, (path directory? depth root), at the cursor's line of the
-   tree."
+   tree, or #f on the blank line between roots."
   (let ([lines (buffer-local 'file-tree-lines)] [line (current-line)])
-    (and lines (< line (vector-length lines)) (vector-ref lines line))))
+    (and lines (< line (vector-length lines))
+         (let ([row (vector-ref lines line)]) (and (>= (caddr row) 0) row)))))
 
 (define (file-tree-root-row? row)
   "Whether `row` is a root's line."
@@ -529,10 +542,12 @@
                (message (string-append "added " (file-tree-relative path) (if folder? "/" "")))))))
 
 (define (file-tree-add-prompt!)
-  "a: asks for a name to add in the folder at the cursor."
-  (let* ([dir (file-tree-target-dir)] [rel (file-tree-relative dir)])
+  "a: asks for a name to add in the folder at the cursor. Does nothing
+   on the blank line between roots."
+  (when (file-tree-row)
+    (let* ([dir (file-tree-target-dir)] [rel (file-tree-relative dir)])
     (ask (string-append "Add in " (if (equal? rel "") (file-name-of dir) rel) "/: ") ""
-         (lambda (name) (file-tree-add! dir name)))))
+         (lambda (name) (file-tree-add! dir name))))))
 
 (define (file-tree-move-paths! from to)
   "Points buffers visiting `from`, or a file under it, at the same file
@@ -572,24 +587,28 @@
 (define (file-tree-rename-prompt!)
   "r: asks for a new path for the entry at the cursor."
   (let ([row (file-tree-row)])
-    (if (or (not row) (file-tree-root-row? row))
-        (message "a root can't be renamed here")
+    (cond
+      [(not row) void]
+      [(file-tree-root-row? row) (message "a root can't be renamed here")]
+      [else
         (ask "Rename to: " (file-tree-relative (car row))
-             (lambda (text) (file-tree-rename! (car row) text))))))
+             (lambda (text) (file-tree-rename! (car row) text)))])))
 
 (define (file-tree-delete-prompt!)
   "D: deletes the entry at the cursor, a folder with everything in it,
    once you say y."
   (let ([row (file-tree-row)])
-    (if (or (not row) (file-tree-root-row? row))
-        (message "a root can't be deleted here (X takes it out of the tree)")
+    (cond
+      [(not row) void]
+      [(file-tree-root-row? row) (message "a root can't be deleted here (X takes it out of the tree)")]
+      [else
         (let ([rel (file-tree-relative (car row))])
           (confirm! (string-append "Delete " rel (if (cadr row) "/ and everything in it?" "?"))
                     (lambda ()
                       (let ([r (error-text (lambda () (delete-path! (car row))))])
                         (if r
                             (message r)
-                            (begin (file-tree-refresh!) (message (string-append "deleted " rel)))))))))))
+                            (begin (file-tree-refresh!) (message (string-append "deleted " rel))))))))])))
 
 (define (file-tree-add-root! dir)
   "Adds directory `dir` as a root after the others, remembered between
@@ -612,7 +631,8 @@
   "X: takes the added root at the cursor out of the tree; the directory
    stays. The first root stays too."
   (let ([row (file-tree-row)])
-    (cond [(or (not row) (not (file-tree-root-row? row))) (message "X works on a root's line")]
+    (cond [(not row) void]
+          [(not (file-tree-root-row? row)) (message "X works on a root's line")]
           [(equal? (car row) (buffer-local 'file-tree-root)) (message "the first root stays")]
           [else (file-tree-save-roots! (filter (lambda (r) (not (equal? r (car row)))) (file-tree-added-roots)))
                 (file-tree-refresh!)

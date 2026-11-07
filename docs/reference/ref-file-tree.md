@@ -22,7 +22,7 @@ Press `SPC t e`, or run `M-x file-tree`, to open the tree. It opens down the lef
 
 With the [daemon](ref-daemon.md), each client has its own tree, so two clients can each show a different project.
 
-The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
+The tree shows the project the current file is in (see [Projects](ref-projects.md)), or the folder you started imp in. The project's name is on the first line, in bold and blue, and a little taller than the rest in the window client. Below it are its folders, ending in `/`, and then its files, each in alphabetical order.
 
 Dotfiles, and files git ignores, aren't shown at first: `H` shows or hides dotfiles, and `I` shows or hides ignored files.
 
@@ -67,9 +67,15 @@ Change the colours in `init.scm`:
 (set-face! "file-tree.modified" "fg=#e69875")
 ```
 
+The projects' names are in `file-tree.root`. To keep them bold but the same height as the rest:
+
+```scheme
+(set-face! "file-tree.root" "bold")
+```
+
 ## More than one project
 
-Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
+Press `P` in the tree to add another project beside the first. Pick one of the projects you've opened before, or type the path of any folder. It shows below the first, after a blank line, with its own folders under its name. The tree remembers the projects you add, even after you quit imp.
 
 To take one out, put the cursor on its name and press `X`. The folder itself isn't touched. The first project, the one the tree opened on, always stays.
 
