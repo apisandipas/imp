@@ -34,7 +34,7 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 
 - `<ret>` or `<tab>` on a folder opens it in place, its contents indented under it. Press it again to shut it.
 - `<ret>` on a file opens it in the window you opened the tree from, and moves the cursor there. The tree stays open.
-- Clicking does the same: click a folder to open or shut it, or a file to open it.
+- Clicking a folder opens or shuts it. Clicking a file opens it in the window you opened the tree from, but the cursor stays in the tree, so you can click through several files.
 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 

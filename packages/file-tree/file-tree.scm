@@ -60,7 +60,7 @@
 
 ;; The tree's keys, (key label procedure), bound at the end and shown by ?.
 (define *file-tree-keys*
-  (list (list "<ret>" "open a file, open or shut a folder" (lambda (n) (file-tree-visit!)))
+  (list (list "<ret>" "open a file, open or shut a folder" (lambda (n) (file-tree-visit! #f)))
         (list "<tab>" "open or shut a folder" (lambda (n) (file-tree-tab!)))
         (list "a" "add a file, or a folder/" (lambda (n) (file-tree-add-prompt!)))
         (list "r" "rename or move" (lambda (n) (file-tree-rename-prompt!)))
@@ -450,16 +450,20 @@
         (cadr entry)
         (list-find (lambda (o) (not (= o w))) (window-list)))))
 
-(define (file-tree-visit!)
-  "<ret>: opens or shuts the folder at the cursor, or opens the file in
-   the window the tree came from, moving the cursor there."
+(define (file-tree-visit! stay)
+  "Opens or shuts the folder at the cursor, or opens the file in the
+   window the tree came from: moving the cursor there (<ret>), or, with
+   `stay`, keeping it in the tree on that file (a click)."
   (let ([row (file-tree-row)])
     (cond [(or (not row) (file-tree-root-row? row)) void]
           [(cadr row) (file-tree-toggle-folder! (car row))]
           [else
-           (let ([target (file-tree-other-window)])
+           (let ([target (file-tree-other-window)] [tree (current-window)])
              (if target
-                 (begin (go-to-window! target) (open-file-buffer! (car row)) void)
+                 (begin (go-to-window! target)
+                        (open-file-buffer! (car row))
+                        (when stay (go-to-window! tree))
+                        void)
                  (message "no window to open it in")))])))
 
 (define (file-tree-refresh!)
@@ -686,12 +690,13 @@
         (file-tree-open!)
         (go-to-window! w)))))
 
-;; A click opens what it lands on, as <ret> does; one below the last
-;; entry, kept on it by normal mode, doesn't.
+;; A click opens what it lands on, as <ret> does, but leaves the cursor
+;; in the tree; one below the last entry, kept on it by normal mode,
+;; doesn't.
 (add-hook! 'mouse-click
   (lambda (offset)
     (when (and (eq? (major-mode) 'file-tree-mode) (= (offset->line offset) (current-line)))
-      (file-tree-visit!))
+      (file-tree-visit! #t))
     void))
 
 (add-hook! 'buffer-enter file-tree-follow-current!)

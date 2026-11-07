@@ -200,10 +200,31 @@ fn clicks_open_folders_and_files() {
         s.text(),
         format!("{root}\n  docs/\n  src/\n  A.txt\n  b.txt\n")
     );
-    // From the other window, a click on a file opens it there.
+    // From the other window, a click on a file opens it in the window
+    // the tree came from, and the cursor goes back to the tree.
     click(&mut s, 3, 2);
-    type_keys(&mut s, "<c-w>l");
+    let tree_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, "<C-w>l");
     click(&mut s, 5, 3);
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    type_keys(&mut s, "<C-w>l");
+    assert_eq!(eval(&mut s, "(current-window)"), file_window);
+    assert_eq!(s.text(), "fn main() {}\n");
+}
+
+#[test]
+fn a_click_on_a_file_keeps_the_cursor_in_the_tree() {
+    let dir = project("tree-click-stay");
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let mut s = visiting(&dir.join("b.txt"));
+    let file_window = eval(&mut s, "(current-window)");
+    type_keys(&mut s, " te");
+    let tree_window = eval(&mut s, "(current-window)");
+    click(&mut s, 3, 2); // src/
+    click(&mut s, 5, 3); // main.rs
+    assert_eq!(eval(&mut s, "(current-window)"), tree_window);
+    assert_eq!(eval(&mut s, "(current-line)"), "3");
+    type_keys(&mut s, "<C-w>l");
     assert_eq!(eval(&mut s, "(current-window)"), file_window);
     assert_eq!(s.text(), "fn main() {}\n");
 }
