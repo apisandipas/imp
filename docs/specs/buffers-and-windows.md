@@ -1,7 +1,7 @@
 ---
 status: accepted
 summary: "Buffers, split windows, popup windows, wrap and Unicode width."
-anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runtime/special.scm, crates/imp-server/tests/buffers.rs, crates/imp-server/tests/windows.rs, crates/imp-server/tests/popup.rs, crates/imp-server/tests/render.rs]
+anchors: [crates/imp-server/src/layout.rs, crates/imp-server/src/render.rs, runtime/special.scm, crates/imp-server/tests/buffers.rs, crates/imp-server/tests/windows.rs, crates/imp-server/tests/popup.rs, crates/imp-server/tests/render.rs, "symbol:buffer-cycle!"]
 ---
 # Buffers and windows
 

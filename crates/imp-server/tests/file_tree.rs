@@ -665,6 +665,18 @@ fn buffer_cycling_leaves_the_tree_alone() {
 }
 
 #[test]
+fn buffer_cycling_in_a_tree_alone_does_nothing() {
+    let dir = project("tree-cycle-alone");
+    let mut s = visiting(&dir.join("b.txt"));
+    type_keys(&mut s, " te:only<ret>");
+    assert_eq!(eval(&mut s, "(length (window-list))"), "1");
+    let tree = eval(&mut s, "(current-buffer)");
+    type_keys(&mut s, ":bn<ret>");
+    assert_eq!(eval(&mut s, "(current-buffer)"), tree);
+    assert_eq!(s.status(), "no window to switch the buffer of");
+}
+
+#[test]
 fn it_scrolls_to_follow_and_leaves_other_files_alone() {
     let dir = project("tree-follow-scroll");
     for i in 0..60 {
