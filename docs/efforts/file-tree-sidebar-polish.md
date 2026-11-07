@@ -4,7 +4,7 @@ status: active
 specs: ["[[spec/file-tree]]", "[[spec/buffers-and-windows]]"]
 issue: https://github.com/apisandipas/imp/issues/180
 frozen:
-  docs/specs/file-tree.md: ff47fc0e0b7b
+  docs/specs/file-tree.md: 89cc01829d44
   docs/specs/buffers-and-windows.md: 48d6a4c92e29
 ---
 # File tree sidebar polish
@@ -24,4 +24,4 @@ Buffer cycling needs a hook in core, because `:bn` and `:bp` live in `runtime/vi
 - [x] A click on a file opens it in the origin window, and the cursor stays in the tree on that file. `<ret>` doesn't change. Update `clicks_open_folders_and_files` and add a test that the tree window is still focused.
 - [x] Root lines in the new `file-tree.root` face (bold, `height=1.2`), and a blank line before each added root. `<ret>`, `a`, `r`, `D`, `X` and a click on the blank line do nothing. Test both in `file_tree.rs`, and update the tests that count lines with more than one root (`p_adds_roots_and_x_removes_them`).
 - [x] Core: `buffer-step` skips buffers with `buffer-cycle-skip`, and `:bn`/`:bp` from a buffer with `buffer-cycle-window` cycle in that window and keep the cursor where it was. The tree sets both. Test that `SPC b n` from the tree changes the origin window's buffer while the tree stays focused and follows, and that `:bn` from the origin window never lands on `*file-tree*`.
-- [ ] Docs: each task above updates `docs/reference/ref-file-tree.md` in its own commit; here, read the whole page against the spec with the docs-page skill and stamp it, read `docs/guide/packages.md` against the change and stamp it, and update the package's header comment.
+- [x] Docs: each task above updates `docs/reference/ref-file-tree.md` in its own commit; here, read the whole page against the spec with the docs-page skill and stamp it, read `docs/guide/packages.md` against the change and stamp it, and update the package's header comment.

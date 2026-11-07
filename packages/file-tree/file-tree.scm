@@ -2,7 +2,9 @@
 ;;;
 ;;; The *file-tree* buffer shows the current buffer's project root (or the
 ;;; working directory) as a tree, and after it any roots added with P, in
-;;; a window file-tree-width columns wide on the left of the frame. Dired
+;;; a window file-tree-width columns wide on the left of the frame. Each
+;;; root's name is in file-tree.root, and a blank line comes before each
+;;; added root. Dired
 ;;; stays the way to edit a directory as text; this is for finding your
 ;;; way around.
 ;;;
@@ -10,6 +12,9 @@
 ;;;
 ;;;   SPC t e, M-x file-tree   open or close the tree
 ;;;   <ret>, <tab>         open or shut a folder; <ret> opens a file
+;;;   a click              as <ret>, but a file opens with the cursor
+;;;                        left in the tree
+;;;   SPC b n, SPC b p     switch the file in the window the tree came from
 ;;;   H, I                 show or hide dotfiles, files git ignores
 ;;;   a                    add a file, or a folder (a name ending in /)
 ;;;   r                    rename or move the entry at the cursor

@@ -9,7 +9,7 @@ frozen:
   docs/specs/nerd-icons.md: 5b1d62bdf17a
   docs/specs/org-babel.md: 0f2ad79678a0
   docs/specs/showkeys.md: 8d44499288a6
-  docs/specs/file-tree.md: 93c6d2be9759
+  docs/specs/file-tree.md: 89cc01829d44
   docs/specs/git-blame.md: d6706377c008
   docs/specs/git-gutter.md: 50690fac14f4
   docs/specs/modus-themes.md: 2f7f2ca55f07

@@ -2,7 +2,7 @@
 type: Page
 spec: "[[spec/file-tree]]"
 frozen:
-  docs/specs/file-tree.md: 93c6d2be9759
+  docs/specs/file-tree.md: 89cc01829d44
 ---
 # File tree
 
@@ -38,7 +38,7 @@ Move with `j` and `k`, search with `/`, and use any other Vim motion, as in any 
 
 The tree reads the folders again each time it opens. If files change while it's open, press `R` to read them again.
 
-`SPC b n` and `SPC b p` (or `:bn` and `:bp`) in the tree switch the file in the window you opened it from, and the cursor stays in the tree, which moves to the new file. From any other window they pass over the tree, so it never shows in two windows.
+`SPC b n` and `SPC b p` (or `:bn` and `:bp`) in the tree switch the file in the window you opened it from, and the cursor stays in the tree. The tree moves to the new file, unless you've set `file-tree-follow` to `#f`. From any other window they pass over the tree, so it never shows in two windows.
 
 The tree remembers which folders you opened. Close it and open it again, and they're still open, until you quit imp.
 
@@ -69,7 +69,7 @@ Change the colours in `init.scm`:
 (set-face! "file-tree.modified" "fg=#e69875")
 ```
 
-The projects' names are in `file-tree.root`. To keep them bold but the same height as the rest:
+The projects' names are in `file-tree.root`. To make them plain bold, the same height and colour as the rest:
 
 ```scheme
 (set-face! "file-tree.root" "bold")
