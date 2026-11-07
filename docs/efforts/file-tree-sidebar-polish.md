@@ -1,6 +1,6 @@
 ---
 type: Effort
-status: active
+status: done
 specs: ["[[spec/file-tree]]", "[[spec/buffers-and-windows]]"]
 issue: https://github.com/apisandipas/imp/issues/180
 frozen:
